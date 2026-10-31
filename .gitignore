@@ -2,6 +2,7 @@
 .env
 .env.*
 *.env
+.gh_device.json
 
 # Python y compilados
 __pycache__/
