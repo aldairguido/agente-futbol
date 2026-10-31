@@ -1,0 +1,59 @@
+name: Bot Futbol 24/7
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: '0 */5 * * *'
+
+concurrency:
+  group: bot-telegram-24-7
+  cancel-in-progress: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  ejecutar_bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Instalar fuentes del sistema (DejaVu)
+        run: |
+          sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar PyTorch CPU ligero y dependencias
+        run: |
+          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Crear directorios de informes
+        run: |
+          mkdir -p informes/auditorias informes/h2h informes/mercados informes/evaluacion
+
+      - name: Ejecutar Bot Interactivo (Hasta 330 minutos)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PORT: 7860
+          MPLBACKEND: "Agg"
+          PYTHONIOENCODING: utf-8
+        run: |
+          timeout 330m python -u bot_interactivo.py || true
+
+      - name: Relanzar Workflow automáticamente (Ciclo Continuo 24/7)
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🔄 Relanzando bot_24_7.yml para mantener el servicio activo 24/7..."
+          gh workflow run bot_24_7.yml || echo "Aviso: no se pudo relanzar por API (se activará por cron o ya hay uno en ejecución)."

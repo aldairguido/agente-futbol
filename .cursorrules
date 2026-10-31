@@ -1,0 +1,28 @@
+# DIRECTIVA MAESTRA Y ARQUITECTURA HÍBRIDA DEL AGENTE (FOTMOB + FLASHSCORE + MLP ENSEMBLE)
+
+> **IMPORTANTE — REGLA PERMANENTE DEL PROYECTO (`D:\agente_futbol`):**
+> Estas reglas son **innegociables, obligatorias y permanentes**. Ningún cambio futuro puede relajar, omitir ni desactivar ninguna de las condiciones descritas en este documento. Aplica de forma estricta y automática en todas las ejecuciones, auditorías, tests y comandos del bot (`/auditar`, `/analizar_vivo`, `/h2h`, `/mercados`, `/evaluar`, `/conciencia`, `/estado`). Está terminantemente prohibido dar por finalizada una tarea, entregar una matriz con huecos o emitir una predicción si no se cumple el 100% de esta especificación.
+
+1. **FUSIÓN AUTOMÁTICA E INMEDIATA: FOTMOB + FLASHSCORE (CERO HUECOS EN LA MATRIZ)**:
+   - FotMob es la fuente primaria; Flashscore cubre inmediatamente todo hueco en FT, 1T y 2T. Prohibido `Flashscore: N/D`.
+   - Coherencia aritmética multitiempo (`1T + 2T == FT`) y tríos `completados/totales (pct%)` en pases largos, tercio final y cruces.
+   - Si `saques_puerta` sigue ausente tras consultar ambas fuentes, se deriva de `remates_fuera` del rival ($\max(1, \text{remates\_fuera}_{\text{rival}} - \text{al\_palo}_{\text{rival}})$) y se declara como `Est.`.
+2. **TOLERANCIA CERO A `None`, `null`, `NaN` O `"sin_dato"`**:
+   - Bloqueo en tests Gatekeeper (`test_fuente_flashscore.py` y `test_auditoria_historica.py`).
+3. **COMANDOS DE INFORME BAJO DEMANDA (`/auditar`)**:
+   - Modalidad A: 30 matrices completas individuales (15 Local + 15 Visitante oficiales, 0 amistosos).
+   - Modalidad B: $N$ matrices H2H reales 2024–2026 (0 duelos inventados).
+   - División en Tomos < 30 KB para apertura directa en Telegram Android.
+4. **CATÁLOGO OFICIAL DE 45 MÉTRICAS EN 6 CATEGORÍAS**:
+   - Principales (01–12), Disparos (13–21), Ataques (22–25), Pases (26–30), Defensa (31–41), Portería (42–45).
+5. **ESTÉTICA EDITORIAL CLARA OBLIGATORIA PARA EL TICKET PNG**:
+   - Fondo `#F7F9FC`, encabezado `#131D31`, tabla de 3 columnas, píldoras verdes ($\ge 70\%$) y ámbar ($58\%–69\%$), cero emojis Unicode rotos (`▯`).
+6. **RESILIENCIA DEL BOT Y NORMALIZACIÓN DE COMANDOS**:
+   - `re.sub(r"^/\s+", "/", texto.strip()).split()[0].lower()` en `bot_interactivo.py`.
+7. **ARQUITECTURA HÍBRIDA DE PREDICCIÓN (MLP 5 FACTORES LATENTES + MULTI-FRECUENCIA + ENSEMBLE + VALIDACIÓN 80/20)**:
+   - Preprocesamiento acotado $[0, 1]$ con cotas teóricas por métrica (cero data leakage, $t_i < T$).
+   - Multi-frecuencia temporal: 55% base estructural (15 partidos), 30% inercia reciente (EWMA 5 partidos), 15% contexto H2H o Nowcasting en vivo.
+   - 5 Factores Latentes con activación no lineal $\tanh$: Posesión Progresiva ($F_1$), Creación Ofensiva ($F_2$), Finalización/Letalidad ($F_3$), Vulnerabilidad Portería Rival ($F_4$), Fragilidad Defensiva Rival ($F_5$).
+   - Ensemble $\lambda_{\text{efectivo}} = \lambda_{\text{base}} \cdot \exp(\alpha \cdot \Delta_{\text{MLP}})$.
+   - Validación cronológica 80/20 en `evaluacion.py` minimizando Log-Loss con L2 en 80% y midiendo Brier Score en 20% (cero shuffle).
+   - IA Explicable (XAI) con desglose porcentual de los 5 factores y Clusters de Marcadores Dominantes.

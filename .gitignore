@@ -1,0 +1,56 @@
+# Entorno local y credenciales (NUNCA SUBIR)
+.env
+.env.*
+*.env
+
+# Python y compilados
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+ENV/
+
+# Bases de datos y caches
+*.db
+*.sqlite
+*.sqlite3
+cache/
+**/cache/
+**/cache_*
+**/cache_*/**
+
+# Artefactos e imágenes generadas
+*.png
+informes/*.png
+informes/**/*.png
+informes/h2h/
+informes/mercados/
+informes/auditorias/
+salidas_test_seccion8/
+scratch/
+temp/
+tmp/
+*.tmp
+*.log
+*.log.*
+diag_*.txt
+diag*.html
+vfeed.txt
+vper.txt
+vper_utf8.txt
+vstats.txt
+
+# Playwright y testing
+.playwright/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo

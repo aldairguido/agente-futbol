@@ -1,0 +1,182 @@
+{
+ "evaluaciones": {
+  "a2ba8cb079cf301a": {
+   "historial": [
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-13 16:47:43",
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-13 16:47:44",
+     "message_id": 151,
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-13 16:53:14",
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-13 16:53:16",
+     "message_id": 152,
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-13 17:01:49",
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-13 17:01:51",
+     "message_id": 156,
+     "ids_imagenes": [],
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-13 17:02:22",
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-13 17:02:28",
+     "message_id": 159,
+     "ids_imagenes": [
+      160,
+      161
+     ],
+     "fallos_imagen": [],
+     "rutas": {
+      "informe_md": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.md",
+      "informe_json": "C:\\Users\\Aldair\\agente_futbol\\informes\\evaluacion\\evaluacion_a2ba8cb079cf301a.json"
+     }
+    }
+   ],
+   "estado": "envio_confirmado",
+   "actualizado_en": "2026-10-13 17:02:28"
+  },
+  "bdf0275601aa8786": {
+   "historial": [
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-14 16:05:03",
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_bdf0275601aa8786.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_bdf0275601aa8786.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-14 16:05:09",
+     "message_id": 201,
+     "ids_imagenes": [
+      202,
+      203
+     ],
+     "fallos_imagen": [],
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_bdf0275601aa8786.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_bdf0275601aa8786.json"
+     }
+    }
+   ],
+   "estado": "envio_confirmado",
+   "actualizado_en": "2026-10-14 16:05:09"
+  },
+  "52c2d0c8b1603e84": {
+   "historial": [
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-14 16:42:02",
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_52c2d0c8b1603e84.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_52c2d0c8b1603e84.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-14 16:42:07",
+     "message_id": 206,
+     "ids_imagenes": [
+      207,
+      208
+     ],
+     "fallos_imagen": [],
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_52c2d0c8b1603e84.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_52c2d0c8b1603e84.json"
+     }
+    }
+   ],
+   "estado": "envio_confirmado",
+   "actualizado_en": "2026-10-14 16:42:07"
+  },
+  "9393a7b9017a5365": {
+   "historial": [
+    {
+     "estado": "resumen_preparado",
+     "en": "2026-10-18 01:19:20",
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-18 01:19:26",
+     "message_id": 403,
+     "ids_imagenes": [
+      405,
+      407
+     ],
+     "fallos_imagen": [],
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.json"
+     }
+    },
+    {
+     "estado": "envio_confirmado",
+     "en": "2026-10-18 01:19:26",
+     "message_id": 404,
+     "ids_imagenes": [
+      406,
+      408
+     ],
+     "fallos_imagen": [],
+     "rutas": {
+      "informe_md": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.md",
+      "informe_json": "D:\\agente_futbol\\informes\\evaluacion\\evaluacion_9393a7b9017a5365.json"
+     }
+    }
+   ],
+   "estado": "envio_confirmado",
+   "actualizado_en": "2026-10-18 01:19:26"
+  }
+ }
+}

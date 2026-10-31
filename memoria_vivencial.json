@@ -1,0 +1,50 @@
+{
+    "madurez": 4475,
+    "estado_adaptativo": "en calibración empírica (muestra en desarrollo)",
+    "identidad_base": "Agente cuantitativo en fase de calibración empírica (24/30 partidos únicos evaluados, 2040 aciertos / 395 fallos, win rate 83.8%). Brier Score: 0.1302 (climatología base: 0.1359). Especialidad preliminar en Hándicap, Total de goles. Priorizo la rigurosidad matemática y la recolección de muestra antes de atribuirme peritaje consolidado.",
+    "resumen_empirico": {
+        "evaluables": 2435,
+        "ganadas": 2040,
+        "perdidas": 395,
+        "win_rate": 0.8378,
+        "brier_score": 0.1302,
+        "partidos_unicos": 24,
+        "evidencia_suficiente": false,
+        "mercados_estrella": [
+            {
+                "familia": "Hándicap",
+                "acierto": 0.8942,
+                "evaluables": 104
+            },
+            {
+                "familia": "Total de goles",
+                "acierto": 0.8864,
+                "evaluables": 1338
+            },
+            {
+                "familia": "Tarjetas",
+                "acierto": 0.881,
+                "evaluables": 168
+            },
+            {
+                "familia": "Doble oportunidad",
+                "acierto": 0.8065,
+                "evaluables": 31
+            }
+        ],
+        "mercados_vigilancia": [
+            {
+                "familia": "Gol en ambos tiempos",
+                "acierto": 0.7317,
+                "brecha_pp": -6.7
+            },
+            {
+                "familia": "Córneres",
+                "acierto": 0.7416,
+                "brecha_pp": -17.18
+            }
+        ],
+        "generado_en": "2026-10-18 01:19:18"
+    },
+    "experiencias": []
+}
