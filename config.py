@@ -11,7 +11,8 @@ RUTA_BASE    = Path(__file__).resolve().parent
 BASE_DIR     = str(RUTA_BASE)
 INFORME_DIR  = str(RUTA_BASE / "informes")
 
-load_dotenv(RUTA_BASE / ".env")
+load_dotenv(RUTA_BASE / ".env", override=True)
+load_dotenv(override=True)
 
 # ─── Zona horaria y ventana de partidos ──────────────────────────────────────
 TIMEZONE = "America/Lima"
@@ -49,7 +50,7 @@ PAUSA_ENTRE_PAGINAS  = 1.0
 
 # ─── Configuración Telegram ──────────────────────────────────────────────────
 # Lee TELEGRAM_TOKEN (o TELEGRAM_BOT_TOKEN) y TELEGRAM_CHAT_ID estrictamente desde el entorno o .env local
-TELEGRAM_TOKEN     = (os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+TELEGRAM_TOKEN     = (os.getenv("TELEGRAM_TOKEN") or os.getenv("TELEGRAM_BOT_TOKEN") or "").strip().strip('"').strip("'")
 TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN
-TELEGRAM_CHAT_ID   = (os.getenv("TELEGRAM_CHAT_ID") or "").strip()
+TELEGRAM_CHAT_ID   = (os.getenv("TELEGRAM_CHAT_ID") or "").strip().strip('"').strip("'")
 

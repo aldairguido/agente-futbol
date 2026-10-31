@@ -1472,6 +1472,70 @@ def preparar_analisis(
               f"{type(e_h2h).__name__}: {e_h2h}")
         ruta_cuadro_h2h = None
 
+    # ── Extracción de Cuotas Flashscore, 4ta Imagen (Ticket de Valor) y Análisis de 3 Párrafos ──
+    ruta_ticket_valor = None
+    cuotas_flashscore: dict[str, float | None] = {"local": None, "empate": None, "visitante": None}
+    id_fs_partido: str | None = None
+    analisis_texto_3_parrafos = ""
+    try:
+        from fuente_flashscore import ClienteFlashscore, candidatos_desde_feed_hh
+        import informe as informe_mod
+
+        cliente_fs = ClienteFlashscore()
+        # 1) Buscar id_flashscore directo del cruce o desde el feed H2H de un partido conocido
+        for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
+            sec = p_cand.get("fuente_secundaria") or {}
+            mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
+            if mid_cand and mid_cand not in ("N/D", "None", ""):
+                id_fs_partido = mid_cand
+                break
+
+        if id_fs_partido:
+            # Intentar extraer cuotas del partido o de los candidatos H2H
+            cuotas_try = cliente_fs.extraer_cuotas(id_fs_partido)
+            if any(v is not None for v in cuotas_try.values()):
+                cuotas_flashscore = cuotas_try
+            else:
+                try:
+                    cands_hh = candidatos_desde_feed_hh(id_fs_partido, cliente=cliente_fs)
+                    for ch in cands_hh[:5]:
+                        cid = str(ch.get("id") or "").strip()
+                        if cid and cid != id_fs_partido:
+                            c_alt = cliente_fs.extraer_cuotas(cid)
+                            if any(v is not None for v in c_alt.values()):
+                                cuotas_flashscore = c_alt
+                                id_fs_partido = cid
+                                break
+                except Exception:
+                    pass
+
+        destino_ticket_valor = os.path.join(
+            base_dir,
+            f"ticket_valor_{_slug(contexto['equipo_local'])}_vs_"
+            f"{_slug(contexto['equipo_visitante'])}_{id_trabajo}.png",
+        )
+        ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
+            analisis,
+            cuotas_flashscore=cuotas_flashscore,
+            destino=destino_ticket_valor,
+            id_flashscore=id_fs_partido,
+        )
+        if ruta_ticket_valor:
+            rutas["ticket_valor"] = ruta_ticket_valor
+
+        analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
+            analisis,
+            info_h2h=info_h2h_2024_2026,
+            cuotas_flashscore=cuotas_flashscore,
+        )
+        if analisis_texto_3_parrafos:
+            with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
+                f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
+                               + analisis_texto_3_parrafos + "\n")
+    except Exception as e_val:
+        print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Ticket de Valor / Análisis 3 párrafos: "
+              f"{type(e_val).__name__}: {e_val}")
+
     # ── Diagnóstico Metacognitivo y Memoria Empírica (AgenteConsciente) ──
     diagnostico_conciencia: dict[str, Any] = {}
     bloque_metacognitivo_md = ""
@@ -1510,6 +1574,10 @@ def preparar_analisis(
         "analisis": analisis,
         "rutas": rutas,
         "ruta_imagen": ruta_imagen,
+        "ruta_ticket_valor": ruta_ticket_valor,
+        "cuotas_flashscore": cuotas_flashscore,
+        "id_flashscore": id_fs_partido,
+        "analisis_texto_3_parrafos": analisis_texto_3_parrafos,
         "ruta_cuadro": ruta_cuadro,
         "ruta_cuadro_h2h": ruta_cuadro_h2h,
         "h2h_2024_2026": info_h2h_2024_2026,
@@ -1609,20 +1677,61 @@ def enviar_analisis(
 
         marcar_estado(id_trabajo, "envio_en_curso", {"tipo": "foto", "ruta": ruta_imagen})
         try:
+            ids_telegram: list[Any] = []
+
+            # 0) Análisis de texto detallado (3 párrafos) ANTES de enviar las imágenes
+            texto_3p = (preparado.get("analisis_texto_3_parrafos") or "").strip()
+            if texto_3p:
+                texto_sender = (
+                    enviar_fn
+                    if (enviar_fn is not None and enviar_fn is not enviar_fn_telegram_foto)
+                    else (enviar_fn_telegram if foto_sender is enviar_fn_telegram_foto else None)
+                )
+                if texto_sender is not None:
+                    try:
+                        encabezado_3p = f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
+                        res_txt_3p = texto_sender(encabezado_3p + texto_3p, chat_id=chat_id)
+                        if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:
+                            ids_telegram.append(res_txt_3p["message_id"])
+                    except Exception as e_txt_3p:
+                        print(f"[SERVICIO MERCADOS] ⚠️ Aviso al enviar análisis de 3 párrafos: {e_txt_3p}")
+
+            # 1) Primera imagen: Ticket General de Mercados
             resultado = foto_sender(ruta_imagen, caption=caption, chat_id=chat_id)
             if isinstance(resultado, dict):
                 if not resultado.get("ok", True):
                     raise RuntimeError(resultado.get("error") or "envío de foto no confirmado")
                 msg_id = resultado.get("message_id")
-                ids_telegram = [msg_id] if msg_id is not None else []
+                if msg_id is not None:
+                    ids_telegram.append(msg_id)
             elif resultado is False:
                 raise RuntimeError("el adaptador de foto devolvió False")
-            else:
-                ids_telegram = []
 
-            # Segunda imagen: el Cuadro Especialista (ratings 0-100 + tempo +
-            # mapa de calor). Es complementario: si falla, el ticket ya está
-            # enviado y el resultado lo declara en lugar de fingir un envío doble.
+            # 2) Segunda imagen (justo después del ticket general): El Ticket de Valor (+EV Flashscore)
+            ruta_ticket_valor = (preparado.get("ruta_ticket_valor")
+                                 or (preparado.get("rutas") or {}).get("ticket_valor"))
+            ticket_valor_enviado = False
+            motivo_ticket_valor = ""
+            if (ruta_ticket_valor and os.path.exists(ruta_ticket_valor)
+                    and os.path.abspath(ruta_ticket_valor) != os.path.abspath(ruta_imagen)):
+                try:
+                    res_valor = foto_sender(
+                        ruta_ticket_valor,
+                        caption=f"💎 Ticket de Valor (+EV Flashscore vs Red 15P) | {eq_l} vs {eq_v}",
+                        chat_id=chat_id,
+                    )
+                    if isinstance(res_valor, dict) and not res_valor.get("ok", True):
+                        raise RuntimeError(res_valor.get("error") or "envío del Ticket de Valor no confirmado")
+                    if res_valor is False:
+                        raise RuntimeError("el adaptador devolvió False para el Ticket de Valor")
+                    ticket_valor_enviado = True
+                    if isinstance(res_valor, dict) and res_valor.get("message_id") is not None:
+                        ids_telegram.append(res_valor["message_id"])
+                except Exception as e_val_send:
+                    motivo_ticket_valor = f"{type(e_val_send).__name__}: {e_val_send}"
+                    print(f"[SERVICIO MERCADOS] ⚠️ Ticket de Valor no enviado: {motivo_ticket_valor}")
+
+            # 3) Tercera imagen: el Cuadro Especialista (ratings 0-100 + tempo + mapa de calor)
             ruta_cuadro = (preparado.get("ruta_cuadro")
                            or (preparado.get("rutas") or {}).get("cuadro"))
             cuadro_enviado = False
@@ -1683,9 +1792,16 @@ def enviar_analisis(
             else:
                 motivo_cuadro_h2h = estado_h2h
 
-            partes_enviadas = 1 + (1 if cuadro_enviado else 0) + (1 if cuadro_h2h_enviado else 0)
+            partes_enviadas = (
+                1
+                + (1 if ticket_valor_enviado else 0)
+                + (1 if cuadro_enviado else 0)
+                + (1 if cuadro_h2h_enviado else 0)
+            )
             marcar_estado(id_trabajo, "envio_confirmado",
                           {"tipo": "foto", "ruta_imagen": ruta_imagen,
+                           "ruta_ticket_valor": ruta_ticket_valor if ticket_valor_enviado else None,
+                           "motivo_ticket_valor": motivo_ticket_valor,
                            "ruta_cuadro": ruta_cuadro if cuadro_enviado else None,
                            "motivo_cuadro": motivo_cuadro,
                            "ruta_cuadro_h2h": ruta_cuadro_h2h if cuadro_h2h_enviado else None,
@@ -1693,6 +1809,9 @@ def enviar_analisis(
                            "motivo_cuadro_h2h": motivo_cuadro_h2h,
                            "ids_telegram": ids_telegram})
             return {"enviado": True, "tipo": "foto", "ruta_imagen": ruta_imagen,
+                    "ruta_ticket_valor": ruta_ticket_valor,
+                    "ticket_valor_enviado": ticket_valor_enviado,
+                    "motivo_ticket_valor": motivo_ticket_valor,
                     "ruta_cuadro": ruta_cuadro, "cuadro_enviado": cuadro_enviado,
                     "motivo_cuadro": motivo_cuadro,
                     "ruta_cuadro_h2h": ruta_cuadro_h2h,

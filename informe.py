@@ -6,9 +6,22 @@ Según la estructura del §11 de la especificación.
 
 import os
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+try:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+except ImportError:
+    matplotlib = None  # type: ignore[assignment]
+    plt = None         # type: ignore[assignment]
+
 import pytz
 import config
 from gestor_tickets import GestorTickets
+
+BASE_DIR = Path(__file__).resolve().parent
 
 
 def generar_informe(resultados: list[dict], fecha_partidos: str) -> str:
@@ -373,3 +386,444 @@ def _seccion_tickets_vip(tickets: dict) -> list[str]:
         lineas.append("")
 
     return lineas
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TICKET DE VALOR (+EV) Y ANÁLISIS DETALLADO DE 3 PÁRRAFOS PARA /mercados
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _extraer_probabilidades_red_general(analisis: Any) -> dict[str, Any]:
+    """
+    Extrae las probabilidades 1X2, Doble Oportunidad, Over/Under 2.5, Ambos Anotan
+    y goles esperados (λ) de la Red Neuronal General (15 partidos oficiales).
+    """
+    motor = getattr(analisis, "motor", None)
+    meta = getattr(analisis, "metadatos", {}) or {}
+    eq_local = str(meta.get("equipo_local") or getattr(motor, "nombre_local", None) or "Local")
+    eq_vis = str(meta.get("equipo_visitante") or getattr(motor, "nombre_visitante", None) or "Visitante")
+
+    matriz = getattr(motor, "matriz_ft", None) or []
+    p_local = 0.0
+    p_empate = 0.0
+    p_vis = 0.0
+    p_over25 = 0.0
+    p_under25 = 0.0
+    p_btts_si = 0.0
+    marcador_modal = "1-0"
+    prob_modal = 0.0
+
+    if matriz:
+        for i, fila in enumerate(matriz):
+            for j, prob in enumerate(fila):
+                val = float(prob or 0.0)
+                if i > j:
+                    p_local += val
+                elif i == j:
+                    p_empate += val
+                else:
+                    p_vis += val
+                if (i + j) >= 3:
+                    p_over25 += val
+                else:
+                    p_under25 += val
+                if i >= 1 and j >= 1:
+                    p_btts_si += val
+                if val > prob_modal:
+                    prob_modal = val
+                    marcador_modal = f"{i}-{j}"
+
+    total_1x2 = p_local + p_empate + p_vis
+    if total_1x2 > 0:
+        p_local /= total_1x2
+        p_empate /= total_1x2
+        p_vis /= total_1x2
+    else:
+        p_local, p_empate, p_vis = 0.42, 0.28, 0.30
+
+    tasas = getattr(motor, "tasas", None)
+    lam_l = float(getattr(tasas, "lambda_local_ft", None) or 1.25)
+    lam_v = float(getattr(tasas, "lambda_visitante_ft", None) or 1.05)
+
+    return {
+        "equipo_local": eq_local,
+        "equipo_visitante": eq_vis,
+        "competicion": str(meta.get("competicion") or "Oficial"),
+        "fecha_partido": str(meta.get("fecha_partido") or ""),
+        "p_local": p_local,
+        "p_empate": p_empate,
+        "p_visitante": p_vis,
+        "p_1x": min(0.99, p_local + p_empate),
+        "p_x2": min(0.99, p_empate + p_vis),
+        "p_12": min(0.99, p_local + p_vis),
+        "p_over25": p_over25,
+        "p_under25": p_under25,
+        "p_btts_si": p_btts_si,
+        "p_btts_no": max(0.0, 1.0 - p_btts_si),
+        "lambda_local": lam_l,
+        "lambda_visitante": lam_v,
+        "lambda_total": lam_l + lam_v,
+        "marcador_modal": marcador_modal,
+        "prob_modal": prob_modal,
+    }
+
+
+def construir_filas_ticket_valor(
+    analisis: Any,
+    cuotas_flashscore: dict[str, float | None] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Cruza las probabilidades de la Red Neuronal General (15 partidos) con las cuotas
+    de Flashscore y calcula Cuota Justa, Valor Esperado (EV) y Recomendación.
+    """
+    info = _extraer_probabilidades_red_general(analisis)
+    eq_l = info["equipo_local"]
+    eq_v = info["equipo_visitante"]
+    cuotas = dict(cuotas_flashscore or {})
+
+    c_loc = cuotas.get("local")
+    c_emp = cuotas.get("empate")
+    c_vis = cuotas.get("visitante")
+
+    # Derivar cuotas equivalentes de Doble Oportunidad (1X, X2, 12) si existen cuotas 1X2 reales
+    c_1x = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+            if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else cuotas.get("1x"))
+    c_x2 = (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+            if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else cuotas.get("x2"))
+    c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+            if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
+
+    definiciones = [
+        (f"1 — Victoria {eq_l}", info["p_local"], c_loc),
+        ("X — Empate", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", info["p_12"], c_12),
+    ]
+
+    filas: list[dict[str, Any]] = []
+    for nombre_mkt, prob_bot, cuota_fs in definiciones:
+        prob_f = max(0.001, min(0.999, float(prob_bot or 0.0)))
+        cuota_justa = round(1.0 / prob_f, 2)
+        cuota_fs_val = round(float(cuota_fs), 2) if isinstance(cuota_fs, (int, float)) and cuota_fs > 1.0 else None
+
+        if cuota_fs_val is not None:
+            ev_pct = round(((prob_f * cuota_fs_val) - 1.0) * 100.0, 2)
+            tiene_valor = bool(cuota_fs_val > cuota_justa)
+            if tiene_valor and ev_pct >= 5.0 and prob_f >= 0.45:
+                recomendacion = "VALOR ALTO (+EV) - APOSTAR"
+            elif tiene_valor:
+                recomendacion = "VALOR (+EV) - FAVORABLE"
+            else:
+                recomendacion = "SIN VALOR (Cuota <= Justa)"
+        else:
+            ev_pct = None
+            tiene_valor = False
+            recomendacion = "SIN CUOTA FLASHSCORE"
+
+        filas.append({
+            "mercado": nombre_mkt,
+            "prob_bot": prob_f,
+            "prob_bot_str": f"{prob_f * 100.0:.1f}%",
+            "cuota_justa": cuota_justa,
+            "cuota_justa_str": f"{cuota_justa:.2f}",
+            "cuota_flashscore": cuota_fs_val,
+            "cuota_flashscore_str": f"{cuota_fs_val:.2f}" if cuota_fs_val is not None else "N/D",
+            "ev_pct": ev_pct,
+            "ev_str": (f"+{ev_pct:.1f}%" if ev_pct is not None and ev_pct > 0
+                       else (f"{ev_pct:.1f}%" if ev_pct is not None else "N/D")),
+            "tiene_valor": tiene_valor,
+            "recomendacion": recomendacion,
+        })
+
+    return filas
+
+
+def generar_ticket_valor_png(
+    analisis: Any,
+    cuotas_flashscore: dict[str, float | None] | None = None,
+    destino: str | None = None,
+    id_flashscore: str | None = None,
+) -> str:
+    """
+    Genera la 4ta imagen (El Ticket de Valor) en formato PNG usando matplotlib:
+    Cruza las cuotas extraídas de Flashscore con las probabilidades de la Red Neuronal
+    General (15 partidos) en una tabla con las 6 columnas obligatorias:
+        Mercado | Prob. Bot | Cuota Justa | Cuota Flashscore | Valor Esperado (EV) | Recomendación
+    Resalta en verde las filas donde la Cuota Flashscore es mayor a la Cuota Justa.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    info = _extraer_probabilidades_red_general(analisis)
+    eq_l = info["equipo_local"]
+    eq_v = info["equipo_visitante"]
+    comp = info["competicion"]
+    filas = construir_filas_ticket_valor(analisis, cuotas_flashscore)
+
+    if not destino:
+        carpeta = Path(config.INFORME_DIR) / "mercados"
+        carpeta.mkdir(parents=True, exist_ok=True)
+        destino = str(carpeta / f"ticket_valor_{eq_l}_{eq_v}.png")
+    else:
+        Path(destino).parent.mkdir(parents=True, exist_ok=True)
+
+    columnas = [
+        "Mercado",
+        "Prob. Bot",
+        "Cuota Justa",
+        "Cuota Flashscore",
+        "Valor Esperado (EV)",
+        "Recomendación",
+    ]
+    datos_celdas = [
+        [
+            f["mercado"],
+            f["prob_bot_str"],
+            f["cuota_justa_str"],
+            f["cuota_flashscore_str"],
+            f["ev_str"],
+            f["recomendacion"],
+        ]
+        for f in filas
+    ]
+
+    n_filas = len(datos_celdas)
+    alto_fig = max(4.6, 2.3 + n_filas * 0.62)
+    fig, ax = plt.subplots(figsize=(13.5, alto_fig), dpi=160)
+    fig.patch.set_facecolor("#F7F9FC")
+    ax.set_facecolor("#F7F9FC")
+    ax.axis("off")
+
+    # Encabezado editorial
+    titulo = f"TICKET DE VALOR (+EV)  |  {eq_l.upper()} vs {eq_v.upper()}"
+    id_fs_txt = f"  •  ID Flashscore: {id_flashscore}" if id_flashscore else ""
+    subtitulo = (
+        f"Red Neuronal General (15 Partidos Oficiales) vs Cuotas Flashscore  •  "
+        f"Competición: {comp}  •  λ Esperados: {eq_l} {info['lambda_local']:.2f} - "
+        f"{info['lambda_visitante']:.2f} {eq_v}{id_fs_txt}"
+    )
+    fig.text(
+        0.03, 0.91, titulo,
+        fontsize=14, fontweight="bold", color="#131D31", family="sans-serif",
+    )
+    fig.text(
+        0.03, 0.84, subtitulo,
+        fontsize=9.5, color="#3B4A6B", family="sans-serif",
+    )
+
+    anchos_col = [0.27, 0.11, 0.12, 0.14, 0.15, 0.21]
+    tabla = ax.table(
+        cellText=datos_celdas,
+        colLabels=columnas,
+        colWidths=anchos_col,
+        loc="center",
+        cellLoc="center",
+        bbox=[0.02, 0.12, 0.96, 0.66],
+    )
+    tabla.auto_set_font_size(False)
+    tabla.set_fontsize(9.8)
+
+    # Estilizado de cabeceras y filas (verde cuando Cuota Flashscore > Cuota Justa)
+    for (row_idx, col_idx), celda in tabla.get_celld().items():
+        celda.set_edgecolor("#CFD8E3")
+        celda.set_linewidth(0.9)
+        if row_idx == 0:
+            celda.set_facecolor("#131D31")
+            celda.get_text().set_color("#FFFFFF")
+            celda.get_text().set_weight("bold")
+            celda.get_text().set_fontsize(10.0)
+        else:
+            fila_info = filas[row_idx - 1]
+            es_valor = bool(fila_info["tiene_valor"])
+            if es_valor:
+                celda.set_facecolor("#D4EDDA")
+                celda.get_text().set_color("#0D5C2B")
+                celda.get_text().set_weight("bold")
+            else:
+                bg = "#FFFFFF" if row_idx % 2 == 1 else "#F1F5F9"
+                celda.set_facecolor(bg)
+                celda.get_text().set_color("#1E293B")
+                if col_idx in (0, 4):
+                    celda.get_text().set_weight("bold")
+
+            if col_idx == 0:
+                celda._loc = "left"
+
+    pie = (
+        "Criterio Matemático: Cuota Justa = 1 / Prob. Bot  |  "
+        "EV (%) = (Prob. Bot × Cuota Flashscore - 1) × 100  |  "
+        "Filas resaltadas en VERDE indican Cuota Flashscore > Cuota Justa (Valor Positivo +EV)."
+    )
+    fig.text(
+        0.03, 0.04, pie,
+        fontsize=8.5, color="#475569", style="italic", family="sans-serif",
+    )
+
+    plt.savefig(destino, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    return str(destino)
+
+
+renderizar_ticket_valor_png = generar_ticket_valor_png
+
+
+def redactar_analisis_3_parrafos(
+    analisis: Any,
+    info_h2h: dict[str, Any] | None = None,
+    cuotas_flashscore: dict[str, float | None] | None = None,
+) -> str:
+    """
+    Redacta el análisis de texto detallado en 3 párrafos claros para Telegram
+    antes de enviar las 4 imágenes de /mercados:
+      • Párrafo 1: Modelo General (15 partidos): quién domina y cuántos goles se esperan.
+      • Párrafo 2: Contraste con el Modelo H2H (2024–2026): ¿apoya o contradice al general?
+      • Párrafo 3: Veredicto Final basado en el EV calculado y la probabilidad más sólida.
+    """
+    info = _extraer_probabilidades_red_general(analisis)
+    eq_l = info["equipo_local"]
+    eq_v = info["equipo_visitante"]
+    p_l = info["p_local"]
+    p_x = info["p_empate"]
+    p_v = info["p_visitante"]
+    lam_l = info["lambda_local"]
+    lam_v = info["lambda_visitante"]
+    lam_tot = info["lambda_total"]
+    p_o25 = info["p_over25"]
+    p_u25 = info["p_under25"]
+    p_btts = info["p_btts_si"]
+
+    # ── PÁRRAFO 1: Modelo General (15 partidos oficiales) ───────────────────
+    if p_l >= p_v and p_l >= p_x:
+        dominador = f"domina {eq_l} como local con un {p_l * 100:.1f}% de probabilidad de victoria (frente a {p_x * 100:.1f}% de empate y {p_v * 100:.1f}% para {eq_v})"
+    elif p_v > p_l and p_v >= p_x:
+        dominador = f"se perfila como favorito el visitante {eq_v} con un {p_v * 100:.1f}% de probabilidad de triunfo (frente a {p_l * 100:.1f}% de {eq_l} y {p_x * 100:.1f}% de empate)"
+    else:
+        dominador = f"se proyecta un duelo sumamente cerrado con alta propensión al empate ({p_x * 100:.1f}%), repartiendo {p_l * 100:.1f}% para {eq_l} y {p_v * 100:.1f}% para {eq_v}"
+
+    tendencia_goles_gen = (
+        f"una tendencia hacia el Over 2.5 goles ({p_o25 * 100:.1f}%)"
+        if p_o25 >= 0.50
+        else f"un escenario de corte cerrado inclinándose al Under 2.5 goles ({p_u25 * 100:.1f}%)"
+    )
+    parrafo_1 = (
+        f"📊 1. Lectura del Modelo General (15 Partidos Oficiales): "
+        f"Según la Red Neuronal Recursiva entrenada con los últimos 15 partidos oficiales de cada club, "
+        f"{dominador}. En producción ofensiva se esperan en promedio {lam_tot:.2f} goles totales "
+        f"(λ {eq_l}: {lam_l:.2f} vs λ {eq_v}: {lam_v:.2f}), marcando {tendencia_goles_gen}, "
+        f"un {p_btts * 100:.1f}% de probabilidad en Ambos Anotan y teniendo al {info['marcador_modal']} "
+        f"({info['prob_modal'] * 100:.1f}%) como marcador exacto más probable."
+    )
+
+    # ── PÁRRAFO 2: Contraste con el Modelo H2H (2024–2026) ──────────────────
+    h2h = dict(info_h2h or {})
+    duelos = h2h.get("duelos") or h2h.get("lista_duelos") or []
+    n_h2h = int(h2h.get("n_duelos") or len(duelos) or 0)
+
+    if n_h2h > 0:
+        lam_h2h_l = h2h.get("lambda_local")
+        lam_h2h_v = h2h.get("lambda_visitante")
+        if lam_h2h_l is not None and lam_h2h_v is not None:
+            prom_goles_h2h = float(lam_h2h_l) + float(lam_h2h_v)
+        elif duelos:
+            tot_g = sum(int(d.get("goles_local", 0) or 0) + int(d.get("goles_visitante", 0) or 0) for d in duelos)
+            prom_goles_h2h = tot_g / max(1, len(duelos))
+        else:
+            prom_goles_h2h = lam_tot
+
+        gen_es_over = (p_o25 >= 0.50)
+        h2h_es_over = (prom_goles_h2h >= 2.50)
+
+        if gen_es_over and h2h_es_over:
+            contraste_txt = (
+                f"el historial directo APOYA y refuerza al modelo general: ambos coinciden en un guion "
+                f"abierto de goles (Over 2.5), registrando {prom_goles_h2h:.2f} goles promedio en sus cruces directos"
+            )
+        elif (not gen_es_over) and (not h2h_es_over):
+            contraste_txt = (
+                f"el historial directo APOYA al modelo general: mientras la red de 15 partidos apunta al "
+                f"Under 2.5 ({p_u25 * 100:.1f}%), el H2H confirma duelos tácticos de bajo marcador "
+                f"con un promedio de {prom_goles_h2h:.2f} goles por encuentro"
+            )
+        elif (not gen_es_over) and h2h_es_over:
+            contraste_txt = (
+                f"el historial directo CONTRADICE la cautela del modelo general: aunque la muestra de 15 partidos "
+                f"sugiere Under 2.5 ({p_u25 * 100:.1f}% con {lam_tot:.2f} goles esperados), cuando {eq_l} y {eq_v} "
+                f"se enfrentan entre sí el ritmo se rompe hacia el Over 2.5 con {prom_goles_h2h:.2f} goles de media"
+            )
+        else:
+            contraste_txt = (
+                f"el historial directo CONTRADICE el ritmo goleador del modelo general: mientras los 15 partidos "
+                f"proyectan Over 2.5 ({p_o25 * 100:.1f}%), sus enfrentamientos directos han sido mucho más "
+                f"friccionados y cerrados (Under 2.5 con {prom_goles_h2h:.2f} goles promedio)"
+            )
+
+        parrafo_2 = (
+            f"⚔️ 2. Contraste con el Modelo H2H Directo ({n_h2h} duelos en 2024–2026): "
+            f"Al cruzar la tendencia general contra la memoria específica del enfrentamiento, {contraste_txt}. "
+            f"Esta lectura cruzada permite ajustar la exposición en líneas de goles y priorizar mercados donde "
+            f"ambas muestras convergen."
+        )
+    else:
+        parrafo_2 = (
+            f"⚔️ 2. Contraste con el Modelo H2H Directo (2024–2026): "
+            f"No se registran enfrentamientos directos oficiales entre {eq_l} y {eq_v} en el ciclo 2024–2026, "
+            f"por lo que no existe contradicción histórica por paternidad reciente y el peso cuantitativo "
+            f"recae íntegramente en el rendimiento condicional Local/Visita de los 15 partidos oficiales."
+        )
+
+    # ── PÁRRAFO 3: Veredicto Final y Mejor Apuesta de Valor (+EV) ───────────
+    filas_ev = construir_filas_ticket_valor(analisis, cuotas_flashscore)
+    con_valor = [f for f in filas_ev if f["tiene_valor"] and f["ev_pct"] is not None]
+    # Ordenar por combinación de mayor EV y probabilidad sólida (>= 40% priorizado)
+    con_valor_solido = sorted(
+        con_valor,
+        key=lambda x: (1 if x["prob_bot"] >= 0.45 else 0, float(x["ev_pct"] or -999.0), x["prob_bot"]),
+        reverse=True,
+    )
+
+    if con_valor_solido:
+        mejor = con_valor_solido[0]
+        vale_la_pena = (
+            "Sí vale la pena arriesgar con gestión disciplinada (Quarter-Kelly), ya que combina ventaja "
+            "matemática real sobre la casa de apuestas con respaldo probabilístico sólido de la red."
+            if mejor["prob_bot"] >= 0.45 and float(mejor["ev_pct"] or 0.0) >= 3.0
+            else "Representa una oportunidad de valor matemático positivo (+EV), aunque por su cuota exige "
+                 "un stake moderado y conservador."
+        )
+        parrafo_3 = (
+            f"🎯 3. Veredicto Final y Apuesta de Valor Absoluto (+EV): "
+            f"Cruzando las probabilidades del bot con las cuotas de Flashscore, la mejor apuesta de valor "
+            f"absoluto es «{mejor['mercado']}», donde la Red Neuronal estima un {mejor['prob_bot_str']} "
+            f"(Cuota Justa {mejor['cuota_justa_str']}) frente a una cuota de mercado de {mejor['cuota_flashscore_str']}, "
+            f"generando un Valor Esperado de {mejor['ev_str']}. {vale_la_pena}"
+        )
+    else:
+        # Si no hubo cuota superior a la justa o Flashscore no publicó cuotas para el partido
+        mejor_prob = max(filas_ev, key=lambda x: x["prob_bot"]) if filas_ev else None
+        tiene_cuotas_fs = any(f["cuota_flashscore"] is not None for f in filas_ev)
+        if tiene_cuotas_fs and mejor_prob:
+            parrafo_3 = (
+                f"🎯 3. Veredicto Final y Auditoría de Valor (+EV): "
+                f"Las cuotas actuales de Flashscore en el mercado 1X2 están ajustadas por debajo de la Cuota Justa "
+                f"del modelo (EV ≤ 0%), por lo que no vale la pena arriesgar en cuotas simples castigadas por el "
+                f"margen de la casa; la opción más sólida por probabilidad pura es «{mejor_prob['mercado']}» "
+                f"({mejor_prob['prob_bot_str']}, Cuota Justa {mejor_prob['cuota_justa_str']}) únicamente si encuentras "
+                f"en tu casa de apuestas una cuota superior a {mejor_prob['cuota_justa_str']}."
+            )
+        elif mejor_prob:
+            parrafo_3 = (
+                f"🎯 3. Veredicto Final y Referencia de Valor (+EV): "
+                f"Dado que Flashscore aún no publica cuotas 1X2 activas para este cruce, la selección matriz más "
+                f"sólida del modelo es «{mejor_prob['mercado']}» con un {mejor_prob['prob_bot_str']} de probabilidad "
+                f"y una Cuota Justa de {mejor_prob['cuota_justa_str']}: solo vale la pena arriesgar si la cuota "
+                f"ofrecida en casa de apuestas supera dicho umbral de {mejor_prob['cuota_justa_str']} (EV > 0%)."
+            )
+        else:
+            parrafo_3 = (
+                "🎯 3. Veredicto Final: Priorizar exclusivamente las selecciones del Top 5 del Ticket General "
+                "cuya cuota real supere la Cuota Justa calculada por la Red Neuronal."
+            )
+
+    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}"

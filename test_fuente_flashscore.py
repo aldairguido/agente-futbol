@@ -393,6 +393,41 @@ def prueba_gatekeeper_catalogo_y_desglose_compuestos() -> None:
     print("  OK 11. gatekeeper desglose compuesto (totales, completados, %) en 1T, 2T y FT")
 
 
+def prueba_extraer_cuotas() -> None:
+    html_cuotas = """
+    <table id="odds_1x2" class="odds">
+      <thead><tr><th>Casa</th><th>1</th><th>X</th><th>2</th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="bookmaker">Bet365</td>
+          <td class="kx"><span class="odds-wrap">1.85</span></td>
+          <td class="kx"><span class="odds-wrap">3.50</span></td>
+          <td class="kx"><span class="odds-wrap">4.20</span></td>
+        </tr>
+        <tr>
+          <td class="bookmaker">Bwin</td>
+          <td>1.80</td><td>3.60</td><td>4.33</td>
+        </tr>
+      </tbody>
+    </table>
+    """
+    urls_capturadas: list[tuple[str, str]] = []
+
+    class ClienteCuotas(fs.ClienteFlashscore):
+        def _get(self, url, binario=False):
+            urls_capturadas.append((url, self._cabeceras().get("x-fsign", "")))
+            class R:
+                status_code = 200
+                text = html_cuotas
+            return R()
+
+    c = ClienteCuotas()
+    cuotas = c.extraer_cuotas("2mAGw9Ti")
+    assert urls_capturadas == [("https://d.flashscore.com/x/feed/d_od_2mAGw9Ti_es_1_eu", "SW9D1eZo")]
+    assert cuotas == {"local": 1.85, "empate": 3.50, "visitante": 4.20}
+    print("  OK 12. extraer_cuotas con self._get (x-fsign) y primera fila HTML (local, empate, visitante)")
+
+
 def main() -> int:
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         try:
@@ -412,6 +447,7 @@ def main() -> int:
         prueba_parseo_por_periodos,
         prueba_aritmetica_de_periodos,
         prueba_gatekeeper_catalogo_y_desglose_compuestos,
+        prueba_extraer_cuotas,
     ]
     fallos = 0
     for prueba in pruebas:

@@ -696,6 +696,72 @@ class ClienteFlashscore:
             salida = self._estadisticas_graphql_dts(id_flashscore)
         return salida
 
+    def extraer_cuotas(self, id_flashscore: str) -> dict[str, float | None]:
+        """
+        Extrae las cuotas 1X2 (local, empate, visitante) de la primera fila de la tabla
+        HTML del feed de cuotas de Flashscore (`d_od_{id_flashscore}_es_1_eu`),
+        usando `self._get` (que incluye la cabecera `x-fsign`) y BeautifulSoup.
+        """
+        from bs4 import BeautifulSoup
+
+        id_limpio = str(id_flashscore or "").strip()
+        if not id_limpio:
+            return {"local": None, "empate": None, "visitante": None}
+
+        url = f"https://d.flashscore.com/x/feed/d_od_{id_limpio}_es_1_eu"
+        try:
+            r = self._get(url)
+            if getattr(r, "status_code", 0) != 200:
+                return {"local": None, "empate": None, "visitante": None}
+            html = getattr(r, "text", "") or ""
+        except Exception:
+            return {"local": None, "empate": None, "visitante": None}
+
+        if not html or html.strip() == "0":
+            return {"local": None, "empate": None, "visitante": None}
+
+        soup = BeautifulSoup(html, "html.parser")
+        tabla = soup.find("table")
+        contenedor = (tabla.find("tbody") if tabla else None) or tabla or soup
+        filas = contenedor.find_all("tr")
+
+        def _extraer_float_celda(celda: Any) -> float | None:
+            span = celda.find("span", class_=re.compile(r"odds|kx", re.I)) or celda
+            txt = span.get_text(" ", strip=True).replace(",", ".")
+            m = re.search(r"\b(\d+\.\d+|\d+)\b", txt)
+            if not m:
+                return None
+            try:
+                val = float(m.group(1))
+                return val if val > 1.0 else None
+            except ValueError:
+                return None
+
+        for fila in filas:
+            celdas = fila.find_all("td")
+            if len(celdas) < 3:
+                continue
+            # En tablas de Flashscore con columna de casa de apuestas (4+ celdas),
+            # las cuotas 1X2 están en las celdas [1, 2, 3]; si son 3 celdas, en [0, 1, 2].
+            candidatas = celdas[1:4] if len(celdas) >= 4 and _extraer_float_celda(celdas[0]) is None else celdas[:3]
+            valores = [_extraer_float_celda(c) for c in candidatas]
+            if len(valores) == 3 and all(v is not None for v in valores):
+                return {
+                    "local": valores[0],
+                    "empate": valores[1],
+                    "visitante": valores[2],
+                }
+            # Fallback: tomar los primeros 3 valores numéricos válidos de la fila
+            todos_vals = [v for v in (_extraer_float_celda(c) for c in celdas) if v is not None]
+            if len(todos_vals) >= 3:
+                return {
+                    "local": todos_vals[0],
+                    "empate": todos_vals[1],
+                    "visitante": todos_vals[2],
+                }
+
+        return {"local": None, "empate": None, "visitante": None}
+
 
 def _int_o_none(texto: str) -> int | None:
     try:

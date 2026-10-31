@@ -62,17 +62,20 @@ import config
 import servicio_mercados as servicio
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env", override=True)
+load_dotenv(override=True)
 
 TOKEN = (
     os.getenv("TELEGRAM_TOKEN")
     or os.getenv("TELEGRAM_BOT_TOKEN")
     or getattr(config, "TELEGRAM_BOT_TOKEN", "")
-).strip()
+).strip().strip('"').strip("'")
 CHAT_ID_AUTORIZADO = (
     os.getenv("TELEGRAM_CHAT_ID")
     or getattr(config, "TELEGRAM_CHAT_ID", "")
-).strip()
+).strip().strip('"').strip("'")
+
+print(f"[BOT TELEGRAM] 🔑 Token leído (primeros 5 caracteres): '{TOKEN[:5]}' (longitud: {len(TOKEN)})")
 
 # Variable global de control de concurrencia
 lock_analisis = threading.Lock()
@@ -1537,6 +1540,8 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
 
         if borrador:
             ruta_img_txt = f"\n• Ticket PNG: `{preparado['rutas'].get('imagen')}`" if preparado['rutas'].get('imagen') else ""
+            ruta_val_txt = (f"\n• Ticket de Valor PNG: `{preparado['rutas'].get('ticket_valor')}`"
+                            if preparado['rutas'].get('ticket_valor') else "")
             ruta_cuadro_txt = (f"\n• Cuadro Especialista PNG: `{preparado['rutas'].get('cuadro')}`"
                                if preparado['rutas'].get('cuadro') else "")
             ruta_h2h_txt = (f"\n• Cuadro H2H (2024–2026) PNG: `{preparado['rutas'].get('cuadro_h2h')}`"
@@ -1546,7 +1551,7 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 bot, chat_id,
                 f"📝 *Modo borrador*: análisis listo, nada enviado.\n"
                 f"• Selecciones > {umbral:.0%}: `{len(analisis.selecciones_filtradas)}`\n"
-                f"• Informe: `{preparado['rutas']['informe']}`{ruta_img_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
+                f"• Informe: `{preparado['rutas']['informe']}`{ruta_img_txt}{ruta_val_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
             return
 
         resultado = servicio.enviar_analisis(
@@ -1573,8 +1578,11 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
         else:
             print(f"[BOT TELEGRAM] ✅ Ticket gráfico de mercados enviado exitosamente como PNG "
                   f"(id {preparado['id_trabajo']})")
+            if resultado.get("ticket_valor_enviado"):
+                print(f"[BOT TELEGRAM] ✅ Ticket de Valor (+EV) enviado como segunda imagen "
+                      f"({preparado['rutas'].get('ticket_valor')})")
             if resultado.get("cuadro_enviado"):
-                print(f"[BOT TELEGRAM] ✅ Cuadro Especialista enviado como segunda imagen "
+                print(f"[BOT TELEGRAM] ✅ Cuadro Especialista enviado como tercera imagen "
                       f"({preparado['rutas'].get('cuadro')})")
             elif resultado.get("motivo_cuadro") or preparado['rutas'].get('cuadro') is None:
                 # El ticket ya llegó: se avisa de lo que falta, sin fingir un envío doble.

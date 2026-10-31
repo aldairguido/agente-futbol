@@ -1531,6 +1531,100 @@ def prueba_motor_recursivo_45_dcn() -> None:
           f"(H={info['historial_entropia'][-1]:.3f})")
 
 
+def prueba_ticket_valor_y_analisis_3_parrafos() -> None:
+    """
+    32. Ticket de Valor (4ta imagen enviada como 2da imagen tras el ticket general) y
+        Análisis de Texto Detallado de 3 Párrafos antes de enviar las imágenes.
+    """
+    import informe as informe_mod
+
+    doc_l = doc_sintetico(
+        "Real Madrid", [("casa", 2, 0)] * 15, xg=[(2.1, 0.7)] * 15,
+        corners=[(7, 3)] * 15, amarillas=[(1, 2)] * 15,
+    )
+    doc_v = doc_sintetico(
+        "Villarreal", [("fuera", 1, 2)] * 15, xg=[(1.0, 1.8)] * 15,
+        corners=[(4, 6)] * 15, amarillas=[(2, 3)] * 15,
+    )
+    a = analizar(doc_l, doc_v, "Real Madrid", "Villarreal", competicion="LaLiga")
+    cuotas_fs = {"local": 1.95, "empate": 3.80, "visitante": 4.50}
+
+    filas = informe_mod.construir_filas_ticket_valor(a, cuotas_fs)
+    assert len(filas) == 6
+    # Como Prob. Bot de Real Madrid es alta (~65-75%, Cuota Justa ~1.35-1.55) y Cuota Flashscore es 1.95,
+    # tiene valor (+EV > 0) y se marca tiene_valor=True
+    assert filas[0]["tiene_valor"] is True
+    assert filas[0]["ev_pct"] > 0
+
+    texto_3p = informe_mod.redactar_analisis_3_parrafos(
+        a,
+        info_h2h={"n_duelos": 3, "lambda_local": 2.0, "lambda_visitante": 1.2, "duelos": [{}, {}, {}]},
+        cuotas_flashscore=cuotas_fs,
+    )
+    parrafos = [p.strip() for p in texto_3p.split("\n\n") if p.strip()]
+    assert len(parrafos) == 3, f"El análisis debe tener exactamente 3 párrafos: {len(parrafos)}"
+    assert "Modelo General" in parrafos[0]
+    assert "Modelo H2H" in parrafos[1]
+    assert "Veredicto Final" in parrafos[2]
+
+    with tempfile.TemporaryDirectory() as tmp:
+        ruta_ticket = os.path.join(tmp, "ticket_general.png")
+        ruta_valor = os.path.join(tmp, "ticket_valor.png")
+        ruta_cuadro = os.path.join(tmp, "cuadro_esp.png")
+        ruta_h2h = os.path.join(tmp, "cuadro_h2h.png")
+
+        servicio.renderizar_ticket_mercados_png(a, destino=ruta_ticket)
+        informe_mod.generar_ticket_valor_png(a, cuotas_flashscore=cuotas_fs, destino=ruta_valor, id_flashscore="2mAGw9Ti")
+        assert os.path.exists(ruta_valor) and os.path.getsize(ruta_valor) > 10000
+
+        # Crear archivos dummy para cuadro y h2h para verificar el orden de las 4 imágenes
+        with open(ruta_cuadro, "wb") as f:
+            f.write(open(ruta_valor, "rb").read())
+        with open(ruta_h2h, "wb") as f:
+            f.write(open(ruta_valor, "rb").read())
+
+        eventos_orden: list[str] = []
+
+        def _env_txt(txt: str, chat_id: Any = None) -> dict[str, Any]:
+            eventos_orden.append(f"TEXTO: {txt[:50]}")
+            return {"ok": True, "message_id": len(eventos_orden)}
+
+        def _env_foto(ruta: str, caption: str = "", chat_id: Any = None) -> dict[str, Any]:
+            eventos_orden.append(f"FOTO: {os.path.basename(ruta)} | {caption}")
+            return {"ok": True, "message_id": len(eventos_orden)}
+
+        prep_4 = {
+            "id_trabajo": "prueba_4_imagenes_y_3_parrafos",
+            "analisis": a,
+            "mensaje": a.mensaje,
+            "analisis_texto_3_parrafos": texto_3p,
+            "ruta_imagen": ruta_ticket,
+            "ruta_ticket_valor": ruta_valor,
+            "ruta_cuadro": ruta_cuadro,
+            "ruta_cuadro_h2h": ruta_h2h,
+            "h2h_2024_2026": {"n_duelos": 3, "estado": "3 enfrentamientos"},
+            "estado_h2h_2024_2026": "3 enfrentamientos",
+            "rutas": {
+                "informe": "x", "datos": "y",
+                "imagen": ruta_ticket, "ticket_valor": ruta_valor,
+                "cuadro": ruta_cuadro, "cuadro_h2h": ruta_h2h,
+            },
+            "contexto": {"equipo_local": "Real Madrid", "equipo_visitante": "Villarreal"},
+        }
+        res_env = servicio.enviar_analisis(prep_4, enviar_fn=_env_txt, enviar_foto_fn=_env_foto)
+        assert res_env["enviado"] is True
+        assert res_env["ticket_valor_enviado"] is True
+        assert res_env["partes"] == 4
+        # Verificar orden estricto: 0) Texto 3 párrafos, 1) Ticket General, 2) Ticket de Valor, 3) Cuadro, 4) H2H
+        assert eventos_orden[0].startswith("TEXTO:"), eventos_orden
+        assert "ticket_general.png" in eventos_orden[1], eventos_orden
+        assert "ticket_valor.png" in eventos_orden[2], eventos_orden
+        assert "cuadro_esp.png" in eventos_orden[3], eventos_orden
+        assert "cuadro_h2h.png" in eventos_orden[4], eventos_orden
+
+    print("  OK 32. Ticket de Valor (2da imagen tras ticket general) y análisis de 3 párrafos previos")
+
+
 def main() -> int:
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         try:
@@ -1570,6 +1664,7 @@ def main() -> int:
         prueba_cuadro_h2h_2024_2026,
         prueba_h2h_espanyol_vs_atletico_prohibicion_falsificacion,
         prueba_motor_recursivo_45_dcn,
+        prueba_ticket_valor_y_analisis_3_parrafos,
     ]
     fallos = 0
     for prueba in pruebas:
