@@ -33,8 +33,9 @@ jobs:
       - name: Instalar PyTorch CPU ligero y dependencias
         run: |
           pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r requirements.txt
-
+          pip install --no-cache-dir -r requirements.txt 
+      - name: Instalar Playwright
+        run: playwright install --with-deps chromium
       - name: Crear directorios de informes
         run: |
           mkdir -p informes/auditorias informes/h2h informes/mercados informes/evaluacion
