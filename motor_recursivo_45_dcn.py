@@ -367,7 +367,8 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
     # 3. Ligas Nivel 3 / Torneos Menores / Segundas divisiones
     if any(k in t for k in [
         "premyer liqa", "azerbaijan", "azerbaiyan", "chipre", "cyprus",
-        "super league greece", "grecia", "austria", "admiral", "suiza", "swiss",
+        "super league", "super league 1", "superleague", "greece", "grecia", "kypello", "greek cup",
+        "austria", "admiral", "suiza", "swiss",
         "superligaen", "denmark", "dinamarca", "eliteserien", "noruega", "norway",
         "allsvenskan", "suecia", "sweden", "ekstraklasa", "polonia", "poland",
         "hnl", "croacia", "croatia", "superliga serbia", "serbia",
@@ -434,7 +435,8 @@ def obtener_tier_coef(
     if any(eq in nom for eq in ["fenerbahce", "fenerbahçe", "galatasaray", "besiktas", "slavia", "sparta praga", "benfica", "porto", "sporting", "ajax", "psv", "feyenoord", "celtic", "rangers"]):
         return 0.85
     if any(eq in nom for eq in ["sabah", "qarabag", "bodo", "bodø", "zagreb", "partizan", "estrella roja", "apoel",
-                                "shakhtar", "dynamo kyiv", "dynamo kiev", "dinamo kiev"]):
+                                "shakhtar", "dynamo kyiv", "dynamo kiev", "dinamo kiev",
+                                "aek", "aek athens", "panathinaikos", "paok", "olympiacos", "olympiakos", "aris", "panserraikos"]):
         return 0.68
 
     return 0.85
@@ -459,32 +461,40 @@ def es_copa_nacional(torneo: str) -> bool:
     return any(k in t for k in PALABRAS_COPA_NACIONAL) or t.endswith(" copa") or t == "copa"
 
 
+def es_champions_league(torneo: str) -> bool:
+    """Detecta partidos de fase de liga / fase de grupos de UEFA Champions League."""
+    t = unicodedata.normalize("NFKD", (torneo or "").lower()).encode("ascii", "ignore").decode("utf-8")
+    return any(k in t for k in ["champions league", "ucl"]) and not any(k in t for k in ["qual", "previa", "clasificaci"])
+
+
 def peso_credibilidad_partido(partido: Dict[str, Any]) -> float:
     """
+    Champions League (fase de liga) pesa 3.0x dentro de la muestra.
     Goleadas (>= 4 goles de diferencia) en Copa Nacional ante rivales de divisiones
-    inferiores/amateur (ej. Rana FK 0-6, Fauske/Sprint 0-5) pesan 0.35x para no
+    inferiores/amateur (ej. Rana FK 0-6, Panserraikos 8-1) pesan 0.35x para no
     distorsionar el promedio que se proyecta a Champions League.
     """
     src = _partido_fuente(partido)
     torneo = str(src.get("torneo") or src.get("competition") or src.get("competicion")
                  or partido.get("torneo") or "")
-    if not es_copa_nacional(torneo):
-        return 1.0
-    gf, gc = _goles_equipo(partido)
-    if gf is not None and gc is not None and (gf - gc) >= 4:
-        return 0.35
+    if es_champions_league(torneo):
+        return 3.0
+    if es_copa_nacional(torneo):
+        gf, gc = _goles_equipo(partido)
+        if gf is not None and gc is not None and (gf - gc) >= 4:
+            return 0.35
     return 1.0
 
 
 def factor_uefa_relativo(tier_coef_propio: float, tier_coef_rival: float) -> float:
-    """(tier_propio / tier_rival) ** 0.80 cuando el propio es de liga más débil; si no, 1.0."""
+    """(tier_propio / tier_rival) cuando el propio es de liga más débil; si no, 1.0."""
     try:
         tp, tr = float(tier_coef_propio), float(tier_coef_rival)
     except (TypeError, ValueError):
         return 1.0
     if tp <= 0 or tr <= 0 or tp >= tr:
         return 1.0
-    return float((tp / tr) ** 0.80)
+    return float(tp / tr)
 
 
 EQUIPOS_SEDE_NEUTRAL_UEFA = (
@@ -695,6 +705,14 @@ def extraer_series_reales_15_partidos(
                 v = max(1.0, float(rem_fuera_riv - palo_riv))
 
             if v is not None:
+                torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+                if es_copa_nacional(torneo_p) and (gf_p - gc_p) >= 4:
+                    if clave in ("xg", "xgot", "xg_juego_abierto", "xg_sin_penalti"):
+                        v = min(float(v), 2.2)
+                    elif clave == "toques_area_rival":
+                        v = min(float(v), 25.0)
+                    elif clave in ("grandes_ocasiones", "remates_puerta"):
+                        v = min(float(v), 2.5)
                 if clave in METRICAS_OFENSIVAS_DESCUENTO:
                     v = v * factores_of_partido[idx_p]
                 elif clave in METRICAS_DEFENSIVAS_CONCEDIDAS:
@@ -736,6 +754,9 @@ def extraer_series_reales_15_partidos(
         if gf is None or gc is None:
             gf = float(m.get("goles_favor", m.get("goles_favor_est", 1.30)))
             gc = float(m.get("goles_contra", m.get("goles_contra_real", 1.25)))
+        torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+        if es_copa_nacional(torneo_p) and (gf - gc) >= 4:
+            gf = min(float(gf), 2.2)
         gf = gf * factores_of_partido[idx_p]
         gc = gc * factores_def_partido[idx_p]
         goles_f.append(float(gf))
@@ -827,24 +848,26 @@ def bilinear_pooling_y_cross_attention(
 
 
 # Cruces inter-equipo OBLIGATORIOS (Ataque/Ejecución propia A ⊗ Resistencia/Defensa rival B).
-# (clave_A, clave_B, etiqueta_A, etiqueta_B, sentido): sentido=+1 si un valor alto de B
-# FAVORECE al atacante (fragilidad), -1 si lo FRENA (resistencia).
 CRUCES_INTER_EQUIPO: Tuple[Tuple[str, str, str, str, int], ...] = (
-    ("xgot", "goles_evitados", "xgot_favor_A", "goles_evitados_rival_B", -1),
-    ("toques_area_rival", "despejes", "toques_area_rival_A", "despejes_rival_B", -1),
-    ("grandes_ocasiones_falladas", "paradas", "grandes_ocasiones_falladas_A", "paradas_rival_B", -1),
-    ("pases_tercio_final_pct", "intercepciones", "pases_tercio_final_pct_A", "intercepciones_rival_B", -1),
-    ("xg_2T", "xg_contra_2T", "xg_2T_A", "fragilidad_2T_rival_B", +1),
+    ("toques_area_rival", "despejes", "toques_area_rival", "despejes_rival", -1),
+    ("xgot", "xgot_enfrentado", "xgot_favor", "xgot_concedido_rival", -1),
+    ("grandes_ocasiones", "paradas", "grandes_ocasiones", "paradas_rival", -1),
+    ("pases_tercio_final_pct", "intercepciones", "pases_tercio_final_pct", "intercepciones_rival", -1),
+    ("remates_dentro_area", "errores_gol", "remates_dentro_area", "errores_defensivos_rival", +1),
 )
 NEUTROS_CRUCE: Dict[str, float] = {
-    "xgot": 1.30, "goles_evitados": 0.0, "toques_area_rival": 22.0, "despejes": 18.0,
-    "grandes_ocasiones_falladas": 1.3, "paradas": 2.8, "pases_tercio_final_pct": 68.0,
-    "intercepciones": 8.0, "xg_2T": 0.70, "xg_contra_2T": 0.65,
+    "toques_area_rival": 22.0, "despejes": 18.0,
+    "xgot": 1.30, "xgot_enfrentado": 1.30,
+    "grandes_ocasiones": 2.2, "paradas": 2.8,
+    "pases_tercio_final_pct": 68.0, "intercepciones": 8.0,
+    "remates_dentro_area": 8.0, "errores_gol": 0.15,
 }
 ESCALAS_CRUCE: Dict[str, float] = {
-    "xgot": 0.45, "goles_evitados": 0.30, "toques_area_rival": 8.0, "despejes": 6.0,
-    "grandes_ocasiones_falladas": 0.8, "paradas": 1.2, "pases_tercio_final_pct": 10.0,
-    "intercepciones": 3.0, "xg_2T": 0.30, "xg_contra_2T": 0.30,
+    "toques_area_rival": 8.0, "despejes": 6.0,
+    "xgot": 0.45, "xgot_enfrentado": 0.45,
+    "grandes_ocasiones": 1.0, "paradas": 1.2,
+    "pases_tercio_final_pct": 10.0, "intercepciones": 3.0,
+    "remates_dentro_area": 3.5, "errores_gol": 0.20,
 }
 
 
@@ -918,19 +941,26 @@ FAMILIA_METRICA: Dict[str, str] = {
 }
 
 
+PROHIBIDOS_CRUCE: Tuple[str, ...] = (
+    "posesion_pct ⊗ pases_total",
+    "toques_area_rival ⊗ remates_totales",
+    "xgot ⊗ goles_favor",
+)
+
+
 def cruce_dominante_distinto(patrones_filtrados: List[Tuple[str, float]]) -> str:
     """
-    Cruce más fuerte entre DOS FAMILIAS distintas (evita reportar sinónimos).
-
-    Si todos los cruces fuesen dentro de la misma familia, devuelve el primero.
+    Cruce dominante entre los 5 cruces adversariales (Ataque Propio vs Defensa Rival).
+    Filtra cualquier par prohibido o del mismo grupo.
     """
     for nombre, _fuerza in patrones_filtrados:
+        if any(p in nombre for p in PROHIBIDOS_CRUCE):
+            continue
         partes = nombre.split(" ⊗ ")
         if len(partes) != 2:
             continue
-        if FAMILIA_METRICA.get(partes[0]) != FAMILIA_METRICA.get(partes[1]):
-            return nombre
-    return patrones_filtrados[0][0] if patrones_filtrados else "sin cruce"
+        return nombre
+    return patrones_filtrados[0][0] if patrones_filtrados else "toques_area_rival ⊗ despejes_rival"
 
 
 def intensidad_de_cruce(patrones_filtrados: List[Tuple[str, float]], top: int = 3) -> float:
@@ -1261,6 +1291,10 @@ def calcular_doble_adn_con_shrinkage(
     for idx_c, p in enumerate(pts_cond):
         gf, gc = _goles_equipo(p)
         if gf is not None and gc is not None:
+            src_c = _partido_fuente(p)
+            torneo_c = str(src_c.get("torneo") or src_c.get("competition") or p.get("torneo") or "").lower()
+            if es_copa_nacional(torneo_c) and (gf - gc) >= 4:
+                gf = min(float(gf), 2.2)
             gfs.append(float(gf) * factores_of_cond[idx_c])
             gcs.append(float(gc) * factores_def_cond[idx_c])
             cg.append(cred_cond[idx_c])
@@ -1346,11 +1380,38 @@ def calcular_los_6_cruces_tacticos(
     )
     f2_V = round(math.tanh(1.5 * z_creac_V) * 3.5, 1)
 
-    z_port_L = -mu_V_fuera.get("goles_evitados", 0.0) * 1.8 - 0.25 * ((mu_V_fuera.get("paradas", 2.8) - 2.8) / 1.2) + (mu_V_fuera.get("xgot_enfrentado", 1.25) - 1.25) / 0.40 * 0.30
-    f4_L = round(math.tanh(1.5 * z_port_L) * 6.0, 1)
+    # Creación: normalización suma cero relativa (no pueden recibir ambos bono positivo)
+    if f2_L > 0 and f2_V > 0:
+        comun_c = min(f2_L, f2_V)
+        f2_L = round(f2_L - comun_c, 1)
+        f2_V = round(f2_V - comun_c, 1)
 
-    z_port_V = -mu_L_casa.get("goles_evitados", 0.0) * 1.8 - 0.25 * ((mu_L_casa.get("paradas", 2.8) - 2.8) / 1.2) + (mu_L_casa.get("xgot_enfrentado", 1.25) - 1.25) / 0.40 * 0.30
+    xgot_enf_V = float(mu_V_fuera.get("xgot_enfrentado", 1.25))
+    g_evit_V = float(mu_V_fuera.get("goles_evitados", 0.0))
+    paradas_V = float(mu_V_fuera.get("paradas", 2.8))
+
+    if xgot_enf_V >= 1.50:
+        # Asedio constante sobre la portería rival: PortRiv y FragRiv deben ser positivos
+        z_port_L = max(0.20, (xgot_enf_V - 1.25) / 0.40 * 0.70 - max(0.0, g_evit_V) * 0.25)
+    else:
+        z_port_L = -g_evit_V * 1.8 - 0.20 * ((paradas_V - 2.8) / 1.2) + (xgot_enf_V - 1.25) / 0.40 * 0.40
+
+    f4_L = round(math.tanh(1.5 * z_port_L) * 6.0, 1)
+    if xgot_enf_V >= 1.50:
+        f4_L = max(1.0, f4_L)
+
+    xgot_enf_L = float(mu_L_casa.get("xgot_enfrentado", 1.25))
+    g_evit_L = float(mu_L_casa.get("goles_evitados", 0.0))
+    paradas_L = float(mu_L_casa.get("paradas", 2.8))
+
+    if xgot_enf_L >= 1.50:
+        z_port_V = max(0.20, (xgot_enf_L - 1.25) / 0.40 * 0.70 - max(0.0, g_evit_L) * 0.25)
+    else:
+        z_port_V = -g_evit_L * 1.8 - 0.20 * ((paradas_L - 2.8) / 1.2) + (xgot_enf_L - 1.25) / 0.40 * 0.40
+
     f4_V = round(math.tanh(1.5 * z_port_V) * 6.0, 1)
+    if xgot_enf_L >= 1.50:
+        f4_V = max(1.0, f4_V)
 
     # ── CRUCE #3: Puntería Clínica vs. Maldición del Delantero (F3 - Finalización xGOT 6.5%) ──
     tiros_por_gol_L = mu_L_casa.get("remates_puerta", 4.2) / max(1.0, mu_L_casa.get("goles_favor", 1.35))

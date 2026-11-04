@@ -1,6 +1,9 @@
 name: Bot Futbol 24/7
 
 on:
+  push:
+    branches:
+      - main
   workflow_dispatch: {}
   schedule:
     - cron: '0 */5 * * *'

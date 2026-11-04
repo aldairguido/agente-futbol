@@ -525,6 +525,7 @@ def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any]) -> dict[
             f"{xgot:.2f} xGOT.")
 
     # Patrón 4: culpa de la defensa vs culpa del portero.
+    from motor_recursivo_45_dcn import _valor_metrica
     partidos_raw = bloque_equipo.get("partidos") or []
     sin_xgot_cnt = 0
     tot_pts = len(partidos_raw)
