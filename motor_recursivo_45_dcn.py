@@ -518,8 +518,13 @@ OFENSIVAS_UEFA = ("xg", "xg_juego_abierto", "xg_sin_penalti", "xg_balon_parado",
 CONCEDIDAS_UEFA = ("xgot_enfrentado",)
 
 
-def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float,
-                               fijos: Optional[Tuple[str, ...]] = None) -> Dict[str, float]:
+def reescalar_factores_a_delta(
+    factores: Dict[str, float],
+    delta_pct_real: float,
+    fijos: Optional[Tuple[str, ...]] = None,
+    pisos: Optional[Dict[str, float]] = None,
+    techos: Optional[Dict[str, float]] = None,
+) -> Dict[str, float]:
     """
     Acota cada uno de los 5 factores latentes estrictamente en [-12.0%, +15.0%]
     y garantiza que su suma coincida al primer decimal con el cambio porcentual
@@ -527,28 +532,46 @@ def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float
 
     `fijos`: factores que NO se tocan al repartir el residuo (p. ej. la Posesión
     Progresiva de suma cero, para que Local y Visita nunca reciban ambos bono).
+    `pisos` / `techos`: restricciones de signo y magnitud táctica (p. ej. FragRiv > 0
+    si el rival concede xGOTc >= 1.50).
     """
     claves = ["F_posesion_progresiva", "F_creacion", "F_finalizacion", "F_porteria_rival", "F_fragilidad_rival"]
     idx_fijos = {i for i, k in enumerate(claves) if fijos and k in fijos}
-    vals = [round(float(np.clip(float(factores.get(k, 0.0)), -12.0, 15.0)), 1) for k in claves]
-    # El cambio total máximo posible con 5 factores en [-12, +15] y coherencia táctica
+    pisos_dict = pisos or {}
+    techos_dict = techos or {}
+
+    vals = []
+    for k in claves:
+        v = float(factores.get(k, 0.0))
+        piso = max(-12.0, pisos_dict.get(k, -12.0))
+        techo = min(15.0, techos_dict.get(k, 15.0))
+        vals.append(round(float(np.clip(v, piso, techo)), 1))
+
     delta_target = round(float(np.clip(float(delta_pct_real), -35.0, 45.0)), 1)
 
-    # Reparto aditivo iterativo respetando estrictamente [-12.0, +15.0] en cada factor
-    for _ in range(8):
+    # Reparto aditivo iterativo respetando estrictamente pisos y techos
+    for _ in range(12):
         dif = round(delta_target - sum(vals), 1)
         if abs(dif) < 0.09:
             break
-        libres = [
-            i for i in range(5)
-            if i not in idx_fijos and (
-                (dif > 0 and vals[i] < 15.0 - 1e-6) or (dif < 0 and vals[i] > -12.0 + 1e-6))
-        ]
+        libres = []
+        for i, k in enumerate(claves):
+            if i in idx_fijos:
+                continue
+            piso = max(-12.0, pisos_dict.get(k, -12.0))
+            techo = min(15.0, techos_dict.get(k, 15.0))
+            if dif > 0 and vals[i] < techo - 1e-6:
+                libres.append(i)
+            elif dif < 0 and vals[i] > piso + 1e-6:
+                libres.append(i)
         if not libres:
             break
         paso = dif / float(len(libres))
         for i in libres:
-            vals[i] = round(float(np.clip(vals[i] + paso, -12.0, 15.0)), 1)
+            k = claves[i]
+            piso = max(-12.0, pisos_dict.get(k, -12.0))
+            techo = min(15.0, techos_dict.get(k, 15.0))
+            vals[i] = round(float(np.clip(vals[i] + paso, piso, techo)), 1)
 
     # Ajuste fino de 0.1% en el factor con margen disponible
     residuo = round(delta_target - sum(vals), 1)
@@ -556,12 +579,16 @@ def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float
         for i in sorted(range(5), key=lambda idx: abs(vals[idx]), reverse=True):
             if i in idx_fijos:
                 continue
+            k = claves[i]
+            piso = max(-12.0, pisos_dict.get(k, -12.0))
+            techo = min(15.0, techos_dict.get(k, 15.0))
             nuevo = round(vals[i] + residuo, 1)
-            if -12.0 <= nuevo <= 15.0:
+            if piso <= nuevo <= techo:
                 vals[i] = nuevo
                 break
 
-    return {k: round(float(np.clip(vals[i], -12.0, 15.0)), 1) for i, k in enumerate(claves)}
+    return {k: round(float(np.clip(vals[i], max(-12.0, pisos_dict.get(k, -12.0)), min(15.0, techos_dict.get(k, 15.0)))), 1)
+            for i, k in enumerate(claves)}
 
 
 def obtener_tier_equipo(partidos: List[Dict[str, Any]], perfil: Optional[Dict[str, Any]] = None) -> int:
@@ -1015,9 +1042,11 @@ def patrones_tacticos_desde_estados(
                   + 0.15 * max(0.0, -pend("xg")),
                   0.04, 1.80)
 
-    muralla = clip((v("goles_evitados") + 0.60) * 0.50
+    xgot_enf_val = v("xgot_enfrentado")
+    factor_muralla_xgot = max(0.35, 1.0 - 0.50 * max(0.0, (xgot_enf_val - 1.25) / 0.40))
+    muralla = clip(((v("goles_evitados") + 0.60) * 0.50
                    + (v("paradas") / 3.0) * 0.30
-                   + (v("bloqueos") / 2.5) * 0.20,
+                   + (v("bloqueos") / 2.5) * 0.20) * factor_muralla_xgot,
                    0.20, 2.00)
 
     # El cruce dominante (Bilinear + Cross-Attention) IMPULSA el bloque ofensivo.
@@ -1330,6 +1359,10 @@ def calcular_los_6_cruces_tacticos(
     mu_V_fuera: Dict[str, float],
     estados_L: Dict[str, Dict[str, Any]],
     estados_V: Dict[str, Dict[str, Any]],
+    perfil_local: Optional[Dict[str, Any]] = None,
+    perfil_visita: Optional[Dict[str, Any]] = None,
+    rL: Optional[Dict[str, Any]] = None,
+    rV: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Ejecuta los 6 Cruces Tácticos entre las 45 Variables:
@@ -1467,19 +1500,38 @@ def calcular_los_6_cruces_tacticos(
         0.0, 0.35
     )
 
+    # ── CRUCE #6: Fragilidad Rival Condicionada (F5) ──
+    # Para el atacante Local, el rival es el Visitante (V) defendiendo fuera:
+    mc_V = (perfil_visita or {}).get("metricas_clave", {})
+    xgotc_visita = float(mu_V_fuera.get("xgot_enfrentado") or mc_V.get("xgot_contra") or 1.25)
+    defensa_V = float((rV or {}).get("Final_Defense_Strength") or (perfil_visita or {}).get("ratings_0_100", {}).get("Final_Defense_Strength") or 50.0)
+
     z_frag_L = (
-        mu_V_fuera.get("errores_gol", 0.15) * 1.8
-        + mu_V_fuera.get("errores_remate", 0.20) * 0.8
-        + mu_V_fuera.get("tarjetas_rojas", 0.10) * 1.2
+        (xgotc_visita - 1.25) / 0.35 * 0.70
+        + (50.0 - defensa_V) / 10.0 * 0.30
+        + mu_V_fuera.get("errores_gol", 0.15) * 1.5
+        + mu_V_fuera.get("errores_remate", 0.20) * 0.6
+        + mu_V_fuera.get("tarjetas_rojas", 0.10) * 1.0
     )
-    f5_L = round(math.tanh(1.5 * z_frag_L) * 3.5, 1)
+    f5_L = round(math.tanh(1.5 * z_frag_L) * 6.0, 1)
+    if xgotc_visita >= 1.50 or defensa_V <= 48.0:
+        f5_L = max(4.0, f5_L)
+
+    # Para el atacante Visitante, el rival es el Local (L) defendiendo en casa:
+    mc_L = (perfil_local or {}).get("metricas_clave", {})
+    xgotc_local = float(mu_L_casa.get("xgot_enfrentado") or mc_L.get("xgot_contra") or 1.25)
+    defensa_L = float((rL or {}).get("Final_Defense_Strength") or (perfil_local or {}).get("ratings_0_100", {}).get("Final_Defense_Strength") or 50.0)
 
     z_frag_V = (
-        mu_L_casa.get("errores_gol", 0.15) * 1.8
-        + mu_L_casa.get("errores_remate", 0.20) * 0.8
-        + mu_L_casa.get("tarjetas_rojas", 0.10) * 1.2
+        (xgotc_local - 1.25) / 0.35 * 0.70
+        + (50.0 - defensa_L) / 10.0 * 0.30
+        + mu_L_casa.get("errores_gol", 0.15) * 1.5
+        + mu_L_casa.get("errores_remate", 0.20) * 0.6
+        + mu_L_casa.get("tarjetas_rojas", 0.10) * 1.0
     )
-    f5_V = round(math.tanh(1.5 * z_frag_V) * 3.5, 1)
+    f5_V = round(math.tanh(1.5 * z_frag_V) * 6.0, 1)
+    if xgotc_local <= 1.20 or defensa_L >= 56.0:
+        f5_V = min(-1.5, f5_V)
 
     return {
         "factores_local": {
@@ -1516,25 +1568,29 @@ def calcular_indice_bloqueo_cerrojo(
     goles_evitados_rival: float,
     tier_coef_atacante: float,
     tier_coef_rival: float,
+    lam_atacante: float = 1.35,
+    xgotc_rival: float = 1.25,
 ) -> Tuple[bool, float]:
     """
     Detector de "Portería Imbatida / Hurdle Zero-Inflation":
-    Evalúa 3 condiciones de bloqueo de gol sobre el equipo atacante:
-      1. Déficit de puntería: xgot < xg o goc_falladas / goc >= 0.55
-      2. Solidez defensiva rival: Defense >= 54.0 o Seg / Gol Concedido >= 3800 s o goles_evitados > 0.15
-      3. Salto de nivel competitivo: tier_coef_atacante < tier_coef_rival
-    Si se cumplen >= 2 de las 3 condiciones, activa cerrojo sumando entre +0.12 y +0.22 a P(G=0).
+    Solo activa cerrojo si:
+      - SU PROPIO λ_atacante < 1.22
+      - La defensa del RIVAL tiene Defense >= 58.0
+      - xGOTc_rival <= 1.15
+    Jamás activa cerrojo si λ_atacante >= 1.22 ni contra rival que concede xGOTc > 1.15.
     """
+    if lam_atacante >= 1.22 or xgotc_rival > 1.15 or defensa_rival_rating < 58.0:
+        return False, 0.0
+
     c1 = (xgot_atacante < xg_atacante) or ((goc_falladas_atacante / max(0.5, goc_atacante)) >= 0.55)
-    c2 = (defensa_rival_rating >= 54.0) or (seg_gol_concedido_rival >= 3800.0) or (goles_evitados_rival > 0.15)
+    c2 = (seg_gol_concedido_rival >= 3800.0) or (goles_evitados_rival > 0.15)
     c3 = (tier_coef_atacante < tier_coef_rival)
 
     n_cond = sum([bool(c1), bool(c2), bool(c3)])
-    if n_cond >= 2:
-        # Entre +0.12 y +0.22 según severidad
-        bonus = 0.14 if n_cond == 2 else 0.20
+    if n_cond >= 1:
+        bonus = 0.12 if n_cond == 1 else 0.16
         if seg_gol_concedido_rival >= 4500.0 or goles_evitados_rival >= 0.25:
-            bonus = min(0.22, bonus + 0.03)
+            bonus = min(0.20, bonus + 0.03)
         return True, bonus
     return False, 0.0
 
@@ -1648,7 +1704,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     cond_adn_L = "neutral" if sede_neutral_local else "casa"
     mu_L_casa = calcular_doble_adn_con_shrinkage(partidos_15_local or [], estados_L, cond_adn_L, perfil_local, tier_rival=tier_V, factor_uefa=fu_L)
     mu_V_fuera = calcular_doble_adn_con_shrinkage(partidos_15_visita or [], estados_V, "fuera", perfil_visita, tier_rival=tier_L, factor_uefa=fu_V)
-    cruces_6 = calcular_los_6_cruces_tacticos(mu_L_casa, mu_V_fuera, estados_L, estados_V)
+    cruces_6 = calcular_los_6_cruces_tacticos(
+        mu_L_casa, mu_V_fuera, estados_L, estados_V,
+        perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,
+    )
 
     f_l = cruces_6["factores_local"]
     f_v = cruces_6["factores_visita"]
@@ -1683,6 +1742,9 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         lam_k_V = min(round(lam_base_visita * 1.12, 2), lam_k_V)
 
     # Detector de Cerrojo / Portería Imbatida (Hurdle Zero-Inflation)
+    # Solo activo si λ_atacante < 1.22 Y defensa_rival >= 58.0 Y xgotc_rival <= 1.15
+    xgotc_riv_V = float(mu_V_fuera.get("xgot_enfrentado", 1.25))
+    xgotc_riv_L = float(mu_L_casa.get("xgot_enfrentado", 1.25))
     cerrojo_L_activo, bonus_cerrojo_L = calcular_indice_bloqueo_cerrojo(
         xgot_atacante=xgot_L, xg_atacante=xg_L,
         goc_atacante=float(estados_L.get("grandes_ocasiones", {}).get("h_reciente", 2.2) or 2.2),
@@ -1691,6 +1753,8 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         seg_gol_concedido_rival=float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
         goles_evitados_rival=float(comp_L.get("goles_evitados_rival", 0.0)),
         tier_coef_atacante=tier_coef_L, tier_coef_rival=tier_coef_V,
+        lam_atacante=lam_k_L,
+        xgotc_rival=xgotc_riv_V,
     )
     cerrojo_V_activo, bonus_cerrojo_V = calcular_indice_bloqueo_cerrojo(
         xgot_atacante=xgot_V, xg_atacante=xg_V,
@@ -1700,6 +1764,8 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         seg_gol_concedido_rival=float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
         goles_evitados_rival=float(comp_V.get("goles_evitados_rival", 0.0)),
         tier_coef_atacante=tier_coef_V, tier_coef_rival=tier_coef_L,
+        lam_atacante=lam_k_V,
+        xgotc_rival=xgotc_riv_L,
     )
     if cerrojo_L_activo:
         cruces_6["alertas_xai"].append(f"Cerrojo Defensivo sobre {eq_L}: Rival de élite neutraliza ataque con probabilidad marginal de 0 goles inflada (+{bonus_cerrojo_L*100:.0f}%).")
@@ -1775,24 +1841,26 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             # El término `0.30 · (intensidad_cruce − 0.75)` es el que hace que el
             # Bilinear Pooling + Cross-Attention PESE en λ: un equipo cuyas variables
             # se mueven juntas (cruce alto) es más predecible y sube; uno irregular baja.
+            penal_seq_L = 0.28 * max(0.0, p_sequia_L * p_muralla_V - 0.48) if (xgotc_riv_V < 1.45 and p_fragilidad_V < 1.15) else 0.0
             mod_total_L = clip(
                 1.0
                 + 0.42 * brecha_overall
                 + 0.25 * brecha_atk_def_L
                 + 0.16 * (cruce_of_L - 1.0)
                 + 0.30 * (int_cruce_L - CENTRO_INTENSIDAD_CRUCE)
-                + 0.14 * estados_L["goles_favor"]["pendiente_dmdp"]
-                - 0.28 * max(0.0, p_sequia_L * p_muralla_V - 0.48),
+                + 0.14 * max(-0.25, estados_L["goles_favor"]["pendiente_dmdp"])
+                - penal_seq_L,
                 0.62, 1.42
             )
+            penal_seq_V = 0.28 * max(0.0, p_sequia_V * p_muralla_L - 0.48) if (xgotc_riv_L < 1.45 and p_fragilidad_L < 1.15) else 0.0
             mod_total_V = clip(
                 1.0
                 - 0.42 * brecha_overall
                 + 0.25 * brecha_atk_def_V
                 + 0.16 * (cruce_of_V - 1.0)
                 + 0.30 * (int_cruce_V - CENTRO_INTENSIDAD_CRUCE)
-                + 0.14 * estados_V["goles_favor"]["pendiente_dmdp"]
-                - 0.28 * max(0.0, p_sequia_V * p_muralla_L - 0.48),
+                + 0.14 * max(-0.25, estados_V["goles_favor"]["pendiente_dmdp"])
+                - penal_seq_V,
                 0.62, 1.42
             )
             lam_k_L = clip(lam_ancla_L * mod_total_L, 0.38, 3.45)
@@ -1839,12 +1907,15 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                                tasa_3mas: float, cola_ancha: bool = False,
                                delta_cerrojo: float = 0.0) -> List[float]:
             probs = _probs_base_cola(lam, max_goles, cola_ancha)
+            # Techo estricto: m[0] jamás puede superar math.exp(-lam) + 0.06
+            p0_max = math.exp(-lam) + 0.06
+            p0_obj = min(p0_obj, p0_max)
+
             escala_pos = (1.0 - p0_obj) / max(1e-9, 1.0 - probs[0])
             res = [0.0] * (max_goles + 1)
             res[0] = p0_obj
             for g in range(1, max_goles + 1):
                 mod_g = 1.0
-                # Si el equipo tiene alta tasa de explosión goleadora (ej. Barcelona con 9/11 partidos >= 3 goles)
                 if tasa_3mas >= 0.50 and lam >= 2.10:
                     if g == 1:
                         mod_g = clip(1.0 - 0.45 * tasa_3mas, 0.52, 0.85)
@@ -1854,17 +1925,16 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                         mod_g = clip(1.0 + 0.55 * tasa_3mas, 1.15, 1.65)
                 elif ventaja > 0.08 and lam >= 1.50:
                     if g == 1:
-                        mod_g = clip(1.0 - 0.42 * ventaja, 0.70, 1.0)
+                        mod_g = clip(1.0 - 0.25 * ventaja, 0.80, 1.0)
                     elif g == 2:
-                        mod_g = clip(1.0 + 0.55 * ventaja, 1.0, 1.48)
+                        mod_g = clip(1.0 + 0.45 * ventaja, 1.0, 1.35)
                     elif g == 3:
-                        mod_g = clip(1.0 + 0.35 * ventaja, 1.0, 1.35)
+                        mod_g = clip(1.0 + 0.30 * ventaja, 1.0, 1.25)
                 res[g] = probs[g] * escala_pos * mod_g
 
             if delta_cerrojo > 0.0:
-                # Restar esa masa principalmente de G=1 y G=2 (activación detector cerrojo)
-                f_desc1 = max(0.48, 1.0 - 0.50 * (delta_cerrojo / 0.15))
-                f_desc2 = max(0.62, 1.0 - 0.30 * (delta_cerrojo / 0.15))
+                f_desc1 = max(0.60, 1.0 - 0.35 * (delta_cerrojo / 0.15))
+                f_desc2 = max(0.75, 1.0 - 0.20 * (delta_cerrojo / 0.15))
                 res[1] *= f_desc1
                 res[2] *= f_desc2
 
@@ -1872,6 +1942,21 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             if s_pos > 0:
                 for g in range(1, max_goles + 1):
                     res[g] = res[g] * (1.0 - p0_obj) / s_pos
+
+            # Restricción estricta de unimodalidad y eliminación de valle en G=1:
+            res[0] = min(res[0], math.exp(-lam) + 0.06)
+            if lam >= 1.15:
+                # m[1] JAMÁS puede ser menor que 0.85 * m[0] ni menor que 0.80 * m[2]
+                piso_m1 = max(0.85 * res[0], 0.80 * res[2])
+                if res[1] < piso_m1:
+                    deficit = piso_m1 - res[1]
+                    res[1] = piso_m1
+                    res[0] = max(0.01, res[0] - deficit * 0.60)
+                    res[2] = max(0.01, res[2] - deficit * 0.40)
+
+            tot = sum(res)
+            if tot > 0:
+                res = [r / tot for r in res]
             return res
 
         vent_L = max(0.0, brecha_overall * 2.2 + 0.35 * (cruce_of_L - 1.0))
@@ -1961,8 +2046,22 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     if tier_coef_V < 0.90 and tier_coef_L >= 1.00:
         delta_pct_real_V = min(12.0, delta_pct_real_V)
 
-    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=("F_posesion_progresiva",))
-    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=("F_posesion_progresiva",))
+    # Si el atacante juega en casa y el rival concede xGOT >= 1.50, garantizar que lambda_red no sufra penalización
+    if xgotc_riv_V >= 1.50 and float(rL.get("Final_Attack_Strength", 50.0)) >= 50.0:
+        delta_pct_real_L = max(0.0, delta_pct_real_L)
+
+    pisos_L = {}
+    if f_l.get("F_fragilidad_rival", 0.0) >= 3.0:
+        pisos_L["F_fragilidad_rival"] = 4.0
+    if f_l.get("F_porteria_rival", 0.0) >= 0.5:
+        pisos_L["F_porteria_rival"] = 0.5
+
+    techos_V = {}
+    if f_v.get("F_fragilidad_rival", 0.0) <= -1.0:
+        techos_V["F_fragilidad_rival"] = -1.5
+
+    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=("F_posesion_progresiva",), pisos=pisos_L)
+    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=("F_posesion_progresiva",), techos=techos_V)
 
     pct_tot_L = round(float(sum(f_l.values())), 1)
     pct_tot_V = round(float(sum(f_v.values())), 1)
