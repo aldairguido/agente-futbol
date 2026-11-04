@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import time
 import unicodedata
 from dataclasses import dataclass, field
@@ -757,6 +758,7 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "bayern": ["FC Bayern München", "Bayern München", "Bayern Munich"],
     "bayern munich": ["FC Bayern München", "Bayern München", "Bayern Munich"],
     "bayern munchen": ["FC Bayern München", "Bayern München"],
+    "bayern münchen": ["FC Bayern München", "Bayern München", "Bayern Munich"],
     "leverkusen": ["Bayer Leverkusen", "Bayer 04 Leverkusen"],
     "bayer leverkusen": ["Bayer Leverkusen", "Bayer 04 Leverkusen"],
     "dortmund": ["Borussia Dortmund", "BVB"],
@@ -998,7 +1000,7 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
 PAISES_EUROPA: frozenset[str] = frozenset({
     "espana", "inglaterra", "italia", "alemania", "francia", "portugal", "holanda",
     "belgica", "turquia", "escocia", "suiza", "austria", "grecia", "dinamarca",
-    "suecia", "noruega", "croacia", "serbia", "republica checa", "polonia", "europa",
+    "suecia", "noruega", "croacia", "serbia", "republica checa", "polonia", "ucrania", "europa",
 })
 PAISES_SUDAMERICA: frozenset[str] = frozenset({
     "uruguay", "chile", "argentina", "peru", "colombia", "brasil", "paraguay",
@@ -1200,7 +1202,7 @@ _LIGA_POR_EQUIPO_CONOCIDO: dict[str, dict[str, Any]] = {
     )},
     # Alemania
     **{k: {"liga": "Bundesliga", "id_liga": 54, "pais": "alemania"} for k in (
-        "bayern", "bayern munich", "bayern munchen", "leverkusen", "bayer leverkusen",
+        "bayern", "bayern munich", "bayern munchen", "bayern münchen", "leverkusen", "bayer leverkusen",
         "dortmund", "borussia dortmund", "leipzig", "rb leipzig", "mainz", "mainz 05",
         "fsv mainz", "maguncia", "friburgo", "sc friburgo", "freiburg", "sc freiburg",
         "stuttgart", "vfb stuttgart", "frankfurt", "francfort", "eintracht",
@@ -1465,6 +1467,10 @@ def _pais_de_liga(nombre_liga: str | None) -> str:
         return "ecuador"
     if any(k in n for k in ("mexico", "liga mx", "expansion mx")):
         return "mexico"
+    if any(k in n for k in ("mls", "major league soccer", "us open cup", "united states", "usa", "eeuu")):
+        return "usa"
+    if any(k in n for k in ("ukraine", "ucrania", "premier league ukraine")):
+        return "ucrania"
     if any(k in n for k in ("champions league", "europa league", "conference league", "uefa")):
         return "europa"
     if any(k in n for k in ("libertadores", "sudamericana", "conmebol")):
@@ -1749,12 +1755,18 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
         if r_pais and c_pais:
             if r_pais == c_pais:
                 coherencia_pais = 15 if es_forzada else 5
-            elif r_pais == "europa" and c_pais in PAISES_EUROPA:
+            elif (r_pais == "europa" and c_pais in PAISES_EUROPA) or (c_pais == "europa" and r_pais in PAISES_EUROPA):
                 coherencia_pais = 12 if es_forzada else 4
-            elif r_pais == "sudamerica" and c_pais in PAISES_SUDAMERICA:
+            elif r_pais in PAISES_EUROPA and c_pais in PAISES_EUROPA:
+                coherencia_pais = 10 if es_forzada else 3
+            elif (r_pais == "sudamerica" and c_pais in PAISES_SUDAMERICA) or (c_pais == "sudamerica" and r_pais in PAISES_SUDAMERICA):
                 coherencia_pais = 12 if es_forzada else 4
-            elif (r_pais in PAISES_EUROPA and c_pais in PAISES_SUDAMERICA) or (r_pais in PAISES_SUDAMERICA and c_pais in PAISES_EUROPA):
+            elif r_pais in PAISES_SUDAMERICA and c_pais in PAISES_SUDAMERICA:
+                coherencia_pais = 10 if es_forzada else 3
+            elif (r_pais in PAISES_EUROPA and c_pais not in PAISES_EUROPA) or (r_pais not in PAISES_EUROPA and c_pais in PAISES_EUROPA):
                 coherencia_pais = -25 if es_forzada else -20  # Gran penalización por cruce intercontinental incoherente
+            elif (r_pais in PAISES_SUDAMERICA and c_pais not in PAISES_SUDAMERICA) or (r_pais not in PAISES_SUDAMERICA and c_pais in PAISES_SUDAMERICA):
+                coherencia_pais = -25 if es_forzada else -20
             else:
                 coherencia_pais = -15 if es_forzada else -2
 
@@ -1773,11 +1785,12 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
         penal_filial = 0
 
     return (
-        coherencia_pais,
-        bono_liga,
         -penal_filial,
+        tiene_identidad,
         es_alias_exacto,
         exacto_nucleo,
+        coherencia_pais,
+        bono_liga,
         empieza,
         solape_nucleo,
         float(candidato.get("score") or 0),
@@ -1833,7 +1846,11 @@ class FuenteFotMob(FuenteXG):
     def _log(self, msg: str) -> None:
         if self.verbose:
             marca = datetime.now(pytz.timezone(config.TIMEZONE)).strftime("%H:%M:%S")
-            print(f"[AUDITORÍA {marca}] {msg}")
+            try:
+                print(f"[AUDITORÍA {marca}] {msg}")
+            except UnicodeEncodeError:
+                safe_msg = msg.encode(sys.stdout.encoding or "ascii", errors="replace").decode(sys.stdout.encoding or "ascii")
+                print(f"[AUDITORÍA {marca}] {safe_msg}")
 
     # ── ciclo de vida ──────────────────────────────────────────────────────
     def abrir(self) -> None:

@@ -596,6 +596,15 @@ def extraer_muestra(doc: dict[str, Any], condicion: str | None = None,
             except (TypeError, ValueError):
                 peso = 1.0
 
+        # Goleadas de Copa Nacional (>= 4 goles) pesan 0.35x para no distorsionar promedio UCL
+        try:
+            from motor_recursivo_45_dcn import peso_credibilidad_partido
+            w_cup = peso_credibilidad_partido(p)
+            if w_cup < 1.0:
+                peso = min(peso, w_cup)
+        except Exception:
+            pass
+
         # ¿Este partido trae xG del equipo? Se cuenta aparte para poder declarar
         # la cobertura real (el dato puede faltar en competiciones sin xG).
         xg_propio = _valor_periodo(p, "xg", periodo, "equipo")
@@ -1265,10 +1274,19 @@ class MotorMercados:
         self._aplicar_cola_ancha()
         if self.matriz_ft:
             asedio_activo = bool(self.recursivo.get("asedio_bandas_activo", False))
+            info_c = dict(self.recursivo.get("cruces_tacticos") or {})
+            info_c["lambda_local_1t"] = getattr(self.tasas, "lambda_local_1t", None)
+            info_c["lambda_visita_1t"] = getattr(self.tasas, "lambda_visitante_1t", None)
+            info_c["lambda_local_2t"] = getattr(self.tasas, "lambda_local_2t", None)
+            info_c["lambda_visita_2t"] = getattr(self.tasas, "lambda_visitante_2t", None)
+            info_c["seg_gol_concedido_L"] = self.recursivo.get("seg_gol_concedido_rival_V", 0.0)
+            info_c["seg_gol_concedido_V"] = self.recursivo.get("seg_gol_concedido_rival_L", 0.0)
+            info_c["mu_local_casa"] = self.recursivo.get("mu_local_casa", {})
+            info_c["mu_visita_fuera"] = self.recursivo.get("mu_visita_fuera", {})
             self.clusters = clusters_marcador(
                 self.matriz_ft, self.nombre_local, self.nombre_visitante,
                 asedio_bandas=asedio_activo,
-                info_cruces=self.recursivo.get("cruces_tacticos"),
+                info_cruces=info_c,
             )
 
         self.cobertura = self._construir_cobertura()
@@ -1359,16 +1377,27 @@ class MotorMercados:
             partidos_v_red = ce.partidos_para_red_neuronal(
                 self.doc_visitante.get("partidos"), self.nombre_visitante)
 
-            from motor_recursivo_45_dcn import obtener_tier_coef, obtener_tier_equipo
+            from motor_recursivo_45_dcn import (
+                obtener_tier_coef, obtener_tier_equipo, es_sede_neutral,
+                factor_uefa_relativo,
+            )
             tier_L_int = obtener_tier_equipo(partidos_l_red)
             tier_V_int = obtener_tier_equipo(partidos_v_red)
+            tier_L = obtener_tier_coef(partidos_l_red, perfil_l_gen, self.nombre_local)
+            tier_V = obtener_tier_coef(partidos_v_red, perfil_v_gen, self.nombre_visitante)
 
-            # Módulo Doble ADN con Contracción Bayesiana k=3.5 (Fase 5.1) + Descuento ΔTier
+            sede_neutral_L = es_sede_neutral(self.nombre_local, getattr(self, "competicion", ""))
+            cond_adn_l = "neutral" if sede_neutral_L else cond_l
+
+            fu_L = factor_uefa_relativo(tier_L, tier_V)
+            fu_V = factor_uefa_relativo(tier_V, tier_L)
+
+            # Módulo Doble ADN con Contracción Bayesiana k=3.5 (Fase 5.1) + Descuento ΔTier + UEFA
             mu_l_cond = red.calcular_doble_adn_con_shrinkage(
-                partidos_l_red, {}, cond_l, perfil_l_gen, tier_rival=tier_V_int
+                partidos_l_red, {}, cond_adn_l, perfil_l_gen, tier_rival=tier_V_int, factor_uefa=fu_L,
             )
             mu_v_cond = red.calcular_doble_adn_con_shrinkage(
-                partidos_v_red, {}, cond_v, perfil_v_gen, tier_rival=tier_L_int
+                partidos_v_red, {}, cond_v, perfil_v_gen, tier_rival=tier_L_int, factor_uefa=fu_V,
             )
 
             atq_L_cond = 0.50 * mu_l_cond.get('goles_favor', atq_L) + 0.50 * mu_l_cond.get('xg', atq_L)
@@ -1377,12 +1406,10 @@ class MotorMercados:
             def_L_cond = 0.50 * mu_l_cond.get('goles_contra', def_L) + 0.50 * mu_l_cond.get('xgot_enfrentado', def_L)
 
             # Ponderación por Coeficiente de Liga (tier_coef) solo si no hubo ya ajuste ΔTier de división
-            tier_L = obtener_tier_coef(partidos_l_red, perfil_l_gen, self.nombre_local)
-            tier_V = obtener_tier_coef(partidos_v_red, perfil_v_gen, self.nombre_visitante)
             if tier_L != tier_V and tier_L_int == tier_V_int:
                 tier_menor = min(tier_L, tier_V)
                 tier_mayor = max(tier_L, tier_V)
-                ratio_fuerza = (tier_menor / tier_mayor) ** 0.75
+                ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
                 if tier_L < tier_V:
                     atq_L_cond = atq_L_cond * ratio_fuerza
                     def_L_cond = def_L_cond / ratio_fuerza
@@ -1398,11 +1425,10 @@ class MotorMercados:
                 perfil_v_gen,
                 float(lam_l),
                 float(lam_v),
-                # La auditoría usa marcador.equipo/rival; la red espera
-                # local/visitante + goles: el puente evita que la serie salga de 1.
                 partidos_l_red,
                 partidos_v_red,
                 n_simulaciones_mc=int(getattr(self.p, "mc_simulaciones", 100_000)),
+                sede_neutral_local=sede_neutral_L,
             )
         except Exception as e:                      # nunca tumba el análisis
             self.recursivo = {
@@ -1482,6 +1508,26 @@ class MotorMercados:
             self.tasas.procedencia_tiempos = (
                 f"{self.tasas.procedencia_tiempos} · reescalado a la λ de la red "
                 f"recursiva (λ_1T + λ_2T = λ_FT)")
+
+        # Sincronización obligatoria de clusters con la matriz activa y tasas reescaladas
+        try:
+            asedio_activo = bool(resultado.get("asedio_bandas_activo", False))
+            info_c = dict(resultado.get("cruces_tacticos") or {})
+            info_c["lambda_local_1t"] = getattr(self.tasas, "lambda_local_1t", None)
+            info_c["lambda_visita_1t"] = getattr(self.tasas, "lambda_visitante_1t", None)
+            info_c["lambda_local_2t"] = getattr(self.tasas, "lambda_local_2t", None)
+            info_c["lambda_visita_2t"] = getattr(self.tasas, "lambda_visitante_2t", None)
+            info_c["seg_gol_concedido_L"] = resultado.get("seg_gol_concedido_rival_V", 0.0)
+            info_c["seg_gol_concedido_V"] = resultado.get("seg_gol_concedido_rival_L", 0.0)
+            info_c["mu_local_casa"] = resultado.get("mu_local_casa", {})
+            info_c["mu_visita_fuera"] = resultado.get("mu_visita_fuera", {})
+            self.clusters = clusters_marcador(
+                self.matriz_ft, self.nombre_local, self.nombre_visitante,
+                asedio_bandas=asedio_activo,
+                info_cruces=info_c,
+            )
+        except Exception:
+            pass
 
         entropias = resultado.get("historial_entropia") or []
         texto_entropia = (f"H={float(entropias[-1]):.3f}" if entropias else "H=s/d")
@@ -2999,17 +3045,21 @@ def calcular_5_factores_latentes(
     vo = vec_ofensivo_norm
     vd = vec_defensivo_rival_norm
 
-    # F1 — Posesión Efectiva y Progresión Territorial
+    # F1 — Posesión Efectiva y Progresión Territorial (ADVERSARIAL DE SUMA CERO: un solo balón)
     pos = vo.get("posesion_pct", 0.5)
+    pos_r = vd.get("posesion_pct", 0.5)
+    pos_esp = pos / (pos + pos_r) if (pos + pos_r) > 1e-6 else 0.5
     pas_tot = vo.get("pases_total", 0.5)
-    pas_prec = vo.get("pases_precision_pct", 0.5)
-    pas_rat = vo.get("pases_ratio", 0.5)
-    pas_lin = vo.get("pases_entre_lineas", 0.5)
-    pas_ter = vo.get("pases_tercio_final_pct", 0.5)
+    pas_tot_r = vd.get("pases_total", 0.5)
+    pas_rel = pas_tot / (pas_tot + pas_tot_r) if (pas_tot + pas_tot_r) > 1e-6 else 0.5
     toq_area = vo.get("toques_area_rival", 0.5)
-    esterilidad = max(0.0, pos - (0.5 * toq_area + 0.5 * pas_lin))
-    z1 = (0.15 * pos + 0.10 * pas_tot + 0.15 * pas_prec + 0.10 * pas_rat +
-          0.20 * pas_lin + 0.15 * pas_ter + 0.25 * toq_area - 0.25 * esterilidad) - 0.50
+    toq_area_r = vd.get("toques_area_rival", 0.5)
+    toq_rel = toq_area / (toq_area + toq_area_r) if (toq_area + toq_area_r) > 1e-6 else 0.5
+    pas_ter = vo.get("pases_tercio_final_pct", 0.5)
+    pas_ter_r = vd.get("pases_tercio_final_pct", 0.5)
+    ter_rel = pas_ter / (pas_ter + pas_ter_r) if (pas_ter + pas_ter_r) > 1e-6 else 0.5
+
+    z1 = (0.35 * (pos_esp - 0.5) + 0.30 * (toq_rel - 0.5) + 0.20 * (ter_rel - 0.5) + 0.15 * (pas_rel - 0.5)) * 2.0
     f1 = math.tanh(2.5 * z1)
 
     # F2 — Volumen de Creación Ofensiva
@@ -3388,6 +3438,52 @@ def seleccionar_top_5_jugadas_recomendadas(
     lam_l = float(getattr(getattr(motor, "tasas", None), "lambda_local_ft", 0.0) or rec.get("lambda_local_recursivo") or 1.35)
     lam_v = float(getattr(getattr(motor, "tasas", None), "lambda_visitante_ft", 0.0) or rec.get("lambda_visita_recursivo") or 1.10)
 
+    # ── Cerrojo / Hurdle Zero-Inflation y Detección Diésel ───────────────────
+    mat = getattr(motor, "matriz_ft", None)
+    p_btts_no_pct = 0.0
+    if mat:
+        R = len(mat)
+        C = len(mat[0]) if R else 0
+        p_btts_si = sum(mat[i][j] for i in range(1, R) for j in range(1, C)) * 100.0
+        p_btts_no_pct = 100.0 - p_btts_si
+
+    seg_conc_l = float(rec.get("seg_gol_concedido_rival_V") or 0.0)
+    seg_conc_v = float(rec.get("seg_gol_concedido_rival_L") or 0.0)
+
+    prohibir_btts_si = (
+        lam_l < 1.25 or lam_v < 1.25 or
+        seg_conc_l >= 4200.0 or seg_conc_v >= 4200.0 or
+        p_btts_no_pct > 48.0
+    )
+
+    if prohibir_btts_si:
+        candidatas = [
+            s for s in candidatas
+            if not (
+                ("btts_si" in str(_v(s, "evento") or "").lower()) or
+                ("ambos" in str(_v(s, "evento") or "").lower() and any(k in str(_v(s, "evento") or "").lower() for k in ("si", "sí", "yes")))
+            )
+        ]
+
+    # Detección Diésel
+    xg1_l = float(mu_l.get("xg_1t", mu_l.get("xg_1T", 0.0)) or 0.0)
+    xg2_l = float(mu_l.get("xg_2t", mu_l.get("xg_2T", 0.0)) or 0.0)
+    xg1_v = float(mu_v.get("xg_1t", mu_v.get("xg_1T", 0.0)) or 0.0)
+    xg2_v = float(mu_v.get("xg_2t", mu_v.get("xg_2T", 0.0)) or 0.0)
+    t1_l = getattr(getattr(motor, "tasas", None), "lambda_local_1t", None)
+    t2_l = getattr(getattr(motor, "tasas", None), "lambda_local_2t", None)
+    t1_v = getattr(getattr(motor, "tasas", None), "lambda_visitante_1t", None)
+    t2_v = getattr(getattr(motor, "tasas", None), "lambda_visitante_2t", None)
+
+    es_diesel = False
+    if (xg1_l > 0 and xg2_l >= 1.30 * xg1_l) or (xg1_v > 0 and xg2_v >= 1.30 * xg1_v):
+        es_diesel = True
+    elif (t1_l and t2_l and t2_l >= 1.30 * t1_l) or (t1_v and t2_v and t2_v >= 1.30 * t1_v):
+        es_diesel = True
+
+    lam_1t_comb = ((t1_l or 0.50) + (t1_v or 0.45)) if (t1_l is not None) else (0.45 * (lam_l + lam_v))
+    patron_diesel_1t = es_diesel and (lam_1t_comb < 1.25)
+
     def _slot_seleccion(s: Any) -> int:
         m_l = str(_v(s, "mercado") or "").lower()
         ev = str(_v(s, "evento") or "").lower()
@@ -3445,6 +3541,8 @@ def seleccionar_top_5_jugadas_recomendadas(
             signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
             return f"Tarjetas Totales ({per}): {signo}{float(lin):g} Tarj." if lin is not None else f"Tarjetas ({per}): {et}"
         if slot == 3:
+            if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
+                return "1ra Mitad : Menos de 1.5 Goles (Duelo de estudio en 1T / Explosión en 2T)"
             if eq:
                 signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev) else "-"
                 return f"Goles {eq} ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles {eq} ({per}): {et}"
@@ -3458,6 +3556,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         per = str(_v(s, "periodo") or "FT").strip().upper()
         eq_raw = _v(s, "equipo", None)
         eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
+        lin = _v(s, "linea", None)
+        ev = str(_v(s, "evento") or "").lower()
         gf_l = float(mu_l.get("goles_favor", lam_l))
         xg_l = float(mu_l.get("xg", lam_l))
         gf_v = float(mu_v.get("goles_favor", lam_v))
@@ -3476,6 +3576,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         if slot == 2:
             return f"Respaldo ADN: Expectativa combinada λ={lam_l + lam_v:.2f} goles ({eq_l} {xg_l:.2f} xG casa + {eq_v} {xg_v:.2f} xG visita)."
         if slot == 3:
+            if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
+                return f"Respaldo Táctico: Estudio táctico en 1T (λ={lam_1t_comb:.2f} goles) y aceleración diésel proyectada en 2T."
             if eq == eq_l:
                 return f"Respaldo ADN: {eq_l} en casa promedia {gf_l:.2f} goles ({xg_l:.2f} xG) ante rival que concede {gc_v:.2f} Gc fuera."
             if eq == eq_v:
@@ -3506,6 +3608,18 @@ def seleccionar_top_5_jugadas_recomendadas(
     def _puntaje_podio(s: Any) -> float:
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
         est_bonus = 0.06 if _v(s, "estado") == "mantiene" else 0.0
+        ev = str(_v(s, "evento") or "").lower()
+
+        # Si Ambos Anotan: No >= 50%, máxima prioridad en Slot 5
+        if "btts_no" in ev and p_btts_no_pct >= 50.0:
+            return 3.0 + (p_btts_no_pct / 100.0)
+
+        # Si patrón diésel 1T, máxima prioridad para 1T Menos de 1.5 en Slot 3
+        per = str(_v(s, "periodo") or "FT").strip().upper()
+        lin = _v(s, "linea", None)
+        if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
+            return 3.0 + p
+
         # Priorizar estrictamente el rango [0.70, 0.88] donde la cuota tiene valor real
         if 0.70 <= p <= 0.88:
             # Pico óptimo alrededor de 0.80 - 0.84
@@ -3874,12 +3988,66 @@ def clusters_marcador(
     lam_V_est = sum(j * sum(prob_celda(i, j) for i in range(max_i)) for j in range(max_j))
     diff_lam_est = abs(lam_L_est - lam_V_est)
 
+    p_btts_no_pct = 100.0 - p_btts_pct
+
+    seg_conc_l = 0.0
+    seg_conc_v = 0.0
+    mu_loc = {}
+    mu_vis = {}
+    lam_1t_L = None
+    lam_1t_V = None
+    lam_2t_L = None
+    lam_2t_V = None
+
+    if info_cruces and isinstance(info_cruces, dict):
+        seg_conc_l = float(info_cruces.get("seg_gol_concedido_L") or 0.0)
+        seg_conc_v = float(info_cruces.get("seg_gol_concedido_V") or 0.0)
+        mu_loc = info_cruces.get("mu_local_casa") or {}
+        mu_vis = info_cruces.get("mu_visita_fuera") or {}
+        lam_1t_L = info_cruces.get("lambda_local_1t")
+        lam_1t_V = info_cruces.get("lambda_visita_1t")
+        lam_2t_L = info_cruces.get("lambda_local_2t")
+        lam_2t_V = info_cruces.get("lambda_visita_2t")
+
+    # Prohibición terminante de BTTS Sí:
+    # Si cualquiera tiene λ Red < 1.25, o defensa Seg/Gol Concedido >= 4200s, o Ambos Anotan: No > 48%
+    prohibir_btts_si = (
+        lam_L_est < 1.25 or lam_V_est < 1.25 or
+        seg_conc_l >= 4200.0 or seg_conc_v >= 4200.0 or
+        p_btts_no_pct > 48.0
+    )
+
+    # Detección de "Equipo Diésel" (xG 2T >= 1.30 * xG 1T) y xG 1T combinado < 1.25
+    es_diesel_L = False
+    es_diesel_V = False
+    xg1_l = float(mu_loc.get("xg_1t", mu_loc.get("xg_1T", 0.0)) or 0.0)
+    xg2_l = float(mu_loc.get("xg_2t", mu_loc.get("xg_2T", 0.0)) or 0.0)
+    if xg1_l > 0 and xg2_l >= 1.30 * xg1_l:
+        es_diesel_L = True
+    elif lam_1t_L and lam_2t_L and lam_2t_L >= 1.30 * lam_1t_L:
+        es_diesel_L = True
+
+    xg1_v = float(mu_vis.get("xg_1t", mu_vis.get("xg_1T", 0.0)) or 0.0)
+    xg2_v = float(mu_vis.get("xg_2t", mu_vis.get("xg_2T", 0.0)) or 0.0)
+    if xg1_v > 0 and xg2_v >= 1.30 * xg1_v:
+        es_diesel_V = True
+    elif lam_1t_V and lam_2t_V and lam_2t_V >= 1.30 * lam_1t_V:
+        es_diesel_V = True
+
+    lam_1t_comb = ((lam_1t_L or 0.50) + (lam_1t_V or 0.45)) if (lam_1t_L is not None) else (0.45 * (lam_L_est + lam_V_est))
+    patron_diesel_1t = (es_diesel_L or es_diesel_V) and (lam_1t_comb < 1.25)
+
     is_11_top2 = (1, 1) in top2_coords
     is_11_or_00_top3 = ((1, 1) in top3_coords) or ((0, 0) in top3_coords)
 
     if p_fav_val >= 60.0 and p_00_pct < 8.5 and diff_lam_est >= 0.45:
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
-    elif is_11_top2 and p_btts_pct >= 51.0:
+    elif p_btts_no_pct >= 50.0:
+        jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
+    elif patron_diesel_1t:
+        p_u15_1t = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
+        jugada_optima_txt = f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t}%) (Duelo de estudio en 1T / Explosión en 2T)"
+    elif is_11_top2 and p_btts_pct >= 51.0 and not prohibir_btts_si:
         jugada_optima_txt = f"Ambos equipos marcan : Sí ({p_btts_pct:.1f}%) o Doble Oportunidad {dc_tag} ({p_dc_val:.1f}%)"
     elif (44.0 <= p_fav_val < 60.0) or is_11_or_00_top3:
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"

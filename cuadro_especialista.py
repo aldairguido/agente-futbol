@@ -488,13 +488,25 @@ def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any]) -> dict[
 
     # ── F. Pressing 0-100 ────────────────────────────────────────────────────
     min_sin_balon = max(15.0, 90.0 * (1.0 - posesion / 100.0))
-    acciones_presion_por_min = (recuperaciones + entradas + intercepciones) / min_sin_balon
-    ratio_proactivo_vs_hundido = (recuperaciones + intercepciones + entradas) / max(8.0, despejes)
+    total_acciones_def = recuperaciones + entradas + intercepciones
+    # Si las métricas defensivas vienen en 0 o sin dato (ej. ligas domésticas sin tracking como Ucrania)
+    if total_acciones_def < 25.0 or recuperaciones <= 2.0:
+        faltas_val = v("faltas", 12.0)
+        duelos_val = 0.5 * duelos_suelo + 0.5 * duelos_aereos
+        acciones_def_est = faltas_val * 1.8 + duelos_val * 0.70 + (posesion * 0.25)
+        total_acciones_def = max(45.0, acciones_def_est)
+        acciones_presion_por_min = total_acciones_def / min_sin_balon
+        ratio_proactivo_vs_hundido = total_acciones_def / max(8.0, despejes)
+    else:
+        acciones_presion_por_min = total_acciones_def / min_sin_balon
+        ratio_proactivo_vs_hundido = total_acciones_def / max(8.0, despejes)
     pases_por_min_pos = pases_tot / max(15.0, 90.0 * (posesion / 100.0))
     pressing = round(
         0.40 * escala_0_100(acciones_presion_por_min, 1.2, 2.8)
         + 0.35 * escala_0_100(ratio_proactivo_vs_hundido, 1.8, 5.2)
         + 0.25 * escala_0_100(pases_por_min_pos, 6.5, 10.5), 2)
+    # Piso realista obligatorio: el pressing nunca puede colapsar a 0.5
+    pressing = max(28.0, pressing)
 
     overall = round(0.48 * ataque + 0.42 * defensa + 0.10 * pressing, 2)
 
@@ -873,7 +885,7 @@ def _metricas_ponderadas_condicion(
     ponderando 60% la condición específica ('casa' o 'fuera') + 40% general,
     aplicando además el Descuento Relativo de División (Sección 8.3: LaLiga2, Segunda, Championship, etc.).
     """
-    from motor_recursivo_45_dcn import obtener_tier_liga
+    from motor_recursivo_45_dcn import obtener_tier_liga, peso_credibilidad_partido, es_sede_neutral
 
     m = perfil.get("metricas_clave", {})
     gf_gen = float(m.get("goles_favor", 1.30))
@@ -892,7 +904,10 @@ def _metricas_ponderadas_condicion(
         t_partido = obtener_tier_liga(torneo_p)
         deltas_pts.append(max(0, t_partido - tier_rival))
 
-    pts_cond = [p for p in pts if str(p.get("condicion") or p.get("_partido", {}).get("condicion") or "").lower() in (condicion_filtro, "local" if condicion_filtro == "casa" else "visitante")]
+    if condicion_filtro == "neutral":
+        pts_cond = list(pts)
+    else:
+        pts_cond = [p for p in pts if str(p.get("condicion") or p.get("_partido", {}).get("condicion") or "").lower() in (condicion_filtro, "local" if condicion_filtro == "casa" else "visitante")]
 
     def _val(p, k):
         src = p.get("_partido") if isinstance(p.get("_partido"), dict) else p
@@ -924,13 +939,27 @@ def _metricas_ponderadas_condicion(
             delta_tier = max(0, obtener_tier_liga(torneo_p) - tier_rival)
             f_of = (0.76 ** delta_tier) if delta_tier >= 1 else 1.0
             f_def = (1.22 ** delta_tier) if delta_tier >= 1 else 1.0
+            w_cred = peso_credibilidad_partido(src)
+
             ge, gr = _gol(p)
-            if ge is not None: gfs.append(ge * f_of)
-            if gr is not None: gcs.append(gr * f_def)
+            if ge is not None:
+                vg = ge * f_of
+                if w_cred < 1.0: vg = w_cred * vg + (1.0 - w_cred) * 1.30
+                gfs.append(vg)
+            if gr is not None:
+                vgc = gr * f_def
+                if w_cred < 1.0: vgc = w_cred * vgc + (1.0 - w_cred) * 1.25
+                gcs.append(vgc)
             xv = _val(p, "xg")
-            if xv is not None: xgfs.append(xv * f_of)
+            if xv is not None:
+                vx = xv * f_of
+                if w_cred < 1.0: vx = w_cred * vx + (1.0 - w_cred) * 1.25
+                xgfs.append(vx)
             xc = _val(p, "xgot_enfrentado")
-            if xc is not None: xgotcs.append(xc * f_def)
+            if xc is not None:
+                vxc = xc * f_def
+                if w_cred < 1.0: vxc = w_cred * vxc + (1.0 - w_cred) * 1.25
+                xgotcs.append(vxc)
         return gfs, gcs, xgfs, xgotcs
 
     if pts:
@@ -1098,8 +1127,11 @@ def generar_cuadro_visual_partido(
     tier_L_int = obtener_tier_equipo(partidos_l_red)
     tier_V_int = obtener_tier_equipo(partidos_v_red)
 
+    sede_neutral_L = red_neuronal.es_sede_neutral(eq_L, competicion)
+    cond_l_obj = "neutral" if sede_neutral_L else "casa"
+
     gf_L, xg_L, gc_L, xgotc_L = _metricas_ponderadas_condicion(
-        partidos_15_local, perfil_local, "casa", tier_rival=tier_V_int
+        partidos_15_local, perfil_local, cond_l_obj, tier_rival=tier_V_int
     )
     gf_V, xg_V, gc_V, xgotc_V = _metricas_ponderadas_condicion(
         partidos_15_visita, perfil_vis, "fuera", tier_rival=tier_L_int
@@ -1111,7 +1143,7 @@ def generar_cuadro_visual_partido(
     if tier_L != tier_V and tier_L_int == tier_V_int:
         tier_menor = min(tier_L, tier_V)
         tier_mayor = max(tier_L, tier_V)
-        ratio_fuerza = (tier_menor / tier_mayor) ** 0.75
+        ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
         if tier_L < tier_V:
             gf_L = round(gf_L * ratio_fuerza, 2)
             xg_L = round(xg_L * ratio_fuerza, 2)
@@ -1144,6 +1176,7 @@ def generar_cuadro_visual_partido(
             lam_plano_V,
             partidos_l_red,
             partidos_v_red,
+            sede_neutral_local=sede_neutral_L,
         )
         lam_local = float(res_red["lambda_local_recursivo"])
         lam_vis = float(res_red["lambda_visita_recursivo"])

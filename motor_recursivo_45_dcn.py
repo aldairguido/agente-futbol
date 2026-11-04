@@ -289,6 +289,20 @@ def _valor_metrica(partido: Dict[str, Any], clave: str) -> Optional[float]:
     return None
 
 
+def _valor_metrica_periodo(partido: Dict[str, Any], clave: str, corte: str,
+                           bando: str = "equipo") -> Optional[float]:
+    """Valor real de una métrica en un periodo concreto ('1T'/'2T'/'FT') y bando ('equipo'/'rival')."""
+    fuente = _partido_fuente(partido)
+    bloque = (fuente.get("periodos") or {}).get(corte) or {}
+    for fila in bloque.get("filas") or []:
+        if isinstance(fila, dict) and fila.get("clave") == clave:
+            valor = fila.get(bando)
+            if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+                return float(valor)
+            return None
+    return None
+
+
 def _goles_equipo(partido: Dict[str, Any]) -> Tuple[Optional[float], Optional[float]]:
     """Goles (equipo, rival) soportando el esquema de auditoría y el normalizado."""
     marcador = (_partido_fuente(partido).get("marcador") or {})
@@ -357,6 +371,7 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
         "superligaen", "denmark", "dinamarca", "eliteserien", "noruega", "norway",
         "allsvenskan", "suecia", "sweden", "ekstraklasa", "polonia", "poland",
         "hnl", "croacia", "croatia", "superliga serbia", "serbia",
+        "premier liha", "ukrain", "ucrania", "nm cupen", "norgesmesterskap",
         "conference league", "uecl",
         "segunda", "laliga 2", "laliga2", "hypermotion", "serie b", "2. bundesliga", "2.bundesliga", "ligue 2", "ligue2"
     ]):
@@ -401,8 +416,7 @@ def obtener_tier_coef(
     for p in (partidos or []):
         src = _partido_fuente(p)
         torneo = str(src.get("torneo") or src.get("competition") or p.get("torneo") or "")
-        t_low = torneo.lower()
-        if any(c in t_low for c in ["copa del rey", "efl cup", "carabao", "coppa italia", "dfb-pokal", "fa cup"]):
+        if es_copa_nacional(torneo):
             continue
         if torneo:
             coefs.append(obtener_tier_coef_liga(torneo))
@@ -419,19 +433,93 @@ def obtener_tier_coef(
         return 1.00
     if any(eq in nom for eq in ["fenerbahce", "fenerbahçe", "galatasaray", "besiktas", "slavia", "sparta praga", "benfica", "porto", "sporting", "ajax", "psv", "feyenoord", "celtic", "rangers"]):
         return 0.85
-    if any(eq in nom for eq in ["sabah", "qarabag", "bodo", "bodø", "zagreb", "partizan", "estrella roja", "apoel"]):
+    if any(eq in nom for eq in ["sabah", "qarabag", "bodo", "bodø", "zagreb", "partizan", "estrella roja", "apoel",
+                                "shakhtar", "dynamo kyiv", "dynamo kiev", "dinamo kiev"]):
         return 0.68
 
     return 0.85
 
 
-def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float) -> Dict[str, float]:
+# ── Corrección post-auditoría UCL (04/11/2026) ─────────────────────────────────
+PALABRAS_COPA_NACIONAL = (
+    "copa del rey", "efl cup", "carabao", "coppa italia", "dfb-pokal", "dfb pokal",
+    "fa cup", "nm cupen", "norgesmesterskap", "knvb", "beker", "coupe de france",
+    "taca de portugal", "taça", "turkiye kupasi", "türkiye kupası", "kupa",
+    "pokal", "cupen", "copa ", "coupe", "cup",
+)
+PALABRAS_COPA_UEFA = ("champions", "europa league", "conference", "uefa", "super cup", "supercopa",
+                      "club world", "mundial de clubes", "libertadores", "sudamericana", "concacaf")
+
+
+def es_copa_nacional(torneo: str) -> bool:
+    """Copa doméstica (excluye torneos UEFA / supercopas)."""
+    t = unicodedata.normalize("NFKD", (torneo or "").lower()).encode("ascii", "ignore").decode("utf-8")
+    if not t or any(k in t for k in PALABRAS_COPA_UEFA):
+        return False
+    return any(k in t for k in PALABRAS_COPA_NACIONAL) or t.endswith(" copa") or t == "copa"
+
+
+def peso_credibilidad_partido(partido: Dict[str, Any]) -> float:
+    """
+    Goleadas (>= 4 goles de diferencia) en Copa Nacional ante rivales de divisiones
+    inferiores/amateur (ej. Rana FK 0-6, Fauske/Sprint 0-5) pesan 0.35x para no
+    distorsionar el promedio que se proyecta a Champions League.
+    """
+    src = _partido_fuente(partido)
+    torneo = str(src.get("torneo") or src.get("competition") or src.get("competicion")
+                 or partido.get("torneo") or "")
+    if not es_copa_nacional(torneo):
+        return 1.0
+    gf, gc = _goles_equipo(partido)
+    if gf is not None and gc is not None and (gf - gc) >= 4:
+        return 0.35
+    return 1.0
+
+
+def factor_uefa_relativo(tier_coef_propio: float, tier_coef_rival: float) -> float:
+    """(tier_propio / tier_rival) ** 0.80 cuando el propio es de liga más débil; si no, 1.0."""
+    try:
+        tp, tr = float(tier_coef_propio), float(tier_coef_rival)
+    except (TypeError, ValueError):
+        return 1.0
+    if tp <= 0 or tr <= 0 or tp >= tr:
+        return 1.0
+    return float((tp / tr) ** 0.80)
+
+
+EQUIPOS_SEDE_NEUTRAL_UEFA = (
+    "shakhtar", "dynamo kyiv", "dynamo kiev", "dinamo kiev", "dnipro", "zorya",
+    "polissya", "maccabi tel", "maccabi haifa", "hapoel", "bate borisov", "dinamo minsk",
+)
+
+
+def es_sede_neutral(nombre_equipo: str, competicion: str = "") -> bool:
+    """Clubes que juegan sus partidos UEFA como local en sede neutral (sin bono de localía)."""
+    nom = unicodedata.normalize("NFKD", (nombre_equipo or "").lower()).encode("ascii", "ignore").decode("utf-8")
+    if not any(e in nom for e in EQUIPOS_SEDE_NEUTRAL_UEFA):
+        return False
+    comp = (competicion or "").lower()
+    return (not comp) or any(k in comp for k in PALABRAS_COPA_UEFA)
+
+
+OFENSIVAS_UEFA = ("xg", "xg_juego_abierto", "xg_sin_penalti", "xg_balon_parado", "xgot",
+                  "toques_area_rival", "remates_totales", "remates_puerta",
+                  "remates_dentro_area", "grandes_ocasiones")
+CONCEDIDAS_UEFA = ("xgot_enfrentado",)
+
+
+def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float,
+                               fijos: Optional[Tuple[str, ...]] = None) -> Dict[str, float]:
     """
     Acota cada uno de los 5 factores latentes estrictamente en [-12.0%, +15.0%]
     y garantiza que su suma coincida al primer decimal con el cambio porcentual
     de lambda_base -> lambda_red sin explosiones multiplicativas.
+
+    `fijos`: factores que NO se tocan al repartir el residuo (p. ej. la Posesión
+    Progresiva de suma cero, para que Local y Visita nunca reciban ambos bono).
     """
     claves = ["F_posesion_progresiva", "F_creacion", "F_finalizacion", "F_porteria_rival", "F_fragilidad_rival"]
+    idx_fijos = {i for i, k in enumerate(claves) if fijos and k in fijos}
     vals = [round(float(np.clip(float(factores.get(k, 0.0)), -12.0, 15.0)), 1) for k in claves]
     # El cambio total máximo posible con 5 factores en [-12, +15] y coherencia táctica
     delta_target = round(float(np.clip(float(delta_pct_real), -35.0, 45.0)), 1)
@@ -443,7 +531,8 @@ def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float
             break
         libres = [
             i for i in range(5)
-            if (dif > 0 and vals[i] < 15.0 - 1e-6) or (dif < 0 and vals[i] > -12.0 + 1e-6)
+            if i not in idx_fijos and (
+                (dif > 0 and vals[i] < 15.0 - 1e-6) or (dif < 0 and vals[i] > -12.0 + 1e-6))
         ]
         if not libres:
             break
@@ -455,6 +544,8 @@ def reescalar_factores_a_delta(factores: Dict[str, float], delta_pct_real: float
     residuo = round(delta_target - sum(vals), 1)
     if abs(residuo) >= 0.1:
         for i in sorted(range(5), key=lambda idx: abs(vals[idx]), reverse=True):
+            if i in idx_fijos:
+                continue
             nuevo = round(vals[i] + residuo, 1)
             if -12.0 <= nuevo <= 15.0:
                 vals[i] = nuevo
@@ -510,6 +601,7 @@ def extraer_series_reales_15_partidos(
     nombre_equipo: str,
     perfil_equipo: Dict[str, Any],
     tier_rival: int = 1,
+    factor_uefa: float = 1.0,
 ) -> Dict[str, List[float]]:
     """
     Construye el Tensor Tridimensional X in R^(15 x 3 x 45) con las 45 métricas
@@ -519,6 +611,9 @@ def extraer_series_reales_15_partidos(
     solo si un partido fue en categoría inferior al rival de hoy (ΔTier >= 1), multiplica ofensivas
     por 0.76^ΔTier y multiplica defensivas concedidas por 1.22^ΔTier. Si están en la misma división,
     el factor es 1.0.
+    Además (post-auditoría UCL): multiplica ofensivas por `factor_uefa`
+    ((tier_propio/tier_rival)**0.80) y divide las concedidas por él; y las goleadas
+    de Copa Nacional (>= 4 goles) se contraen a la media con peso 0.35x.
     Reconstruye además métricas xG/xGOT cuando falte tracking en ligas menores.
     """
     ordenados = sorted(
@@ -549,8 +644,10 @@ def extraer_series_reales_15_partidos(
         delta_tier = tier_p - tier_rival
         f_of = (0.76 ** delta_tier) if delta_tier >= 1 else 1.0
         f_def = (1.22 ** delta_tier) if delta_tier >= 1 else 1.0
-        factores_of_partido.append(f_of)
-        factores_def_partido.append(f_def)
+        fu = float(factor_uefa) if factor_uefa and factor_uefa > 0 else 1.0
+        factores_of_partido.append(f_of * fu)
+        factores_def_partido.append(f_def / fu)
+    pesos_cred = [peso_credibilidad_partido(p) for p in ordenados]
 
     for clave in VARIABLES_REALES_45:
         vals_c = []
@@ -610,9 +707,25 @@ def extraer_series_reales_15_partidos(
         presentes = [v for v in valores if v is not None]
         medias[clave] = float(np.mean(presentes)) if presentes else NEUTRALES.get(clave, 0.0)
 
+    # Goleadas de Copa Nacional (>= 4 goles): contracción a la media con peso 0.35x
+    for clave in VARIABLES_REALES_45:
+        vals_c = crudos[clave]
+        for idx_p, w in enumerate(pesos_cred):
+            if w < 1.0 and vals_c[idx_p] is not None:
+                vals_c[idx_p] = w * vals_c[idx_p] + (1.0 - w) * medias[clave]
+
     series: Dict[str, List[float]] = {}
     for clave in VARIABLES_REALES_45:
         series[clave] = [round(v if v is not None else medias[clave], 4) for v in crudos[clave]]
+
+    # Series del 2º tiempo (aceleración diésel propia y fragilidad 2T concedida)
+    for clave_s, bando in (("xg_2T", "equipo"), ("xg_contra_2T", "rival")):
+        vals_2t = [_valor_metrica_periodo(p, "xg", "2T", bando) for p in ordenados]
+        pres_2t = [v for v in vals_2t if v is not None]
+        med_2t = float(np.mean(pres_2t)) if pres_2t else 0.65
+        f_lado = factores_of_partido if bando == "equipo" else factores_def_partido
+        series[clave_s] = [round((v if v is not None else med_2t) * f_lado[i], 4)
+                           for i, v in enumerate(vals_2t)]
 
     # Serie real de goles (a favor / en contra del equipo auditado)
     goles_f: List[float] = []
@@ -627,14 +740,21 @@ def extraer_series_reales_15_partidos(
         gc = gc * factores_def_partido[idx_p]
         goles_f.append(float(gf))
         goles_c.append(float(gc))
+    if goles_f and any(w < 1.0 for w in pesos_cred):
+        mgf, mgc = float(np.mean(goles_f)), float(np.mean(goles_c))
+        goles_f = [w * g + (1.0 - w) * mgf for g, w in zip(goles_f, pesos_cred)]
+        goles_c = [w * g + (1.0 - w) * mgc for g, w in zip(goles_c, pesos_cred)]
 
     # Resiliencia de muestra: si 1 <= len(goles_f) < 15, rellenar hacia atrás (backfill) con la media
     # empírica del equipo para que la dimensión temporal P=15 no desactive el tensor ni el filtro LSTM
     n_partidos = len(goles_f)
     if 1 <= n_partidos < 15:
         faltantes = 15 - n_partidos
-        for clave in VARIABLES_REALES_45:
-            med_val = round(medias.get(clave, NEUTRALES.get(clave, 0.0)), 4)
+        for clave in list(VARIABLES_REALES_45) + ["xg_2T", "xg_contra_2T"]:
+            if clave in medias:
+                med_val = round(medias.get(clave, NEUTRALES.get(clave, 0.0)), 4)
+            else:
+                med_val = round(float(np.mean(series[clave])) if series[clave] else 0.65, 4)
             series[clave] = [med_val] * faltantes + series[clave]
         media_gf = round(float(np.mean(goles_f)), 2)
         media_gc = round(float(np.mean(goles_c)), 2)
@@ -706,7 +826,70 @@ def bilinear_pooling_y_cross_attention(
     return estados_variables, patrones_filtrados
 
 
+# Cruces inter-equipo OBLIGATORIOS (Ataque/Ejecución propia A ⊗ Resistencia/Defensa rival B).
+# (clave_A, clave_B, etiqueta_A, etiqueta_B, sentido): sentido=+1 si un valor alto de B
+# FAVORECE al atacante (fragilidad), -1 si lo FRENA (resistencia).
+CRUCES_INTER_EQUIPO: Tuple[Tuple[str, str, str, str, int], ...] = (
+    ("xgot", "goles_evitados", "xgot_favor_A", "goles_evitados_rival_B", -1),
+    ("toques_area_rival", "despejes", "toques_area_rival_A", "despejes_rival_B", -1),
+    ("grandes_ocasiones_falladas", "paradas", "grandes_ocasiones_falladas_A", "paradas_rival_B", -1),
+    ("pases_tercio_final_pct", "intercepciones", "pases_tercio_final_pct_A", "intercepciones_rival_B", -1),
+    ("xg_2T", "xg_contra_2T", "xg_2T_A", "fragilidad_2T_rival_B", +1),
+)
+NEUTROS_CRUCE: Dict[str, float] = {
+    "xgot": 1.30, "goles_evitados": 0.0, "toques_area_rival": 22.0, "despejes": 18.0,
+    "grandes_ocasiones_falladas": 1.3, "paradas": 2.8, "pases_tercio_final_pct": 68.0,
+    "intercepciones": 8.0, "xg_2T": 0.70, "xg_contra_2T": 0.65,
+}
+ESCALAS_CRUCE: Dict[str, float] = {
+    "xgot": 0.45, "goles_evitados": 0.30, "toques_area_rival": 8.0, "despejes": 6.0,
+    "grandes_ocasiones_falladas": 0.8, "paradas": 1.2, "pases_tercio_final_pct": 10.0,
+    "intercepciones": 3.0, "xg_2T": 0.30, "xg_contra_2T": 0.30,
+}
+
+
+def bilinear_pooling_inter_equipo(
+    estados_propio: Dict[str, Dict[str, Any]],
+    estados_rival: Dict[str, Dict[str, Any]],
+) -> List[Tuple[str, float]]:
+    """
+    Bilinear Pooling + Cross-Attention INTER-EQUIPO (A ⊗ B). Prohíbe cruces
+    intra-familia colineales (posesion_pct ⊗ pases_total): cada cruce enfrenta una
+    variable de Ataque/Ejecución propia contra una de Resistencia/Defensa rival.
+
+      • Término bilineal: covarianza cruzada de los vectores temporales (z-score) A·B/15.
+      • Término de nivel: z_A (desvío del atacante) ⊗ z_B (desvío de la defensa rival).
+      • Cross-Attention: softmax sobre los 5 cruces → fuerza ∈ [0, 1].
+    """
+    def h(est: Dict[str, Dict[str, Any]], k: str) -> float:
+        return float(est.get(k, {}).get("h_reciente", NEUTROS_CRUCE.get(k, 0.0)) or 0.0)
+
+    def vec(est: Dict[str, Dict[str, Any]], k: str) -> np.ndarray:
+        v = est.get(k, {}).get("vector_temporal")
+        return np.asarray(v, dtype=float) if v is not None else np.zeros(15)
+
+    brutos: List[Tuple[str, float]] = []
+    for ka, kb, ea, eb, sentido in CRUCES_INTER_EQUIPO:
+        z_a = (h(estados_propio, ka) - NEUTROS_CRUCE[ka]) / ESCALAS_CRUCE[ka]
+        z_b = (h(estados_rival, kb) - NEUTROS_CRUCE[kb]) / ESCALAS_CRUCE[kb]
+        va, vb = vec(estados_propio, ka), vec(estados_rival, kb)
+        n = min(len(va), len(vb))
+        cov = float(np.dot(va[-n:], vb[-n:]) / max(1, n)) if n else 0.0
+        nivel = math.tanh(0.5 * (abs(z_a) + abs(z_b)) + 0.25 * abs(z_a * z_b))
+        brutos.append((f"{ea} ⊗ {eb}", 0.65 * nivel + 0.35 * min(1.0, abs(cov))))
+
+    logits = np.array([b[1] for b in brutos], dtype=float) * 3.0
+    attn = np.exp(logits - logits.max())
+    attn /= attn.sum()
+    patrones = [(nombre, round(float(clip(f * (0.75 + 1.25 * a), 0.0, 1.0)), 4))
+                for (nombre, f), a in zip(brutos, attn)]
+    patrones.sort(key=lambda x: x[1], reverse=True)
+    return patrones
+
+
 UMBRAL_CRUCE_FUERTE = 0.60
+# Centro de la intensidad de los cruces INTER-EQUIPO (media de los 3 cruces A x B mas fuertes)
+CENTRO_INTENSIDAD_CRUCE = 0.55
 
 # Familias de las 45 métricas: sirven para que el "cruce #1" del sello no sea una
 # pareja de sinónimos (xg ⊗ xg_sin_penalti) sino un cruce entre bloques distintos.
@@ -717,10 +900,10 @@ FAMILIA_METRICA: Dict[str, str] = {
     "remates_rechazados": "tiro", "remates_dentro_area": "tiro",
     "remates_fuera_area": "tiro", "al_palo": "tiro",
     "grandes_ocasiones": "tiro", "grandes_ocasiones_falladas": "tiro",
-    "pases_total": "pase", "pases_precision_pct": "pase", "pases_ratio": "pase",
-    "pases_largos_pct": "pase", "pases_tercio_final_pct": "pase",
-    "pases_entre_lineas": "pase", "cruces_pct": "pase", "xa_equipo": "pase",
-    "posesion_pct": "posesion",
+    "pases_total": "posesion_pase", "pases_precision_pct": "posesion_pase", "pases_ratio": "posesion_pase",
+    "pases_largos_pct": "posesion_pase", "pases_tercio_final_pct": "posesion_pase",
+    "pases_entre_lineas": "posesion_pase", "cruces_pct": "posesion_pase", "xa_equipo": "posesion_pase",
+    "posesion_pct": "posesion_pase",
     "corners": "balon_parado", "tiros_libres": "balon_parado",
     "saques_banda": "balon_parado", "saques_puerta": "balon_parado",
     "toques_area_rival": "ataque", "fueras_juego": "ataque",
@@ -810,7 +993,7 @@ def patrones_tacticos_desde_estados(
     # El cruce dominante (Bilinear + Cross-Attention) IMPULSA el bloque ofensivo.
     # Se centra en 0,25 (proporción típica de parejas acopladas): un equipo con
     # muchas variables que se mueven juntas sube hasta +15 %; uno irregular baja.
-    empuje_cruce = clip(1.0 + 0.50 * (intensidad_cruce - 0.75), 0.90, 1.10)
+    empuje_cruce = clip(1.0 + 0.50 * (intensidad_cruce - CENTRO_INTENSIDAD_CRUCE), 0.90, 1.10)
     asfixia = clip(asfixia * empuje_cruce, 0.20, 2.30)
 
     return {
@@ -886,6 +1069,37 @@ def componentes_lambda_efectivo(
         "errores_remate_rival": round(errores_remate_rival, 4),
     }
 
+def z_posesion_progresiva_suma_cero(m_a: Dict[str, float], m_b: Dict[str, float]) -> float:
+    """
+    Normalización ADVERSARIAL DE SUMA CERO (un partido = un solo balón = 100% posesión):
+      posesion_esperada_A = pos_A / (pos_A + pos_B) * 100
+    y reparto relativo frente a frente de pases_total, pases_tercio_final_pct y
+    toques_area_rival. El resultado es ANTISIMÉTRICO: z(A, B) = -z(B, A), por lo que
+    jamás pueden recibir ambos equipos bono positivo de Posesión Progresiva.
+    """
+    def par(k: str, neutro: float) -> Tuple[float, float]:
+        a = max(0.0, float(m_a.get(k, neutro) or neutro))
+        b = max(0.0, float(m_b.get(k, neutro) or neutro))
+        return a, b
+
+    def cuota(a: float, b: float) -> float:
+        return a / (a + b) if (a + b) > 1e-9 else 0.5
+
+    pos_a, pos_b = par("posesion_pct", 50.0)
+    pos_esp_a = cuota(pos_a, pos_b) * 100.0
+    toq_a, toq_b = par("toques_area_rival", 22.0)
+    ter_a, ter_b = par("pases_tercio_final_pct", 68.0)
+    pas_a, pas_b = par("pases_total", 420.0)
+    rec_a, rec_b = par("recuperaciones", 45.0)
+    return (
+        (pos_esp_a - 50.0) / 15.0 * 0.40
+        + (cuota(toq_a, toq_b) - 0.5) / 0.10 * 0.35
+        + (cuota(ter_a, ter_b) - 0.5) / 0.08 * 0.25
+        + (cuota(pas_a, pas_b) - 0.5) / 0.12 * 0.10
+        - (rec_b - rec_a) / 15.0 * 0.15
+    )
+
+
 def calcular_5_factores_latentes_desde_estados(
     estados_propio: Dict[str, Dict[str, Any]],
     estados_rival: Dict[str, Dict[str, Any]],
@@ -903,12 +1117,10 @@ def calcular_5_factores_latentes_desde_estados(
     def v(est: Dict[str, Dict[str, Any]], k: str) -> float:
         return float(est.get(k, {}).get("h_reciente", 0.0) or 0.0)
 
-    # F1 — Posesión Progresiva
-    z_pos = (
-        (v(estados_propio, "posesion_pct") - 50.0) / 15.0 * 0.40
-        + (v(estados_propio, "toques_area_rival") - 18.0) / 10.0 * 0.35
-        + (v(estados_propio, "pases_tercio_final_pct") - 68.0) / 10.0 * 0.25
-        - (v(estados_rival, "recuperaciones") - 45.0) / 15.0 * 0.15
+    # F1 — Posesión Progresiva (ADVERSARIAL DE SUMA CERO: un solo balón)
+    z_pos = z_posesion_progresiva_suma_cero(
+        {k: v(estados_propio, k) for k in ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")},
+        {k: v(estados_rival, k) for k in ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")},
     )
     f1 = math.tanh(1.5 * z_pos) * 5.0
 
@@ -958,6 +1170,7 @@ def calcular_doble_adn_con_shrinkage(
     perfil_equipo: Optional[Dict[str, Any]] = None,
     k_shrinkage: float = 3.5,
     tier_rival: int = 1,
+    factor_uefa: float = 1.0,
 ) -> Dict[str, float]:
     """
     Módulo Doble ADN con Contracción Bayesiana (Empirical Bayes Shrinkage):
@@ -965,12 +1178,18 @@ def calcular_doble_adn_con_shrinkage(
       mu_cond(m) = w_cond * x_bar_cond(m) + (1 - w_cond) * h_lstm_15(m)
     Aísla el contexto del equipo jugando en su condición exacta (Casa o Fuera)
     sin sufrir sobreajuste por muestra reducida (N ~ 7 u 8 partidos), aplicando
-    además el descuento relativo de división (ΔTier >= 1) frente al rival actual.
+    además el descuento relativo de división (ΔTier >= 1) frente al rival actual,
+    el descuento UEFA `factor_uefa` y el peso 0.35x a goleadas de Copa Nacional.
+    condicion_objetivo='neutral' (sede neutral) usa TODOS los partidos: sin bono de localía.
     """
     cond_target = (condicion_objetivo or "casa").lower().strip()
+    fu = float(factor_uefa) if factor_uefa and factor_uefa > 0 else 1.0
     pts_cond = []
     for p in (partidos_cronologicos or []):
         if not isinstance(p, dict):
+            continue
+        if cond_target == "neutral":
+            pts_cond.append(p)
             continue
         fuente = _partido_fuente(p)
         c_raw = p.get("condicion") or fuente.get("condicion")
@@ -1006,13 +1225,15 @@ def calcular_doble_adn_con_shrinkage(
         torneo_p = str(src_p.get("torneo") or src_p.get("competition") or p.get("torneo") or "")
         tier_p = obtener_tier_liga(torneo_p)
         delta_tier = tier_p - tier_rival
-        factores_of_cond.append((0.76 ** delta_tier) if delta_tier >= 1 else 1.0)
-        factores_def_cond.append((1.22 ** delta_tier) if delta_tier >= 1 else 1.0)
+        factores_of_cond.append(((0.76 ** delta_tier) if delta_tier >= 1 else 1.0) * fu)
+        factores_def_cond.append(((1.22 ** delta_tier) if delta_tier >= 1 else 1.0) / fu)
+    cred_cond = [peso_credibilidad_partido(p) for p in pts_cond]
 
     mu: Dict[str, float] = {}
 
     for clave in VARIABLES_REALES_45:
         vals = []
+        creds = []
         for idx_c, p in enumerate(pts_cond):
             v = _valor_metrica(p, clave)
             if v is not None:
@@ -1022,8 +1243,9 @@ def calcular_doble_adn_con_shrinkage(
                 elif clave in METRICAS_DEFENSIVAS_CONC:
                     vf *= factores_def_cond[idx_c]
                 vals.append(vf)
+                creds.append(cred_cond[idx_c])
         if vals:
-            pesos = np.linspace(0.8, 1.2, len(vals))
+            pesos = np.linspace(0.8, 1.2, len(vals)) * np.array(creds)
             pesos /= np.sum(pesos)
             media_cond = float(np.sum(np.array(vals) * pesos))
         else:
@@ -1035,26 +1257,27 @@ def calcular_doble_adn_con_shrinkage(
     # Goles a favor y en contra
     gfs = []
     gcs = []
+    cg = []
     for idx_c, p in enumerate(pts_cond):
         gf, gc = _goles_equipo(p)
-        if gf is not None:
+        if gf is not None and gc is not None:
             gfs.append(float(gf) * factores_of_cond[idx_c])
-        if gc is not None:
             gcs.append(float(gc) * factores_def_cond[idx_c])
+            cg.append(cred_cond[idx_c])
 
     m_perfil = (perfil_equipo or {}).get("metricas_clave", {})
     h_gf = float(estados_lstm_15.get("goles_favor", {}).get("h_reciente", m_perfil.get("goles_favor", 1.30)) or 1.30)
     h_gc = float(estados_lstm_15.get("goles_contra", {}).get("h_reciente", m_perfil.get("goles_contra", 1.25)) or 1.25)
 
     if gfs:
-        pesos_g = np.linspace(0.8, 1.2, len(gfs))
+        pesos_g = np.linspace(0.8, 1.2, len(gfs)) * np.array(cg)
         pesos_g /= np.sum(pesos_g)
         media_gf = float(np.sum(np.array(gfs) * pesos_g))
     else:
         media_gf = h_gf
 
     if gcs:
-        pesos_gc = np.linspace(0.8, 1.2, len(gcs))
+        pesos_gc = np.linspace(0.8, 1.2, len(gcs)) * np.array(cg)
         pesos_gc /= np.sum(pesos_gc)
         media_gc = float(np.sum(np.array(gcs) * pesos_gc))
     else:
@@ -1083,21 +1306,14 @@ def calcular_los_6_cruces_tacticos(
     alertas: List[str] = []
 
     # ── CRUCE #1: Asfixia vs. Espacio en Mediocampo (F1 - Posesión Progresiva) ──
-    z_pos_L = (
-        (mu_L_casa.get("posesion_pct", 50.0) - 50.0) / 15.0 * 0.40
-        + (mu_L_casa.get("toques_area_rival", 22.0) - 18.0) / 10.0 * 0.35
-        + (mu_L_casa.get("pases_tercio_final_pct", 68.0) - 68.0) / 10.0 * 0.25
-        - (mu_V_fuera.get("recuperaciones", 48.0) - 45.0) / 15.0 * 0.15
+    # Normalización ADVERSARIAL DE SUMA CERO: un solo balón. PosProg_V = -PosProg_L.
+    claves_f1 = ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")
+    z_pos_L = z_posesion_progresiva_suma_cero(
+        {k: mu_L_casa.get(k, NEUTRALES.get(k, 0.0)) for k in claves_f1},
+        {k: mu_V_fuera.get(k, NEUTRALES.get(k, 0.0)) for k in claves_f1},
     )
     f1_L = round(math.tanh(1.5 * z_pos_L) * 5.0, 1)
-
-    z_pos_V = (
-        (mu_V_fuera.get("posesion_pct", 50.0) - 50.0) / 15.0 * 0.40
-        + (mu_V_fuera.get("toques_area_rival", 22.0) - 18.0) / 10.0 * 0.35
-        + (mu_V_fuera.get("pases_tercio_final_pct", 68.0) - 68.0) / 10.0 * 0.25
-        - (mu_L_casa.get("recuperaciones", 48.0) - 45.0) / 15.0 * 0.15
-    )
-    f1_V = round(math.tanh(1.5 * z_pos_V) * 5.0, 1)
+    f1_V = round(-f1_L, 1)
 
     if mu_L_casa.get("posesion_pct", 50.0) >= 55.0 and mu_V_fuera.get("intercepciones", 8.0) >= 11.0 and mu_V_fuera.get("recuperaciones", 48.0) >= 48.0:
         alertas.append("Atasco en Mediocampo: Alta posesión del Local en casa pero el Rival acumula intercepciones y recuperaciones de visita.")
@@ -1229,6 +1445,39 @@ def calcular_los_6_cruces_tacticos(
     }
 
 
+def calcular_indice_bloqueo_cerrojo(
+    xgot_atacante: float,
+    xg_atacante: float,
+    goc_atacante: float,
+    goc_falladas_atacante: float,
+    defensa_rival_rating: float,
+    seg_gol_concedido_rival: float,
+    goles_evitados_rival: float,
+    tier_coef_atacante: float,
+    tier_coef_rival: float,
+) -> Tuple[bool, float]:
+    """
+    Detector de "Portería Imbatida / Hurdle Zero-Inflation":
+    Evalúa 3 condiciones de bloqueo de gol sobre el equipo atacante:
+      1. Déficit de puntería: xgot < xg o goc_falladas / goc >= 0.55
+      2. Solidez defensiva rival: Defense >= 54.0 o Seg / Gol Concedido >= 3800 s o goles_evitados > 0.15
+      3. Salto de nivel competitivo: tier_coef_atacante < tier_coef_rival
+    Si se cumplen >= 2 de las 3 condiciones, activa cerrojo sumando entre +0.12 y +0.22 a P(G=0).
+    """
+    c1 = (xgot_atacante < xg_atacante) or ((goc_falladas_atacante / max(0.5, goc_atacante)) >= 0.55)
+    c2 = (defensa_rival_rating >= 54.0) or (seg_gol_concedido_rival >= 3800.0) or (goles_evitados_rival > 0.15)
+    c3 = (tier_coef_atacante < tier_coef_rival)
+
+    n_cond = sum([bool(c1), bool(c2), bool(c3)])
+    if n_cond >= 2:
+        # Entre +0.12 y +0.22 según severidad
+        bonus = 0.14 if n_cond == 2 else 0.20
+        if seg_gol_concedido_rival >= 4500.0 or goles_evitados_rival >= 0.25:
+            bonus = min(0.22, bonus + 0.03)
+        return True, bonus
+    return False, 0.0
+
+
 def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     perfil_local: Dict[str, Any],
     perfil_visita: Dict[str, Any],
@@ -1240,6 +1489,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     max_iteraciones_recursivas: int = 8,
     tol_convergencia_entropia: float = 1e-4,
     n_simulaciones_mc: int = 100000,
+    sede_neutral_local: bool = False,
 ) -> Dict[str, Any]:
     """
     Ejecuta el Bucle Recursivo (Iteración 1 -> Iteración 2 -> Iteración 3 ... hasta Convergencia):
@@ -1264,9 +1514,17 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     tier_L = obtener_tier_equipo(partidos_15_local or [], perfil_local)
     tier_V = obtener_tier_equipo(partidos_15_visita or [], perfil_visita)
 
-    # Extraer tensores temporales de las series REALES de 15 partidos con ajuste relativo ΔTier
-    series_L = extraer_series_reales_15_partidos(partidos_15_local or [], eq_L, perfil_local, tier_rival=tier_V)
-    series_V = extraer_series_reales_15_partidos(partidos_15_visita or [], eq_V, perfil_visita, tier_rival=tier_L)
+    # Coeficiente UEFA de liga (1.00 Top-5 / 0.85 / 0.68) y descuento relativo
+    tier_coef_L = obtener_tier_coef(partidos_15_local or [], perfil_local, eq_L)
+    tier_coef_V = obtener_tier_coef(partidos_15_visita or [], perfil_visita, eq_V)
+    fu_L = factor_uefa_relativo(tier_coef_L, tier_coef_V)
+    fu_V = factor_uefa_relativo(tier_coef_V, tier_coef_L)
+    if sede_neutral_local is None:
+        sede_neutral_local = es_sede_neutral(eq_L)
+
+    # Extraer tensores temporales de las series REALES de 15 partidos con ajuste relativo ΔTier + UEFA
+    series_L = extraer_series_reales_15_partidos(partidos_15_local or [], eq_L, perfil_local, tier_rival=tier_V, factor_uefa=fu_L)
+    series_V = extraer_series_reales_15_partidos(partidos_15_visita or [], eq_V, perfil_visita, tier_rival=tier_L, factor_uefa=fu_V)
     n_series = len(series_L.get("goles_favor", []))
 
     estados_L = {k: procesar_secuencia_individual_lstm_determinista(v)
@@ -1274,10 +1532,11 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     estados_V = {k: procesar_secuencia_individual_lstm_determinista(v)
                  for k, v in series_V.items() if not k.startswith("_")}
 
-    _, top_cruces_L = bilinear_pooling_y_cross_attention(estados_L)
-    _, top_cruces_V = bilinear_pooling_y_cross_attention(estados_V)
-    int_cruce_L = intensidad_de_cruce(top_cruces_L)
-    int_cruce_V = intensidad_de_cruce(top_cruces_V)
+    # Bilinear Pooling + Cross-Attention INTER-EQUIPO (A ⊗ B): ataque propio vs resistencia rival
+    top_cruces_L = bilinear_pooling_inter_equipo(estados_L, estados_V)
+    top_cruces_V = bilinear_pooling_inter_equipo(estados_V, estados_L)
+    int_cruce_L = float(np.mean([f for _, f in top_cruces_L[:3]])) if top_cruces_L else 0.0
+    int_cruce_V = float(np.mean([f for _, f in top_cruces_V[:3]])) if top_cruces_V else 0.0
 
     # Estadísticas reales de la serie de goles (sequía vs explosión ofensiva)
     gf_L = series_L["goles_favor"]
@@ -1325,8 +1584,9 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     comp_V = componentes_lambda_efectivo(estados_V, estados_L)
 
     # ── MÓDULO DOBLE ADN + 6 CRUCES TÁCTICOS (Contracción Bayesiana k=3.5) ──
-    mu_L_casa = calcular_doble_adn_con_shrinkage(partidos_15_local or [], estados_L, "casa", perfil_local, tier_rival=tier_V)
-    mu_V_fuera = calcular_doble_adn_con_shrinkage(partidos_15_visita or [], estados_V, "fuera", perfil_visita, tier_rival=tier_L)
+    cond_adn_L = "neutral" if sede_neutral_local else "casa"
+    mu_L_casa = calcular_doble_adn_con_shrinkage(partidos_15_local or [], estados_L, cond_adn_L, perfil_local, tier_rival=tier_V, factor_uefa=fu_L)
+    mu_V_fuera = calcular_doble_adn_con_shrinkage(partidos_15_visita or [], estados_V, "fuera", perfil_visita, tier_rival=tier_L, factor_uefa=fu_V)
     cruces_6 = calcular_los_6_cruces_tacticos(mu_L_casa, mu_V_fuera, estados_L, estados_V)
 
     f_l = cruces_6["factores_local"]
@@ -1353,6 +1613,37 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         + comp_V["ajuste_portero"]
         + comp_V["regalo_errores"],
         0.38, 3.45)
+
+    # Techo estricto: ningún equipo de liga menor (tier_coef < 0.90) puede recibir aumento > +12% sobre su λ Base
+    # cuando enfrenta a un rival de Top 5 Ligas (tier_coef == 1.00)
+    if tier_coef_L < 0.90 and tier_coef_V >= 1.00:
+        lam_k_L = min(round(lam_base_local * 1.12, 2), lam_k_L)
+    if tier_coef_V < 0.90 and tier_coef_L >= 1.00:
+        lam_k_V = min(round(lam_base_visita * 1.12, 2), lam_k_V)
+
+    # Detector de Cerrojo / Portería Imbatida (Hurdle Zero-Inflation)
+    cerrojo_L_activo, bonus_cerrojo_L = calcular_indice_bloqueo_cerrojo(
+        xgot_atacante=xgot_L, xg_atacante=xg_L,
+        goc_atacante=float(estados_L.get("grandes_ocasiones", {}).get("h_reciente", 2.2) or 2.2),
+        goc_falladas_atacante=float(estados_L.get("grandes_ocasiones_falladas", {}).get("h_reciente", 1.3) or 1.3),
+        defensa_rival_rating=float(rV.get("Final_Defense_Strength", 50.0)),
+        seg_gol_concedido_rival=float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        goles_evitados_rival=float(comp_L.get("goles_evitados_rival", 0.0)),
+        tier_coef_atacante=tier_coef_L, tier_coef_rival=tier_coef_V,
+    )
+    cerrojo_V_activo, bonus_cerrojo_V = calcular_indice_bloqueo_cerrojo(
+        xgot_atacante=xgot_V, xg_atacante=xg_V,
+        goc_atacante=float(estados_V.get("grandes_ocasiones", {}).get("h_reciente", 2.2) or 2.2),
+        goc_falladas_atacante=float(estados_V.get("grandes_ocasiones_falladas", {}).get("h_reciente", 1.3) or 1.3),
+        defensa_rival_rating=float(rL.get("Final_Defense_Strength", 50.0)),
+        seg_gol_concedido_rival=float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        goles_evitados_rival=float(comp_V.get("goles_evitados_rival", 0.0)),
+        tier_coef_atacante=tier_coef_V, tier_coef_rival=tier_coef_L,
+    )
+    if cerrojo_L_activo:
+        cruces_6["alertas_xai"].append(f"Cerrojo Defensivo sobre {eq_L}: Rival de élite neutraliza ataque con probabilidad marginal de 0 goles inflada (+{bonus_cerrojo_L*100:.0f}%).")
+    if cerrojo_V_activo:
+        cruces_6["alertas_xai"].append(f"Cerrojo Defensivo sobre {eq_V}: Rival de élite neutraliza ataque con probabilidad marginal de 0 goles inflada (+{bonus_cerrojo_V*100:.0f}%).")
 
     desactivar_sequia_L = (tier_L == 1 and tier_V >= 2)
     desactivar_sequia_V = (tier_V == 1 and tier_L >= 2)
@@ -1428,7 +1719,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                 + 0.42 * brecha_overall
                 + 0.25 * brecha_atk_def_L
                 + 0.16 * (cruce_of_L - 1.0)
-                + 0.30 * (int_cruce_L - 0.75)
+                + 0.30 * (int_cruce_L - CENTRO_INTENSIDAD_CRUCE)
                 + 0.14 * estados_L["goles_favor"]["pendiente_dmdp"]
                 - 0.28 * max(0.0, p_sequia_L * p_muralla_V - 0.48),
                 0.62, 1.42
@@ -1438,7 +1729,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                 - 0.42 * brecha_overall
                 + 0.25 * brecha_atk_def_V
                 + 0.16 * (cruce_of_V - 1.0)
-                + 0.30 * (int_cruce_V - 0.75)
+                + 0.30 * (int_cruce_V - CENTRO_INTENSIDAD_CRUCE)
                 + 0.14 * estados_V["goles_favor"]["pendiente_dmdp"]
                 - 0.28 * max(0.0, p_sequia_V * p_muralla_L - 0.48),
                 0.62, 1.42
@@ -1478,8 +1769,14 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         p0_L = clip((1.0 - peso_seq_L) * p0_base_L + peso_seq_L * max(p0_base_L, tasa_sequia_L), 0.02, 0.68)
         p0_V = clip((1.0 - peso_seq_V) * p0_base_V + peso_seq_V * max(p0_base_V, tasa_sequia_V), 0.02, 0.68)
 
+        if cerrojo_L_activo:
+            p0_L = clip(p0_L + bonus_cerrojo_L, 0.02, 0.75)
+        if cerrojo_V_activo:
+            p0_V = clip(p0_V + bonus_cerrojo_V, 0.02, 0.75)
+
         def marginal_recursiva(lam: float, p0_obj: float, ventaja: float,
-                               tasa_3mas: float, cola_ancha: bool = False) -> List[float]:
+                               tasa_3mas: float, cola_ancha: bool = False,
+                               delta_cerrojo: float = 0.0) -> List[float]:
             probs = _probs_base_cola(lam, max_goles, cola_ancha)
             escala_pos = (1.0 - p0_obj) / max(1e-9, 1.0 - probs[0])
             res = [0.0] * (max_goles + 1)
@@ -1502,6 +1799,14 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                     elif g == 3:
                         mod_g = clip(1.0 + 0.35 * ventaja, 1.0, 1.35)
                 res[g] = probs[g] * escala_pos * mod_g
+
+            if delta_cerrojo > 0.0:
+                # Restar esa masa principalmente de G=1 y G=2 (activación detector cerrojo)
+                f_desc1 = max(0.48, 1.0 - 0.50 * (delta_cerrojo / 0.15))
+                f_desc2 = max(0.62, 1.0 - 0.30 * (delta_cerrojo / 0.15))
+                res[1] *= f_desc1
+                res[2] *= f_desc2
+
             s_pos = sum(res[1:])
             if s_pos > 0:
                 for g in range(1, max_goles + 1):
@@ -1511,8 +1816,8 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         vent_L = max(0.0, brecha_overall * 2.2 + 0.35 * (cruce_of_L - 1.0))
         vent_V = max(0.0, -brecha_overall * 2.2 + 0.35 * (cruce_of_V - 1.0))
 
-        m_L = marginal_recursiva(lam_k_L, p0_L, vent_L, tasa_explosion_3mas_L)
-        m_V = marginal_recursiva(lam_k_V, p0_V, vent_V, tasa_explosion_3mas_V)
+        m_L = marginal_recursiva(lam_k_L, p0_L, vent_L, tasa_explosion_3mas_L, delta_cerrojo=bonus_cerrojo_L if cerrojo_L_activo else 0.0)
+        m_V = marginal_recursiva(lam_k_V, p0_V, vent_V, tasa_explosion_3mas_V, delta_cerrojo=bonus_cerrojo_V if cerrojo_V_activo else 0.0)
 
         asimetria = abs(lam_k_L - lam_k_V) + abs(brecha_overall) * 2.2
         rho_k = clip(0.06 * (asimetria - 0.25), 0.01, 0.09) if asimetria >= 0.32 else -0.03
@@ -1590,8 +1895,13 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     delta_pct_real_L = round(((lam_k_L - lam_base_local) / max(0.1, lam_base_local)) * 100.0, 1)
     delta_pct_real_V = round(((lam_k_V - lam_base_visita) / max(0.1, lam_base_visita)) * 100.0, 1)
 
-    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L)
-    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V)
+    if tier_coef_L < 0.90 and tier_coef_V >= 1.00:
+        delta_pct_real_L = min(12.0, delta_pct_real_L)
+    if tier_coef_V < 0.90 and tier_coef_L >= 1.00:
+        delta_pct_real_V = min(12.0, delta_pct_real_V)
+
+    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=("F_posesion_progresiva",))
+    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=("F_posesion_progresiva",))
 
     pct_tot_L = round(float(sum(f_l.values())), 1)
     pct_tot_V = round(float(sum(f_v.values())), 1)
@@ -1600,6 +1910,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
 
     cruces_6["factores_local"] = f_l
     cruces_6["factores_visita"] = f_v
+    cruces_6["seg_gol_concedido_L"] = float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0))
+    cruces_6["seg_gol_concedido_V"] = float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0))
+    cruces_6["cerrojo_L_activo"] = cerrojo_L_activo
+    cruces_6["cerrojo_V_activo"] = cerrojo_V_activo
 
     sello_verificacion = (
         f"RED NEURONAL RECURSIVA ACTIVA (5 FACTORES LATENTES XAI) · it. {iteracion_final} (H={historial_entropia[-1]:.3f})  ·  "
@@ -1636,4 +1950,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         "alertas_xai": cruces_6["alertas_xai"],
         "asedio_bandas_activo": cruces_6["asedio_bandas_activo"],
         "defensa_kamikaze_activa": cruces_6["defensa_kamikaze_activa"],
+        "seg_gol_concedido_rival_L": float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        "seg_gol_concedido_rival_V": float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        "seg_gol_L": float(tL.get("Avg_Seconds_Between_Goals", 3500.0)),
+        "seg_gol_V": float(tV.get("Avg_Seconds_Between_Goals", 3500.0)),
+        "cerrojo_L_activo": cerrojo_L_activo,
+        "cerrojo_V_activo": cerrojo_V_activo,
     }

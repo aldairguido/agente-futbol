@@ -245,14 +245,14 @@ def _auditoria_corresponde_a_consulta(
         "score": 100.0,
     }
     pts = puntuar_candidato(cand_doc, consulta_limpia or equipo_consulta, rival_meta=meta_ctx)
-    # pts[0] <= -50 significa que `tiene_identidad` es False (ej. FC Porto para fc fulham)
-    if pts[0] <= -50:
-        return False, f"el equipo en caché ({nombre_doc}) no coincide con «{consulta_limpia or equipo_consulta}»"
-    # pts[2] < 0 significa que es equipo femenino o filial no solicitado
-    if pts[2] < 0:
+    # pts[0] < 0 significa que es equipo femenino o filial no solicitado
+    if pts[0] < 0:
         return False, f"el equipo en caché ({nombre_doc}) es filial/femenino no solicitado"
-    # pts[0] < 0 con contexto de liga o rival significa incoherencia geográfica/liga
-    if pts[0] < 0 and meta_ctx:
+    # pts[1] == 0 significa que `tiene_identidad` es False
+    if pts[1] == 0:
+        return False, f"el equipo en caché ({nombre_doc}) no coincide con «{consulta_limpia or equipo_consulta}»"
+    # pts[4] < 0 con contexto de liga o rival significa incoherencia geográfica/liga
+    if pts[4] < 0 and meta_ctx:
         return False, (
             f"incoherencia de liga/país con el contexto solicitado "
             f"({nombre_doc} en {eq_doc.get('liga')})"
@@ -455,8 +455,8 @@ def cargar_o_crear_auditoria(
             )
             es_incoherente = (not ok_mem) or bool(
                 pais_doc and pais_riv and (
-                    (pais_doc in PAISES_EUROPA and pais_riv in PAISES_SUDAMERICA)
-                    or (pais_doc in PAISES_SUDAMERICA and pais_riv in PAISES_EUROPA)
+                    (pais_doc in PAISES_EUROPA and pais_riv not in PAISES_EUROPA)
+                    or (pais_doc not in PAISES_EUROPA and pais_riv in PAISES_EUROPA)
                 )
             )
             if not es_incoherente:
@@ -502,8 +502,8 @@ def cargar_o_crear_auditoria(
                     rival_efectivo.get("liga") if isinstance(rival_efectivo, dict) else str(rival_efectivo or "")
                 )
                 if not obsoleta and pais_doc and pais_riv and (
-                    (pais_doc in PAISES_EUROPA and pais_riv in PAISES_SUDAMERICA)
-                    or (pais_doc in PAISES_SUDAMERICA and pais_riv in PAISES_EUROPA)
+                    (pais_doc in PAISES_EUROPA and pais_riv not in PAISES_EUROPA)
+                    or (pais_doc not in PAISES_EUROPA and pais_riv in PAISES_EUROPA)
                 ):
                     obsoleta = True
                     previo = None

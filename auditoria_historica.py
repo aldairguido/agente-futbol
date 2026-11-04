@@ -45,6 +45,14 @@ from typing import Any
 
 import pytz
 
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except Exception:
+    pass
+
 import config
 from fuentes_xg import (
     CATALOGO_METRICAS,
@@ -263,7 +271,10 @@ def _auditar_equipo_interno(
     rival: str | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     def avisar(msg: str) -> None:
-        print(f"[AUDITORÍA] {msg}")
+        try:
+            print(f"[AUDITORÍA] {msg}")
+        except UnicodeEncodeError:
+            print(f"[AUDITORÍA] {msg.encode('ascii', 'replace').decode('ascii')}")
         if callable(progreso):
             try:
                 progreso(msg)
