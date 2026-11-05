@@ -386,7 +386,7 @@ def bloque_para_lado(motor: Any, lado: str, peso_roja: float | None = None) -> d
 # 2. PERFIL ESPECIALISTA: RATINGS 0-100, TEMPO Y LECTURAS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any]) -> dict[str, Any]:
+def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any], ratio_tier: float = 1.0) -> dict[str, Any]:
     """
     Convierte el bloque de métricas de un equipo en:
       1. Las columnas de ritmo temporal (segundos por tiro/gol, a favor y en contra).
@@ -441,6 +441,12 @@ def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any]) -> dict[
     goles_favor = goles_favor_real if goles_favor_real is not None else max(
         0.30, round(0.55 * xgot + 0.45 * (max(0.0, g_oc - g_oc_fall)
                                           + 0.35 * (xg - g_oc * 0.35)), 2))
+
+    # Descuento relativo de liga doméstica para el equipo más débil (ratio_tier < 1.0)
+    if ratio_tier < 1.0 and ratio_tier > 0.05:
+        goles_contra = round(goles_contra / ratio_tier, 2)
+        xgot_enf = round(xgot_enf / ratio_tier, 2)
+        goles_evit = round(goles_evit * ratio_tier - 0.35 * (1.0 - ratio_tier), 3)
 
     # Tiros a puerta concedidos: métrica real si existe; si no, paradas + goles.
     rem_pue_contra_real = _media_o_none(m, "remates_puerta_contra")
@@ -1094,13 +1100,20 @@ def _organizar_sec1_para_cuadro(
     matriz_prob: list[list[float]] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Organiza las selecciones >= 70% en una estructura de categorías y ámbitos
-    para dibujar la tabla de Sección 1 en el bloque inferior del Súper-Cuadro Especialista.
+    Organiza las selecciones >= 70% en las 5 categorías completas:
+      1. GOLES PARTIDO
+      2. GOLES POR EQUIPO
+      3. CÓRNERES
+      4. TARJETAS
+      5. HÁNDICAP / 1X2 / DC
+    Filtra rigurosamente líneas triviales (>89% como -6.5 Goles o -5.5 Goles).
     """
     def _v(obj: Any, clave: str, defecto: Any = None) -> Any:
         if isinstance(obj, dict):
             return obj.get(clave, defecto)
         return getattr(obj, clave, defecto)
+
+    from motor_mercados import es_seleccion_competitiva_ticket, filtrar_top_opciones_ticket
 
     lista_sels = sec1_data
     if lista_sels is None:
@@ -1108,12 +1121,19 @@ def _organizar_sec1_para_cuadro(
         if not lista_sels and hasattr(analisis, "grupos"):
             g = getattr(analisis, "grupos", {})
             lista_sels = (g.get("mantiene", []) + g.get("sensible", []))
+        if not lista_sels and hasattr(analisis, "selecciones_validadas"):
+            lista_sels = getattr(analisis, "selecciones_validadas", []) or []
 
+    # Filtrar estrictamente con Gatekeeper (prohibiendo -6.5 Goles, -5.5 Goles, etc.)
     validadas = []
     for s in (lista_sels or []):
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
-        if p >= 0.70:
+        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V):
             validadas.append(s)
+
+    # Si vienen más de 18, acotar a las 18 más competitivas
+    if len(validadas) > 18:
+        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, max_opciones=18)
 
     def _clasificar(s: Any) -> tuple[str, str]:
         m_l = str(_v(s, "mercado") or "").lower()
@@ -1231,20 +1251,30 @@ def _organizar_sec1_para_cuadro(
     res = []
     for cat in orden_cats:
         ambs = agrupado.get(cat, {})
+        todas_pildoras = []
+        amb_nombres = []
         for amb, pildoras in ambs.items():
             if not pildoras:
                 continue
-            unicas = []
-            vistos = set()
-            for p in sorted(pildoras, key=lambda x: -x["prob"]):
-                if p["lbl"] not in vistos:
-                    vistos.add(p["lbl"])
-                    unicas.append(p)
-            res.append({
-                "categoria": cat,
-                "ambito": amb,
-                "pildoras": unicas,
-            })
+            amb_nombres.append(amb)
+            todas_pildoras.extend(pildoras)
+
+        unicas = []
+        vistos = set()
+        for p in sorted(todas_pildoras, key=lambda x: -x["prob"]):
+            if p["lbl"] not in vistos:
+                vistos.add(p["lbl"])
+                unicas.append(p)
+
+        amb_str = " · ".join(amb_nombres[:2]) if amb_nombres else "Tiempo Completo (FT)"
+        if not unicas:
+            unicas = [{"lbl": "Sin líneas validadas >= 70%", "pct": "-", "prob": 0.0}]
+
+        res.append({
+            "categoria": cat,
+            "ambito": amb_str,
+            "pildoras": unicas[:4],
+        })
     return res
 
 
@@ -1284,10 +1314,10 @@ def generar_cuadro_visual_partido(
 
     eq_L = perfil_local["equipo"]
     eq_V = perfil_vis["equipo"]
-    rL = perfil_local["ratings_0_100"]
-    rV = perfil_vis["ratings_0_100"]
-    tL = perfil_local["tempo_segundos"]
-    tV = perfil_vis["tempo_segundos"]
+    rL = dict(perfil_local["ratings_0_100"])
+    rV = dict(perfil_vis["ratings_0_100"])
+    tL = dict(perfil_local["tempo_segundos"])
+    tV = dict(perfil_vis["tempo_segundos"])
 
     # ── RED NEURONAL RECURSIVA: SINCRONIZACIÓN ESTRICTA MATRIZ-TICKET ───────
     import motor_recursivo_45_dcn as red_neuronal
@@ -1297,6 +1327,22 @@ def generar_cuadro_visual_partido(
     partidos_v_red = partidos_para_red_neuronal(partidos_15_visita, eq_V)
     tier_L_int = obtener_tier_equipo(partidos_l_red)
     tier_V_int = obtener_tier_equipo(partidos_v_red)
+    tier_coef_L = obtener_tier_coef(partidos_l_red, perfil_local, eq_L, competicion)
+    tier_coef_V = obtener_tier_coef(partidos_v_red, perfil_vis, eq_V, competicion)
+    ratio_tier_L = min(1.0, tier_coef_L / max(0.1, tier_coef_V))
+    ratio_tier_V = min(1.0, tier_coef_V / max(0.1, tier_coef_L))
+
+    if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
+        rV["Final_Defense_Strength"] = round(rV["Final_Defense_Strength"] * (ratio_tier_V ** 0.65), 1)
+        rV["Overall_Hybrid_Rating"] = round(0.48 * rV["Final_Attack_Strength"] + 0.42 * rV["Final_Defense_Strength"] + 0.10 * rV["Pressing_Intensity_Score"], 1)
+        if tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
+            tV["Avg_Seconds_Between_Goals_Conceded"] = round(tV["Avg_Seconds_Between_Goals_Conceded"] * ratio_tier_V, 1)
+
+    if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
+        rL["Final_Defense_Strength"] = round(rL["Final_Defense_Strength"] * (ratio_tier_L ** 0.65), 1)
+        rL["Overall_Hybrid_Rating"] = round(0.48 * rL["Final_Attack_Strength"] + 0.42 * rL["Final_Defense_Strength"] + 0.10 * rL["Pressing_Intensity_Score"], 1)
+        if tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
+            tL["Avg_Seconds_Between_Goals_Conceded"] = round(tL["Avg_Seconds_Between_Goals_Conceded"] * ratio_tier_L, 1)
 
     sede_neutral_L = red_neuronal.es_sede_neutral(eq_L, competicion)
     cond_l_obj = "neutral" if sede_neutral_L else "casa"
@@ -1734,7 +1780,7 @@ def generar_cuadro_visual_partido(
 
     # Extraer y organizar selecciones >= 70%
     sec1_organizada = _organizar_sec1_para_cuadro(analisis, sec1_data, eq_L, eq_V, matriz_prob)
-    total_validadas_cnt = sum(len(c["pildoras"]) for c in sec1_organizada)
+    total_validadas_cnt = len(sec1_data) if (sec1_data and isinstance(sec1_data, list)) else sum(len(c["pildoras"]) for c in sec1_organizada if c.get("pildoras") and c["pildoras"][0]["pct"] != "-")
 
     rect_banner_sec1 = FancyBboxPatch((0.0, 0.88), 1.0, 0.12, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.2, transform=ax_sec1.transAxes)
     ax_sec1.add_patch(rect_banner_sec1)
@@ -1926,8 +1972,23 @@ def generar_cuadro_desde_analisis(
         "local": bloque_para_lado(motor, "local", peso_roja=peso_roja),
         "visitante": bloque_para_lado(motor, "visitante", peso_roja=peso_roja),
     }
-    perfil_l = construir_perfil_especialista_equipo(bloques["local"])
-    perfil_v = construir_perfil_especialista_equipo(bloques["visitante"])
+
+    from motor_recursivo_45_dcn import obtener_tier_coef
+    eq_l_nom = getattr(motor, "nombre_local", "") or ""
+    eq_v_nom = getattr(motor, "nombre_visitante", "") or ""
+    meta_mkt = getattr(analisis, "metadatos", {}) or {}
+    comp_nom = meta_mkt.get("competicion") or getattr(motor, "competicion", "") or ""
+
+    pts_l = doc_local.get("partidos") if doc_local else []
+    pts_v = doc_visitante.get("partidos") if doc_visitante else []
+
+    t_coef_L = obtener_tier_coef(partidos=pts_l, nombre_equipo=eq_l_nom, competicion_str=comp_nom)
+    t_coef_V = obtener_tier_coef(partidos=pts_v, nombre_equipo=eq_v_nom, competicion_str=comp_nom)
+    ratio_tier_l = min(1.0, t_coef_L / max(0.1, t_coef_V))
+    ratio_tier_v = min(1.0, t_coef_V / max(0.1, t_coef_L))
+
+    perfil_l = construir_perfil_especialista_equipo(bloques["local"], ratio_tier=ratio_tier_l)
+    perfil_v = construir_perfil_especialista_equipo(bloques["visitante"], ratio_tier=ratio_tier_v)
 
     if doc_local is not None:
         mit_l = perfil_mitades(doc_local, None)
@@ -1985,15 +2046,26 @@ def generar_cuadro_desde_analisis(
         if not sels_raw and hasattr(analisis, "grupos"):
             g = getattr(analisis, "grupos", {})
             sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
-        top5_podio = getattr(analisis, "top5_podio", None)
+        sec1_filtrada_usar = sels_raw
+        try:
+            from servicio_mercados import obtener_top5_y_seccion1_filtrados
+            top5_calc, sec1_mantiene, cnt_val = obtener_top5_y_seccion1_filtrados(analisis)
+            if top5_calc:
+                top5_podio = top5_calc
+            if sec1_mantiene:
+                sec1_filtrada_usar = sec1_mantiene
+        except Exception:
+            pass
+
         if not top5_podio:
             try:
                 import motor_mercados as _mm
                 top5_podio = _mm.seleccionar_top_5_jugadas_recomendadas(
-                    sels_raw, motor, motor.nombre_local, motor.nombre_visitante
+                    sec1_filtrada_usar, motor, motor.nombre_local, motor.nombre_visitante
                 )
             except Exception:
                 top5_podio = []
+
         ruta = generar_cuadro_visual_partido(
             perfil_l, perfil_v, lam_l, lam_v, motor.matriz_ft, destino,
             competicion=competicion, fecha_str=str(fecha)[:10],
@@ -2006,7 +2078,7 @@ def generar_cuadro_desde_analisis(
             res_red_precalculado=res_red_pre,
             info_clusters_precalculado=clusters_pre,
             top5_podio=top5_podio,
-            sec1_data=sels_raw,
+            sec1_data=sec1_filtrada_usar,
             analisis=analisis,
         )
     except ImportError as e:

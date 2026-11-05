@@ -362,10 +362,11 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
 
     # 2. Fases previas / clasificación europea (UCL Qual., UEL Qual., UECL Qual.)
     if any(k in t for k in ["qual", "previa", "clasificaci"]):
-        return 0.68
+        return 0.65
 
-    # 3. Ligas Nivel 3 / Torneos Menores / Segundas divisiones
+    # 3. Ligas Nivel 3 / Torneos Menores / Hungría / Segundas divisiones
     if any(k in t for k in [
+        "nb i", "nb 1", "nb1", "hungria", "hungary", "magyar", "otp bank", "nemzeti bajnoksag",
         "premyer liqa", "azerbaijan", "azerbaiyan", "chipre", "cyprus",
         "super league", "super league 1", "superleague", "greece", "grecia", "kypello", "greek cup",
         "austria", "admiral", "suiza", "swiss",
@@ -376,6 +377,8 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
         "conference league", "uecl",
         "segunda", "laliga 2", "laliga2", "hypermotion", "serie b", "2. bundesliga", "2.bundesliga", "ligue 2", "ligue2"
     ]):
+        if any(h in t for h in ["nb i", "nb 1", "nb1", "hungria", "hungary", "magyar", "otp bank", "nemzeti bajnoksag"]):
+            return 0.65
         return 0.68
 
     # 4. Ligas Nivel 2
@@ -408,7 +411,17 @@ def obtener_tier_coef(
     competicion_str: str = ""
 ) -> float:
     """Calcula el Coeficiente de Fuerza de Liga (tier_coef) de un equipo."""
-    if competicion_str:
+    nom = (nombre_equipo or "").lower()
+    if any(eq in nom for eq in ["ferencvaros", "ferencváros", "fradi", "ujpest", "újpest", "fehervar", "debrecen", "puskas"]):
+        return 0.65
+    if any(eq in nom for eq in ["dortmund", "bayern", "real madrid", "barcelona", "arsenal", "liverpool", "manchester", "paris", "inter", "milan", "juventus", "atletico"]):
+        return 1.00
+
+    # Torneos continentales (UCL, UEL, UECL, etc.): la fuerza base del equipo proviene de su liga doméstica/mediana
+    # NO del torneo continental mismo (evitar inflar Ferencváros o Bodø/Glimt a 1.00 por jugar UCL).
+    es_torneo_continental = any(k in (competicion_str or "").lower() for k in ["champions", "ucl", "europa league", "uel", "conference", "uecl", "copa"])
+
+    if competicion_str and not es_torneo_continental:
         coef_comp = obtener_tier_coef_liga(competicion_str)
         if coef_comp != 0.85:
             return coef_comp
@@ -419,25 +432,36 @@ def obtener_tier_coef(
         torneo = str(src.get("torneo") or src.get("competition") or p.get("torneo") or "")
         if es_copa_nacional(torneo):
             continue
-        if torneo:
+        # Si el torneo es continental, no usarlo para definir la fuerza doméstica base del equipo si hay partidos de liga
+        if torneo and not any(k in torneo.lower() for k in ["champions", "ucl", "europa league", "uel", "conference", "uecl"]):
             coefs.append(obtener_tier_coef_liga(torneo))
     if coefs:
         return float(np.median(coefs))
 
+    # Si todos los partidos eran de UCL o copas, evaluar todos los torneos
+    if partidos:
+        for p in partidos:
+            src = _partido_fuente(p)
+            torneo = str(src.get("torneo") or src.get("competition") or p.get("torneo") or "")
+            if torneo and not es_copa_nacional(torneo):
+                coefs.append(obtener_tier_coef_liga(torneo))
+        if coefs:
+            return float(np.median(coefs))
+
     if perfil:
         torneo_p = str(perfil.get("torneo") or perfil.get("liga") or perfil.get("competicion") or "")
-        if torneo_p:
+        if torneo_p and not any(k in torneo_p.lower() for k in ["champions", "ucl", "europa league", "uel"]):
             return obtener_tier_coef_liga(torneo_p)
 
-    nom = (nombre_equipo or "").lower()
-    if any(eq in nom for eq in ["dortmund", "bayern", "real madrid", "barcelona", "arsenal", "liverpool", "manchester", "paris", "inter", "milan", "juventus", "atletico"]):
-        return 1.00
     if any(eq in nom for eq in ["fenerbahce", "fenerbahçe", "galatasaray", "besiktas", "slavia", "sparta praga", "benfica", "porto", "sporting", "ajax", "psv", "feyenoord", "celtic", "rangers"]):
         return 0.85
     if any(eq in nom for eq in ["sabah", "qarabag", "bodo", "bodø", "zagreb", "partizan", "estrella roja", "apoel",
                                 "shakhtar", "dynamo kyiv", "dynamo kiev", "dinamo kiev",
                                 "aek", "aek athens", "panathinaikos", "paok", "olympiacos", "olympiakos", "aris", "panserraikos"]):
         return 0.68
+
+    if competicion_str:
+        return obtener_tier_coef_liga(competicion_str)
 
     return 0.85
 
@@ -1636,6 +1660,8 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     tier_coef_V = obtener_tier_coef(partidos_15_visita or [], perfil_visita, eq_V)
     fu_L = factor_uefa_relativo(tier_coef_L, tier_coef_V)
     fu_V = factor_uefa_relativo(tier_coef_V, tier_coef_L)
+    ratio_tier_L = min(1.0, tier_coef_L / max(0.1, tier_coef_V))
+    ratio_tier_V = min(1.0, tier_coef_V / max(0.1, tier_coef_L))
     if sede_neutral_local is None:
         sede_neutral_local = es_sede_neutral(eq_L)
 
@@ -1692,18 +1718,42 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     goles_lstm_L = estados_L["goles_favor"]["h_reciente"]
     goles_lstm_V = estados_V["goles_favor"]["h_reciente"]
 
-    # ── λ EFECTIVO: finalización, portería rival vulnerable y errores regalados ──
-    # Lección del 4-1 del Real Madrid al Sevilla: el xG de creación estaba bien
-    # (2,24 vs 0,75) pero el marcador fue 4-1 porque el atacante convirtió por
-    # encima de su xG (xGOT), el portero rival venía con goles_evitados negativos
-    # y el rival cometió errores conducentes a gol. Nada de eso entraba en λ.
-    comp_L = componentes_lambda_efectivo(estados_L, estados_V)
-    comp_V = componentes_lambda_efectivo(estados_V, estados_L)
-
     # ── MÓDULO DOBLE ADN + 6 CRUCES TÁCTICOS (Contracción Bayesiana k=3.5) ──
     cond_adn_L = "neutral" if sede_neutral_local else "casa"
     mu_L_casa = calcular_doble_adn_con_shrinkage(partidos_15_local or [], estados_L, cond_adn_L, perfil_local, tier_rival=tier_V, factor_uefa=fu_L)
     mu_V_fuera = calcular_doble_adn_con_shrinkage(partidos_15_visita or [], estados_V, "fuera", perfil_visita, tier_rival=tier_L, factor_uefa=fu_V)
+
+    # Ajuste por salto competitivo de liga doméstica (ratio_tier < 1.0):
+    # Si un equipo de liga menor (ej. Ferencváros en Hungría 0.65) enfrenta a un club de élite (ej. Milan 1.00):
+    # Sus números defensivos domésticos se descuentan severamente para reflejar el salto competitivo.
+    if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
+        mu_L_casa["goles_contra"] = round(mu_L_casa.get("goles_contra", 1.1) / ratio_tier_L, 2)
+        mu_L_casa["xgot_enfrentado"] = round(mu_L_casa.get("xgot_enfrentado", 1.25) / ratio_tier_L, 2)
+        mu_L_casa["goles_evitados"] = round(mu_L_casa.get("goles_evitados", 0.0) * ratio_tier_L - 0.35 * (1.0 - ratio_tier_L), 3)
+        if "goles_contra" in estados_L:
+            estados_L["goles_contra"]["h_reciente"] = float(estados_L["goles_contra"]["h_reciente"]) / ratio_tier_L
+        if "xgot_enfrentado" in estados_L:
+            estados_L["xgot_enfrentado"]["h_reciente"] = float(estados_L["xgot_enfrentado"]["h_reciente"]) / ratio_tier_L
+        if "goles_evitados" in estados_L:
+            estados_L["goles_evitados"]["h_reciente"] = float(estados_L["goles_evitados"]["h_reciente"]) * ratio_tier_L - 0.35 * (1.0 - ratio_tier_L)
+        tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_L_casa["goles_contra"]), 1)
+
+    if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
+        mu_V_fuera["goles_contra"] = round(mu_V_fuera.get("goles_contra", 1.3) / ratio_tier_V, 2)
+        mu_V_fuera["xgot_enfrentado"] = round(mu_V_fuera.get("xgot_enfrentado", 1.25) / ratio_tier_V, 2)
+        mu_V_fuera["goles_evitados"] = round(mu_V_fuera.get("goles_evitados", 0.0) * ratio_tier_V - 0.35 * (1.0 - ratio_tier_V), 3)
+        if "goles_contra" in estados_V:
+            estados_V["goles_contra"]["h_reciente"] = float(estados_V["goles_contra"]["h_reciente"]) / ratio_tier_V
+        if "xgot_enfrentado" in estados_V:
+            estados_V["xgot_enfrentado"]["h_reciente"] = float(estados_V["xgot_enfrentado"]["h_reciente"]) / ratio_tier_V
+        if "goles_evitados" in estados_V:
+            estados_V["goles_evitados"]["h_reciente"] = float(estados_V["goles_evitados"]["h_reciente"]) * ratio_tier_V - 0.35 * (1.0 - ratio_tier_V)
+        tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_V_fuera["goles_contra"]), 1)
+
+    # ── λ EFECTIVO: finalización, portería rival vulnerable y errores regalados ──
+    comp_L = componentes_lambda_efectivo(estados_L, estados_V)
+    comp_V = componentes_lambda_efectivo(estados_V, estados_L)
+
     cruces_6 = calcular_los_6_cruces_tacticos(
         mu_L_casa, mu_V_fuera, estados_L, estados_V,
         perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,

@@ -451,6 +451,129 @@ def _sanear_para_canvas(texto: str) -> str:
     )
 
 
+def obtener_top5_y_seccion1_filtrados(
+    analisis,
+    metadatos = None,
+    umbral = None,
+):
+    """
+    Extrae el Top-5 Podio y la lista filtrada de Sección 1 (Gatekeeper)
+    garantizando que las líneas triviales como -6.5 Goles o -5.5 Goles sean eliminadas
+    y que las selecciones correspondan al subconjunto competitivo de 15-20 opciones.
+    Devuelve (top5_podio, mantiene_raw, total_validadas).
+    """
+    def _val(obj, clave, defecto=None):
+        if isinstance(obj, dict):
+            return obj.get(clave, defecto)
+        return getattr(obj, clave, defecto)
+
+    meta = metadatos or _val(analisis, "metadatos", {}) or {}
+    params = _val(analisis, "parametros", None)
+    umbral_val = (umbral if umbral is not None else _val(params, "umbral", 0.70))
+    if isinstance(umbral_val, (int, float)) and umbral_val > 1.0:
+        umbral_val = umbral_val / 100.0
+
+    eq_l = str(meta.get("equipo_local") or "Local")
+    eq_v = str(meta.get("equipo_visitante") or "Visitante")
+
+    sels_raw = _val(analisis, "selecciones_filtradas", []) or []
+    if not sels_raw and hasattr(analisis, "grupos"):
+        g = getattr(analisis, "grupos", {})
+        sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
+    if not sels_raw and hasattr(analisis, "selecciones_validadas"):
+        sels_raw = getattr(analisis, "selecciones_validadas", []) or []
+
+    motor = getattr(analisis, "motor", None)
+
+    bloquear_corners = False
+    bloquear_tarjetas = False
+    if motor and hasattr(motor, "_mu_corners"):
+        try:
+            mu_cl = motor._mu_corners("local")
+            mu_cv = motor._mu_corners("visitante")
+            ml_g = motor.muestras.get("local_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
+            mv_g = motor.muestras.get("visitante_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
+            p_ceros_l = ml_g.pct_ceros if (ml_g and hasattr(ml_g, "pct_ceros")) else 0.0
+            p_ceros_v = mv_g.pct_ceros if (mv_g and hasattr(mv_g, "pct_ceros")) else 0.0
+            if mu_cl is None or mu_cv is None or (mu_cl + mu_cv) < 1.5 or p_ceros_l > 0.30 or p_ceros_v > 0.30:
+                bloquear_corners = True
+        except Exception:
+            pass
+    if motor and hasattr(motor, "_mu_tarjetas"):
+        try:
+            mu_am = motor._mu_tarjetas("amarillas")
+            ml_am = motor.muestras.get("local_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
+            mv_am = motor.muestras.get("visitante_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
+            p_c_l = ml_am.pct_ceros if (ml_am and hasattr(ml_am, "pct_ceros")) else 0.0
+            p_c_v = mv_am.pct_ceros if (mv_am and hasattr(mv_am, "pct_ceros")) else 0.0
+            if mu_am is None or mu_am < 0.5 or p_c_l > 0.30 or p_c_v > 0.30:
+                bloquear_tarjetas = True
+        except Exception:
+            pass
+
+    from motor_mercados import (
+        es_seleccion_competitiva_ticket,
+        filtrar_top_opciones_ticket,
+        seleccionar_top_5_jugadas_recomendadas,
+    )
+
+    p_1x2 = None
+    if motor and getattr(motor, "matriz_ft", None):
+        mat = motor.matriz_ft
+        R = len(mat)
+        C = len(mat[0]) if R else 0
+        p1 = sum(mat[i][j] for i in range(R) for j in range(C) if i > j)
+        px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
+        p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
+        p_1x2 = (p1, px, p2)
+
+    def _clasificar_cat(s):
+        m_l = str(_val(s, "mercado") or "").lower()
+        e_l = str(_val(s, "evento") or "").lower()
+        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
+            return "CÓRNERES"
+        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
+            return "TARJETAS"
+        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
+            return "HÁNDICAP / 1X2 / DC"
+        eq_raw = _val(s, "equipo", None)
+        if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", ""):
+            return "GOLES POR EQUIPO"
+        return "GOLES PARTIDO"
+
+    def _permitida_sel(s):
+        cat_s = _clasificar_cat(s)
+        if bloquear_corners and cat_s == "CÓRNERES":
+            return False
+        if bloquear_tarjetas and cat_s == "TARJETAS":
+            return False
+        return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+
+    sels_validas = [
+        s for s in sels_raw
+        if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
+    ]
+    if not sels_validas and sels_raw:
+        sels_validas = [
+            s for s in sels_raw
+            if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6)
+            and not (bloquear_corners and _clasificar_cat(s) == "CÓRNERES")
+            and not (bloquear_tarjetas and _clasificar_cat(s) == "TARJETAS")
+        ]
+
+    top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
+    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18)
+    if not sels_top_tabla and sels_validas:
+        sels_top_tabla = sels_validas[:18]
+
+    mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
+    if not mantiene_raw and sels_top_tabla:
+        mantiene_raw = sels_top_tabla
+
+    total_validadas = len(mantiene_raw)
+    return top5_podio, mantiene_raw, total_validadas
+
+
 def renderizar_ticket_mercados_png(
     analisis: Any,
     metadatos: dict[str, Any] | None = None,
