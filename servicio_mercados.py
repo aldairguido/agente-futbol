@@ -1433,6 +1433,16 @@ def preparar_analisis(
             aviso=progreso)
         if ruta_cuadro:
             rutas["cuadro"] = ruta_cuadro
+
+        destino_auditoria_15p = os.path.join(
+            carpeta_cuadro,
+            f"auditoria_15p_{_slug(contexto['equipo_local'])}_vs_"
+            f"{_slug(contexto['equipo_visitante'])}_{id_trabajo}.png")
+        ruta_auditoria_15p = cuadro_mod.generar_cuadro_auditoria_15_partidos_png(
+            analisis, contexto["doc_local"], contexto["doc_visitante"],
+            destino=destino_auditoria_15p)
+        if ruta_auditoria_15p:
+            rutas["auditoria_15p"] = ruta_auditoria_15p
     except Exception as e_cuadro:
         print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Cuadro Especialista: "
               f"{type(e_cuadro).__name__}: {e_cuadro}")
@@ -1579,6 +1589,7 @@ def preparar_analisis(
         "id_flashscore": id_fs_partido,
         "analisis_texto_3_parrafos": analisis_texto_3_parrafos,
         "ruta_cuadro": ruta_cuadro,
+        "ruta_auditoria_15p": ruta_auditoria_15p,
         "ruta_cuadro_h2h": ruta_cuadro_h2h,
         "h2h_2024_2026": info_h2h_2024_2026,
         "estado_h2h_2024_2026": info_h2h_2024_2026.get("estado"),
@@ -1792,11 +1803,35 @@ def enviar_analisis(
             else:
                 motivo_cuadro_h2h = estado_h2h
 
+            # 5) Auditoría de los 15 Partidos Oficiales Únicos
+            ruta_auditoria_15p = (preparado.get("ruta_auditoria_15p")
+                                  or (preparado.get("rutas") or {}).get("auditoria_15p"))
+            auditoria_15p_enviado = False
+            motivo_auditoria_15p = ""
+            if (ruta_auditoria_15p and os.path.exists(ruta_auditoria_15p)
+                    and os.path.abspath(ruta_auditoria_15p) != os.path.abspath(ruta_imagen)):
+                try:
+                    res_15p = foto_sender(
+                        ruta_auditoria_15p,
+                        caption=f"📋 Auditoría de los 15 Partidos Oficiales Únicos | {eq_l} vs {eq_v}",
+                        chat_id=chat_id)
+                    if isinstance(res_15p, dict) and not res_15p.get("ok", True):
+                        raise RuntimeError(res_15p.get("error") or "envío de auditoría 15P no confirmado")
+                    if res_15p is False:
+                        raise RuntimeError("el adaptador devolvió False para auditoría 15P")
+                    auditoria_15p_enviado = True
+                    if isinstance(res_15p, dict) and res_15p.get("message_id") is not None:
+                        ids_telegram.append(res_15p["message_id"])
+                except Exception as e_15p_send:
+                    motivo_auditoria_15p = f"{type(e_15p_send).__name__}: {e_15p_send}"
+                    print(f"[SERVICIO MERCADOS] ⚠️ Auditoría 15P no enviada: {motivo_auditoria_15p}")
+
             partes_enviadas = (
                 1
                 + (1 if ticket_valor_enviado else 0)
                 + (1 if cuadro_enviado else 0)
                 + (1 if cuadro_h2h_enviado else 0)
+                + (1 if auditoria_15p_enviado else 0)
             )
             marcar_estado(id_trabajo, "envio_confirmado",
                           {"tipo": "foto", "ruta_imagen": ruta_imagen,
@@ -1807,6 +1842,8 @@ def enviar_analisis(
                            "ruta_cuadro_h2h": ruta_cuadro_h2h if cuadro_h2h_enviado else None,
                            "estado_h2h_2024_2026": estado_h2h,
                            "motivo_cuadro_h2h": motivo_cuadro_h2h,
+                           "ruta_auditoria_15p": ruta_auditoria_15p if auditoria_15p_enviado else None,
+                           "motivo_auditoria_15p": motivo_auditoria_15p,
                            "ids_telegram": ids_telegram})
             return {"enviado": True, "tipo": "foto", "ruta_imagen": ruta_imagen,
                     "ruta_ticket_valor": ruta_ticket_valor,
@@ -1818,6 +1855,9 @@ def enviar_analisis(
                     "cuadro_h2h_enviado": cuadro_h2h_enviado,
                     "estado_h2h_2024_2026": estado_h2h,
                     "motivo_cuadro_h2h": motivo_cuadro_h2h,
+                    "ruta_auditoria_15p": ruta_auditoria_15p,
+                    "auditoria_15p_enviado": auditoria_15p_enviado,
+                    "motivo_auditoria_15p": motivo_auditoria_15p,
                     "ids_telegram": ids_telegram, "partes": partes_enviadas,
                     "id_trabajo": id_trabajo, "estado": "envio_confirmado"}
         except Exception as e:

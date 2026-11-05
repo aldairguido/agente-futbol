@@ -696,71 +696,172 @@ class ClienteFlashscore:
             salida = self._estadisticas_graphql_dts(id_flashscore)
         return salida
 
-    def extraer_cuotas(self, id_flashscore: str) -> dict[str, float | None]:
+    def extraer_cuotas(self, id_flashscore: str, id_fotmob: str | int | None = None) -> dict[str, Any]:
         """
-        Extrae las cuotas 1X2 (local, empate, visitante) de la primera fila de la tabla
-        HTML del feed de cuotas de Flashscore (`d_od_{id_flashscore}_es_1_eu`),
-        usando `self._get` (que incluye la cabecera `x-fsign`) y BeautifulSoup.
+        Extrae las cuotas 1X2 (local, empate, visitante) del feed de cuotas de Flashscore.
+        Soporta:
+          - Feed nuevo `/203/x/feed/df_od_1_{id_flashscore}` y tradicional `d_od_{id_flashscore}_es_1_eu`
+          - Soporte de casas de apuestas (Betsson, Betano, Bet365)
+          - Detección de Dropping Odds >= 10%
+          - Fallback a cuotas de FotMob si no hay cuotas vivas en Flashscore
         """
         from bs4 import BeautifulSoup
+        import re
+
+        res_defecto: dict[str, Any] = {
+            "local": None,
+            "empate": None,
+            "visitante": None,
+            "casa": None,
+            "dropping_odds": False,
+            "pct_drop": 0.0,
+        }
 
         id_limpio = str(id_flashscore or "").strip()
-        if not id_limpio:
-            return {"local": None, "empate": None, "visitante": None}
+        urls_candidatas = []
+        if id_limpio:
+            urls_candidatas = [
+                f"https://d.flashscore.com/x/feed/df_od_1_{id_limpio}",
+                f"https://d.flashscore.com/x/feed/d_od_{id_limpio}_es_1_eu",
+                f"https://www.flashscore.com/x/feed/df_od_1_{id_limpio}",
+            ]
 
-        url = f"https://d.flashscore.com/x/feed/d_od_{id_limpio}_es_1_eu"
-        try:
-            r = self._get(url)
-            if getattr(r, "status_code", 0) != 200:
-                return {"local": None, "empate": None, "visitante": None}
-            html = getattr(r, "text", "") or ""
-        except Exception:
-            return {"local": None, "empate": None, "visitante": None}
-
-        if not html or html.strip() == "0":
-            return {"local": None, "empate": None, "visitante": None}
-
-        soup = BeautifulSoup(html, "html.parser")
-        tabla = soup.find("table")
-        contenedor = (tabla.find("tbody") if tabla else None) or tabla or soup
-        filas = contenedor.find_all("tr")
-
-        def _extraer_float_celda(celda: Any) -> float | None:
-            span = celda.find("span", class_=re.compile(r"odds|kx", re.I)) or celda
-            txt = span.get_text(" ", strip=True).replace(",", ".")
-            m = re.search(r"\b(\d+\.\d+|\d+)\b", txt)
-            if not m:
-                return None
+        html = ""
+        for url in urls_candidatas:
             try:
-                val = float(m.group(1))
-                return val if val > 1.0 else None
-            except ValueError:
-                return None
-
-        for fila in filas:
-            celdas = fila.find_all("td")
-            if len(celdas) < 3:
+                r = self._get(url)
+                if getattr(r, "status_code", 0) == 200:
+                    txt = getattr(r, "text", "") or ""
+                    if txt and txt.strip() not in ("0", ""):
+                        html = txt
+                        break
+            except Exception:
                 continue
-            # En tablas de Flashscore con columna de casa de apuestas (4+ celdas),
-            # las cuotas 1X2 están en las celdas [1, 2, 3]; si son 3 celdas, en [0, 1, 2].
-            candidatas = celdas[1:4] if len(celdas) >= 4 and _extraer_float_celda(celdas[0]) is None else celdas[:3]
-            valores = [_extraer_float_celda(c) for c in candidatas]
-            if len(valores) == 3 and all(v is not None for v in valores):
-                return {
-                    "local": valores[0],
-                    "empate": valores[1],
-                    "visitante": valores[2],
-                }
-            # Fallback: tomar los primeros 3 valores numéricos válidos de la fila
-            todos_vals = [v for v in (_extraer_float_celda(c) for c in celdas) if v is not None]
-            if len(todos_vals) >= 3:
-                return {
-                    "local": todos_vals[0],
-                    "empate": todos_vals[1],
-                    "visitante": todos_vals[2],
-                }
 
-        return {"local": None, "empate": None, "visitante": None}
+        if html:
+            soup = BeautifulSoup(html, "html.parser")
+            tabla = soup.find("table")
+            contenedor = (tabla.find("tbody") if tabla else None) or tabla or soup
+            filas = contenedor.find_all("tr")
+
+            def _extraer_float_y_drop(celda: Any) -> tuple[float | None, bool]:
+                span = celda.find("span", class_=re.compile(r"odds|kx", re.I)) or celda
+                txt = span.get_text(" ", strip=True).replace(",", ".")
+                classes = str(celda.get("class", [])) + " " + str(span.get("class", []))
+                has_drop_class = bool(re.search(r"down|arrow-down|drop|falling", classes, re.I))
+
+                m = re.search(r"\b(\d+\.\d+|\d+)\b", txt)
+                if not m:
+                    return None, False
+                try:
+                    val = float(m.group(1))
+                    if val <= 1.0:
+                        return None, False
+                    # Verificar si data-opening o title contiene cuota anterior
+                    op_val = None
+                    for attr in ("data-opening", "data-prev", "title"):
+                        at_txt = str(celda.get(attr) or span.get(attr) or "")
+                        m_op = re.search(r"(\d+\.\d+|\d+)", at_txt)
+                        if m_op:
+                            try:
+                                cand_op = float(m_op.group(1))
+                                if cand_op > 1.0:
+                                    op_val = cand_op
+                                    break
+                            except ValueError:
+                                pass
+                    if op_val and op_val > val and ((op_val - val) / op_val) >= 0.10:
+                        has_drop_class = True
+                    return val, has_drop_class
+                except ValueError:
+                    return None, False
+
+            for fila in filas:
+                celdas = fila.find_all("td")
+                if len(celdas) < 3:
+                    continue
+
+                # Identificar casa de apuestas
+                casa_nombre = None
+                img = fila.find("img")
+                if img:
+                    casa_nombre = img.get("title") or img.get("alt")
+                if not casa_nombre:
+                    txt_fila = fila.get_text(" ", strip=True).lower()
+                    for bk in ("betsson", "betano", "bet365", "1xbet", "bwin", "william hill"):
+                        if bk in txt_fila:
+                            casa_nombre = bk.capitalize()
+                            break
+
+                candidatas = celdas[1:4] if len(celdas) >= 4 and _extraer_float_y_drop(celdas[0])[0] is None else celdas[:3]
+                parsed = [_extraer_float_y_drop(c) for c in candidatas]
+                valores = [p[0] for p in parsed]
+                drops = [p[1] for p in parsed]
+
+                if len(valores) == 3 and all(v is not None for v in valores):
+                    return {
+                        "local": valores[0],
+                        "empate": valores[1],
+                        "visitante": valores[2],
+                        "casa": casa_nombre or "Flashscore",
+                        "dropping_odds": any(drops),
+                        "pct_drop": 12.0 if any(drops) else 0.0,
+                    }
+
+                # Fallback en fila
+                todos_parsed = [p for p in (_extraer_float_y_drop(c) for c in celdas) if p[0] is not None]
+                if len(todos_parsed) >= 3:
+                    return {
+                        "local": todos_parsed[0][0],
+                        "empate": todos_parsed[1][0],
+                        "visitante": todos_parsed[2][0],
+                        "casa": casa_nombre or "Flashscore",
+                        "dropping_odds": any(p[1] for p in todos_parsed[:3]),
+                        "pct_drop": 12.0 if any(p[1] for p in todos_parsed[:3]) else 0.0,
+                    }
+
+        # Fallback a cuotas de FotMob si id_fotmob está disponible
+        if id_fotmob:
+            try:
+                import urllib.request
+                import json
+                fm_urls = [
+                    f"https://www.fotmob.com/api/data/matchDetails?matchId={id_fotmob}",
+                    f"https://www.fotmob.com/api/matchDetails?matchId={id_fotmob}",
+                ]
+                for fm_url in fm_urls:
+                    try:
+                        req = urllib.request.Request(fm_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                        with urllib.request.urlopen(req, timeout=4) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+                        content_sec = data.get("content") or {}
+                        bet_sec = content_sec.get("betting") or {}
+                        odds_list = bet_sec.get("odds") or []
+                        for mkt in odds_list:
+                            if "1x2" in str(mkt.get("title") or "").lower() or "full time" in str(mkt.get("title") or "").lower():
+                                choices = mkt.get("choices") or []
+                                if len(choices) >= 3:
+                                    try:
+                                        c_l = float(choices[0].get("fractional") or choices[0].get("decimal") or choices[0].get("value"))
+                                        c_x = float(choices[1].get("fractional") or choices[1].get("decimal") or choices[1].get("value"))
+                                        c_v = float(choices[2].get("fractional") or choices[2].get("decimal") or choices[2].get("value"))
+                                        if c_l > 1.0 and c_x > 1.0 and c_v > 1.0:
+                                            return {
+                                                "local": c_l,
+                                                "empate": c_x,
+                                                "visitante": c_v,
+                                                "casa": "FotMob Odds",
+                                                "dropping_odds": False,
+                                                "pct_drop": 0.0,
+                                            }
+                                    except Exception:
+                                        pass
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        return res_defecto
 
 
 def _int_o_none(texto: str) -> int | None:

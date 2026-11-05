@@ -469,16 +469,18 @@ def _extraer_probabilidades_red_general(analisis: Any) -> dict[str, Any]:
 
 def construir_filas_ticket_valor(
     analisis: Any,
-    cuotas_flashscore: dict[str, float | None] | None = None,
+    cuotas_flashscore: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Cruza las probabilidades de la Red Neuronal General (15 partidos) con las cuotas
-    de Flashscore y calcula Cuota Justa, Valor Esperado (EV) y Recomendación.
+    de Flashscore y calcula Cuota Justa, Cuota Mínima +EV, Stake Kelly (0.25x), Valor Esperado (EV) y Recomendación.
     """
     info = _extraer_probabilidades_red_general(analisis)
     eq_l = info["equipo_local"]
     eq_v = info["equipo_visitante"]
     cuotas = dict(cuotas_flashscore or {})
+    dropping_odds = bool(cuotas.get("dropping_odds"))
+    alerta_drop = " [ALERTA DROPPING ODDS]" if dropping_odds else ""
 
     c_loc = cuotas.get("local")
     c_emp = cuotas.get("empate")
@@ -505,21 +507,30 @@ def construir_filas_ticket_valor(
     for nombre_mkt, prob_bot, cuota_fs in definiciones:
         prob_f = max(0.001, min(0.999, float(prob_bot or 0.0)))
         cuota_justa = round(1.0 / prob_f, 2)
+        cuota_minima = round(1.05 * cuota_justa, 2)
+        b_min = max(0.01, cuota_minima - 1.0)
+        f_star_min = max(0.0, (prob_f * cuota_minima - 1.0) / b_min)
+        stake_kelly_min_pct = round(0.25 * f_star_min * 100.0, 1)
+
         cuota_fs_val = round(float(cuota_fs), 2) if isinstance(cuota_fs, (int, float)) and cuota_fs > 1.0 else None
 
         if cuota_fs_val is not None:
             ev_pct = round(((prob_f * cuota_fs_val) - 1.0) * 100.0, 2)
             tiene_valor = bool(cuota_fs_val > cuota_justa)
+            b_fs = max(0.01, cuota_fs_val - 1.0)
+            f_star = max(0.0, (prob_f * cuota_fs_val - 1.0) / b_fs)
+            stake_kelly_pct = round(0.25 * f_star * 100.0, 1) if tiene_valor else 0.0
+
             if tiene_valor and ev_pct >= 5.0 and prob_f >= 0.45:
-                recomendacion = "VALOR ALTO (+EV) - APOSTAR"
+                recomendacion = f"VALOR ALTO (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
             elif tiene_valor:
-                recomendacion = "VALOR (+EV) - FAVORABLE"
+                recomendacion = f"VALOR (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
             else:
-                recomendacion = "SIN VALOR (Cuota <= Justa)"
+                recomendacion = f"SIN VALOR (Cuota <= Justa){alerta_drop}"
         else:
             ev_pct = None
             tiene_valor = False
-            recomendacion = "SIN CUOTA FLASHSCORE"
+            recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
 
         filas.append({
             "mercado": nombre_mkt,
@@ -527,6 +538,8 @@ def construir_filas_ticket_valor(
             "prob_bot_str": f"{prob_f * 100.0:.1f}%",
             "cuota_justa": cuota_justa,
             "cuota_justa_str": f"{cuota_justa:.2f}",
+            "cuota_minima": cuota_minima,
+            "cuota_minima_str": f"{cuota_minima:.2f}",
             "cuota_flashscore": cuota_fs_val,
             "cuota_flashscore_str": f"{cuota_fs_val:.2f}" if cuota_fs_val is not None else "N/D",
             "ev_pct": ev_pct,
@@ -613,7 +626,7 @@ def generar_ticket_valor_png(
         fontsize=9.5, color="#3B4A6B", family="sans-serif",
     )
 
-    anchos_col = [0.27, 0.11, 0.12, 0.14, 0.15, 0.21]
+    anchos_col = [0.24, 0.10, 0.11, 0.13, 0.14, 0.28]
     tabla = ax.table(
         cellText=datos_celdas,
         colLabels=columnas,

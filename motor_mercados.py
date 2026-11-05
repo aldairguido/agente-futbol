@@ -2018,7 +2018,7 @@ class MotorMercados:
                      "mu_total": mu_l + mu_v})
 
     def _mu_corners(self, bando: str) -> float | None:
-        """λ de córneres de un equipo: (propios + concedidos por el rival) / 2."""
+        """λ de córneres de un equipo: (propios + concedidos por el rival) / 2 ponderado por factor de bloqueo y guion."""
         k_credibilidad = self.p.k_credibilidad
         if bando == "local":
             propio = media_ajustada(self.muestras["local_general"].dame("corners_favor"),
@@ -2037,6 +2037,43 @@ class MotorMercados:
         if propio is None and concedido is None:
             return None
         base = concedido if propio is None else (propio if concedido is None else (propio + concedido) / 2.0)
+
+        # ── Calibración de córneres por bloqueos rivales y guion de partido (Sección 8 / Champions) ──
+        try:
+            xai = getattr(self, "xai_factores", None) or {}
+            rec = getattr(self, "recursivo", None) or {}
+            mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
+            mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
+            if bando == "local":
+                centros = float(mu_l.get("centros") or 18.0)
+                bloq_riv = float(mu_v.get("bloqueos") or 2.5)
+                desp_riv = float(mu_v.get("despejes") or 18.0)
+                lam_p = float(rec.get("lambda_local_recursivo") or getattr(getattr(self, "tasas", None), "lambda_local_ft", 1.35) or 1.35)
+                lam_r = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
+            else:
+                centros = float(mu_v.get("centros") or 16.0)
+                bloq_riv = float(mu_l.get("bloqueos") or 2.5)
+                desp_riv = float(mu_l.get("despejes") or 18.0)
+                lam_p = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
+                lam_r = float(rec.get("lambda_local_recursivo") or getattr(getattr(self, "tasas", None), "lambda_local_ft", 1.35) or 1.35)
+
+            # factor_bloqueo_bandas = 0.60 + 0.20 * (centros_propios / 18.0) + 0.20 * (bloqueos_rival + despejes_rival / 8.0) / 5.0
+            factor_bloqueo = 0.60 + 0.20 * (centros / 18.0) + 0.20 * ((bloq_riv + (desp_riv / 8.0)) / 5.0)
+            factor_bloqueo = max(0.78, min(1.18, factor_bloqueo))
+
+            # Ajuste dinámico por guion de marcador proyectado:
+            diff_lam = lam_p - lam_r
+            if diff_lam >= 0.55 and bloq_riv < 2.2:
+                # Favorito claro ante rival que no bloquea tiros anota temprano -> -10% córneres
+                factor_bloqueo *= 0.90
+            elif abs(diff_lam) <= 0.35 and centros >= 20.0:
+                # Duelo parejo cerrado en 1T con equipo de alto volumen de centros -> +8% por asedio
+                factor_bloqueo *= 1.08
+
+            base = base * factor_bloqueo
+        except Exception:
+            pass
+
         if getattr(self, "moduladores", None) and self.p.aplicar_moduladores:
             clave_mult = "mult_corners_L" if bando == "local" else "mult_corners_V"
             mult = self.moduladores.get(clave_mult, 1.0)
@@ -3299,10 +3336,10 @@ def es_seleccion_competitiva_ticket(
     # 3. HÁNDICAP / 1X2 / DC / DNB
     if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in ev for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate", "h0_", "h1_", "h2_", "h3_", "h-1_", "h_minus1_")):
         if per != "FT":
-            # En 1T/2T solo permitir Doble Oportunidad o Ganador si está en rango de valor [0.70, 0.88]
+            # En 1T/2T solo permitir Doble Oportunidad o Ganador si está en rango de valor [0.70, 0.92]
             if any(h in ev for h in ("h1_", "h2_", "h3_", "h0_")):
                 return False
-            return 0.70 <= prob <= 0.88
+            return 0.70 <= prob <= 0.92
         # Prohibido terminantemente H+2 y H+3
         if "h2_" in ev or "h3_" in ev or "h+2" in et or "h+3" in et or "+2" in et or "+3" in et:
             return False
@@ -3313,7 +3350,7 @@ def es_seleccion_competitiva_ticket(
                 return False
             if eq == eq_v and p2 > p1:
                 return False
-            if prob > 0.90:
+            if prob > 0.92:
                 return False
         return True
 
@@ -3482,7 +3519,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         es_diesel = True
 
     lam_1t_comb = ((t1_l or 0.50) + (t1_v or 0.45)) if (t1_l is not None) else (0.45 * (lam_l + lam_v))
-    patron_diesel_1t = es_diesel and (lam_1t_comb < 1.25)
+    p_u15_1t_val = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
+    patron_diesel_1t = es_diesel and (lam_1t_comb < 1.25) and (p_u15_1t_val >= 68.0)
 
     def _slot_seleccion(s: Any) -> int:
         m_l = str(_v(s, "mercado") or "").lower()
@@ -3491,14 +3529,25 @@ def seleccionar_top_5_jugadas_recomendadas(
         eq_raw = _v(s, "equipo", None)
         eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
 
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2")) or any(k in ev for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate", "h0_", "h1_", "h-1_", "h_minus1_")):
-            return 1
+        # 1. Córneres primero (evitar colisión de '12' con 'under_12_5' o similares)
         if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev:
             return 4
+        # 2. Tarjetas o Ambos marcan
         if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in ev for k in ("tarjeta", "amarilla", "roja")) or "ambos_marcan" in ev or "btts" in ev:
             return 5
+        # 3. Resultado / Doble Oportunidad / Sin empate (evaluación estricta de códigos)
+        es_res_mkt = any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2"))
+        es_res_ev = (
+            ev in ("1", "2", "x", "1x", "x2", "12", "dc_1x", "dc_x2", "dc_12", "local_gana", "visitante_gana", "empate")
+            or any(ev.startswith(k) or ev.endswith(k) for k in ("1x", "x2", "12", "dnb", "h0_", "h1_", "h-1_", "h_minus1_"))
+            or ("dnb" in ev) or ("gana" in ev) or ("empate" in ev)
+        )
+        if es_res_mkt or es_res_ev:
+            return 1
+        # 4. Goles por Mitad o por Equipo
         if per in ("1T", "2T") or eq:
             return 3
+        # 5. Goles Totales FT
         return 2
 
     def _etiqueta_limpia(s: Any) -> str:
@@ -3517,11 +3566,11 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return f"1X2: {eq_l} Gana ({per})"
             if ev in ("2", "visitante_gana"):
                 return f"1X2: {eq_v} Gana ({per})"
-            if ev == "1x":
+            if ev in ("1x", "dc_1x") or ev.endswith("_1x"):
                 return f"Doble Oportunidad 1X: {eq_l} o Empate ({per})"
-            if ev == "x2":
+            if ev in ("x2", "dc_x2") or ev.endswith("_x2"):
                 return f"Doble Oportunidad X2: Empate o {eq_v} ({per})"
-            if ev == "12":
+            if ev in ("12", "dc_12") or ev.endswith("_12"):
                 return f"Doble Oportunidad 12: Sin Empate ({per})"
             if "dnb" in ev or "h0_" in ev:
                 return f"{eq or eq_l} Apuesta Sin Empate / DNB ({per})"
@@ -3542,12 +3591,12 @@ def seleccionar_top_5_jugadas_recomendadas(
             return f"Tarjetas Totales ({per}): {signo}{float(lin):g} Tarj." if lin is not None else f"Tarjetas ({per}): {et}"
         if slot == 3:
             if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
-                return "1ra Mitad : Menos de 1.5 Goles (Duelo de estudio en 1T / Explosión en 2T)"
+                return f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t_val}%) (Duelo de estudio en 1T / Explosión en 2T)"
             if eq:
                 signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev) else "-"
                 return f"Goles {eq} ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles {eq} ({per}): {et}"
             signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
-            return f"Goles {per}: {signo}{float(lin):g} Goles" if lin is not None else f"Goles {per}: {et}"
+            return f"Goles {per}: {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
         # Slot 2: Goles Totales FT
         signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
         return f"Goles Totales ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
@@ -3577,7 +3626,7 @@ def seleccionar_top_5_jugadas_recomendadas(
             return f"Respaldo ADN: Expectativa combinada λ={lam_l + lam_v:.2f} goles ({eq_l} {xg_l:.2f} xG casa + {eq_v} {xg_v:.2f} xG visita)."
         if slot == 3:
             if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
-                return f"Respaldo Táctico: Estudio táctico en 1T (λ={lam_1t_comb:.2f} goles) y aceleración diésel proyectada en 2T."
+                return f"Respaldo Táctico: Estudio táctico en 1T (λ={lam_1t_comb:.2f} goles, {p_u15_1t_val}%) y aceleración diésel proyectada en 2T."
             if eq == eq_l:
                 return f"Respaldo ADN: {eq_l} en casa promedia {gf_l:.2f} goles ({xg_l:.2f} xG) ante rival que concede {gc_v:.2f} Gc fuera."
             if eq == eq_v:
@@ -3609,6 +3658,14 @@ def seleccionar_top_5_jugadas_recomendadas(
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
         est_bonus = 0.06 if _v(s, "estado") == "mantiene" else 0.0
         ev = str(_v(s, "evento") or "").lower()
+        sl = _slot_seleccion(s)
+
+        # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad
+        if sl == 1:
+            if 0.70 <= p <= 0.92:
+                return 4.0 - abs(p - 0.82) + est_bonus
+            elif p > 0.92:
+                return 2.5 + est_bonus
 
         # Si Ambos Anotan: No >= 50%, máxima prioridad en Slot 5
         if "btts_no" in ev and p_btts_no_pct >= 50.0:
@@ -3637,29 +3694,58 @@ def seleccionar_top_5_jugadas_recomendadas(
     for sl in por_slot:
         por_slot[sl].sort(key=_puntaje_podio, reverse=True)
 
-    elegidas: list[Any] = []
+    elegidas: list[tuple[int, Any]] = []
     usadas_claves: set[str] = set()
+    n_corners = 0
+    n_tarjetas = 0
 
-    # 1ª pasada: elegir la mejor de cada uno de los 5 slots para diversificación máxima
-    for sl in (1, 2, 3, 4, 5):
+    # Paso 1: El slot 1 (Resultado / DC) tiene prioridad absoluta para liderar en #1 si existe candidato
+    cands_s1 = por_slot.get(1, [])
+    if cands_s1:
+        best_s1 = cands_s1[0]
+        elegidas.append((1, best_s1))
+        usadas_claves.add(_etiqueta_limpia(best_s1))
+
+    # Paso 2: Iterar por los demás slots (2, 3, 4, 5) cuidando no duplicar corners ni tarjetas
+    for sl in (2, 3, 4, 5):
         for cand in por_slot.get(sl, []):
             et_c = _etiqueta_limpia(cand)
-            if et_c not in usadas_claves:
-                elegidas.append((sl, cand))
-                usadas_claves.add(et_c)
-                break
+            if et_c in usadas_claves:
+                continue
+            if sl == 4 and n_corners >= 1:
+                continue
+            if sl == 5 and n_tarjetas >= 1 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
+                continue
 
-    # 2ª pasada: si algún slot estaba vacío (ej. córneres o tarjetas sin cobertura), completar hasta 5 con las mejores restantes
+            elegidas.append((sl, cand))
+            usadas_claves.add(et_c)
+            if sl == 4:
+                n_corners += 1
+            if sl == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
+                n_tarjetas += 1
+            break
+
+    # Paso 3: Si aún faltan para 5, rellenar con las mejores restantes respetando MAX 1 Córner y MAX 1 Tarjeta
     if len(elegidas) < 5:
         todas_ord = sorted(candidatas, key=_puntaje_podio, reverse=True)
         for cand in todas_ord:
             if len(elegidas) >= 5:
                 break
             et_c = _etiqueta_limpia(cand)
-            if et_c not in usadas_claves:
-                sl = _slot_seleccion(cand)
-                elegidas.append((sl, cand))
-                usadas_claves.add(et_c)
+            if et_c in usadas_claves:
+                continue
+            sl_cand = _slot_seleccion(cand)
+            if sl_cand == 4 and n_corners >= 1:
+                continue
+            if sl_cand == 5 and n_tarjetas >= 1 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
+                continue
+
+            elegidas.append((sl_cand, cand))
+            usadas_claves.add(et_c)
+            if sl_cand == 4:
+                n_corners += 1
+            if sl_cand == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
+                n_tarjetas += 1
 
     podio: list[dict[str, Any]] = []
     nombres_slot = {
@@ -3670,16 +3756,19 @@ def seleccionar_top_5_jugadas_recomendadas(
         5: "TARJETAS / AMBOS ANOTAN",
     }
     for idx, (sl, s) in enumerate(elegidas[:5], start=1):
+        actual_slot = sl
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
         podio.append({
             "rank": idx,
-            "slot": sl,
-            "categoria_podio": nombres_slot.get(sl, "MERCADO"),
+            "slot": actual_slot,
+            "categoria_podio": nombres_slot.get(actual_slot, "MERCADO"),
+            "categoria": nombres_slot.get(actual_slot, "MERCADO"),
             "etiqueta": _etiqueta_limpia(s),
             "probabilidad": prob,
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
             "estado": str(_v(s, "estado") or "mantiene"),
-            "respaldo": _respaldo_xai(s, sl),
+            "respaldo": _respaldo_xai(s, actual_slot),
+            "respaldo_adn": _respaldo_xai(s, actual_slot),
         })
     return podio
 
@@ -4040,24 +4129,30 @@ def clusters_marcador(
     is_11_top2 = (1, 1) in top2_coords
     is_11_or_00_top3 = ((1, 1) in top3_coords) or ((0, 0) in top3_coords)
 
-    if p_fav_val >= 60.0 and p_00_pct < 8.5 and diff_lam_est >= 0.45:
+    # Cálculo exacto de probabilidad de Menos de 1.5 Goles en 1T vía distribución Poisson
+    p_u15_1t = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
+
+    # 1. Determinar SIEMPRE primero la mejor jugada de Resultado / Doble Oportunidad
+    if p_fav_val >= 62.0 and p_00_pct < 8.5 and diff_lam_est >= 0.40:
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
-    elif p_btts_no_pct >= 50.0:
+    elif p_dc_val >= 66.0:
+        jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
+    elif p_btts_no_pct >= 55.0:
         jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
-    elif patron_diesel_1t:
-        p_u15_1t = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
-        jugada_optima_txt = f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t}%) (Duelo de estudio en 1T / Explosión en 2T)"
-    elif is_11_top2 and p_btts_pct >= 51.0 and not prohibir_btts_si:
-        jugada_optima_txt = f"Ambos equipos marcan : Sí ({p_btts_pct:.1f}%) o Doble Oportunidad {dc_tag} ({p_dc_val:.1f}%)"
-    elif (44.0 <= p_fav_val < 60.0) or is_11_or_00_top3:
+    elif (44.0 <= p_fav_val < 62.0) or is_11_or_00_top3:
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
     elif p_u25_pct >= 62.0 and p_cerrados_pct >= 50.0:
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%) o 1er Tiempo : Empate"
     else:
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
 
+    # 2. Solo si la probabilidad real Poisson de -1.5 en 1T es >= 68.0% (lam_1t_comb <= 1.08),
+    # anexarla al lado con ' | ' sin borrar la jugada principal
+    if p_u15_1t >= 68.0 and lam_1t_comb <= 1.08:
+        jugada_optima_txt += f" | 1ra Mitad : Menos de 1.5 Goles ({p_u15_1t:.1f}%)"
+
     if asedio_bandas:
-        jugada_optima_txt += " | Córneres : Más de 8.5 (78.5%)"
+        jugada_optima_txt += " | Córneres : Más de 8.5"
 
     linea_pie = (
         f"Dominante [{top4_txt}]: {top4_pct:.1f}%  ·  {comp_favorito_txt}\n"

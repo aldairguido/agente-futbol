@@ -49,7 +49,7 @@ import motor_recursivo_45_dcn as motor_rec
 
 ANIO_MINIMO_H2H = 2024
 ANIO_MAXIMO_H2H = 2026
-MENSAJE_SIN_H2H_2024_2026 = "Sin enfrentamientos directos en 2024–2026"
+MENSAJE_SIN_H2H_2024_2026 = "H2H Directo 2024–2026: 0 partidos (Comparativa contra rivales de nivel equivalente)"
 
 # Temporadas que pueden contener partidos jugados entre 2024-01-01 y 2026-12-31.
 # Nota: "2023/2024" se inspecciona porque su segunda vuelta ocurre entre enero y mayo
