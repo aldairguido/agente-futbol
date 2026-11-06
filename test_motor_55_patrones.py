@@ -72,8 +72,58 @@ def test_motor_55_patrones_completo():
     assert "Patrón #01" in texto_xai and "Patrón #13" in texto_xai and "Patrón #26" in texto_xai
 
 
+def test_sevilla_alaves_cuadro_b_hibrido():
+    partidos_sevilla = [
+        "01. 01/11/2026 Getafe (3) vs Sevilla (1)",
+        "02. 28/10/2026 Sevilla (1) vs Osasuna (0)",
+        "03. 25/10/2026 Atlético (3) vs Sevilla (0)",
+        "04. 19/10/2026 Sevilla (1) vs Mallorca (3)",
+        "05. 05/10/2026 Sevilla (4) vs Barcelona (1)",
+        "06. 28/09/2026 Rayo (0) vs Sevilla (1)",
+        "07. 23/09/2026 Sevilla (1) vs Villarreal (2)",
+        "08. 20/09/2026 Alavés (1) vs Sevilla (2)",
+        "09. 12/09/2026 Sevilla (2) vs Elche (2)",
+        "10. 30/08/2026 Girona (0) vs Sevilla (2)",
+        "11. 25/08/2026 Sevilla (1) vs Getafe (2)",
+        "12. 17/08/2026 Athletic (3) vs Sevilla (2)",
+        "13. 25/05/2026 Villarreal (4) vs Sevilla (2)",
+        "14. 18/05/2026 Sevilla (0) vs Real Madrid (2)",
+        "15. 13/05/2026 Sevilla (1) vs Las Palmas (0)",
+    ]
+    partidos_alaves = [
+        "01. 27/10/2026 Elche (0) vs Deportivo A (2)",
+        "02. 20/10/2026 Deportivo A (0) vs Valencia (0)",
+        "03. 05/10/2026 Deportivo A (3) vs Elche (1)",
+        "04. 27/09/2026 Mallorca (1) vs Deportivo A (0)",
+        "05. 24/09/2026 Getafe (1) vs Deportivo A (1)",
+        "06. 20/09/2026 Deportivo A (1) vs Sevilla (2)",
+        "07. 13/09/2026 Athletic (0) vs Deportivo A (1)",
+        "08. 30/08/2026 Deportivo A (1) vs Atlético (1)",
+        "09. 22/08/2026 Real Betis (1) vs Deportivo A (0)",
+        "10. 16/08/2026 Deportivo A (2) vs Levante (1)",
+        "11. 24/05/2026 Deportivo A (1) vs Osasuna (1)",
+        "12. 18/05/2026 Valladolid (0) vs Deportivo A (1)",
+        "13. 14/05/2026 Deportivo A (1) vs Valencia (0)",
+        "14. 11/05/2026 Athletic (1) vs Deportivo A (0)",
+        "15. 03/05/2026 Deportivo A (0) vs Atlético (0)",
+    ]
+    cb_sev = calcular_cuadro_b_tendencias(partidos_sevilla, "Sevilla")
+    cb_ala = calcular_cuadro_b_tendencias(partidos_alaves, "Deportivo Alavés")
+
+    assert cb_sev["victorias"]["conteo"] == 6, f"Esperado 6 victorias Sevilla, obtenido {cb_sev['victorias']}"
+    assert cb_sev["sin_derrotas"]["conteo"] == 7, f"Esperado 7 sin derrotas Sevilla, obtenido {cb_sev['sin_derrotas']}"
+    assert cb_sev["btts"]["conteo"] == 9, f"Esperado 9 BTTS Sevilla, obtenido {cb_sev['btts']}"
+    assert cb_sev["ganador_1t"]["conteo"] > 0
+
+    assert cb_ala["victorias"]["conteo"] == 6, f"Esperado 6 victorias Alavés, obtenido {cb_ala['victorias']}"
+    assert cb_ala["sin_derrotas"]["conteo"] == 11, f"Esperado 11 sin derrotas Alavés, obtenido {cb_ala['sin_derrotas']}"
+    assert cb_ala["btts"]["conteo"] == 6, f"Esperado 6 BTTS Alavés, obtenido {cb_ala['btts']}"
+    assert cb_ala["ganador_1t"]["conteo"] > 0
+
+
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     test_motor_55_patrones_completo()
-    print("OK: test_motor_55_patrones_completo superado en verde.")
+    test_sevilla_alaves_cuadro_b_hibrido()
+    print("OK: test_motor_55_patrones_completo + test_sevilla_alaves_cuadro_b_hibrido superados en verde.")

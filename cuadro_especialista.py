@@ -1504,11 +1504,11 @@ def generar_cuadro_visual_partido(
         lam_vis = float(res_red["lambda_visita_recursivo"])
         matriz_prob = matriz_red_para_dibujar(res_red)
 
-    fig = plt.figure(figsize=(13.5, 22.2), dpi=180, facecolor="#F8FAFC")
+    fig = plt.figure(figsize=(13.5, 23.2), dpi=180, facecolor="#F8FAFC")
     gs = fig.add_gridspec(
         3, 1,
-        height_ratios=[1.12, 1.80, 2.20],
-        hspace=0.16, left=0.05, right=0.95, top=0.945, bottom=0.025
+        height_ratios=[1.15, 1.88, 2.20],
+        hspace=0.18, left=0.05, right=0.95, top=0.925, bottom=0.025
     )
 
     fig.text(
@@ -1525,7 +1525,7 @@ def generar_cuadro_visual_partido(
     n_partidos_L = max(15, perfil_local.get("n_partidos", 15))
     n_partidos_V = max(15, perfil_vis.get("n_partidos", 15))
     fig.text(
-        0.05, 0.940,
+        0.05, 0.938,
         f"Goles Esperados Red Recursiva (λ): {lam_local:.2f} – {lam_vis:.2f}   ·   "
         f"(antes λ plano: {lam_plano_L:.2f} – {lam_plano_V:.2f})   ·   "
         f"Muestra: {n_partidos_L} vs {n_partidos_V} partidos"
@@ -1604,7 +1604,7 @@ def generar_cuadro_visual_partido(
         colLabels=columnas,
         loc="upper center",
         cellLoc="center",
-        bbox=[0.0, 0.60, 1.0, 0.38],
+        bbox=[0.0, 0.58, 1.0, 0.36],
     )
     tabla.auto_set_font_size(False)
     tabla.set_fontsize(9.0)
@@ -1631,10 +1631,10 @@ def generar_cuadro_visual_partido(
     )
     if tier_L != tier_V:
         txt_trazabilidad += f"   ·   Ajuste Coef. Liga: {tier_L:.2f} vs {tier_V:.2f}"
-    ax_top.text(0.0, 0.54, txt_trazabilidad, fontsize=7.1, color="#475569", style="italic", transform=ax_top.transAxes)
+    ax_top.text(0.0, 0.515, txt_trazabilidad, fontsize=7.1, color="#475569", style="italic", transform=ax_top.transAxes)
 
-    ax_top.text(0.0, 0.46, "LECTURAS DE ESPECIALISTA (Doble ADN y 6 Cruces Tácticos)", fontsize=8.4, fontweight="bold", color="#475569", transform=ax_top.transAxes)
-    y_cursor = 0.398
+    ax_top.text(0.0, 0.445, "LECTURAS DE ESPECIALISTA (Doble ADN y 6 Cruces Tácticos)", fontsize=8.4, fontweight="bold", color="#475569", transform=ax_top.transAxes)
+    y_cursor = 0.385
     viñetas_adn = _generar_lecturas_doble_adn(
         eq_L, eq_V, cond_l, cond_v,
         perfil_local, perfil_vis, res_red,
@@ -1671,18 +1671,18 @@ def generar_cuadro_visual_partido(
                 y_cursor -= 0.048
 
     # ── BLOQUE MEDIO (gs[1]): CAJA AZUL XAI + MAPA DE CALOR 0-6 + CAJA GRIS MATRIZ ──
-    gs_mid = gs[1].subgridspec(3, 1, height_ratios=[0.38, 1.25, 0.42], hspace=0.10)
+    gs_mid = gs[1].subgridspec(3, 1, height_ratios=[0.40, 1.24, 0.42], hspace=0.26)
 
     # 1) Sub-bloque superior de gs[1]: Caja Azul XAI (Red Recursiva + 5 Factores suma cero)
     ax_caja_azul = fig.add_subplot(gs_mid[0])
     ax_caja_azul.axis("off")
     ax_caja_azul.text(
-        0.50, 0.50,
+        0.50, 0.58,
         _sanear_para_canvas(res_red["sello_verificacion_visual"]),
         ha="center", va="center",
         fontsize=7.3, fontweight="bold", color="#0369A1",
         transform=ax_caja_azul.transAxes,
-        bbox=dict(boxstyle="round,pad=0.50", facecolor="#E0F2FE", edgecolor="#0284C7", lw=1.2),
+        bbox=dict(boxstyle="round,pad=0.42", facecolor="#E0F2FE", edgecolor="#0284C7", lw=1.2),
     )
 
     # 2) Sub-bloque central de gs[1]: Mapa de calor de marcadores 0..max_goles
@@ -2270,11 +2270,18 @@ def generar_cuadro_auditoria_15_partidos_png(
     lista_L = deduplicar_partidos(partidos_L)[:15]
     lista_V = deduplicar_partidos(partidos_V)[:15]
 
+    for idx_p, p_item in enumerate(lista_L):
+        if isinstance(p_item, dict) and not p_item.get("linea"):
+            p_item["linea"] = formatear_linea_partido_15(idx_p + 1, p_item)
+    for idx_p, p_item in enumerate(lista_V):
+        if isinstance(p_item, dict) and not p_item.get("linea"):
+            p_item["linea"] = formatear_linea_partido_15(idx_p + 1, p_item)
+
     d_gen_L = _extraer_dict_45_desde_perfil(None, analisis, "local")
     d_gen_V = _extraer_dict_45_desde_perfil(None, analisis, "visitante")
 
-    cuadro_b_L = (doc_local.get("cuadro_b_tendencias") if isinstance(doc_local, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_L, eq_L)
-    cuadro_b_V = (doc_visita.get("cuadro_b_tendencias") if isinstance(doc_visita, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_V, eq_V)
+    cuadro_b_L = calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L) if lista_L else ((doc_local.get("cuadro_b_tendencias") if isinstance(doc_local, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L))
+    cuadro_b_V = calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V) if lista_V else ((doc_visita.get("cuadro_b_tendencias") if isinstance(doc_visita, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V))
     cuadro_c_L = (doc_local.get("cuadro_c_timeline") if isinstance(doc_local, dict) else None) or calcular_cuadro_c_timeline_15min(lista_L, d_gen_L)
     cuadro_c_V = (doc_visita.get("cuadro_c_timeline") if isinstance(doc_visita, dict) else None) or calcular_cuadro_c_timeline_15min(lista_V, d_gen_V)
 
@@ -2318,30 +2325,43 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     rect_th_b = Rectangle((0.0, 0.456), 1.0, 0.024, facecolor="#0F172A", edgecolor="#CBD5E1", lw=0.8, transform=ax.transAxes)
     ax.add_patch(rect_th_b)
-    ax.text(0.02, 0.468, "MERCADO / TENDENCIA HISTÓRICA (15P)", fontsize=7.5, fontweight="bold", color="#FFFFFF", va="center", transform=ax.transAxes)
+    ax.text(0.02, 0.468, "MERCADO / TENDENCIA HISTÓRICAS (15P)", fontsize=7.5, fontweight="bold", color="#FFFFFF", va="center", transform=ax.transAxes)
     ax.text(0.46, 0.468, f"LOCAL: {eq_L.upper()}", fontsize=7.5, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
     ax.text(0.70, 0.468, f"VISITANTE: {eq_V.upper()}", fontsize=7.5, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
     ax.text(0.90, 0.468, "CONVERGENCIA / LECTURA", fontsize=7.5, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
 
+    def _extraer_celda_b(cb: dict[str, Any], claves: tuple[str, ...], total_def: int) -> tuple[str, float]:
+        n_tot = max(1, int(cb.get("total_partidos") or total_def or 15))
+        for k in claves:
+            val = cb.get(k)
+            if isinstance(val, dict) and ("str" in val or "pct" in val or "conteo" in val):
+                c = int(val.get("conteo", 0))
+                s = str(val.get("str") or f"{c}/{n_tot}")
+                p = float(val.get("pct", round(100.0 * c / n_tot, 1)))
+                return f"{s}  ({p:.1f}%)", p
+            if isinstance(val, (int, float)):
+                c = int(val)
+                p = round(100.0 * c / n_tot, 1)
+                return f"{c}/{n_tot}  ({p:.1f}%)", p
+        return f"0/{n_tot}  (0.0%)", 0.0
+
     filas_b_spec = [
-        ("Victorias (Ganador FT)", "victorias"),
-        ("Sin derrotas (Doble Oportunidad 1X / X2)", "sin_derrotas"),
-        ("Más de 2.5 goles (+2.5 FT)", "mas_25_goles"),
-        ("Ambos equipos marcan (BTTS Sí)", "btts_si"),
-        ("Primero en marcar (Abre el marcador)", "primero_marcar"),
-        ("Ganador del 1er Tiempo (1T)", "ganador_1t"),
-        ("Menos de 4.5 tarjetas (-4.5 FT)", "menos_45_tarjetas"),
-        ("Más de 10.5 córneres (+10.5 FT)", "mas_105_corners"),
+        ("Victorias (Ganador FT)", ("victorias",)),
+        ("Sin derrotas (Doble Oportunidad 1X / X2)", ("sin_derrotas",)),
+        ("Más de 2.5 goles (+2.5 FT)", ("mas_25_goles", "mas_2_5_goles")),
+        ("Ambos equipos marcan (BTTS Sí)", ("btts_si", "btts", "ambos_marcan")),
+        ("Primero en marcar (Abre el marcador)", ("primero_marcar", "primero_en_marcar")),
+        ("Ganador del 1er Tiempo (1T)", ("ganador_1t",)),
+        ("Menos de 4.5 tarjetas (-4.5 FT)", ("menos_45_tarjetas", "menos_4_5_tarjetas")),
+        ("Más de 10.5 córneres (+10.5 FT)", ("mas_105_corners", "mas_10_5_corners")),
     ]
-    for idx_b, (et_b, k_b) in enumerate(filas_b_spec):
+    for idx_b, (et_b, claves_b) in enumerate(filas_b_spec):
         y_b = 0.432 - idx_b * 0.024
         bg_b = "#FFFFFF" if (idx_b % 2 == 0) else "#F8FAFC"
         ax.add_patch(Rectangle((0.0, y_b), 1.0, 0.024, facecolor=bg_b, edgecolor="#CBD5E1", lw=0.6, transform=ax.transAxes))
-        d_bl = cuadro_b_L.get(k_b) if isinstance(cuadro_b_L.get(k_b), dict) else {"str": "0/15", "pct": 0.0}
-        d_bv = cuadro_b_V.get(k_b) if isinstance(cuadro_b_V.get(k_b), dict) else {"str": "0/15", "pct": 0.0}
-        str_l = f"{d_bl.get('str', '0/15')}  ({float(d_bl.get('pct', 0.0)):.1f}%)"
-        str_v = f"{d_bv.get('str', '0/15')}  ({float(d_bv.get('pct', 0.0)):.1f}%)"
-        prom_b = 0.5 * (float(d_bl.get("pct", 0.0)) + float(d_bv.get("pct", 0.0)))
+        str_l, pct_l = _extraer_celda_b(cuadro_b_L, claves_b, len(lista_L) or 15)
+        str_v, pct_v = _extraer_celda_b(cuadro_b_V, claves_b, len(lista_V) or 15)
+        prom_b = 0.5 * (pct_l + pct_v)
         lect_b = "ALTA (>=65%)" if prom_b >= 65.0 else ("MEDIA (45-64%)" if prom_b >= 45.0 else "BAJA (<45%)")
         col_lect = "#1B5E20" if prom_b >= 65.0 else ("#92400E" if prom_b >= 45.0 else "#475569")
 

@@ -1,145 +1,308 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional, Tuple
+import re
+import unicodedata
+from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 
 
+def _limpiar_txt(s: str) -> str:
+    txt = "".join(
+        c for c in unicodedata.normalize("NFD", str(s or "").lower().strip())
+        if unicodedata.category(c) != "Mn"
+    )
+    return re.sub(r"[^a-z0-9\s]", "", txt).strip()
+
+
+def _es_mismo_equipo(nombre_buscado: str, nombre_en_partido: str) -> bool:
+    """Detecta coincidencia incluso si el nombre está truncado (ej. 'Deportivo Alavés' vs 'Deportivo A')."""
+    a = _limpiar_txt(nombre_buscado)
+    b = _limpiar_txt(nombre_en_partido)
+    if not a or not b:
+        return False
+    if a in b or b in a:
+        return True
+    # Comparar por prefijo de 7 caracteres o palabras clave
+    if len(a) >= 6 and len(b) >= 6 and a[:7] == b[:7]:
+        return True
+    palabras_a = [w for w in a.split() if len(w) >= 4 and w not in ("club", "real", "deportivo")]
+    return any(w in b for w in palabras_a)
+
+
+def _extraer_goles_item(
+    item: Any,
+    nombre_equipo: str = "",
+) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int]]:
+    """
+    Extrae (gf, gc, gf_1t, gc_1t) desde cualquier representación de partido:
+      1) Dict con goles_favor / goles_contra
+      2) Dict de auditoria_historica con marcador: {'equipo': X, 'rival': Y} o goles_equipo / goles_rival
+      3) Dict con local / visitante y goles_local / goles_visitante (usando _es_mismo_equipo)
+      4) String o resumen con formato '01. 01/11/2026 Getafe (3) vs Sevilla (1)' via Regex
+    """
+    gf: Optional[int] = None
+    gc: Optional[int] = None
+    gf_1t: Optional[int] = None
+    gc_1t: Optional[int] = None
+
+    if isinstance(item, dict):
+        # 1) Si el dict trae goles_favor y goles_contra directos
+        if item.get("goles_favor") is not None and item.get("goles_contra") is not None:
+            gf = int(round(float(item["goles_favor"])))
+            gc = int(round(float(item["goles_contra"])))
+        else:
+            # 2) Formato estándar MatrizPartido.a_dict(): marcador={'equipo': X, 'rival': Y}
+            marc = item.get("marcador") if isinstance(item.get("marcador"), dict) else {}
+            ge_m = marc.get("equipo") if marc.get("equipo") is not None else item.get("goles_equipo")
+            gr_m = marc.get("rival") if marc.get("rival") is not None else item.get("goles_rival")
+            if ge_m is not None and gr_m is not None:
+                ge_i = int(round(float(ge_m)))
+                gr_i = int(round(float(gr_m)))
+                eq_p = str(item.get("equipo") or "")
+                riv_p = str(item.get("rival") or "")
+                if nombre_equipo and riv_p and _es_mismo_equipo(nombre_equipo, riv_p) and not _es_mismo_equipo(nombre_equipo, eq_p):
+                    gf, gc = gr_i, ge_i
+                else:
+                    gf, gc = ge_i, gr_i
+            else:
+                # 3) Formato local / visitante + goles_local / goles_visitante
+                loc_str = str(item.get("local") or item.get("home_team") or item.get("equipo_local") or "")
+                vis_str = str(item.get("visitante") or item.get("away_team") or item.get("equipo_visitante") or "")
+                gl_raw = item.get("goles_local", item.get("home_score", item.get("score_home")))
+                gv_raw = item.get("goles_visitante", item.get("away_score", item.get("score_away")))
+                if gl_raw is not None and gv_raw is not None:
+                    gl = int(round(float(gl_raw)))
+                    gv = int(round(float(gv_raw)))
+                    cond_p = str(item.get("condicion") or "").lower()
+                    if _es_mismo_equipo(nombre_equipo, loc_str):
+                        es_local = True
+                    elif _es_mismo_equipo(nombre_equipo, vis_str):
+                        es_local = False
+                    elif cond_p in ("casa", "local"):
+                        es_local = True
+                    elif cond_p in ("fuera", "visitante"):
+                        es_local = False
+                    else:
+                        es_local = True
+                    gf = gl if es_local else gv
+                    gc = gv if es_local else gl
+                elif isinstance(marc.get("texto"), str) and "-" in marc["texto"]:
+                    partes_m = re.findall(r"\d+", marc["texto"])
+                    if len(partes_m) >= 2:
+                        gf, gc = int(partes_m[0]), int(partes_m[1])
+
+        # Extraer 1T si existe en el dict
+        if item.get("goles_1t_favor") is not None and item.get("goles_1t_contra") is not None:
+            gf_1t = int(round(float(item["goles_1t_favor"])))
+            gc_1t = int(round(float(item["goles_1t_contra"])))
+        else:
+            m1t = item.get("marcador_1t") if isinstance(item.get("marcador_1t"), dict) else {}
+            if m1t.get("equipo") is not None and m1t.get("rival") is not None:
+                gf_1t = int(round(float(m1t["equipo"])))
+                gc_1t = int(round(float(m1t["rival"])))
+
+        if gf is None and (item.get("texto") or item.get("resumen") or item.get("linea")):
+            item = str(item.get("texto") or item.get("resumen") or item.get("linea"))
+
+    if isinstance(item, str) and gf is None:
+        # 4) Regex para extraer goles entre paréntesis: "01. 01/11/2026 Getafe (3) vs Sevilla (1)"
+        goles_match = re.findall(r"\((\d+)\)", item)
+        if len(goles_match) >= 2 and "vs" in item.lower():
+            gl = int(goles_match[0])
+            gv = int(goles_match[1])
+            partes_vs = re.split(r"\bvs\b", item, maxsplit=1, flags=re.IGNORECASE)
+            raw_izq = partes_vs[0]
+            raw_der = partes_vs[1] if len(partes_vs) > 1 else ""
+            # Limpiar prefijo "01. 27/10/2026 ", marcador "(2)" y etiquetas finales "[V] · LALIGA"
+            eq_izq = re.sub(r"^\s*\d+\.\s*\d{1,2}/\d{1,2}/\d{2,4}\s*", "", raw_izq)
+            eq_izq = re.sub(r"\(\d+\).*$", "", eq_izq).strip()
+            eq_der = re.sub(r"\(\d+\).*$", "", raw_der).strip()
+            es_local = _es_mismo_equipo(nombre_equipo, eq_izq) and not _es_mismo_equipo(nombre_equipo, eq_der)
+            gf = gl if es_local else gv
+            gc = gv if es_local else gl
+
+    return gf, gc, gf_1t, gc_1t
+
+
 def calcular_cuadro_b_tendencias(
-    partidos_o_df: Any,
+    partidos_o_df: Union[List[Any], pd.DataFrame],
     nombre_equipo: str = "",
     patrones_equipo: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
-    Calcula las 8 tendencias exactas del Cuadro B sobre los 15 partidos del equipo.
-    Funciona tanto con un DataFrame como con la lista de 15 partidos de auditoria_historica.py.
+    Calcula las 8 tendencias del Cuadro B sobre los 15 partidos.
+    Soporta DataFrames, listas de diccionarios y listas de strings ('Getafe (3) vs Sevilla (1)').
     """
+    pat = patrones_equipo or {}
+
     if isinstance(partidos_o_df, pd.DataFrame) and not partidos_o_df.empty:
         df = partidos_o_df
         n = len(df)
         gf = df["goles_favor"] if "goles_favor" in df else pd.Series([1.5] * n)
         gc = df["goles_contra"] if "goles_contra" in df else pd.Series([1.2] * n)
-        gf_1t = df["goles_1t_favor"] if "goles_1t_favor" in df else (gf * 0.45).round()
-        gc_1t = df["goles_1t_contra"] if "goles_1t_contra" in df else (gc * 0.45).round()
-        primero = df["primero_en_marcar"] if "primero_en_marcar" in df else (gf > 0) & (gf >= gc)
-        tarj = df["tarjetas_amarillas"] if "tarjetas_amarillas" in df else pd.Series([2.0] * n)
-        corn = df["corners"] if "corners" in df else pd.Series([5.0] * n)
-        return {
-            "n_partidos": n,
-            "victorias": int((gf > gc).sum()),
-            "sin_derrotas": int((gf >= gc).sum()),
-            "mas_2_5_goles": int(((gf + gc) > 2.5).sum()),
-            "btts": int(((gf > 0) & (gc > 0)).sum()),
-            "primero_en_marcar": int(primero.sum()),
-            "ganador_1t": int((gf_1t > gc_1t).sum()),
-            "menos_4_5_tarjetas": int((tarj < 4.5).sum()),
-            "mas_10_5_corners": int((corn > 10.5).sum()),
-        }
+        victorias = int((gf > gc).sum())
+        sin_derrotas = int((gf >= gc).sum())
+        mas_2_5_goles = int(((gf + gc) > 2.5).sum())
+        btts = int(((gf > 0) & (gc > 0)).sum())
+        primero_en_marcar = int(df["primero_en_marcar"].sum()) if "primero_en_marcar" in df else int(((gf > 0) & (gf >= gc)).sum())
+        ganador_1t = int((df["goles_1t_favor"] > df["goles_1t_contra"]).sum()) if ("goles_1t_favor" in df and "goles_1t_contra" in df) else max(1, int(round(victorias * 0.65)))
+        menos_4_5_tarjetas = int((df["tarjetas_amarillas"] < 4.5).sum()) if "tarjetas_amarillas" in df else int(round(n * 0.60))
+        mas_10_5_corners = int((df["corners"] > 10.5).sum()) if "corners" in df else int(round(n * 0.25))
+    else:
+        lista_partidos = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
+        n = len(lista_partidos) if lista_partidos else 15
+        victorias = 0
+        sin_derrotas = 0
+        mas_2_5_goles = 0
+        btts = 0
+        primero_en_marcar = 0
+        ganador_1t = 0
+        menos_4_5_tarjetas = 0
+        mas_10_5_corners = 0
 
-    # Si recibe la lista de diccionarios de 15 partidos de auditoria_historica.py
-    lista = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
-    n = len(lista) if lista else 15
-    nom_low = (nombre_equipo or "").lower().strip()
-    pat = patrones_equipo or {}
+        partidos_validos = 0
+        for idx, item in enumerate(lista_partidos):
+            gf, gc, gf_1t, gc_1t = _extraer_goles_item(item, nombre_equipo)
+            if gf is None or gc is None:
+                continue
+            partidos_validos += 1
 
-    victorias = 0
-    sin_derrotas = 0
-    mas_25 = 0
-    btts = 0
-    primero = 0
-    ganador_1t = 0
-    menos_45_tarj = 0
-    mas_105_corn = 0
+            if gf > gc:
+                victorias += 1
+            if gf >= gc:
+                sin_derrotas += 1
+            if (gf + gc) > 2.5:
+                mas_2_5_goles += 1
+            if gf > 0 and gc > 0:
+                btts += 1
 
-    if not lista and pat:
-        gf_m = float(pat.get("goles_favor", pat.get("xg", 1.5)) or 1.5)
-        gc_m = float(pat.get("goles_contra", 1.2) or 1.2)
-        cor_m = float(pat.get("corners", 4.8) or 4.8) * 2.0
-        am_m = float(pat.get("tarjetas_amarillas", 1.8) or 1.8) * 2.0
-        ratio_f = gf_m / max(0.5, gf_m + gc_m)
-        victorias = max(2, min(14, int(round(15 * (ratio_f * 0.85)))))
-        sin_derrotas = max(victorias, min(15, victorias + 3))
-        mas_25 = max(2, min(14, int(round(15 * min(0.85, (gf_m + gc_m) / 3.6)))))
-        btts = max(2, min(14, int(round(15 * min(0.80, min(gf_m, gc_m) / 1.45)))))
-        primero = max(victorias, min(14, int(round(15 * ratio_f))))
-        ganador_1t = max(2, min(12, int(round(victorias * 0.65))))
-        menos_45_tarj = max(3, min(14, int(round(15 * (0.75 if am_m < 4.2 else 0.45)))))
-        mas_105_corn = max(2, min(13, int(round(15 * (0.60 if cor_m > 10.0 else 0.35)))))
-        return {
-            "n_partidos": n,
-            "victorias": victorias,
-            "sin_derrotas": sin_derrotas,
-            "mas_2_5_goles": mas_25,
-            "btts": btts,
-            "primero_en_marcar": primero,
-            "ganador_1t": ganador_1t,
-            "menos_4_5_tarjetas": menos_45_tarj,
-            "mas_10_5_corners": mas_105_corn,
-        }
+            if gf > gc or (gf > 0 and gc == 0) or (gf == gc and gf > 0 and idx % 2 == 0):
+                primero_en_marcar += 1
 
-    for idx, p in enumerate(lista):
-        marc = p.get("marcador") if isinstance(p.get("marcador"), dict) else {}
-        if "equipo" in marc and "rival" in marc:
-            gf_i = int(round(float(marc.get("equipo") or 0)))
-            gc_i = int(round(float(marc.get("rival") or 0)))
-        else:
-            loc = str(p.get("local") or p.get("home_team") or "").lower()
-            gl = int(float(p.get("goles_local") if p.get("goles_local") is not None else p.get("home_score", 1)))
-            gv = int(float(p.get("goles_visitante") if p.get("goles_visitante") is not None else p.get("away_score", 1)))
-            es_local = bool(nom_low and (nom_low in loc or loc in nom_low))
-            gf_i = gl if es_local else gv
-            gc_i = gv if es_local else gl
-
-        if gf_i > gc_i:
-            victorias += 1
-        if gf_i >= gc_i:
-            sin_derrotas += 1
-        if (gf_i + gc_i) >= 3:
-            mas_25 += 1
-        if gf_i > 0 and gc_i > 0:
-            btts += 1
-        if p.get("primero_en_marcar") is not None:
-            primero += int(bool(p.get("primero_en_marcar")))
-        elif gf_i > gc_i or (gf_i > 0 and gc_i == 0) or (gf_i == gc_i and gf_i > 0 and idx % 2 == 0):
-            primero += 1
-
-        marc_1t = p.get("marcador_1t") if isinstance(p.get("marcador_1t"), dict) else {}
-        gf_1t_i = p.get("goles_1t_favor", marc_1t.get("equipo"))
-        gc_1t_i = p.get("goles_1t_contra", marc_1t.get("rival"))
-        if gf_1t_i is not None and gc_1t_i is not None:
-            if int(gf_1t_i) > int(gc_1t_i):
+            if gf_1t is not None and gc_1t is not None:
+                if gf_1t > gc_1t:
+                    ganador_1t += 1
+            elif (gf > gc and gf >= 2) or (gf > gc and idx % 2 == 0):
                 ganador_1t += 1
-        elif gf_i > gc_i and (gf_i >= 2 or idx % 2 == 0):
-            ganador_1t += 1
 
-        filas_ft = ((p.get("periodos") or {}).get("FT") or {}).get("filas") or []
-        mapa_ft = {f.get("clave"): f for f in filas_ft if isinstance(f, dict) and f.get("clave")}
-        tarj_tot = p.get("tarjetas_totales", p.get("tarjetas_amarillas"))
-        if tarj_tot is None and "tarjetas_amarillas" in mapa_ft:
-            tarj_tot = float(mapa_ft["tarjetas_amarillas"].get("equipo") or 1.8) + float(mapa_ft["tarjetas_amarillas"].get("rival") or 1.8)
-        if tarj_tot is not None:
-            if float(tarj_tot) < 4.5:
-                menos_45_tarj += 1
-        elif pat.get("tarjetas_amarillas", 1.8) * 2.0 < 4.3:
-            menos_45_tarj += 1 if idx % 5 != 0 else 0
+            # Tarjetas del partido
+            tarj_val: Optional[float] = None
+            if isinstance(item, dict):
+                if item.get("tarjetas_totales") is not None:
+                    tarj_val = float(item["tarjetas_totales"])
+                else:
+                    filas_ft = ((item.get("periodos") or {}).get("FT") or {}).get("filas") or []
+                    for f in filas_ft:
+                        if isinstance(f, dict) and f.get("clave") == "tarjetas_amarillas":
+                            if f.get("equipo") is not None and f.get("rival") is not None:
+                                tarj_val = float(f["equipo"]) + float(f["rival"])
+                            break
+            if tarj_val is not None:
+                if tarj_val < 4.5:
+                    menos_4_5_tarjetas += 1
+            else:
+                tarj_media = float(pat.get("tarjetas_amarillas", 1.9)) * 2.0
+                if tarj_media < 4.5 and (idx % 3 != 0):
+                    menos_4_5_tarjetas += 1
 
-        corn_tot = p.get("corners_totales", p.get("corners"))
-        if corn_tot is None and "corners" in mapa_ft:
-            corn_tot = float(mapa_ft["corners"].get("equipo") or 5.0) + float(mapa_ft["corners"].get("rival") or 4.5)
-        if corn_tot is not None:
-            if float(corn_tot) > 10.5:
-                mas_105_corn += 1
-        elif pat.get("corners", 4.8) >= 5.8 and idx % 2 == 0:
-            mas_105_corn += 1
+            # Córneres del partido
+            corn_val: Optional[float] = None
+            if isinstance(item, dict):
+                if item.get("corners_totales") is not None:
+                    corn_val = float(item["corners_totales"])
+                else:
+                    filas_ft = ((item.get("periodos") or {}).get("FT") or {}).get("filas") or []
+                    for f in filas_ft:
+                        if isinstance(f, dict) and f.get("clave") == "corners":
+                            if f.get("equipo") is not None and f.get("rival") is not None:
+                                corn_val = float(f["equipo"]) + float(f["rival"])
+                            break
+            if corn_val is not None:
+                if corn_val > 10.5:
+                    mas_10_5_corners += 1
+            else:
+                corn_media = float(pat.get("corners", 4.5)) * 2.0
+                if (corn_media > 10.0 and idx % 2 == 0) or (gf + gc >= 4 and idx % 3 == 0):
+                    mas_10_5_corners += 1
+
+        # Si no venía lista de partidos (o ningún partido tenía marcador), estimar desde patrones
+        if partidos_validos == 0 and pat:
+            gf_m = float(pat.get("goles_favor", pat.get("xg", 1.5)) or 1.5)
+            gc_m = float(pat.get("goles_contra", 1.2) or 1.2)
+            cor_m = float(pat.get("corners", 4.8) or 4.8) * 2.0
+            am_m = float(pat.get("tarjetas_amarillas", 1.8) or 1.8) * 2.0
+            ratio_f = gf_m / max(0.5, gf_m + gc_m)
+            victorias = max(2, min(14, int(round(15 * (ratio_f * 0.85)))))
+            sin_derrotas = max(victorias, min(15, victorias + 3))
+            mas_2_5_goles = max(2, min(14, int(round(15 * min(0.85, (gf_m + gc_m) / 3.6)))))
+            btts = max(2, min(14, int(round(15 * min(0.80, min(gf_m, gc_m) / 1.45)))))
+            primero_en_marcar = max(victorias, min(14, int(round(15 * ratio_f))))
+            ganador_1t = max(2, min(12, int(round(victorias * 0.65))))
+            menos_4_5_tarjetas = max(3, min(14, int(round(15 * (0.75 if am_m < 4.2 else 0.45)))))
+            mas_10_5_corners = max(2, min(13, int(round(15 * (0.60 if cor_m > 10.0 else 0.35)))))
+
+    n = max(1, n)
+
+    class _CeldaTendencia(int):
+        def __new__(cls, conteo: int, total: int = 15):
+            obj = super().__new__(cls, int(conteo))
+            tot = max(1, int(total))
+            pct = round(100.0 * int(conteo) / tot, 1)
+            obj._meta = {
+                "conteo": int(conteo),
+                "total": tot,
+                "pct": pct,
+                "str": f"{int(conteo)}/{tot}",
+                "fmt": f"{int(conteo)}/{tot} ({pct:.1f}%)",
+            }
+            return obj
+
+        def __getitem__(self, key: str) -> Any:
+            return self._meta[key]
+
+        def get(self, key: str, default: Any = None) -> Any:
+            return self._meta.get(key, default)
+
+        def __contains__(self, key: object) -> bool:
+            return key in self._meta
+
+    v_c = _CeldaTendencia(victorias, n)
+    sd_c = _CeldaTendencia(sin_derrotas, n)
+    m25_c = _CeldaTendencia(mas_2_5_goles, n)
+    btts_c = _CeldaTendencia(btts, n)
+    pm_c = _CeldaTendencia(primero_en_marcar, n)
+    g1t_c = _CeldaTendencia(ganador_1t, n)
+    m45t_c = _CeldaTendencia(menos_4_5_tarjetas, n)
+    m105c_c = _CeldaTendencia(mas_10_5_corners, n)
 
     return {
         "n_partidos": n,
-        "victorias": victorias,
-        "sin_derrotas": sin_derrotas,
-        "mas_2_5_goles": mas_25,
-        "btts": btts,
-        "primero_en_marcar": primero,
-        "ganador_1t": ganador_1t,
-        "menos_4_5_tarjetas": menos_45_tarj,
-        "mas_10_5_corners": mas_105_corn,
+        "total_partidos": n,
+        "victorias": v_c,
+        "sin_derrotas": sd_c,
+        "mas_2_5_goles": m25_c,
+        "btts": btts_c,
+        "primero_en_marcar": pm_c,
+        "ganador_1t": g1t_c,
+        "menos_4_5_tarjetas": m45t_c,
+        "mas_10_5_corners": m105c_c,
+        # Aliases por compatibilidad con cualquier renderizador de tabla
+        "ganador_ft": v_c,
+        "doble_oportunidad": sd_c,
+        "mas_25_goles": m25_c,
+        "ambos_marcan": btts_c,
+        "btts_si": btts_c,
+        "primero_marcar": pm_c,
+        "ganador_primer_tiempo": g1t_c,
+        "menos_45_tarjetas": m45t_c,
+        "mas_105_corners": m105c_c,
+        "victorias_fmt": f"{victorias}/{n} ({(victorias/n)*100:.1f}%)",
+        "sin_derrotas_fmt": f"{sin_derrotas}/{n} ({(sin_derrotas/n)*100:.1f}%)",
+        "mas_2_5_goles_fmt": f"{mas_2_5_goles}/{n} ({(mas_2_5_goles/n)*100:.1f}%)",
+        "btts_fmt": f"{btts}/{n} ({(btts/n)*100:.1f}%)",
+        "primero_en_marcar_fmt": f"{primero_en_marcar}/{n} ({(primero_en_marcar/n)*100:.1f}%)",
+        "ganador_1t_fmt": f"{ganador_1t}/{n} ({(ganador_1t/n)*100:.1f}%)",
+        "menos_4_5_tarjetas_fmt": f"{menos_4_5_tarjetas}/{n} ({(menos_4_5_tarjetas/n)*100:.1f}%)",
+        "mas_10_5_corners_fmt": f"{mas_10_5_corners}/{n} ({(mas_10_5_corners/n)*100:.1f}%)",
     }
 
 
@@ -164,29 +327,20 @@ def calcular_cuadro_c_timeline(
                 for fr in franjas
             }
 
-    # Si viene desde la lista de 15 partidos, suma los goles reales y los distribuye según peso 1T/2T
     lista = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
-    nom_low = (nombre_equipo or "").lower().strip()
     pat = patrones_equipo or {}
 
     tot_gf = 0
     tot_gc = 0
-    for p in lista:
-        marc = p.get("marcador") if isinstance(p.get("marcador"), dict) else {}
-        if "equipo" in marc and "rival" in marc:
-            tot_gf += int(round(float(marc.get("equipo") or 0)))
-            tot_gc += int(round(float(marc.get("rival") or 0)))
-        else:
-            loc = str(p.get("local") or p.get("home_team") or "").lower()
-            gl = int(float(p.get("goles_local") if p.get("goles_local") is not None else p.get("home_score", 1)))
-            gv = int(float(p.get("goles_visitante") if p.get("goles_visitante") is not None else p.get("away_score", 1)))
-            es_local = bool(nom_low and (nom_low in loc or loc in nom_low))
-            tot_gf += gl if es_local else gv
-            tot_gc += gv if es_local else gl
+    for item in lista:
+        gf_i, gc_i, _, _ = _extraer_goles_item(item, nombre_equipo)
+        if gf_i is not None and gc_i is not None:
+            tot_gf += gf_i
+            tot_gc += gc_i
 
     if tot_gf == 0 and tot_gc == 0:
-        tot_gf = int(round(pat.get("goles_favor", 1.5) * 15))
-        tot_gc = int(round(pat.get("goles_contra", 1.2) * 15))
+        tot_gf = int(round(float(pat.get("goles_favor", pat.get("xg", 1.5)) or 1.5) * 15))
+        tot_gc = int(round(float(pat.get("goles_contra", 1.2) or 1.2) * 15))
 
     peso_2t = float(pat.get("P26_Poder_Cierre_2T", 0.55))
     peso_1t = max(0.20, min(0.80, 1.0 - peso_2t))
@@ -470,7 +624,9 @@ def calcular_cuadro_b_tendencias_15p(
         ("menos_45_tarjetas", "menos_4_5_tarjetas", "-4.5 tarjetas"),
         ("mas_105_corners", "mas_10_5_corners", "+10.5 córneres"),
     ]
-    res: Dict[str, Any] = {"n_partidos": n_tot, "filas": {}}
+    res: Dict[str, Any] = dict(raw)
+    res["n_partidos"] = n_tot
+    res["filas"] = {}
     for k_vis, k_raw, titulo in mapa_claves:
         val = raw.get(k_raw, raw.get(k_vis, 8))
         if isinstance(val, dict):
@@ -488,8 +644,9 @@ def calcular_cuadro_b_tendencias_15p(
             "texto": f"{cnt}/{n_tot} ({pct:.0f}%)",
         }
         res["filas"][k_vis] = nodo
+        res["filas"][k_raw] = nodo
         res[k_vis] = nodo
-        res[k_raw] = cnt
+        res[k_raw] = nodo
     res["btts_si"] = res["btts"]
     res["filas"]["btts_si"] = res["btts"]
     return res
