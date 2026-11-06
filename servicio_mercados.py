@@ -1824,9 +1824,10 @@ def enviar_analisis(
                 if texto_sender is not None:
                     try:
                         encabezado_3p = f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
-                        res_txt_3p = texto_sender(encabezado_3p + texto_3p, chat_id=chat_id)
-                        if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:
-                            ids_telegram.append(res_txt_3p["message_id"])
+                        for parte_3p in partir_mensaje(encabezado_3p + texto_3p):
+                            res_txt_3p = texto_sender(parte_3p, chat_id=chat_id)
+                            if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:
+                                ids_telegram.append(res_txt_3p["message_id"])
                     except Exception as e_txt_3p:
                         print(f"[SERVICIO MERCADOS] ⚠️ Aviso al enviar análisis de 3 párrafos: {e_txt_3p}")
 

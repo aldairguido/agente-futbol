@@ -839,4 +839,78 @@ def redactar_analisis_3_parrafos(
                 "cuya cuota real supere la Cuota Justa calculada por la Red Neuronal."
             )
 
+    bloque_xai = generar_bloque_narrativo_xai_desde_analisis(analisis)
+    if bloque_xai:
+        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}"
     return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}"
+
+
+def generar_bloque_narrativo_xai_desde_analisis(
+    analisis: Any,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+) -> str:
+    """
+    Construye el Informe Narrativo XAI determinista (📊 TICKET DE ANÁLISIS PROFUNDO)
+    con los 5 bloques explicativos y 15+ razones respaldadas por los 55 patrones,
+    Cuadro B (Tendencias 15P) y Cuadro C (Timeline 15 min).
+    """
+    try:
+        from motor_patrones import calcular_patrones_completos_partido
+        from motor_inferencia import (
+            aplicar_reglas_matchup_55,
+            calcular_cuadro_b_tendencias_15p,
+            calcular_cuadro_c_timeline_15min,
+            generar_informe_narrativo_xai,
+        )
+
+        meta = getattr(analisis, "metadatos", {}) or {}
+        motor = getattr(analisis, "motor", None)
+        eq_l = str(meta.get("equipo_local") or getattr(motor, "nombre_local", "Local") or "Local")
+        eq_v = str(meta.get("equipo_visitante") or getattr(motor, "nombre_visitante", "Visitante") or "Visitante")
+        comp = str(meta.get("competicion") or getattr(motor, "competicion", "Competición Oficial") or "Competición Oficial")
+
+        def _dict_bloque(lado: str) -> dict[str, Any]:
+            d: dict[str, Any] = {}
+            bloques = getattr(motor, "bloques", {}) if motor else {}
+            b = bloques.get(lado) if isinstance(bloques, dict) else None
+            ft_d = getattr(b, "ft", None) if b is not None else None
+            if isinstance(ft_d, dict):
+                for k, nodo in ft_d.items():
+                    if isinstance(nodo, dict):
+                        d[k] = nodo.get("promedio", nodo.get("valor", 0.0))
+                    else:
+                        d[k] = nodo
+            return d
+
+        d_gen_L = _dict_bloque("local")
+        d_gen_V = _dict_bloque("visitante")
+        d_loc_L = dict(d_gen_L)
+        d_vis_V = dict(d_gen_V)
+
+        rec = getattr(motor, "recursivo", None) or {}
+        if isinstance(rec.get("mu_local_casa"), dict):
+            d_loc_L.update(rec["mu_local_casa"])
+        if isinstance(rec.get("mu_visita_fuera"), dict):
+            d_vis_V.update(rec["mu_visita_fuera"])
+
+        P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+
+        probs_1x2 = _probabilidades_1x2_y_goles_desde_matriz(analisis)
+        p_loc_adj, p_emp_adj, p_vis_adj, alertas = aplicar_reglas_matchup_55(
+            P_L, P_V, probs_1x2["local"], probs_1x2["empate"], probs_1x2["visitante"], eq_l, eq_v
+        )
+
+        pts_l = (doc_local.get("partidos") if isinstance(doc_local, dict) else None) or getattr(motor, "partidos_local", []) or []
+        pts_v = (doc_visitante.get("partidos") if isinstance(doc_visitante, dict) else None) or getattr(motor, "partidos_visitante", []) or []
+
+        cb_L = calcular_cuadro_b_tendencias_15p(pts_l, eq_l, d_gen_L)
+        cb_V = calcular_cuadro_b_tendencias_15p(pts_v, eq_v, d_gen_V)
+        cc_L = calcular_cuadro_c_timeline_15min(pts_l, eq_l, d_gen_L)
+        cc_V = calcular_cuadro_c_timeline_15min(pts_v, eq_v, d_gen_V)
+
+        return generar_informe_narrativo_xai(
+            eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V
+        )
+    except Exception:
+        return ""
