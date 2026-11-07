@@ -651,7 +651,12 @@ def renderizar_ticket_mercados_png(
         prob = float(_val(s, "probabilidad", 0.0) or 0.0)
         pct = f"{prob:.0%}"
 
+        eq_raw_p = _val(s, "equipo", None)
+        eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
+
         if "GOL" in cat:
+            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+                return "", "", 0.0
             if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
                 lbl = f"+{lin:g} Goles" if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
@@ -662,7 +667,7 @@ def renderizar_ticket_mercados_png(
                 else:
                     lbl = et
             elif "primer_gol" in ev:
-                eq_anota = _val(s, "equipo") or eq_l
+                eq_anota = eq_p or eq_l
                 lbl = f"1er Gol: {eq_anota}"
             elif "ambos_marcan" in ev or "btts" in ev:
                 lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
@@ -672,12 +677,14 @@ def renderizar_ticket_mercados_png(
             # Prohibido imprimir líneas negativas o imposibles como -0.5 Córn. 100%
             if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
                 return "", "", 0.0
+            pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
             if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Córn." if lin is not None else et
+                lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Córn." if lin is not None else et
+                lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
             else:
                 lbl = et
+            return lbl, pct, prob
         elif "TARJETA" in cat:
             # Prohibido imprimir líneas negativas o imposibles como -0.5 Tarj. 100%
             if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
@@ -1281,6 +1288,8 @@ def renderizar_ticket_mercados_png(
         return destino
     finally:
         img.close()
+        import gc
+        gc.collect()
 
 
 renderizar_ticket_png = renderizar_ticket_mercados_png

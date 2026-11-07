@@ -949,7 +949,32 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "racing de avellaneda": ["Racing Club"],
     "racing": ["Racing Club"],
     "independiente": ["Independiente", "CA Independiente"],
-    "san lorenzo": ["San Lorenzo"],
+    "san lorenzo": ["San Lorenzo", "CA San Lorenzo"],
+    "platense": ["CA Platense", "Platense", "Club Atlético Platense"],
+    "ca platense": ["CA Platense", "Platense"],
+    "club atletico platense": ["CA Platense", "Platense"],
+    "riestra": ["Deportivo Riestra", "Riestra"],
+    "deportivo riestra": ["Deportivo Riestra", "Riestra"],
+    "huracan": ["CA Huracán", "Huracán", "Huracan"],
+    "belgrano": ["Belgrano", "CA Belgrano"],
+    "instituto": ["Instituto", "Instituto ACC"],
+    "godoy cruz": ["Godoy Cruz"],
+    "banfield": ["Banfield", "CA Banfield"],
+    "lanus": ["Lanús", "Lanus", "CA Lanús"],
+    "defensa y justicia": ["Defensa y Justicia"],
+    "argentinos juniors": ["Argentinos Juniors"],
+    "rosario central": ["Rosario Central"],
+    "newells": ["Newell's Old Boys", "Newells Old Boys"],
+    "newells old boys": ["Newell's Old Boys", "Newells Old Boys"],
+    "union": ["Unión", "Union", "Unión de Santa Fe"],
+    "union santa fe": ["Unión", "Union", "Unión de Santa Fe"],
+    "sarmiento": ["Sarmiento"],
+    "central cordoba": ["Central Córdoba", "Central Cordoba", "Central Córdoba SdE"],
+    "tigre": ["Tigre", "CA Tigre"],
+    "barracas central": ["Barracas Central"],
+    "gimnasia": ["Gimnasia LP", "Gimnasia y Esgrima"],
+    "independiente rivadavia": ["Independiente Rivadavia"],
+    "atletico tucuman": ["Atlético Tucumán", "Atletico Tucuman"],
     "velez": ["Vélez Sarsfield", "Velez Sarsfield"],
     "velez sarsfield": ["Vélez Sarsfield", "Velez Sarsfield"],
     "estudiantes": ["Estudiantes", "Estudiantes de La Plata"],
@@ -960,7 +985,20 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "cr flamengo": ["Flamengo", "CR Flamengo"],
     "palmeiras": ["Palmeiras", "SE Palmeiras"],
     "se palmeiras": ["Palmeiras", "SE Palmeiras"],
-    "fluminense": ["Fluminense"],
+    "fluminense": ["Fluminense", "Fluminense FC"],
+    "vitoria": ["Vitória", "EC Vitória", "Vitoria"],
+    "vitória": ["Vitória", "EC Vitória", "Vitoria"],
+    "ec vitoria": ["Vitória", "EC Vitória", "Vitoria"],
+    "fortaleza": ["Fortaleza", "Fortaleza EC"],
+    "bahia": ["Bahia", "EC Bahia"],
+    "cruzeiro": ["Cruzeiro", "Cruzeiro EC"],
+    "internacional": ["Internacional", "SC Internacional"],
+    "athletico paranaense": ["Athletico Paranaense", "Athletico-PR"],
+    "bragantino": ["Red Bull Bragantino", "RB Bragantino", "Bragantino"],
+    "juventude": ["Juventude", "EC Juventude"],
+    "criciuma": ["Criciúma", "Criciuma"],
+    "cuiaba": ["Cuiabá", "Cuiaba"],
+    "atletico goianiense": ["Atlético Goianiense", "Atletico-GO"],
     "corinthians": ["Corinthians"],
     "sao paulo": ["São Paulo", "Sao Paulo"],
     "botafogo": ["Botafogo"],
@@ -1253,10 +1291,18 @@ _LIGA_POR_EQUIPO_CONOCIDO: dict[str, dict[str, Any]] = {
     **{k: {"liga": "Liga Profesional", "id_liga": 112, "pais": "argentina"} for k in (
         "boca", "boca juniors", "river", "river plate", "racing club", "racing de avellaneda",
         "independiente", "san lorenzo", "velez", "velez sarsfield", "estudiantes", "talleres", "lanus",
+        "platense", "ca platense", "club atletico platense", "riestra", "deportivo riestra",
+        "huracan", "ca huracan", "belgrano", "instituto", "godoy cruz", "banfield",
+        "defensa y justicia", "argentinos juniors", "rosario central", "newells",
+        "newells old boys", "union", "union santa fe", "sarmiento", "central cordoba",
+        "tigre", "barracas central", "gimnasia", "independiente rivadavia", "atletico tucuman",
     )},
     **{k: {"liga": "Brasileirão Série A", "id_liga": 268, "pais": "brasil"} for k in (
         "vasco", "vasco da gama", "flamengo", "cr flamengo", "palmeiras", "se palmeiras",
         "fluminense", "corinthians", "sao paulo", "botafogo", "atletico mineiro", "atletico-mg", "gremio",
+        "vitoria", "vitória", "ec vitoria", "fortaleza", "bahia", "ec bahia", "cruzeiro",
+        "internacional", "sc internacional", "athletico paranaense", "bragantino",
+        "rb bragantino", "red bull bragantino", "juventude", "criciuma", "cuiaba", "atletico goianiense",
     )},
     **{k: {"liga": "Liga AUF Uruguaya", "id_liga": 161, "pais": "uruguay"} for k in (
         "penarol", "peñarol", "nacional", "montevideo city torque", "montevideo city",
@@ -1422,13 +1468,53 @@ def _normalizar_fonetica_hispana(nombre: str) -> list[str]:
     return res
 
 
-def _pais_de_liga(nombre_liga: str | None) -> str:
-    """Infiere el país o federación a partir del nombre de la liga."""
+_MAPA_CCODE_PAIS: dict[str, str] = {
+    "arg": "argentina", "argentina": "argentina",
+    "bra": "brasil", "brazil": "brasil", "brasil": "brasil",
+    "esp": "espana", "spain": "espana", "espana": "espana",
+    "eng": "inglaterra", "england": "inglaterra", "inglaterra": "inglaterra",
+    "ita": "italia", "italy": "italia", "italia": "italia",
+    "ger": "alemania", "deu": "alemania", "germany": "alemania", "alemania": "alemania",
+    "fra": "francia", "france": "francia", "francia": "francia",
+    "por": "portugal", "prt": "portugal", "portugal": "portugal",
+    "ned": "holanda", "nld": "holanda", "netherlands": "holanda", "holanda": "holanda",
+    "bel": "belgica", "belgium": "belgica", "belgica": "belgica",
+    "tur": "turquia", "turkey": "turquia", "turkiye": "turquia", "turquia": "turquia",
+    "sco": "escocia", "scotland": "escocia", "escocia": "escocia",
+    "uru": "uruguay", "ury": "uruguay", "uruguay": "uruguay",
+    "chi": "chile", "chl": "chile", "chile": "chile",
+    "per": "peru", "peru": "peru",
+    "col": "colombia", "colombia": "colombia",
+    "ecu": "ecuador", "ecuador": "ecuador",
+    "mex": "mexico", "mexico": "mexico",
+    "usa": "usa", "united states": "usa",
+    "hon": "honduras", "hnd": "honduras", "honduras": "honduras",
+    "crc": "costa rica", "costa rica": "costa rica",
+    "gua": "guatemala", "gtm": "guatemala", "guatemala": "guatemala",
+    "slv": "el salvador", "esa": "el salvador", "el salvador": "el salvador",
+    "pan": "panama", "panama": "panama",
+    "par": "paraguay", "pry": "paraguay", "paraguay": "paraguay",
+    "bol": "bolivia", "bolivia": "bolivia",
+    "ven": "venezuela", "venezuela": "venezuela",
+    "int": "internacional",
+}
+
+
+def _pais_de_liga(nombre_liga: str | None, ccode: str | None = None) -> str:
+    """Infiere el país o federación a partir del código de país o del nombre de la liga."""
+    if ccode:
+        cc = _sin_acentos(str(ccode)).lower().strip()
+        if cc in _MAPA_CCODE_PAIS:
+            return _MAPA_CCODE_PAIS[cc]
     if not nombre_liga:
         return ""
-    n = _sin_acentos(str(nombre_liga)).lower()
+    n = _sin_acentos(str(nombre_liga)).lower().strip()
+    if n in _MAPA_CCODE_PAIS:
+        return _MAPA_CCODE_PAIS[n]
+    if any(k in n for k in ("honduras", "liga nacional honduras", "olancho", "juticalpa", "motagua", "olimpia honduras")):
+        return "honduras"
     if any(k in n for k in ("laliga", "la liga", "copa del rey", "primera division espana", "segunda division", "supercopa de espana", "espana", "spain", "liga f", "federacion")):
-        if not any(p in n for p in ("uruguay", "chile", "argentina", "peru", "colombia")):
+        if not any(p in n for p in ("uruguay", "chile", "argentina", "peru", "colombia", "honduras", "costa rica", "mexico")):
             return "espana"
     if any(k in n for k in ("premier league", "fa cup", "efl cup", "championship", "league one", "league two", "inglaterra", "england")):
         if not any(p in n for p in ("tanzania", "uganda", "kenya", "ghana", "nigeria", "egypt", "azerbaijan", "armenia", "kazakhstan", "russia", "ukraine", "scotland", "canada")):
@@ -1455,13 +1541,13 @@ def _pais_de_liga(nombre_liga: str | None) -> str:
         return "uruguay"
     if any(k in n for k in ("chile", "campeonato chileno", "primera b")):
         return "chile"
-    if any(k in n for k in ("argentina", "liga profesional", "copa de la liga profesional", "copa argentina")):
+    if any(k in n for k in ("argentina", "liga profesional", "copa de la liga profesional", "copa argentina", "primera nacional", "torneo betano")):
         return "argentina"
     if any(k in n for k in ("peru", "liga 1", "liga 1 te apuesto")):
         return "peru"
     if any(k in n for k in ("colombia", "liga betplay", "primera a")):
         return "colombia"
-    if any(k in n for k in ("brasil", "brazil", "brasileirao", "serie a brazil", "copa do brasil", "paulista", "carioca", "gaucho")):
+    if any(k in n for k in ("brasil", "brazil", "brasileirao", "serie a brazil", "copa do brasil", "paulista", "carioca", "gaucho", "baiano", "copa do nordeste")):
         return "brasil"
     if any(k in n for k in ("ecuador", "ligapro", "liga pro")):
         return "ecuador"
@@ -1475,6 +1561,8 @@ def _pais_de_liga(nombre_liga: str | None) -> str:
         return "europa"
     if any(k in n for k in ("libertadores", "sudamericana", "conmebol")):
         return "sudamerica"
+    if "liga nacional" in n:
+        return "honduras"
     return ""
 
 
@@ -1694,13 +1782,22 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     alias_conocidos = {norm(a) for a in alias_raw if a}
     alias_nucleos = {" ".join(_palabras_nucleo(a)) for a in alias_raw if a}
 
+    nucleo_identidad_consulta = [p for p in nucleo_consulta if p not in _MODIFICADORES_GENERICOS_CLUB] or nucleo_consulta
+    nucleo_identidad_nombre = [p for p in nucleo_nombre if p not in _MODIFICADORES_GENERICOS_CLUB] or nucleo_nombre
+    str_identidad_consulta = " ".join(nucleo_identidad_consulta)
+    str_identidad_nombre = " ".join(nucleo_identidad_nombre)
+
     exacto_raw = 1 if (nombre == consulta_n or nombre == canonico_n) else 0
-    exacto_nucleo = 1 if (str_nucleo_consulta and str_nucleo_nombre == str_nucleo_consulta) else 0
+    exacto_nucleo = 1 if (
+        (str_nucleo_consulta and str_nucleo_nombre == str_nucleo_consulta)
+        or (str_identidad_consulta and str_identidad_nombre == str_identidad_consulta)
+    ) else 0
     es_alias_exacto = 1 if (
         exacto_raw
         or exacto_nucleo
         or nombre in alias_conocidos
         or (str_nucleo_nombre and str_nucleo_nombre in alias_nucleos)
+        or (str_identidad_nombre and str_identidad_nombre in alias_nucleos)
     ) else 0
 
     empieza = 1 if (
@@ -1715,9 +1812,7 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     # o 'guizhou'/'guiyang' en 'guizhou guiyang athletic'), el candidato DEBE coincidir con al menos una
     # palabra específica, ser un alias hispano conocido, o tener similitud difusa >= 0.72.
     import difflib
-    palabras_identidad = [p for p in nucleo_consulta if p not in _MODIFICADORES_GENERICOS_CLUB]
-    if not palabras_identidad:
-        palabras_identidad = nucleo_consulta
+    palabras_identidad = nucleo_identidad_consulta
     solape_identidad = sum(
         1 for p in palabras_identidad
         if any(p == w or (len(p) >= 4 and (p in w or w in p)) for w in nucleo_nombre)
@@ -1732,15 +1827,15 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     bono_liga = 0
     coherencia_pais = 0
     if rival_meta and isinstance(rival_meta, dict):
-        c_liga_id = candidato.get("leagueId")
-        c_lname = norm(candidato.get("leagueName"))
+        c_liga_id = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
+        c_lname = norm(candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"))
         ids_esperados = [str(x) for x in (rival_meta.get("ids_liga") or []) if x is not None]
-        r_liga_id = rival_meta.get("id_liga") or rival_meta.get("leagueId")
+        r_liga_id = rival_meta.get("id_liga") or rival_meta.get("leagueId") or rival_meta.get("primaryLeagueId")
         if r_liga_id is not None and str(r_liga_id) not in ids_esperados:
             ids_esperados.append(str(r_liga_id))
 
         keywords_liga = [norm(k) for k in (rival_meta.get("keywords_liga") or []) if k]
-        r_lname = norm(rival_meta.get("liga") or rival_meta.get("leagueName"))
+        r_lname = norm(rival_meta.get("liga") or rival_meta.get("leagueName") or rival_meta.get("primaryLeagueName"))
         if r_lname and r_lname not in keywords_liga:
             keywords_liga.append(r_lname)
 
@@ -1750,17 +1845,27 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
         elif c_lname and any(k == c_lname or k in c_lname or c_lname in k for k in keywords_liga if k):
             bono_liga = 20 if es_forzada else 8
 
-        r_pais = rival_meta.get("pais") or _pais_de_liga(rival_meta.get("liga") or rival_meta.get("leagueName"))
-        c_pais = _pais_de_liga(candidato.get("leagueName"))
+        r_pais = _pais_de_liga(
+            rival_meta.get("liga") or rival_meta.get("leagueName") or rival_meta.get("primaryLeagueName"),
+            ccode=rival_meta.get("pais") or rival_meta.get("ccode") or rival_meta.get("country"),
+        ) or norm(rival_meta.get("pais") or "")
+        c_pais = _pais_de_liga(
+            candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
+            ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
+        )
+        es_duelo_nacional = bool(r_pais and r_pais not in ("europa", "sudamerica", "internacional"))
         if r_pais and c_pais:
             if r_pais == c_pais:
                 coherencia_pais = 15 if es_forzada else 5
             elif (r_pais == "europa" and c_pais in PAISES_EUROPA) or (c_pais == "europa" and r_pais in PAISES_EUROPA):
                 coherencia_pais = 12 if es_forzada else 4
-            elif r_pais in PAISES_EUROPA and c_pais in PAISES_EUROPA:
-                coherencia_pais = 10 if es_forzada else 3
             elif (r_pais == "sudamerica" and c_pais in PAISES_SUDAMERICA) or (c_pais == "sudamerica" and r_pais in PAISES_SUDAMERICA):
                 coherencia_pais = 12 if es_forzada else 4
+            elif es_duelo_nacional and c_pais != r_pais:
+                # En duelos nacionales (ej. San Lorenzo vs Platense en Argentina), descartar homónimos de otro país
+                coherencia_pais = -80
+            elif r_pais in PAISES_EUROPA and c_pais in PAISES_EUROPA:
+                coherencia_pais = 10 if es_forzada else 3
             elif r_pais in PAISES_SUDAMERICA and c_pais in PAISES_SUDAMERICA:
                 coherencia_pais = 10 if es_forzada else 3
             elif (r_pais in PAISES_EUROPA and c_pais not in PAISES_EUROPA) or (r_pais not in PAISES_EUROPA and c_pais in PAISES_EUROPA):
@@ -1768,7 +1873,10 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             elif (r_pais in PAISES_SUDAMERICA and c_pais not in PAISES_SUDAMERICA) or (r_pais not in PAISES_SUDAMERICA and c_pais in PAISES_SUDAMERICA):
                 coherencia_pais = -25 if es_forzada else -20
             else:
-                coherencia_pais = -15 if es_forzada else -2
+                coherencia_pais = -15 if es_forzada else -10
+        elif es_duelo_nacional and bono_liga == 0 and c_lname:
+            # El candidato tiene una liga no perteneciente al país del rival nacional
+            coherencia_pais = -60
 
     # Si el candidato NO comparte ninguna palabra nuclear de identidad ni alias (ej. "FC Porto" para "fc fulham"),
     # hundir su puntuación para que jamás gane por compartir solo "FC" o por tener mayor popularidad en FotMob.
@@ -1784,17 +1892,152 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     else:
         penal_filial = 0
 
+    # Un homónimo de otro país (coherencia_pais < 0) jamás debe superar por nombre exacto a un club del mismo país
+    es_alias_coherente = es_alias_exacto if coherencia_pais >= 0 else 0
+    exacto_nucleo_coherente = exacto_nucleo if coherencia_pais >= 0 else 0
+
     return (
         -penal_filial,
         tiene_identidad,
-        es_alias_exacto,
-        exacto_nucleo,
+        es_alias_coherente,
+        exacto_nucleo_coherente,
         coherencia_pais,
         bono_liga,
         empieza,
         solape_nucleo,
         float(candidato.get("score") or 0),
     )
+
+
+def resolver_par_equipos_coherentes(
+    nombre_local: str,
+    nombre_visita: str,
+    competicion_hint: str = "",
+    fuente_obj: Any = None,
+    candidatos_local: list[dict[str, Any]] | None = None,
+    candidatos_visita: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """
+    Resuelve de forma conjunta (Entity Resolution) el equipo Local y el Visitante
+    exigiendo coherencia geográfica y de liga en duelos nacionales (ej. San Lorenzo vs Platense
+    en Liga Profesional de Argentina, descartando a Platense FC de Honduras).
+    """
+    if fuente_obj is not None and hasattr(fuente_obj, "resolver_cruce_equipos") and candidatos_local is None and candidatos_visita is None:
+        return fuente_obj.resolver_cruce_equipos(nombre_local, nombre_visita, liga_contexto=competicion_hint or None)
+
+    liga_a, limpio_a = extraer_liga_de_texto(nombre_local or "")
+    liga_b, limpio_b = extraer_liga_de_texto(nombre_visita or "")
+    liga_comun = liga_a or liga_b or (_inferir_meta_rival_desde_texto(competicion_hint) if competicion_hint else None)
+
+    ctx_para_a = _inferir_meta_rival_desde_texto(limpio_b) or {}
+    if liga_comun:
+        ctx_para_a = {**ctx_para_a, **liga_comun}
+    ctx_para_b = _inferir_meta_rival_desde_texto(limpio_a) or {}
+    if liga_comun:
+        ctx_para_b = {**ctx_para_b, **liga_comun}
+
+    res_a: dict[str, Any] | None = None
+    res_b: dict[str, Any] | None = None
+
+    if candidatos_local:
+        orden_a = sorted(
+            candidatos_local,
+            key=lambda c: puntuar_candidato(c, limpio_a or nombre_local, rival_meta=ctx_para_a),
+            reverse=True,
+        )
+        res_a = orden_a[0] if orden_a else None
+    elif ctx_para_b:
+        res_a = dict(ctx_para_b)
+
+    if res_a and isinstance(res_a, dict):
+        pais_a = _pais_de_liga(res_a.get("leagueName") or res_a.get("liga"), ccode=res_a.get("ccode") or res_a.get("pais"))
+        if pais_a and not ctx_para_b.get("pais"):
+            ctx_para_b["pais"] = pais_a
+        if (res_a.get("leagueName") or res_a.get("liga")) and not ctx_para_b.get("liga"):
+            ctx_para_b["liga"] = res_a.get("leagueName") or res_a.get("liga")
+        if (res_a.get("leagueId") or res_a.get("id_liga")) and not ctx_para_b.get("id_liga"):
+            ctx_para_b["id_liga"] = res_a.get("leagueId") or res_a.get("id_liga")
+
+    if candidatos_visita:
+        orden_b = sorted(
+            candidatos_visita,
+            key=lambda c: puntuar_candidato(c, limpio_b or nombre_visita, rival_meta=ctx_para_b),
+            reverse=True,
+        )
+        res_b = orden_b[0] if orden_b else None
+    elif ctx_para_a:
+        res_b = dict(ctx_para_a)
+
+    return res_a, res_b
+
+
+def validar_coherencia_nacional_15_partidos(
+    doc_local: dict[str, Any] | list[dict[str, Any]],
+    doc_visita: dict[str, Any] | str,
+    competicion_hint: str = "",
+) -> bool:
+    """
+    Valida que en un duelo nacional al menos 10 de los 15 partidos de Equipo A y Equipo B
+    pertenezcan al mismo país/federación (evita mezclar Platense de Honduras con San Lorenzo de Argentina).
+    Soporta tanto (doc_local, doc_visita) como (lista_partidos, nombre_rival).
+    """
+    hint_pais = _pais_de_liga(competicion_hint)
+    if hint_pais in ("europa", "sudamerica", "internacional"):
+        return True
+
+    def _paises_partidos(doc_or_list: dict[str, Any] | list[dict[str, Any]] | str) -> list[str]:
+        if isinstance(doc_or_list, str):
+            meta_r = _inferir_meta_rival_desde_texto(doc_or_list)
+            if meta_r and meta_r.get("pais"):
+                return [str(meta_r["pais"])] * 15
+            p_str = _pais_de_liga(doc_or_list)
+            return [p_str] * 15 if p_str else []
+        if isinstance(doc_or_list, list):
+            partidos = doc_or_list
+            p_eq = ""
+        else:
+            eq = doc_or_list.get("equipo") or {}
+            p_eq = _pais_de_liga(eq.get("liga"), ccode=eq.get("pais"))
+            if not p_eq:
+                meta_eq = _inferir_meta_rival_desde_texto(str(eq.get("nombre") or ""))
+                if meta_eq:
+                    p_eq = str(meta_eq.get("pais") or "")
+            partidos = doc_or_list.get("partidos") or []
+
+        paises: list[str] = []
+        for p in partidos[:15]:
+            comp = str(p.get("competicion") or p.get("torneo") or p.get("liga") or "")
+            pc = _pais_de_liga(comp)
+            if pc in ("", "europa", "sudamerica") and p_eq:
+                pc = p_eq
+            if pc:
+                paises.append(pc)
+        return paises
+
+    paises_a = _paises_partidos(doc_local)
+    paises_b = _paises_partidos(doc_visita)
+    if not paises_a or not paises_b:
+        return True
+
+    from collections import Counter
+    dom_a, cnt_a = Counter(paises_a).most_common(1)[0]
+    dom_b, cnt_b = Counter(paises_b).most_common(1)[0]
+
+    if isinstance(doc_local, list) or isinstance(doc_visita, str):
+        if dom_a and dom_b and dom_a not in ("europa", "sudamerica") and dom_b not in ("europa", "sudamerica"):
+            return dom_a == dom_b
+        return True
+
+    if dom_a and dom_b and dom_a not in ("europa", "sudamerica") and dom_b not in ("europa", "sudamerica"):
+        eq_a_nom = str((doc_local.get("equipo") or {}).get("nombre") or "").lower()
+        eq_b_nom = str((doc_visita.get("equipo") or "").get("nombre") or "").lower()
+        homonimos = ("platense", "arsenal", "barcelona", "river", "nacional", "independiente", "racing", "everton", "estudiantes")
+        if dom_a != dom_b and any(h in eq_a_nom or h in eq_b_nom for h in homonimos):
+            raise AssertionError(
+                f"Incoherencia geográfica detectada en duelo nacional: "
+                f"{eq_a_nom} ({dom_a}, {cnt_a}/15) vs {eq_b_nom} ({dom_b}, {cnt_b}/15)"
+            )
+    return True
 
 
 class FuenteFotMob(FuenteXG):
@@ -1893,14 +2136,15 @@ class FuenteFotMob(FuenteXG):
         self.cerrar()
 
     # ── acceso a la API interna ────────────────────────────────────────────
-    def _api(self, ruta: str, reintentos: int = 2) -> Any:
-        """GET a la API interna de FotMob usando el contexto del navegador."""
+    def _api(self, ruta: str, reintentos: int = 3) -> Any:
+        """GET a la API interna de FotMob usando el contexto del navegador (3 reintentos, timeout 12s)."""
         url = ruta if ruta.startswith("http") else FOTMOB_BASE + "/api/data" + ruta
         ultimo_error = None
-        for intento in range(reintentos + 1):
+        timeout_req = min(self.timeout_ms, 12_000) if self.timeout_ms else 12_000
+        for intento in range(max(1, reintentos)):
             try:
                 r = self.ctx.request.get(
-                    url, timeout=self.timeout_ms,
+                    url, timeout=timeout_req,
                     headers={"Referer": FOTMOB_BASE + "/", "Accept": "application/json, text/plain, */*"},
                 )
                 if r.status == 200:
@@ -1908,9 +2152,9 @@ class FuenteFotMob(FuenteXG):
                 ultimo_error = f"HTTP {r.status}"
             except Exception as e:  # red, timeout, JSON inválido
                 ultimo_error = f"{type(e).__name__}: {e}"
-            if intento < reintentos:
-                time.sleep(1.0 + intento)
-        self._log(f"⚠️  API {url} falló: {ultimo_error}")
+            if intento < reintentos - 1:
+                time.sleep(2.0)
+        self._log(f"⚠️  API {url} falló tras {reintentos} intentos: {ultimo_error}")
         return None
 
     # ── resolución de equipo ───────────────────────────────────────────────
@@ -1966,12 +2210,12 @@ class FuenteFotMob(FuenteXG):
                 if not variante_usada:
                     variante_usada = variante
                 # Solo detener la búsqueda anticipadamente si encontramos un candidato titular (no filial),
-                # con coincidencia exacta nuclear/alias (pts[3] > 0) y coherencia geográfica positiva con el rival/liga.
+                # con coincidencia exacta nuclear/alias (pts[2] > 0) y coherencia geográfica positiva con el rival/liga.
                 exige_coherencia = bool(meta_rival and (meta_rival.get("pais") or meta_rival.get("liga") or meta_rival.get("leagueName")))
                 if any(
-                    (pts := puntuar_candidato(c, consulta_efectiva, rival_meta=meta_rival))[2] == 0
-                    and pts[3] > 0
-                    and (pts[0] > 0 if exige_coherencia else pts[0] >= 0)
+                    (pts := puntuar_candidato(c, consulta_efectiva, rival_meta=meta_rival))[0] == 0
+                    and pts[2] > 0
+                    and (pts[4] > 0 if exige_coherencia else pts[4] >= 0)
                     for c in encontrados
                 ):
                     break

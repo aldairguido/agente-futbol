@@ -1442,27 +1442,122 @@ class MotorMercados:
                 f"se conserva la matriz del modelo lineal.")
             return
 
-        # ── Sustitución efectiva de λ y matriz (FT) ─────────────────────────
+        # ── Sustitución efectiva de λ y matriz (FT) + Sincronización con Motor 55 Patrones, Rachas 60/40 y En Vivo ──
         lam_l_red = float(resultado["lambda_local_recursivo"])
         lam_v_red = float(resultado["lambda_visita_recursivo"])
         resultado["aplicado"] = True
-        # El módulo solo PUBLICA las tasas del local, aunque internamente calcula
-        # y aplica también las del visitante (líneas 394-399 y 538-539). Aquí se
-        # replican con la MISMA fórmula para poder declarar los dos lados.
         resultado["tasas_por_equipo"] = {
             "local": _tasas_sequia_explosion(partidos_l_red),
             "visita": _tasas_sequia_explosion(partidos_v_red),
         }
-        # λ base SIN redondear: el servicio recalcula con ella y así la matriz
-        # coincide bit a bit con la del motor (la verificación no debe inventar
-        # una divergencia de 1e-5 por un redondeo a 4 decimales).
         resultado["lambda_base_local"] = float(lam_l)
         resultado["lambda_base_visita"] = float(lam_v)
+
+        # Puntos 7, 9, 11, 13, 15 y 18: Rachas 60/40 + Reglas Matchup 55 Patrones + En Vivo
+        try:
+            from motor_patrones import calcular_promedios_racha_60_40, calcular_patrones_completos_partido
+            from motor_inferencia import aplicar_reglas_matchup_55
+
+            racha_l = calcular_promedios_racha_60_40(self.doc_local.get("partidos") or partidos_l_red, self.nombre_local)
+            racha_v = calcular_promedios_racha_60_40(self.doc_visitante.get("partidos") or partidos_v_red, self.nombre_visitante)
+            self.racha_local = racha_l
+            self.racha_visita = racha_v
+            resultado["racha_local"] = racha_l
+            resultado["racha_visita"] = racha_v
+
+            mat_base_red = ce.matriz_red_para_dibujar(resultado)
+            r_1x2_orig = resultado_1x2(mat_base_red)
+            p1_o = max(0.05, float(r_1x2_orig["1"]))
+            px_o = max(0.05, float(r_1x2_orig["X"]))
+            p2_o = max(0.05, float(r_1x2_orig["2"]))
+
+            m1_l = (perfil_l_gen.get("mitades") or {}).get("1T") or {}
+            m2_l = (perfil_l_gen.get("mitades") or {}).get("2T") or {}
+            m1_v = (perfil_v_gen.get("mitades") or {}).get("1T") or {}
+            m2_v = (perfil_v_gen.get("mitades") or {}).get("2T") or {}
+            pat_l, pat_v = calcular_patrones_completos_partido(
+                resultado.get("mu_local_casa") or {},
+                resultado.get("mu_visita_fuera") or {},
+                metricas_1t_local=m1_l,
+                metricas_2t_local=m2_l,
+                metricas_1t_visita=m1_v,
+                metricas_2t_visita=m2_v,
+            )
+            es_vivo = bool(getattr(self.p, "es_en_vivo", False))
+            roja_l = bool(getattr(self.p, "tarjeta_roja_local", False))
+            roja_v = bool(getattr(self.p, "tarjeta_roja_visita", False))
+
+            p1_55, px_55, p2_55, alertas_55 = aplicar_reglas_matchup_55(
+                pat_l, pat_v, p1_o, px_o, p2_o,
+                nombre_local=self.nombre_local,
+                nombre_visita=self.nombre_visitante,
+                es_en_vivo=es_vivo,
+                tarjeta_roja_local=roja_l,
+                tarjeta_roja_visita=roja_v,
+            )
+            resultado["patrones_55_local"] = pat_l
+            resultado["patrones_55_visita"] = pat_v
+            resultado["alertas_55"] = alertas_55
+
+            # Punto 13: Ajustar lambdas si las reglas de los 55 patrones o las rachas 60/40 movieron las probabilidades
+            ratio_55_l = max(0.82, min(1.22, (p1_55 / p1_o) ** 0.45))
+            ratio_55_v = max(0.82, min(1.22, (p2_55 / p2_o) ** 0.45))
+            # Ponderar suavemente factor de racha 60/40 (crisis -10%, racha +8%)
+            f_racha_l = 1.0 + (float(racha_l.get("factor_lambda", 1.0)) - 1.0) * 0.50
+            f_racha_v = 1.0 + (float(racha_v.get("factor_lambda", 1.0)) - 1.0) * 0.50
+
+            mult_sinc_l = max(0.75, min(1.28, ratio_55_l * f_racha_l))
+            mult_sinc_v = max(0.75, min(1.28, ratio_55_v * f_racha_v))
+
+            if es_vivo and (roja_l or roja_v):
+                if roja_l and not roja_v:
+                    mult_sinc_l *= 0.60
+                    mult_sinc_v *= 1.25
+                elif roja_v and not roja_l:
+                    mult_sinc_v *= 0.60
+                    mult_sinc_l *= 1.25
+
+            if abs(mult_sinc_l - 1.0) > 0.015 or abs(mult_sinc_v - 1.0) > 0.015:
+                lam_l_red = round(max(0.25, min(4.20, lam_l_red * mult_sinc_l)), 2)
+                lam_v_red = round(max(0.25, min(4.20, lam_v_red * mult_sinc_v)), 2)
+                resultado["lambda_local_recursivo"] = lam_l_red
+                resultado["lambda_visita_recursivo"] = lam_v_red
+                # Re-ponderar matriz conjunta con las nuevas marginales Poisson y normalizar a 1.0000
+                import numpy as _np
+                M_arr = _np.asarray(mat_base_red, dtype=float)
+                R_m, C_m = M_arr.shape
+                p_i_old = M_arr.sum(axis=1)
+                p_i_new = _np.array([poisson_pmf(i, lam_l_red) for i in range(R_m)], dtype=float)
+                if p_i_new.sum() > 0:
+                    p_i_new /= p_i_new.sum()
+                for i in range(R_m):
+                    if p_i_old[i] > 1e-12:
+                        M_arr[i, :] *= (0.55 * (p_i_new[i] / p_i_old[i]) + 0.45)
+                p_j_old = M_arr.sum(axis=0)
+                p_j_new = _np.array([poisson_pmf(j, lam_v_red) for j in range(C_m)], dtype=float)
+                if p_j_new.sum() > 0:
+                    p_j_new /= p_j_new.sum()
+                for j in range(C_m):
+                    if p_j_old[j] > 1e-12:
+                        M_arr[:, j] *= (0.55 * (p_j_new[j] / p_j_old[j]) + 0.45)
+                if M_arr.sum() > 0:
+                    M_arr /= M_arr.sum()
+                mat_base_red = M_arr.tolist()
+                resultado["matriz_probabilidades"] = mat_base_red
+                resultado["matriz_marcadores"] = mat_base_red
+        except Exception:
+            mat_base_red = ce.matriz_red_para_dibujar(resultado)
+
+        # Punto 12: Sanity Check de la Matriz de Calor (suma exacta 1.0000 sin celdas negativas)
+        suma_mat = sum(max(0.0, float(cel)) for fila in mat_base_red for cel in fila)
+        if suma_mat > 0:
+            mat_base_red = [[max(0.0, float(cel)) / suma_mat for cel in fila] for fila in mat_base_red]
+            resultado["matriz_probabilidades"] = mat_base_red
+            resultado["matriz_marcadores"] = mat_base_red
+
         self.tasas.lambda_local_ft = lam_l_red
         self.tasas.lambda_visitante_ft = lam_v_red
-        # `matriz_red_para_dibujar` simetriza solo si los dos equipos son
-        # exactamente iguales (el ruido del Monte Carlo no debe inventar ventaja).
-        self.matriz_ft = ce.matriz_red_para_dibujar(resultado)
+        self.matriz_ft = mat_base_red
         self.residual_ft = max(0.0, 1.0 - sum(sum(f) for f in self.matriz_ft))
         self.recursivo = resultado
         # Sincronización obligatoria de clusters con la matriz activa
@@ -1677,15 +1772,20 @@ class MotorMercados:
                 continue
             dist = total_goles(matriz)
             detalle[periodo] = {k: round(v, 6) for k, v in sorted(dist.items())}
-            for linea in LINEAS_GOLES:
+            # Punto 4: En Goles Totales FT las únicas líneas válidas son 1.5, 2.5, 3.5 y 4.5;
+            # y prohibido terminantemente generar under_0.5 (-0.5 Goles) en ningún mercado o mitad.
+            lineas_over = (1.5, 2.5, 3.5, 4.5) if periodo == "FT" else LINEAS_GOLES
+            lineas_under = (1.5, 2.5, 3.5, 4.5) if periodo == "FT" else (1.5, 2.5)
+            for linea in lineas_over:
                 sels.append(self._sel(idm, nombre, f"over_{linea}", f"más de {linea} goles",
                                       periodo, None, linea, prob_over(dist, linea)))
+            for linea in lineas_under:
                 sels.append(self._sel(idm, nombre, f"under_{linea}", f"menos de {linea} goles",
                                       periodo, None, linea, prob_under(dist, linea)))
             for n in range(0, 6):
                 sels.append(self._sel(idm, nombre, f"exacto_{n}", f"exactamente {n} goles",
                                       periodo, None, float(n), prob_exacto(dist, n)))
-            for n in range(1, 6):
+            for n in range((2 if periodo == "FT" else 1), 6):
                 sels.append(self._sel(idm, nombre, f"al_menos_{n}", f"al menos {n} goles",
                                       periodo, None, float(n), prob_al_menos(dist, n)))
         return ResultadoMercado(idm, numero, nombre, selecciones=sels, detalle=detalle)
@@ -1702,15 +1802,18 @@ class MotorMercados:
         for periodo, matriz in matrices.items():
             if not matriz:
                 continue
+            # Punto 4: Marginales exactas (Local suma sobre filas i, Visitante sobre columnas j)
             dist: dict[int, float] = {}
             for i, fila in enumerate(matriz):
                 for j, p in enumerate(fila):
                     k = i if indice == 0 else j
                     dist[k] = dist.get(k, 0.0) + p
-            for linea in LINEAS_GOLES:
+            for linea in (0.5, 1.5, 2.5, 3.5, 4.5):
                 sels.append(self._sel(idm, nombre, f"{bando}_over_{linea}",
                                       f"{equipo}: más de {linea} goles", periodo, equipo,
                                       linea, prob_over(dist, linea)))
+            # Prohibido under_0.5 (-0.5 Goles); las líneas Under por equipo solo son 1.5 y 2.5
+            for linea in (1.5, 2.5):
                 sels.append(self._sel(idm, nombre, f"{bando}_under_{linea}",
                                       f"{equipo}: menos de {linea} goles", periodo, equipo,
                                       linea, prob_under(dist, linea)))
@@ -2212,8 +2315,8 @@ class MotorMercados:
         λ del TOTAL de un tipo de tarjeta en el partido.
 
         Cruce declarado: tarjetas propias de cada equipo + tarjetas de los rivales
-        del otro equipo (aproximación a la interacción disciplinaria). No se
-        convierten amarillas en un total con rojas ni puntos.
+        del otro equipo, ponderado por agresividad defensiva (amarillas / faltas)
+        y reducido -15% cuando un equipo es ampliamente favorito (domina sin fricción).
         """
         clave = "amarillas" if tipo == "amarillas" else "rojas"
         k_credibilidad = self.p.k_credibilidad
@@ -2228,7 +2331,28 @@ class MotorMercados:
                 partes.append(propia)
         if not partes:
             return None
-        return sum(partes)
+        base_tarj = sum(partes)
+        if tipo == "amarillas":
+            try:
+                xai = getattr(self, "xai_factores", None) or {}
+                rec = getattr(self, "recursivo", None) or {}
+                mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
+                mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
+                am_l = float(mu_l.get("amarillas", partes[0] if partes else 2.0) or 2.0)
+                am_v = float(mu_v.get("amarillas", partes[-1] if partes else 2.0) or 2.0)
+                fal_l = max(5.0, float(mu_l.get("faltas", 11.5) or 11.5))
+                fal_v = max(5.0, float(mu_v.get("faltas", 12.0) or 12.0))
+                ratio_agresividad = ((am_l / fal_l) + (am_v / fal_v)) / 2.0
+                # Ratio medio ~0.18; modulador suave entre 0.88 y 1.15
+                mod_agr = max(0.88, min(1.15, 0.82 + ratio_agresividad))
+                base_tarj *= mod_agr
+                lam_l = float(rec.get("lambda_local_recursivo") or getattr(getattr(self, "tasas", None), "lambda_local_ft", 1.35) or 1.35)
+                lam_v = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
+                if abs(lam_l - lam_v) >= 0.75:
+                    base_tarj *= 0.85
+            except Exception:
+                pass
+        return base_tarj
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3299,6 +3423,12 @@ def es_seleccion_competitiva_ticket(
     if "al_menos_" in ev and lin is not None and isinstance(lin, (int, float)):
         lin = float(lin) - 0.5
 
+    # Prohibición universal de "-0.5 Goles" / "Menos de 0.5 goles" (Punto 4)
+    if es_under and lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("gol" in m_l or "gol" in et or "under_0.5" in ev):
+        return False
+    if "-0.5 gol" in et or "menos de 0.5 gol" in et:
+        return False
+
     # 1. CÓRNERES
     if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev:
         if lin is None:
@@ -3310,13 +3440,13 @@ def es_seleccion_competitiva_ticket(
                 return False
             return 3.5 <= lin_f <= 6.5
         else:
-            # Córneres Totales FT: solo +7.5 a +11.5 y -10.5 a -12.5
+            # Córneres Totales FT: +7.5 a +11.5 y -6.5 a -12.5 (Poisson estricto)
             if per != "FT":
                 return False
             if es_over:
                 return 7.5 <= lin_f <= 11.5
             if es_under:
-                return 10.5 <= lin_f <= 12.5
+                return 6.5 <= lin_f <= 12.5
             return False
 
     # 2. TARJETAS
@@ -3359,12 +3489,12 @@ def es_seleccion_competitiva_ticket(
         if lin is None:
             return False
         lin_f = float(lin)
-        # Prohibido líneas negativas en 1T/2T (-1.5 a -6.5 en 1T o 2T) y prohibido -3.5 a -6.5 en FT
+        # Prohibido líneas negativas en 1T/2T (-0.5 a -6.5 en 1T o 2T) y prohibido -0.5 o -3.5 a -6.5 en FT
         if per in ("1T", "2T"):
             if es_under:
                 return False
             return lin_f in (0.5, 1.5) and (0.70 <= prob <= 0.90)
-        # En FT solo +0.5, +1.5, -1.5, -2.5
+        # En FT solo +0.5, +1.5, +2.5 y -1.5, -2.5 (jamás -0.5 Goles)
         if es_over:
             return lin_f in (0.5, 1.5, 2.5)
         if es_under:
@@ -3377,20 +3507,20 @@ def es_seleccion_competitiva_ticket(
     if lin is not None:
         lin_f = float(lin)
         if per in ("1T", "2T"):
-            # Goles 1T / 2T: solo +0.5 y -1.5 (prohibido -2.5 a -6.5)
+            # Goles 1T / 2T: solo +0.5, +1.5 y -1.5 (prohibido -0.5 y -2.5 a -6.5)
             if es_over:
                 return abs(lin_f - 0.5) < 1e-6 or abs(lin_f - 1.5) < 1e-6
             if es_under:
                 return abs(lin_f - 1.5) < 1e-6
             return False
         else:
-            # Goles Totales FT: +1.5 a +3.5 y -2.5 a -4.5 (+0.5 FT solo si prob entre 70% y 88%)
+            # Goles Totales FT: estrictamente líneas estándar 1.5, 2.5, 3.5 y 4.5 (Punto 4)
+            if lin_f not in (1.5, 2.5, 3.5, 4.5):
+                return False
             if es_over:
-                if abs(lin_f - 0.5) < 1e-6:
-                    return 0.70 <= prob <= 0.88
-                return 1.5 <= lin_f <= 3.5
+                return 1.5 <= lin_f <= 4.5
             if es_under:
-                return 2.5 <= lin_f <= 4.5
+                return 1.5 <= lin_f <= 4.5
             return False
 
     return True
@@ -3457,6 +3587,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         return getattr(obj, k, d)
 
     p_1x2 = None
+    marcador_mas_probable: tuple[int, int] = (1, 0)
+    prob_marcador_max: float = 0.0
     if motor is not None and getattr(motor, "matriz_ft", None):
         mat = motor.matriz_ft
         R = len(mat)
@@ -3465,6 +3597,11 @@ def seleccionar_top_5_jugadas_recomendadas(
         px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
         p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
         p_1x2 = (p1, px, p2)
+        for i in range(R):
+            for j in range(C):
+                if float(mat[i][j]) > prob_marcador_max:
+                    prob_marcador_max = float(mat[i][j])
+                    marcador_mas_probable = (i, j)
 
     candidatas = [s for s in selecciones if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)]
 
@@ -3474,6 +3611,46 @@ def seleccionar_top_5_jugadas_recomendadas(
     mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
     lam_l = float(getattr(getattr(motor, "tasas", None), "lambda_local_ft", 0.0) or rec.get("lambda_local_recursivo") or 1.35)
     lam_v = float(getattr(getattr(motor, "tasas", None), "lambda_visitante_ft", 0.0) or rec.get("lambda_visita_recursivo") or 1.10)
+
+    # ── Punto 6: Exclusión de "12 (Sin Empate)" en duelos de bajo/medio gol o empate >= 24% ──
+    px_actual = p_1x2[1] if p_1x2 is not None else 0.25
+    prohibir_dc_12 = (
+        px_actual >= 0.24
+        or (lam_l + lam_v) < 3.0
+        or marcador_mas_probable in ((0, 0), (1, 1))
+    )
+
+    def _es_dc_12(s: Any) -> bool:
+        ev_s = str(_v(s, "evento") or "").lower().strip()
+        et_s = str(_v(s, "etiqueta") or "").lower().strip()
+        return (
+            ev_s in ("12", "dc_12")
+            or ev_s.endswith("_12")
+            or "doble oportunidad 12" in et_s
+            or ("12 (" in et_s and "empate" in et_s)
+        )
+
+    if prohibir_dc_12:
+        candidatas = [s for s in candidatas if not _es_dc_12(s)]
+
+    # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
+    candidatas_filtradas_ev: list[Any] = []
+    for s in candidatas:
+        prob_s = float(_v(s, "probabilidad", 0.0) or 0.0)
+        try:
+            cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
+            if cuota_r is not None and float(cuota_r) > 1.01:
+                ev_calc = (prob_s * float(cuota_r)) - 1.0
+                if ev_calc < 0.03:
+                    continue
+        except Exception:
+            pass
+        candidatas_filtradas_ev.append(s)
+    if candidatas_filtradas_ev:
+        candidatas = candidatas_filtradas_ev
+
+    # ── Punto 12: Detección de duelo cerrado (1-0, 0-1, 0-0 > 15%) ──
+    es_duelo_cerrado = (marcador_mas_probable in ((1, 0), (0, 1), (0, 0)) and prob_marcador_max > 0.15) or ((lam_l + lam_v) <= 2.35)
 
     # ── Cerrojo / Hurdle Zero-Inflation y Detección Diésel ───────────────────
     mat = getattr(motor, "matriz_ft", None)
@@ -3696,7 +3873,20 @@ def seleccionar_top_5_jugadas_recomendadas(
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
         est_bonus = 0.06 if _v(s, "estado") == "mantiene" else 0.0
         ev = str(_v(s, "evento") or "").lower()
+        per = str(_v(s, "periodo") or "FT").strip().upper()
+        lin = _v(s, "linea", None)
         sl = _slot_seleccion(s)
+
+        # Prohibir "12 (Sin Empate)" como líder (Punto 6)
+        if _es_dc_12(s):
+            return -5.0
+
+        # Punto 12: Coherencia entre Marcador Exacto (1-0, 0-1, 0-0) y Jugada Principal
+        if es_duelo_cerrado:
+            if sl == 2 and per == "FT" and lin is not None and float(lin) in (2.5, 3.5) and ("under" in ev or "menos" in str(_v(s, "etiqueta", "")).lower()):
+                est_bonus += 0.65
+            if sl == 1 and (ev in ("1x", "x2", "dc_1x", "dc_x2") or ev.endswith("_1x") or ev.endswith("_x2")):
+                est_bonus += 0.55
 
         # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad
         if sl == 1:
@@ -3724,8 +3914,6 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return 3.0 + (2.5 - bloq_riv) + est_bonus
 
         # Si patrón diésel 1T, máxima prioridad para 1T Menos de 1.5 en Slot 3
-        per = str(_v(s, "periodo") or "FT").strip().upper()
-        lin = _v(s, "linea", None)
         if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
             return 3.0 + p
 
@@ -3751,8 +3939,8 @@ def seleccionar_top_5_jugadas_recomendadas(
     n_corners = 0
     n_tarjetas = 0
 
-    # Paso 1: El slot 1 (Resultado / DC) tiene prioridad absoluta para liderar en #1 si existe candidato
-    cands_s1 = por_slot.get(1, [])
+    # Paso 1: El slot 1 (Resultado / DC) o Goles Under en duelos cerrados tiene prioridad en #1 (jamás "12")
+    cands_s1 = [c for c in por_slot.get(1, []) if not _es_dc_12(c)]
     if cands_s1:
         best_s1 = cands_s1[0]
         elegidas.append((1, best_s1))
@@ -3761,6 +3949,8 @@ def seleccionar_top_5_jugadas_recomendadas(
     # Paso 2: Iterar por los demás slots (2, 3, 4, 5) cuidando no duplicar corners ni tarjetas
     for sl in (2, 3, 4, 5):
         for cand in por_slot.get(sl, []):
+            if _es_dc_12(cand) and len(elegidas) == 0:
+                continue
             et_c = _etiqueta_limpia(cand)
             if et_c in usadas_claves:
                 continue
@@ -3783,6 +3973,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         for cand in todas_ord:
             if len(elegidas) >= 5:
                 break
+            if _es_dc_12(cand) and len(elegidas) == 0:
+                continue
             et_c = _etiqueta_limpia(cand)
             if et_c in usadas_claves:
                 continue
@@ -3810,6 +4002,20 @@ def seleccionar_top_5_jugadas_recomendadas(
     for idx, (sl, s) in enumerate(elegidas[:5], start=1):
         actual_slot = sl
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
+        cuota_minima = round(1.05 / max(0.05, prob), 2)
+        stake_sugerido = round(max(0.01, min(0.05, prob * 0.045)), 4)
+        ev_valor: float | None = None
+        try:
+            cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
+            if cuota_r is not None and float(cuota_r) > 1.01:
+                c_val = float(cuota_r)
+                ev_valor = round((prob * c_val) - 1.0, 4)
+                b_kelly = c_val - 1.0
+                q_kelly = 1.0 - prob
+                stake_sugerido = round(max(0.01, min(0.08, (((b_kelly * prob) - q_kelly) / max(0.01, b_kelly)) * 0.25)), 4)
+        except Exception:
+            pass
+        stake_pct = round(stake_sugerido * 100.0, 1)
         podio.append({
             "rank": idx,
             "slot": actual_slot,
@@ -3818,6 +4024,11 @@ def seleccionar_top_5_jugadas_recomendadas(
             "etiqueta": _etiqueta_limpia(s),
             "probabilidad": prob,
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
+            "cuota_minima": cuota_minima,
+            "stake_sugerido": stake_sugerido,
+            "stake_sugerido_pct": stake_pct,
+            "ev": ev_valor,
+            "etiqueta_valor": f"{prob * 100.0:.1f}% (Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)",
             "estado": str(_v(s, "estado") or "mantiene"),
             "respaldo": _respaldo_xai(s, actual_slot),
             "respaldo_adn": _respaldo_xai(s, actual_slot),

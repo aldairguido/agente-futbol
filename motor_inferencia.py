@@ -384,6 +384,9 @@ def aplicar_reglas_matchup_55(
     prob_poisson_visita: float,
     nombre_local: str = "Local",
     nombre_visita: str = "Visitante",
+    es_en_vivo: bool = False,
+    tarjeta_roja_local: bool = False,
+    tarjeta_roja_visita: bool = False,
 ) -> Tuple[float, float, float, List[str]]:
     """
     Aplica las 10 reglas de inferencia táctica sobre los 55 patrones y retorna
@@ -393,6 +396,16 @@ def aplicar_reglas_matchup_55(
     p_emp = float(prob_poisson_empate)
     p_vis = float(prob_poisson_visita)
     alertas: List[str] = []
+
+    # Ajuste exclusivo en vivo por inferioridad numérica (Puntos 9 y 18)
+    if es_en_vivo and (tarjeta_roja_local or tarjeta_roja_visita):
+        if tarjeta_roja_local and not tarjeta_roja_visita:
+            p_loc *= 0.60
+            p_vis *= 1.25
+        elif tarjeta_roja_visita and not tarjeta_roja_local:
+            p_vis *= 0.60
+            p_loc *= 1.25
+        alertas.append("[ALERTA: Inferioridad numérica detectada (Roja). El modelo ajustó los Lambdas]")
 
     # 1. Regla del Espejismo de Posesión (Patrón #01 y #49)
     if patrones_local["posesion_pct"] > 54.0 and patrones_local["P01_xG_por_Remate"] < 0.145 and patrones_visita["P15_Muro_Asedio"] > 0.55:
@@ -405,36 +418,39 @@ def aplicar_reglas_matchup_55(
         )
 
     # 2. Regla del Portero Imbatible (Patrón #13 y #50)
-    if patrones_visita["P13_Portero_Goles_Evitados"] > 0.30 and patrones_local["P06_Desperdicio_Ocasiones"] > 0.40:
+    gev_loc = float(patrones_local.get("P13_Portero_Goles_Evitados", 0.0))
+    gev_vis = float(patrones_visita.get("P13_Portero_Goles_Evitados", 0.0))
+    mejor_arq = nombre_local if gev_loc >= gev_vis else nombre_visita
+    if gev_vis > 0.30 and patrones_local["P06_Desperdicio_Ocasiones"] > 0.40:
         p_loc -= 0.06
         p_emp += 0.04
         p_vis += 0.02
-        alertas.append(
-            f"Patrón #13 Activado: El portero de {nombre_visita} promedia +{patrones_visita['P13_Portero_Goles_Evitados']:.2f} "
-            f"en Goles Evitados. Es un muro bajo los tres palos."
-        )
-    elif patrones_local["P13_Portero_Goles_Evitados"] > 0.30 and patrones_visita["P06_Desperdicio_Ocasiones"] > 0.40:
+    elif gev_loc > 0.30 and patrones_visita["P06_Desperdicio_Ocasiones"] > 0.40:
         p_vis -= 0.06
         p_emp += 0.03
         p_loc += 0.03
+    if abs(gev_loc - gev_vis) >= 0.05 or gev_loc != 0.0 or gev_vis != 0.0:
         alertas.append(
-            f"Patrón #13 Activado: El portero de {nombre_local} promedia +{patrones_local['P13_Portero_Goles_Evitados']:.2f} "
-            f"en Goles Evitados ante un {nombre_visita} que desperdicia ocasiones."
+            f"Patrón #13 Activado: {nombre_local} {gev_loc:+.2f} GeV vs {nombre_visita} {gev_vis:+.2f} GeV "
+            f"(Mayor seguridad bajo palos: {mejor_arq})."
         )
 
     # 3. Regla del Poder de Cierre en 2T (Patrón #26 y #51)
-    if patrones_visita["P26_Poder_Cierre_2T"] >= 0.54:
-        p_vis += 0.05
-        p_loc -= 0.03
-        alertas.append(
-            f"Patrón #26 Activado: {nombre_visita} genera el {patrones_visita['P26_Poder_Cierre_2T']*100:.0f}% de su xG "
-            f"en el segundo tiempo. Alerta de gol visitante en 2T."
-        )
-    if patrones_local["P26_Poder_Cierre_2T"] >= 0.55:
-        p_loc += 0.04
-        alertas.append(
-            f"Patrón #26 Activado: {nombre_local} genera el {patrones_local['P26_Poder_Cierre_2T']*100:.0f}% de su xG en el 2T."
-        )
+    p26_l = float(patrones_local.get("P26_Poder_Cierre_2T", 0.50))
+    p26_v = float(patrones_visita.get("P26_Poder_Cierre_2T", 0.50))
+    if abs(p26_l - p26_v) < 0.03:
+        cierre_txt = "Empate técnico en el poder de cierre del 2T"
+    else:
+        ganador_2t = nombre_local if p26_l > p26_v else nombre_visita
+        cierre_txt = f"Cierre fuerte: {ganador_2t}"
+        if p26_v > p26_l and p26_v >= 0.53:
+            p_vis += 0.05
+            p_loc -= 0.03
+        elif p26_l > p26_v and p26_l >= 0.54:
+            p_loc += 0.04
+    alertas.append(
+        f"Patrón #26 Activado: {nombre_local} {p26_l*100:.1f}% xG en 2T vs {nombre_visita} {p26_v*100:.1f}% xG en 2T ({cierre_txt})."
+    )
 
     # 4. Regla del Muro Aéreo (Patrón #24 y #52)
     if abs(patrones_local["P24_Ratio_Duelos_Aereos"] - patrones_visita["P24_Ratio_Duelos_Aereos"]) >= 0.03:
@@ -448,8 +464,8 @@ def aplicar_reglas_matchup_55(
     if patrones_visita["P39_Estilo_Directo"] >= 0.35 and patrones_local["despejes"] >= 18.0:
         p_vis += 0.04
         alertas.append(
-            f"Patrón #39 Activado: {nombre_visita} tiene {patrones_visita['P39_Estilo_Directo']*100:.2f}% de pases largos precisos "
-            f"(Estilo Directo) frente a {patrones_local['despejes']:.1f} despejes de {nombre_local}."
+            f"Patrón #39 Activado: {nombre_local} {patrones_local['P39_Estilo_Directo']*100:.1f}% vs {nombre_visita} {patrones_visita['P39_Estilo_Directo']*100:.1f}% "
+            f"de pases largos precisos (Estilo Directo frente a {patrones_local['despejes']:.1f} despejes de {nombre_local})."
         )
 
     # 6. Regla de Asedio de Córneres (Patrón #48 y #54)
@@ -489,8 +505,8 @@ def aplicar_reglas_matchup_55(
     if len(alertas) < 3:
         extras = [
             f"Patrón #01 Activado: Calidad de tiro {nombre_local} ({patrones_local['P01_xG_por_Remate']:.2f} xG/tiro) vs {nombre_visita} ({patrones_visita['P01_xG_por_Remate']:.2f} xG/tiro).",
-            f"Patrón #13 Activado: Portería {nombre_local} ({patrones_local['P13_Portero_Goles_Evitados']:+.2f} GeV) vs {nombre_visita} ({patrones_visita['P13_Portero_Goles_Evitados']:+.2f} GeV).",
-            f"Patrón #26 Activado: Poder de cierre en 2T ({patrones_local['P26_Poder_Cierre_2T']*100:.0f}% vs {patrones_visita['P26_Poder_Cierre_2T']*100:.0f}%).",
+            f"Patrón #13 Activado: Portería {nombre_local} ({gev_loc:+.2f} GeV) vs {nombre_visita} ({gev_vis:+.2f} GeV) — Mayor seguridad bajo palos: {mejor_arq}.",
+            f"Patrón #26 Activado: Poder de cierre en 2T ({p26_l*100:.1f}% vs {p26_v*100:.1f}% — {cierre_txt}).",
         ]
         for ex in extras:
             if len(alertas) >= 3:

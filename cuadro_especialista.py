@@ -1176,13 +1176,18 @@ def _organizar_sec1_para_cuadro(
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
         pct = f"{prob:.0%}"
 
+        eq_raw_s = _v(s, "equipo", None)
+        eq_s = str(eq_raw_s).strip() if eq_raw_s and str(eq_raw_s).strip() not in ("None", "Total", "null", "") else None
+
         if "GOL" in cat:
+            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+                return "", "", 0.0
             if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
                 lbl = f"+{lin:g} Goles" if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
                 lbl = f"-{lin:g} Goles" if lin is not None else et
             elif "primer_gol" in ev:
-                lbl = f"1er Gol: {_v(s, 'equipo') or eq_L}"
+                lbl = f"1er Gol: {eq_s or eq_L}"
             elif "ambos_marcan" in ev or "btts" in ev:
                 lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
             else:
@@ -1190,12 +1195,14 @@ def _organizar_sec1_para_cuadro(
         elif "CÓRNER" in cat or "CORNER" in cat:
             if lin is not None and lin <= 0.5 and "under_" in ev:
                 return "", "", 0.0
-            if "over_" in ev or "mas" in et.lower():
-                lbl = f"+{lin:g} Córn." if lin is not None else et
+            pref_c = (eq_s[:11] if len(eq_s) > 11 else eq_s) if eq_s else "Total"
+            if "over_" in ev or "mas" in et.lower() or "más" in et.lower():
+                lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
             elif "under_" in ev or "menos" in et.lower():
-                lbl = f"-{lin:g} Córn." if lin is not None else et
+                lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
             else:
                 lbl = et
+            return lbl, pct, prob
         elif "TARJETA" in cat:
             if lin is not None and lin <= 0.5 and "under_" in ev:
                 return "", "", 0.0
@@ -1282,26 +1289,43 @@ def _extraer_dict_45_desde_perfil(
     perfil: dict[str, Any] | None,
     analisis: Any = None,
     lado: str = "local",
-) -> dict[str, Any]:
-    """Construye un diccionario consolidado de las 45 variables desde el perfil y el bloque del motor."""
-    d: dict[str, Any] = {}
+    mitades_doc: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Construye diccionarios consolidados (FT, 1T, 2T) de las 45 variables desde el perfil y el bloque del motor."""
+    d_ft: dict[str, Any] = {}
+    d_1t: dict[str, Any] = {}
+    d_2t: dict[str, Any] = {}
     if analisis is not None:
         motor = getattr(analisis, "motor", None)
         bloques = getattr(motor, "bloques", {}) if motor else {}
         b = bloques.get(lado) if isinstance(bloques, dict) else None
-        ft_dict = getattr(b, "ft", None) if b is not None else None
-        if isinstance(ft_dict, dict):
-            for k, nodo in ft_dict.items():
-                if isinstance(nodo, dict):
-                    d[k] = nodo.get("promedio", nodo.get("valor", 0.0))
-                else:
-                    d[k] = nodo
+        for attr_corte, target_d in (("ft", d_ft), ("p1", d_1t), ("p2", d_2t)):
+            c_dict = getattr(b, attr_corte, None) if b is not None else None
+            if isinstance(c_dict, dict):
+                for k, nodo in c_dict.items():
+                    if isinstance(nodo, dict):
+                        target_d[k] = nodo.get("promedio", nodo.get("valor", 0.0))
+                    else:
+                        target_d[k] = nodo
     if isinstance(perfil, dict):
         mc = perfil.get("metricas_clave") or {}
         for k, v in mc.items():
             if v is not None:
-                d[k] = v
-    return d
+                d_ft[k] = v
+    if isinstance(mitades_doc, dict):
+        if isinstance(mitades_doc.get("1T"), dict):
+            for k, v in mitades_doc["1T"].items():
+                if v is not None:
+                    d_1t[k] = v
+        if isinstance(mitades_doc.get("2T"), dict):
+            for k, v in mitades_doc["2T"].items():
+                if v is not None:
+                    d_2t[k] = v
+    if "xg" in d_1t and "xg_1t" not in d_ft:
+        d_ft["xg_1t"] = d_1t["xg"]
+    if "xg" in d_2t and "xg_2t" not in d_ft:
+        d_ft["xg_2t"] = d_2t["xg"]
+    return d_ft, d_1t, d_2t
 
 
 def _construir_4_alertas_motor_55(
@@ -1318,6 +1342,8 @@ def _construir_4_alertas_motor_55(
     p_btts: float,
     p_o25: float,
     res_red: dict[str, Any] | None = None,
+    mitades_local: dict[str, Any] | None = None,
+    mitades_vis: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """
     Calcula los 55 patrones y devuelve las 4 Alertas Principales activadas
@@ -1327,8 +1353,8 @@ def _construir_4_alertas_motor_55(
         from motor_patrones import calcular_patrones_completos_partido
         from motor_inferencia import aplicar_reglas_matchup_55
 
-        d_gen_L = _extraer_dict_45_desde_perfil(perfil_local, analisis, "local")
-        d_gen_V = _extraer_dict_45_desde_perfil(perfil_vis, analisis, "visitante")
+        d_gen_L, d_1t_L, d_2t_L = _extraer_dict_45_desde_perfil(perfil_local, analisis, "local", mitades_local)
+        d_gen_V, d_1t_V, d_2t_V = _extraer_dict_45_desde_perfil(perfil_vis, analisis, "visitante", mitades_vis)
         d_loc_L = dict(d_gen_L)
         d_vis_V = dict(d_gen_V)
         if isinstance(res_red, dict):
@@ -1337,20 +1363,29 @@ def _construir_4_alertas_motor_55(
             if isinstance(res_red.get("mu_visita_fuera"), dict):
                 d_vis_V.update(res_red["mu_visita_fuera"])
 
-        P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+        P_L, P_V = calcular_patrones_completos_partido(
+            d_loc_L, d_vis_V,
+            datos_1t_local=d_1t_L, datos_2t_local=d_2t_L,
+            datos_1t_visita=d_1t_V, datos_2t_visita=d_2t_V,
+        )
         _, _, _, alertas_reglas = aplicar_reglas_matchup_55(
             P_L, P_V, p_1 / 100.0, p_x / 100.0, p_2 / 100.0, eq_L, eq_V
         )
 
-        p01_l, p01_v = P_L.get("P01_xG_por_Remate", 0.12), P_V.get("P01_xG_por_Remate", 0.12)
-        p13_l, p13_v = P_L.get("P13_Portero_Goles_Evitados", 0.0), P_V.get("P13_Portero_Goles_Evitados", 0.0)
-        p26_l, p26_v = P_L.get("P26_Poder_Cierre_2T", 0.55), P_V.get("P26_Poder_Cierre_2T", 0.55)
-        p39_l, p39_v = P_L.get("P39_Estilo_Directo", 0.45), P_V.get("P39_Estilo_Directo", 0.45)
+        p01_l, p01_v = float(P_L.get("P01_xG_por_Remate", 0.12)), float(P_V.get("P01_xG_por_Remate", 0.12))
+        p13_l, p13_v = float(P_L.get("P13_Portero_Goles_Evitados", 0.0)), float(P_V.get("P13_Portero_Goles_Evitados", 0.0))
+        p26_l, p26_v = float(P_L.get("P26_Poder_Cierre_2T", 0.50)), float(P_V.get("P26_Poder_Cierre_2T", 0.50))
+        p39_l, p39_v = float(P_L.get("P39_Estilo_Directo", 0.45)), float(P_V.get("P39_Estilo_Directo", 0.45))
 
         dom_01 = eq_L if p01_l >= p01_v else eq_V
         dom_13 = eq_L if p13_l >= p13_v else eq_V
-        dom_26 = eq_L if p26_l >= p26_v else eq_V
         dom_39 = eq_L if p39_l >= p39_v else eq_V
+
+        if abs(p26_l - p26_v) < 0.03:
+            cierre_26_txt = "Empate técnico en el poder de cierre del 2T"
+        else:
+            dom_26 = eq_L if p26_l > p26_v else eq_V
+            cierre_26_txt = f"Cierre fuerte: {dom_26}"
 
         return [
             {
@@ -1366,7 +1401,7 @@ def _construir_4_alertas_motor_55(
             {
                 "codigo": "Patrón #26",
                 "titulo": "Poder de Cierre en 2T (Proporción de xG en 2da Mitad)",
-                "detalle": f"{eq_L}: {p26_l*100:.0f}% xG en 2T vs {eq_V}: {p26_v*100:.0f}% xG en 2T  ·  Cierre fuerte: {dom_26}",
+                "detalle": f"{eq_L}: {p26_l*100:.0f}% xG en 2T vs {eq_V}: {p26_v*100:.0f}% xG en 2T  ·  {cierre_26_txt}",
             },
             {
                 "codigo": "Patrón #39",
@@ -1572,9 +1607,24 @@ def generar_cuadro_visual_partido(
         if x1_v is not None and x2_v is not None:
             perfil_vis['metricas_clave']['xg_favor'] = round(x1_v + x2_v, 2)
 
+    racha_tag_L = ""
+    racha_tag_V = ""
+    try:
+        from motor_patrones import calcular_promedios_racha_60_40
+        if partidos_15_local:
+            r_l = calcular_promedios_racha_60_40(partidos_15_local, eq_L)
+            if r_l.get("etiqueta_racha"):
+                racha_tag_L = f" {r_l['etiqueta_racha']}"
+        if partidos_15_visita:
+            r_v = calcular_promedios_racha_60_40(partidos_15_visita, eq_V)
+            if r_v.get("etiqueta_racha"):
+                racha_tag_V = f" {r_v['etiqueta_racha']}"
+    except Exception:
+        pass
+
     filas_datos = [
         [
-            f"{eq_L} ({cond_l})",
+            f"{eq_L} ({cond_l}){racha_tag_L}",
             f"{rL['Overall_Hybrid_Rating']:.1f}",
             f"{rL['Final_Attack_Strength']:.1f}",
             f"{rL['Final_Defense_Strength']:.1f}",
@@ -1586,7 +1636,7 @@ def generar_cuadro_visual_partido(
             f"{perfil_local['metricas_clave']['xg_favor']:.2f} / {perfil_local['metricas_clave']['xgot_favor']:.2f}",
         ],
         [
-            f"{eq_V} ({cond_v})",
+            f"{eq_V} ({cond_v}){racha_tag_V}",
             f"{rV['Overall_Hybrid_Rating']:.1f}",
             f"{rV['Final_Attack_Strength']:.1f}",
             f"{rV['Final_Defense_Strength']:.1f}",
@@ -1885,7 +1935,8 @@ def generar_cuadro_visual_partido(
 
     alertas_4 = _construir_4_alertas_motor_55(
         perfil_local, perfil_vis, analisis, eq_L, eq_V,
-        lam_local, lam_vis, p_1, p_x, p_2, p_btts, p_o25, res_red
+        lam_local, lam_vis, p_1, p_x, p_2, p_btts, p_o25, res_red,
+        mitades_local=mitades_local, mitades_vis=mitades_vis,
     )
 
     rect_ban_al = FancyBboxPatch((0.0, 0.72), 1.0, 0.26, boxstyle="round,pad=0.01", facecolor="#FEF6E4", edgecolor="#D97706", lw=1.1, transform=ax_alertas55.transAxes)
@@ -1970,6 +2021,9 @@ def generar_cuadro_visual_partido(
     os.makedirs(os.path.dirname(os.path.abspath(ruta_str)) or ".", exist_ok=True)
     fig.savefig(ruta_str, dpi=180)
     plt.close(fig)
+    plt.close("all")
+    import gc
+    gc.collect()
     return ruta_salida_png
 
 
@@ -2277,8 +2331,8 @@ def generar_cuadro_auditoria_15_partidos_png(
         if isinstance(p_item, dict) and not p_item.get("linea"):
             p_item["linea"] = formatear_linea_partido_15(idx_p + 1, p_item)
 
-    d_gen_L = _extraer_dict_45_desde_perfil(None, analisis, "local")
-    d_gen_V = _extraer_dict_45_desde_perfil(None, analisis, "visitante")
+    d_gen_L, _, _ = _extraer_dict_45_desde_perfil(None, analisis, "local")
+    d_gen_V, _, _ = _extraer_dict_45_desde_perfil(None, analisis, "visitante")
 
     cuadro_b_L = calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L) if lista_L else ((doc_local.get("cuadro_b_tendencias") if isinstance(doc_local, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L))
     cuadro_b_V = calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V) if lista_V else ((doc_visita.get("cuadro_b_tendencias") if isinstance(doc_visita, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V))
@@ -2430,6 +2484,9 @@ def generar_cuadro_auditoria_15_partidos_png(
     os.makedirs(os.path.dirname(os.path.abspath(ruta_str)) or ".", exist_ok=True)
     fig.savefig(ruta_str, dpi=180)
     plt.close(fig)
+    plt.close("all")
+    import gc
+    gc.collect()
     return ruta_str
 
 

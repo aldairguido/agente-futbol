@@ -306,7 +306,7 @@ def buscar_auditoria(equipo: str, directorio: str | None = None,
                 return ruta_cand
         except Exception:
             continue
-    return max(set(candidatos), key=os.path.getmtime)
+    return None
 
 
 def _antiguedad_horas(ruta: str) -> float:

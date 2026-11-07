@@ -121,9 +121,126 @@ def test_sevilla_alaves_cuadro_b_hibrido():
     assert cb_ala["ganador_1t"]["conteo"] > 0
 
 
+def test_especificacion_20_puntos_produccion():
+    from fuentes_xg import (
+        puntuar_candidato,
+        validar_coherencia_nacional_15_partidos,
+        _inferir_meta_rival_desde_texto,
+    )
+    from motor_patrones import (
+        calcular_55_patrones_equipo,
+        calcular_patrones_completos_partido,
+        calcular_promedios_racha_60_40,
+        validar_esquema_datos,
+    )
+    from motor_mercados import (
+        es_seleccion_competitiva_ticket,
+        seleccionar_top_5_jugadas_recomendadas,
+        prob_under,
+        prob_over,
+        distribucion_conteo,
+        Parametros,
+    )
+
+    # 1. Resolución de Identidad: San Lorenzo vs Platense (Argentina vs Honduras)
+    meta_san_lorenzo = _inferir_meta_rival_desde_texto("San Lorenzo")
+    assert meta_san_lorenzo is not None and meta_san_lorenzo.get("pais") == "argentina", f"Meta rival incorrecta: {meta_san_lorenzo}"
+
+    cand_honduras = {
+        "id": 1001, "name": "Platense FC",
+        "leagueName": "Liga Nacional", "leagueId": 999, "ccode": "HON",
+    }
+    cand_argentina = {
+        "id": 2002, "name": "CA Platense",
+        "leagueName": "Liga Profesional", "leagueId": 112, "ccode": "ARG",
+    }
+    sc_hon = puntuar_candidato(cand_honduras, "Platense", rival_meta=meta_san_lorenzo)
+    sc_arg = puntuar_candidato(cand_argentina, "Platense", rival_meta=meta_san_lorenzo)
+    assert sc_arg > sc_hon, f"Platense ARG ({sc_arg}) debe superar ampliamente a HON ({sc_hon})"
+    assert sc_hon[4] < 0, f"Platense HON debe tener penalización de país: {sc_hon}"
+
+    partidos_hon = [
+        {"torneo": "Liga Nacional", "rival": {"nombre": "Olancho FC"}},
+        {"torneo": "Liga Nacional", "rival": {"nombre": "Juticalpa"}},
+        {"torneo": "Liga Nacional", "rival": {"nombre": "Real España"}},
+    ]
+    partidos_arg = [
+        {"torneo": "Liga Profesional", "rival": {"nombre": "River Plate"}},
+        {"torneo": "Liga Profesional", "rival": {"nombre": "Boca Juniors"}},
+        {"torneo": "Liga Profesional", "rival": {"nombre": "Racing Club"}},
+    ]
+    assert validar_coherencia_nacional_15_partidos(partidos_hon, "San Lorenzo") is False
+    assert validar_coherencia_nacional_15_partidos(partidos_arg, "San Lorenzo") is True
+
+    # Vitória vs Fluminense (Brasil)
+    meta_flu = _inferir_meta_rival_desde_texto("Fluminense")
+    meta_vit = _inferir_meta_rival_desde_texto("Vitória")
+    assert meta_flu is not None and meta_flu.get("pais") == "brasil"
+    assert meta_vit is not None and meta_vit.get("pais") == "brasil"
+
+    # 2 & 3. Patrón #26 Dinámico y Patrón #13 Goles Evitados con signo algebraico
+    datos_l = {"xg": 1.50, "xg_1t": 0.60, "xg_2t": 0.90, "posesion_pct": 52.0, "remates_totales": 13.0, "goles_favor": 1.4, "despejes": 18.0, "xgot_enfrentado": 1.15, "goles_contra": 1.40}
+    datos_v = {"xg": 1.20, "xg_1t": 0.72, "xg_2t": 0.48, "posesion_pct": 48.0, "remates_totales": 10.0, "goles_favor": 1.1, "despejes": 22.0, "xgot_enfrentado": 1.35, "goles_contra": 1.10}
+    P_L, P_V = calcular_patrones_completos_partido(datos_l, datos_v)
+    assert abs(P_L["P26_Poder_Cierre_2T"] - 0.60) < 0.02, f"P26_L debe ser ~0.60, obtenido {P_L['P26_Poder_Cierre_2T']}"
+    assert abs(P_V["P26_Poder_Cierre_2T"] - 0.40) < 0.02, f"P26_V debe ser ~0.40, obtenido {P_V['P26_Poder_Cierre_2T']}"
+    assert P_L["P13_Portero_Goles_Evitados"] < 0 < P_V["P13_Portero_Goles_Evitados"]
+
+    p1, px, p2, alertas_55 = aplicar_reglas_matchup_55(P_L, P_V, 0.42, 0.30, 0.28, "San Lorenzo", "Platense")
+    alerta_13 = [a for a in alertas_55 if "Patrón #13" in a][0]
+    assert "Mayor seguridad bajo palos: Platense" in alerta_13, f"Error signo P13: {alerta_13}"
+
+    # Empate técnico en Patrón #26 (< 3%)
+    P_L_emp = dict(P_L, P26_Poder_Cierre_2T=0.51)
+    P_V_emp = dict(P_V, P26_Poder_Cierre_2T=0.50)
+    _, _, _, alertas_emp = aplicar_reglas_matchup_55(P_L_emp, P_V_emp, 0.40, 0.32, 0.28, "Sevilla", "Deportivo Alavés")
+    alerta_26 = [a for a in alertas_emp if "Patrón #26" in a][0]
+    assert "Empate técnico en el poder de cierre del 2T" in alerta_26, f"Falta empate técnico P26: {alerta_26}"
+
+    # 4 & 5. Prohibición de "-0.5 Goles" y Monotonicidad Poisson en Córneres
+    sel_prohibida = {"mercado": "Total de goles", "evento": "under_0.5", "etiqueta": "Menos de 0.5 goles", "periodo": "FT", "linea": 0.5, "probabilidad": 0.12}
+    assert es_seleccion_competitiva_ticket(sel_prohibida, "Sevilla", "Deportivo Alavés") is False
+
+    dist_c = {k: p for k, p in enumerate(distribucion_conteo(9.5, parametros=Parametros(distribucion_conteos="poisson")))}
+    u65 = prob_under(dist_c, 6.5)
+    u85 = prob_under(dist_c, 8.5)
+    u105 = prob_under(dist_c, 10.5)
+    u125 = prob_under(dist_c, 12.5)
+    assert u65 < u85 < u105 < u125, "Las probabilidades Under de córneres deben ser estrictamente crecientes"
+
+    # 6, 10, 12, 14 & 20. Exclusión de "12 Sin Empate" como #1 + Cuota Mínima y Stake Kelly
+    sels_test = [
+        {"mercado": "Doble oportunidad", "evento": "dc_12", "etiqueta": "12 (Sin Empate)", "periodo": "FT", "probabilidad": 0.75, "estado": "mantiene"},
+        {"mercado": "Doble oportunidad", "evento": "dc_1x", "etiqueta": "1X (San Lorenzo o empate)", "periodo": "FT", "probabilidad": 0.78, "estado": "mantiene"},
+        {"mercado": "Total de goles", "evento": "under_2.5", "etiqueta": "Menos de 2.5 goles", "periodo": "FT", "linea": 2.5, "probabilidad": 0.76, "estado": "mantiene"},
+        {"mercado": "Total de córneres", "evento": "corners_under_10.5", "etiqueta": "Menos de 10.5 córneres", "periodo": "FT", "linea": 10.5, "probabilidad": 0.74, "estado": "mantiene"},
+        {"mercado": "Total de tarjetas", "evento": "amarillas_over_3.5", "etiqueta": "Más de 3.5 tarjetas amarillas", "periodo": "FT", "linea": 3.5, "probabilidad": 0.77, "estado": "mantiene"},
+    ]
+    top5 = seleccionar_top_5_jugadas_recomendadas(sels_test, motor=None, eq_l="San Lorenzo", eq_v="Platense")
+    assert len(top5) >= 3
+    assert "Sin Empate" not in top5[0]["etiqueta"], f"La jugada #1 jamás puede ser 12 Sin Empate: {top5[0]}"
+    assert "cuota_minima" in top5[0] and top5[0]["cuota_minima"] > 1.05
+    assert "stake_sugerido_pct" in top5[0] and 1.0 <= top5[0]["stake_sugerido_pct"] <= 8.0
+
+    # 11 & 15. Ponderación 60/40 de rachas y Validación de Esquema
+    racha_info = calcular_promedios_racha_60_40(
+        [
+            {"fecha": "2026-11-01", "local": "Vitória", "visita": "Rival1", "goles_local": 0, "goles_visita": 2, "xg": 0.8},
+            {"fecha": "2026-10-25", "local": "Vitória", "visita": "Rival2", "goles_local": 1, "goles_visita": 2, "xg": 0.9},
+            {"fecha": "2026-10-18", "local": "Vitória", "visita": "Rival3", "goles_local": 0, "goles_visita": 1, "xg": 0.7},
+            {"fecha": "2026-10-10", "local": "Vitória", "visita": "Rival4", "goles_local": 2, "goles_visita": 0, "xg": 1.6},
+            {"fecha": "2026-10-01", "local": "Vitória", "visita": "Rival5", "goles_local": 1, "goles_visita": 1, "xg": 1.2},
+        ],
+        "Vitória",
+    )
+    assert racha_info["en_crisis"] is True and racha_info["etiqueta_racha"] == "[EN CRISIS]"
+    assert bool(validar_esquema_datos(datos_l)) is True
+
+
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     test_motor_55_patrones_completo()
     test_sevilla_alaves_cuadro_b_hibrido()
-    print("OK: test_motor_55_patrones_completo + test_sevilla_alaves_cuadro_b_hibrido superados en verde.")
+    test_especificacion_20_puntos_produccion()
+    print("OK: todos los tests de los 20 puntos superados en verde.")

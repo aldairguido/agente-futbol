@@ -637,6 +637,52 @@ def _auditar_equipo_interno(
     return auditoria
 
 
+CACHE_RESILIENCIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+
+
+def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
+    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\\agente_futbol\\cache\\."""
+    try:
+        os.makedirs(CACHE_RESILIENCIA_DIR, exist_ok=True)
+        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = None) -> dict[str, Any] | None:
+    """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando coherencia de país."""
+    try:
+        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
+        if not os.path.isfile(ruta):
+            return None
+        with open(ruta, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        eq_doc = doc.get("equipo") or {}
+        pts = puntuar_candidato(
+            {
+                "id": eq_doc.get("id"),
+                "name": eq_doc.get("nombre"),
+                "leagueName": eq_doc.get("liga"),
+                "leagueId": eq_doc.get("id_liga"),
+                "score": 100.0,
+            },
+            nombre_equipo,
+            rival_meta=meta_ctx,
+        )
+        if pts[0] < 0 or pts[1] == 0 or (pts[4] < 0 and meta_ctx):
+            return None
+        aviso = "[Aviso: Datos leídos desde caché local por intermitencia temporal del proveedor]"
+        advs = doc.setdefault("advertencias", [])
+        if aviso not in advs:
+            advs.append(aviso)
+        doc["desde_cache_resiliencia"] = True
+        return doc
+    except Exception:
+        return None
+
+
 def auditar_equipo(
     nombre_equipo: str,
     limite: int = LIMITE_PARTIDOS_POR_DEFECTO,
@@ -653,7 +699,7 @@ def auditar_equipo(
     """
     Ejecuta la auditoría histórica completa de un equipo.
     Implementa Lock por equipo para serializar ejecuciones y evitar descargas duplicadas,
-    así como caché en memoria para reutilizar datasets dentro de la misma sesión.
+    así como caché en memoria y caché de resiliencia en disco (D:\\agente_futbol\\cache\\).
     """
     liga_pref, nombre_sin_liga = extraer_liga_de_texto(nombre_equipo or "")
     if liga_pref and nombre_sin_liga:
@@ -668,15 +714,15 @@ def auditar_equipo(
 
     slug_equipo = _slug(nombre_equipo)
     lock_equipo = _obtener_lock_equipo(slug_equipo)
+    meta_ctx = rival if isinstance(rival, dict) else (
+        _inferir_meta_rival_desde_texto(rival) if isinstance(rival, str) and rival.strip() else None
+    )
 
     with lock_equipo:
         if fuente_obj is None:
             doc_mem = obtener_auditoria_en_memoria(slug_equipo)
             if doc_mem is not None:
                 eq_doc = doc_mem.get("equipo") or {}
-                meta_ctx = rival if isinstance(rival, dict) else (
-                    _inferir_meta_rival_desde_texto(rival) if isinstance(rival, str) and rival.strip() else None
-                )
                 pts_mem = puntuar_candidato(
                     {
                         "id": eq_doc.get("id"),
@@ -688,7 +734,7 @@ def auditar_equipo(
                     nombre_equipo,
                     rival_meta=meta_ctx,
                 )
-                coherente_mem = pts_mem[0] > -50 and pts_mem[2] >= 0 and not (pts_mem[0] < 0 and meta_ctx)
+                coherente_mem = pts_mem[0] >= 0 and pts_mem[1] > 0 and not (pts_mem[4] < 0 and meta_ctx)
                 if coherente_mem:
                     partidos_mem = doc_mem.get("partidos") or []
                     res_mem = doc_mem.get("resumen") or {}
@@ -702,23 +748,32 @@ def auditar_equipo(
                                 pass
                         return doc_mem
 
-        res = _auditar_equipo_interno(
-            nombre_equipo=nombre_equipo,
-            limite=limite,
-            fuente=fuente,
-            headless=headless,
-            incluir_amistosos=incluir_amistosos,
-            minimo_con_datos=minimo_con_datos,
-            progreso=progreso,
-            fuente_obj=fuente_obj,
-            mejor_previo=mejor_previo,
-            permitir_relleno_amistoso=permitir_relleno_amistoso,
-            rival=rival,
-        )
+        try:
+            res = _auditar_equipo_interno(
+                nombre_equipo=nombre_equipo,
+                limite=limite,
+                fuente=fuente,
+                headless=headless,
+                incluir_amistosos=incluir_amistosos,
+                minimo_con_datos=minimo_con_datos,
+                progreso=progreso,
+                fuente_obj=fuente_obj,
+                mejor_previo=mejor_previo,
+                permitir_relleno_amistoso=permitir_relleno_amistoso,
+                rival=rival,
+            )
+        except Exception:
+            doc_resiliencia = _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
+            if doc_resiliencia is not None:
+                return doc_resiliencia
+            raise
+
         guardar_auditoria_en_memoria(slug_equipo, res)
+        _guardar_cache_resiliencia(slug_equipo, res)
         nom_resuelto = (res.get("equipo") or {}).get("nombre")
         if nom_resuelto and _slug(nom_resuelto) != slug_equipo:
             guardar_auditoria_en_memoria(_slug(nom_resuelto), res)
+            _guardar_cache_resiliencia(_slug(nom_resuelto), res)
         return res
 
 
