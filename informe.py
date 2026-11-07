@@ -872,6 +872,17 @@ def generar_bloque_narrativo_xai_desde_analisis(
 
         def _dict_bloque(lado: str) -> dict[str, Any]:
             d: dict[str, Any] = {}
+            if motor is not None and getattr(motor, "muestras", None):
+                try:
+                    import cuadro_especialista as _ce
+                    b_m = _ce.bloque_para_lado(motor, lado, peso_roja=_ce.PESO_PARTIDO_CON_ROJA)
+                    m_dict = b_m.get("metricas") if isinstance(b_m, dict) else None
+                    if isinstance(m_dict, dict):
+                        for k, nodo in m_dict.items():
+                            if isinstance(nodo, dict) and not nodo.get("sin_dato"):
+                                d[k] = float(nodo.get("promedio", 0.0) or 0.0)
+                except Exception:
+                    pass
             bloques = getattr(motor, "bloques", {}) if motor else {}
             b = bloques.get(lado) if isinstance(bloques, dict) else None
             ft_d = getattr(b, "ft", None) if b is not None else None
@@ -896,9 +907,9 @@ def generar_bloque_narrativo_xai_desde_analisis(
 
         P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
 
-        probs_1x2 = _probabilidades_1x2_y_goles_desde_matriz(analisis)
+        probs_1x2 = _extraer_probabilidades_red_general(analisis)
         p_loc_adj, p_emp_adj, p_vis_adj, alertas = aplicar_reglas_matchup_55(
-            P_L, P_V, probs_1x2["local"], probs_1x2["empate"], probs_1x2["visitante"], eq_l, eq_v
+            P_L, P_V, probs_1x2["p_local"], probs_1x2["p_empate"], probs_1x2["p_visitante"], eq_l, eq_v
         )
 
         pts_l = (doc_local.get("partidos") if isinstance(doc_local, dict) else None) or getattr(motor, "partidos_local", []) or []

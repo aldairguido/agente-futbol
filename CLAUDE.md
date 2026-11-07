@@ -423,3 +423,12 @@ La Capa Oculta Estructurada sintetiza las 45 métricas normalizadas en 5 Factore
    - En `LECTURAS DE ESPECIALISTA`: usar exactamente el mismo `xG` y `xGOT` de la tabla superior y generar 3 viñetas tácticas por equipo basadas en los 6 cruces del Doble ADN.
    - Unificar la matriz y `clusters_marcador` entre `MotorMercados` y `cuadro_especialista.py` para que `Dominante (...)` y `JUGADA OPTIMA TE APUESTO (...)` muestren exactamente el mismo porcentaje al $0.1\%$ en ambas imágenes.
 
+
+
+---
+
+## 10. DIRECTIVA MAESTRA DE PRODUCCIÓN v3: 55 PATRONES DINÁMICOS, GATEKEEPER BLINDADO, EV% + STAKE KELLY 25%, NOTA DE CALIBRACIÓN Y VEREDICTO TÁCTICO
+Ver sección 10 íntegra en `D:\agente_futbol\AGENTS.md`:
+1. Validación de identidad de clubes (`validar_identidad_club` / `validar_coherencia_nacional_15_partidos`) y fin de la homonimia.
+2. `_val()` con soporte regex `'98/124 (79%)'`, derivación dinámica de `P26_Poder_Cierre_2T` y `P13_Portero_Goles_Evitados = round(xgot_enf - goles_c, 2)` en `motor_patrones.py`.
+3. Badges con `EV%` + `Stake Kelly (25%)` en el Top 5, `Nota de Calibración` (Base Matriz Poisson -> Ajustada Ticket), `[EN CRISIS]` en segunda línea, equipo + periodo en `GOLES POR EQUIPO` y bloque narrativo obligatorio `🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?` en la segunda imagen y en Telegram.

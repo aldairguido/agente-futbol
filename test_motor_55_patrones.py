@@ -236,6 +236,29 @@ def test_especificacion_20_puntos_produccion():
     assert racha_info["en_crisis"] is True and racha_info["etiqueta_racha"] == "[EN CRISIS]"
     assert bool(validar_esquema_datos(datos_l)) is True
 
+    # Verificación de Badges con EV% + Stake Kelly 25%, Nota de Calibración y Veredicto Táctico (4 conclusiones)
+    from motor_inferencia import generar_veredicto_tactico_partido
+    assert "badge_completo" in top5[0] and "EV +" in top5[0]["badge_completo"] and "Stake:" in top5[0]["badge_completo"]
+    assert "nota_calibracion" in top5[0] and "Base Matriz Poisson:" in top5[0]["nota_calibracion"]
+    veredicto_txt = generar_veredicto_tactico_partido(
+        nombre_local="Nottingham Forest",
+        nombre_visita="Manchester City",
+        patrones_loc=P_L,
+        patrones_vis=P_V,
+        probs={"local": 0.069, "empate": 0.251, "visita": 0.680},
+        cuadro_b_loc={"victorias": 4, "sin_derrotas": 7, "n_partidos": 15},
+        cuadro_b_vis={"victorias": 8, "sin_derrotas": 12, "n_partidos": 15},
+        cuadro_c_loc={"anotados": {"76'-90'": 4}, "recibidos": {"76'-90'": 6}},
+        cuadro_c_vis={"anotados": {"76'-90'": 10}, "recibidos": {"76'-90'": 2}},
+        ratings_loc={"Final_Attack_Strength": 53.7, "Pressing_Intensity_Score": 52.0},
+        ratings_vis={"Final_Attack_Strength": 96.0, "Pressing_Intensity_Score": 64.9},
+        top5_podio=top5,
+    )
+    assert "VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?" in veredicto_txt
+    assert "1. El Manchester City va a ganar (o mínimo empatar):" in veredicto_txt
+    assert "2. Cuidado con los goles de Manchester City al final:" in veredicto_txt
+    assert "3. " in veredicto_txt and "4. " in veredicto_txt
+
 
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):

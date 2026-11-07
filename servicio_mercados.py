@@ -446,6 +446,7 @@ def _sanear_para_canvas(texto: str) -> str:
              .replace("⚖ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
              .replace("⚖️", "[ALERTA]")
              .replace("⚖", "[ALERTA]")
+             .replace("⊗", "x")
              .replace("★", "*")
              .strip()
     )
@@ -653,17 +654,40 @@ def renderizar_ticket_mercados_png(
 
         eq_raw_p = _val(s, "equipo", None)
         eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
+        per_p = str(_val(s, "periodo") or "FT").strip().upper()
+        if per_p not in ("FT", "1T", "2T"):
+            per_p = "FT"
+
+        if cat == "GOLES POR EQUIPO":
+            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+                return "", "", 0.0
+            eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
+            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+                lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            elif "under_" in ev or "menos de" in et.lower():
+                lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            elif "al_menos_" in ev or "al menos" in et.lower():
+                if lin is not None and isinstance(lin, (int, float)):
+                    lbl = f"{eq_corto} +{lin - 0.5:g} Goles ({per_p})"
+                else:
+                    lbl = f"{eq_corto} {et}"
+            elif "primer_gol" in ev:
+                lbl = f"1er Gol: {eq_corto}"
+            else:
+                lbl = f"{eq_corto} {et}"
+            return lbl, pct, prob
 
         if "GOL" in cat:
             if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
                 return "", "", 0.0
+            suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
             if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Goles" if lin is not None else et
+                lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Goles" if lin is not None else et
+                lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
             elif "al_menos_" in ev or "al menos" in et.lower():
                 if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"+{lin - 0.5:g} Goles"
+                    lbl = f"+{lin - 0.5:g} Goles{suf_p}"
                 else:
                     lbl = et
             elif "primer_gol" in ev:
@@ -1081,12 +1105,19 @@ def renderizar_ticket_mercados_png(
             d.rounded_rectangle([PAD_X, y_c, PAD_X + ANCHO_TABLA, y_c + alto_banner],
                                 radius=6, fill=C_PODIO_BG, outline=C_PODIO_BORDER, width=1)
             d.text((PAD_X + 16, y_c + 8), "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)", font=f_banner_tit, fill=C_PODIO_TXT)
-            d.text((PAD_X + 16, y_c + 26), "Podio diversificado (70%-88% prob.) con respaldo estadístico del Doble ADN y los 6 Cruces Tácticos.", font=f_banner_sub, fill=C_TXT_MUTED)
-
             cnt_podio_txt = f"Top {len(top5_podio)} Selección Élite"
             cw_p = _get_w(cnt_podio_txt, f_banner_cnt) + 18
             cx_p = PAD_X + ANCHO_TABLA - 14 - cw_p
             cy_p = y_c + 9
+
+            nota_cal_podio = str(top5_podio[0].get("nota_calibracion") or "Podio diversificado (70%-88% prob.) con respaldo estadístico del Doble ADN.")
+            max_w_sub_p = max(250, cx_p - (PAD_X + 16) - 12)
+            if _get_w(nota_cal_podio, f_banner_sub) > max_w_sub_p:
+                nota_cal_podio = nota_cal_podio.replace(
+                    "Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. ",
+                    "Ajustada por varianza (9 escenarios): ",
+                )
+            d.text((PAD_X + 16, y_c + 26), nota_cal_podio, font=f_banner_sub, fill=C_TXT_MUTED)
             d.rounded_rectangle([cx_p, cy_p, cx_p + cw_p, cy_p + 26], radius=4, fill=(255, 255, 255), outline=C_PODIO_BORDER, width=1)
             d.text((cx_p + 9, cy_p + 5), cnt_podio_txt, font=f_banner_cnt, fill=C_COBALT)
 
@@ -1103,19 +1134,25 @@ def renderizar_ticket_mercados_png(
                 d.rounded_rectangle([PAD_X + 14, y_c + 9, PAD_X + 44, y_c + 35], radius=5, fill=C_NAVY_HDR)
                 d.text((PAD_X + 20, y_c + 14), rank_txt, font=f_cat, fill=C_TXT_WHITE)
 
-                # Etiqueta de la jugada y categoría
-                jug_txt = _sanear_para_canvas(f"[{item['categoria_podio']}]  {item['etiqueta']}")
-                resp_txt = _sanear_para_canvas(str(item.get("respaldo") or ""))
-                d.text((PAD_X + 54, y_c + 6), jug_txt, font=f_amb, fill=C_TITLE)
-                d.text((PAD_X + 54, y_c + 24), resp_txt, font=f_banner_sub, fill=C_TXT_MUTED)
-
-                # Píldora de probabilidad a la derecha
+                # Píldora de probabilidad + EV% + Stake Kelly 25% a la derecha
                 pct_str = item["probabilidad_pct"]
-                est_str = "SOLIDA" if item.get("estado") == "mantiene" else "SENSIBLE"
-                badge_p_txt = f"{pct_str} ({est_str})"
+                est_str = "SÓLIDA" if item.get("estado") == "mantiene" else "SENSIBLE"
+                ev_p = float(item.get("ev_pct", 4.8) or 4.8)
+                stk_p = float(item.get("stake_sugerido_pct", 2.4) or 2.4)
+                badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · EV {ev_p:+.1f}% · Stake: {stk_p:.1f}%)")
                 bw_p = _get_w(badge_p_txt, f_pill_pct) + 20
                 bx_p = PAD_X + ANCHO_TABLA - 14 - bw_p
                 by_p = y_c + 10
+
+                # Etiqueta de la jugada y categoría (truncar respaldo antes del badge)
+                jug_txt = _sanear_para_canvas(f"[{item['categoria_podio']}]  {item['etiqueta']}")
+                resp_txt = _sanear_para_canvas(str(item.get("respaldo") or ""))
+                max_w_resp = max(220, bx_p - (PAD_X + 54) - 14)
+                while _get_w(resp_txt, f_banner_sub) > max_w_resp and len(resp_txt) > 30:
+                    resp_txt = resp_txt[:-6].rstrip() + "..."
+                d.text((PAD_X + 54, y_c + 6), jug_txt, font=f_amb, fill=C_TITLE)
+                d.text((PAD_X + 54, y_c + 24), resp_txt, font=f_banner_sub, fill=C_TXT_MUTED)
+
                 p_bg = C_SEC1_PILL_BG if item.get("estado") == "mantiene" else C_SEC2_PILL_BG
                 p_bd = C_SEC1_PILL_BORDER if item.get("estado") == "mantiene" else C_SEC2_PILL_BORDER
                 p_fg = C_SEC1_PILL_PCT if item.get("estado") == "mantiene" else C_SEC2_PILL_PCT

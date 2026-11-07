@@ -237,19 +237,34 @@ def calcular_promedios_racha_60_40(
     }
 
 
-def _val(d: Dict[str, Any], *claves: str, default: float = 0.01) -> float:
-    """Extrae un valor numérico seguro desde un dict o Serie de las 45 variables."""
+import re
+
+
+def _val(d: Optional[Dict[str, Any]], *claves: str, default: float = 0.01, allow_zero: bool = True) -> float:
+    """Extrae un float seguro soportando strings con '%' o 'completados/totales (pct%)'."""
+    if not d:
+        return default
     for k in claves:
         if k in d and d[k] is not None:
             nodo = d[k]
-            if isinstance(nodo, dict):
-                v = nodo.get("promedio", nodo.get("valor", default))
-            else:
-                v = nodo
+            v = nodo.get("promedio", nodo.get("valor", default)) if isinstance(nodo, dict) else nodo
+            if isinstance(v, str):
+                v_str = v.strip()
+                # Si viene en formato "98/124 (79%)" y la clave pide _pct, extrae el porcentaje entre paréntesis
+                m_paren = re.search(r"\((\d+(?:\.\d+)?)\s*%\)", v_str)
+                if m_paren and ("pct" in k or "precision" in k):
+                    v = float(m_paren.group(1))
+                else:
+                    m_num = re.search(r"[-+]?\d+(?:\.\d+)?", v_str.replace(",", "."))
+                    if not m_num:
+                        continue
+                    v = float(m_num.group(0))
             try:
                 f = float(v)
                 if not math.isnan(f):
-                    return max(0.01, f) if abs(f) < 1e-9 else f
+                    if not allow_zero and abs(f) < 1e-9:
+                        return max(0.01, default)
+                    return f
             except (TypeError, ValueError):
                 continue
     return default
@@ -341,9 +356,10 @@ def calcular_55_patrones_equipo(
     err_gol = max(0.0, _val(m, "errores_gol", default=0.15))
 
     paradas = max(0.2, _val(m, "paradas", "paradas_portero", default=3.1))
-    # Punto 3: P13_Portero_Goles_Evitados = round(xgot_enfrentado_real - goles_concedidos_reales, 2)
-    tiene_xgot_enf = any(k in m and m[k] is not None for k in ("xgot_enfrentado", "xgot_enfrentados", "xgot_contra"))
-    xgot_enf = max(0.05, _val(m, "xgot_enfrentado", "xgot_enfrentados", "xgot_contra", default=1.30))
+    # Cálculo directo y sin inversión para P13_Portero_Goles_Evitados:
+    # Siempre se calcula como: xGOT_enfrentado (recibido por nuestro arquero) - Goles_concedidos
+    tiene_xgot_enf = any(k in m and m[k] is not None for k in ("xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido"))
+    xgot_enf = max(0.05, _val(m, "xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido", default=goles_c))
     if tiene_xgot_enf:
         goles_evit = round(xgot_enf - goles_c, 2)
     else:
@@ -352,21 +368,23 @@ def calcular_55_patrones_equipo(
     rem_puerta_rec = max(0.5, paradas + goles_c)
     rem_area_rec = max(1.0, _val(m, "remates_dentro_area_recibidos", default=rem_puerta_rec * 1.85))
 
-    # Punto 2: Cálculo dinámico de 1T y 2T (prohibido hardcodear 0.45 / 0.55 estático)
-    tiene_1t_expl = any(k in m1 and m1[k] is not None for k in ("xg", "xg_1t")) or ("xg_1t" in m and m["xg_1t"] is not None)
-    tiene_2t_expl = any(k in m2 and m2[k] is not None for k in ("xg", "xg_2t")) or ("xg_2t" in m and m["xg_2t"] is not None)
+    # Lectura real de 1T y 2T buscando tanto en m1/m2 como en m
+    xg_1t_raw = _val(m1, "xg", "xg_1t", "xg_favor_1t", default=_val(m, "xg_1t", "xg_favor_1t", default=-1.0))
+    xg_2t_raw = _val(m2, "xg", "xg_2t", "xg_favor_2t", default=_val(m, "xg_2t", "xg_favor_2t", default=-1.0))
+    g1_raw = _val(m1, "goles", "goles_1t", "goles_favor_1t", default=_val(m, "goles_1t", "goles_favor_1t", default=-1.0))
+    g2_raw = _val(m2, "goles", "goles_2t", "goles_favor_2t", default=_val(m, "goles_2t", "goles_favor_2t", default=-1.0))
+    r1_raw = _val(m1, "remates_totales", "remates_totales_1t", default=_val(m, "remates_totales_1t", default=-1.0))
+    r2_raw = _val(m2, "remates_totales", "remates_totales_2t", default=_val(m, "remates_totales_2t", default=-1.0))
 
-    if tiene_1t_expl or tiene_2t_expl:
-        xg_1t = max(0.03, _val(m1, "xg", "xg_1t", default=_val(m, "xg_1t", default=xg * 0.46)))
-        xg_2t = max(0.03, _val(m2, "xg", "xg_2t", default=_val(m, "xg_2t", default=max(0.03, xg - xg_1t))))
-    else:
-        # Si no se pasó m1/m2 explícito, derivar la proporción 2T de la estructura real de ataque/fatiga del equipo
-        g1_hint = _val(m1, "goles", "goles_1t", default=_val(m, "goles_1t", default=-1.0))
-        g2_hint = _val(m2, "goles", "goles_2t", default=_val(m, "goles_2t", default=-1.0))
-        if g1_hint >= 0.0 and g2_hint >= 0.0 and (g1_hint + g2_hint) > 0.05:
-            ratio_2t_din = max(0.32, min(0.68, g2_hint / (g1_hint + g2_hint)))
+    # Si alguna mitad no trajo xG separado, derívalo de la proporción real de goles y remates en 1T vs 2T (nunca 0.45/0.55 fijo)
+    if xg_1t_raw <= 0.0 and xg_2t_raw <= 0.0:
+        if (g1_raw >= 0.0 and g2_raw >= 0.0 and (g1_raw + g2_raw) > 0.05) or (r1_raw >= 0.0 and r2_raw >= 0.0 and (r1_raw + r2_raw) > 0.5):
+            g1_use = max(0.02, g1_raw if g1_raw >= 0.0 else goles * 0.44)
+            g2_use = max(0.02, g2_raw if g2_raw >= 0.0 else max(0.02, goles - g1_use))
+            r1_use = max(0.5, r1_raw if r1_raw >= 0.0 else rem_tot * 0.45)
+            r2_use = max(0.5, r2_raw if r2_raw >= 0.0 else max(0.5, rem_tot - r1_use))
+            ratio_2t = 0.50 * (g2_use / max(0.1, g1_use + g2_use)) + 0.50 * (r2_use / max(1.0, r1_use + r2_use))
         else:
-            # Función continua del perfil de asedio tardío (córneres, área, posesión, pases largos y recuperaciones)
             impulso_2t = (
                 0.50
                 + 0.0022 * (toques_area - 20.0)
@@ -375,23 +393,27 @@ def calcular_55_patrones_equipo(
                 + 0.0015 * (pases_largos_pct - 48.0)
                 + 0.0150 * (xg - 1.35)
             )
-            ratio_2t_din = max(0.36, min(0.66, impulso_2t))
-        xg_2t = max(0.03, round(xg * ratio_2t_din, 4))
-        xg_1t = max(0.03, round(xg - xg_2t, 4))
+            ratio_2t = max(0.36, min(0.66, impulso_2t))
+        xg_2t = max(0.05, round(xg * ratio_2t, 4))
+        xg_1t = max(0.05, round(xg - xg_2t, 4))
+    else:
+        xg_1t = max(0.05, xg_1t_raw if xg_1t_raw > 0 else max(0.05, xg - xg_2t_raw))
+        xg_2t = max(0.05, xg_2t_raw if xg_2t_raw > 0 else max(0.05, xg - xg_1t))
 
-    ratio_1t_ref = xg_1t / max(0.10, xg_1t + xg_2t)
-    ratio_2t_ref = 1.0 - ratio_1t_ref
+    xg_sum_mitades = max(0.10, xg_1t + xg_2t)
+    ratio_1t_ref = xg_1t / xg_sum_mitades
+    ratio_2t_ref = xg_2t / xg_sum_mitades
 
+    goles_1t = max(0.02, g1_raw if g1_raw > 0 else goles * ratio_1t_ref)
+    goles_2t = max(0.02, g2_raw if g2_raw > 0 else max(0.02, goles - goles_1t))
+    rem_tot_1t = max(0.5, r1_raw if r1_raw > 0 else rem_tot * ratio_1t_ref)
+    rem_tot_2t = max(0.5, r2_raw if r2_raw > 0 else max(0.5, rem_tot - rem_tot_1t))
     pos_1t = max(15.0, _val(m1, "posesion_pct", "posesion_1t", default=_val(m, "posesion_1t", default=posesion + (0.50 - ratio_2t_ref) * 6.0)))
     pos_2t = max(15.0, _val(m2, "posesion_pct", "posesion_2t", default=_val(m, "posesion_2t", default=posesion - (0.50 - ratio_2t_ref) * 6.0)))
-    goles_1t = max(0.05, _val(m1, "goles", "goles_1t", default=_val(m, "goles_1t", default=goles * ratio_1t_ref)))
-    goles_2t = max(0.05, _val(m2, "goles", "goles_2t", default=_val(m, "goles_2t", default=max(0.05, goles - goles_1t))))
     rem_pue_1t = max(0.3, _val(m1, "remates_puerta", "remates_puerta_1t", default=_val(m, "remates_puerta_1t", default=rem_pue * ratio_1t_ref)))
     rem_pue_2t = max(0.3, _val(m2, "remates_puerta", "remates_puerta_2t", default=_val(m, "remates_puerta_2t", default=rem_pue * ratio_2t_ref)))
     pases_prec_1t = max(40.0, _val(m1, "pases_pct", "pases_precision_1t", default=_val(m, "pases_precision_1t", default=pases_prec_pct + 1.0)))
     pases_prec_2t = max(40.0, _val(m2, "pases_pct", "pases_precision_2t", default=_val(m, "pases_precision_2t", default=pases_prec_pct - 1.0)))
-    rem_tot_1t = max(0.5, _val(m1, "remates_totales", "remates_totales_1t", default=_val(m, "remates_totales_1t", default=rem_tot * ratio_1t_ref)))
-    rem_tot_2t = max(0.5, _val(m2, "remates_totales", "remates_totales_2t", default=_val(m, "remates_totales_2t", default=rem_tot * ratio_2t_ref)))
     rem_fue_2t = max(0.2, _val(m2, "remates_fuera_area", "remates_fuera_2t", default=_val(m, "remates_fuera_2t", default=rem_f_area * ratio_2t_ref)))
     rem_area_2t = max(0.5, _val(m2, "remates_area", "remates_dentro_area_2t", default=_val(m, "remates_dentro_area_2t", default=rem_area * ratio_2t_ref)))
     corners_1t = max(0.3, _val(m1, "corners", "corners_1t", default=_val(m, "corners_1t", default=corners * ratio_1t_ref)))
@@ -505,8 +527,8 @@ def calcular_55_patrones_matchup(
     pL["P49_Espejismo_Posesion"] = round((pL["posesion_pct"] / 50.0) * pV["P15_Muro_Asedio"] / max(0.05, pL["P01_xG_por_Remate"] * 10.0), 4)
     pV["P49_Espejismo_Posesion"] = round((pV["posesion_pct"] / 50.0) * pL["P15_Muro_Asedio"] / max(0.05, pV["P01_xG_por_Remate"] * 10.0), 4)
 
-    pL["P50_Choque_Portero_Rival"] = round(pL["P06_Desperdicio_Ocasiones"] * (1.0 + pV["P13_Portero_Goles_Evitados"]), 4)
-    pV["P50_Choque_Portero_Rival"] = round(pV["P06_Desperdicio_Ocasiones"] * (1.0 + pL["P13_Portero_Goles_Evitados"]), 4)
+    pL["P50_Choque_Portero_Rival"] = round(pL["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pV["P13_Portero_Goles_Evitados"]), 4)
+    pV["P50_Choque_Portero_Rival"] = round(pV["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pL["P13_Portero_Goles_Evitados"]), 4)
 
     pL["P51_Diferencial_Cierre_2T"] = round(pL["P26_Poder_Cierre_2T"] * (1.0 + max(0.0, pV["P27_Caida_Posesion_2T"]) / 10.0), 4)
     pV["P51_Diferencial_Cierre_2T"] = round(pV["P26_Poder_Cierre_2T"] * (1.0 + max(0.0, pL["P27_Caida_Posesion_2T"]) / 10.0), 4)
@@ -535,8 +557,16 @@ def calcular_patrones_completos_partido(
     metricas_2t_visita: Optional[Dict[str, Any]] = None,
     timeline_local: Optional[Dict[str, Any]] = None,
     timeline_visita: Optional[Dict[str, Any]] = None,
+    datos_1t_local: Optional[Dict[str, Any]] = None,
+    datos_2t_local: Optional[Dict[str, Any]] = None,
+    datos_1t_visita: Optional[Dict[str, Any]] = None,
+    datos_2t_visita: Optional[Dict[str, Any]] = None,
 ) -> Tuple[Dict[str, float], Dict[str, float]]:
     """Calcula los 55 patrones completos (P01..P55) para Local y Visita en una sola llamada."""
-    p_l = calcular_55_patrones_equipo(metricas_local, metricas_1t_local, metricas_2t_local, timeline_local)
-    p_v = calcular_55_patrones_equipo(metricas_visita, metricas_1t_visita, metricas_2t_visita, timeline_visita)
+    m1_l = metricas_1t_local if metricas_1t_local is not None else datos_1t_local
+    m2_l = metricas_2t_local if metricas_2t_local is not None else datos_2t_local
+    m1_v = metricas_1t_visita if metricas_1t_visita is not None else datos_1t_visita
+    m2_v = metricas_2t_visita if metricas_2t_visita is not None else datos_2t_visita
+    p_l = calcular_55_patrones_equipo(metricas_local, m1_l, m2_l, timeline_local)
+    p_v = calcular_55_patrones_equipo(metricas_visita, m1_v, m2_v, timeline_visita)
     return calcular_55_patrones_matchup(p_l, p_v)

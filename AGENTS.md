@@ -438,3 +438,38 @@ La Capa Oculta Estructurada sintetiza las 45 métricas normalizadas en 5 Factore
    - En `LECTURAS DE ESPECIALISTA`: usar exactamente el mismo `xG` y `xGOT` mostrado en la tabla superior y generar 3 viñetas tácticas por equipo basadas en los 6 cruces del Doble ADN (1. Control/Asedio/Córneres vs Despejes/Aéreos, 2. Puntería Tiros a puerta por gol y xGOT vs Goles Evitados del portero rival, 3. Disciplina/Faltas/Amarillas/Errores).
    - Unificar la matriz y `clusters_marcador` entre `MotorMercados` y `cuadro_especialista.py` para que `Dominante (...)` y `JUGADA OPTIMA TE APUESTO (...)` muestren exactamente el mismo porcentaje al $0.1\%$ en ambas imágenes.
 
+
+
+---
+
+## 10. DIRECTIVA MAESTRA DE PRODUCCIÓN v3: 55 PATRONES DINÁMICOS, GATEKEEPER BLINDADO, EV% + STAKE KELLY 25%, NOTA DE CALIBRACIÓN Y VEREDICTO TÁCTICO
+
+1. **Validación de Identidad de Clubes / Fin de la Homonimia (`Entity Resolution` en `auditoria_historica.py`, `auditoria_h2h.py` y `fuentes_xg.py`):**
+   - En ligas nacionales (Liga Profesional Argentina, LaLiga, Brasileirão, Liga 1 Perú, Primera A Colombia, Primera Chile, LigaPro Ecuador, MLS, Premier League, Bundesliga, Serie A), ambos clubes deben pertenecer obligatoriamente al mismo país (`pais_local == pais_visita`) y compartir rivales de esa misma liga nacional en su historial reciente.
+   - Bloqueo de seguridad antes de calcular matrices: si `es_liga_nacional and pais_local != pais_visita`, lanzar `ValueError` descriptivo de homonimia.
+   - Cascada automática FotMob $\to$ Flashscore manteniendo la validación de país y liga.
+
+2. **Motor de 55 Patrones Dinámico (`motor_patrones.py`):**
+   - `_val()` soporta strings con `'%'` y formato compuesto `'98/124 (79%)'` (extrayendo el porcentaje entre paréntesis cuando la clave pide `pct` o `precision`).
+   - Fin del `"55% xG en 2T"` fijo: extraer `xg_1t_raw` y `xg_2t_raw` buscando en `m1`/`m2` y en `m`; si no hay xG separado por mitad, derivarlo de la proporción real de goles y remates en `1T` vs `2T` (`ratio_2t = 0.50 * (goles_2t / max(0.1, goles_1t + goles_2t)) + 0.50 * (rem_tot_2t / max(1.0, rem_tot_1t + rem_tot_2t))`).
+   - `P13_Portero_Goles_Evitados = round(xgot_enf - goles_c, 2)` calculado directamente sin inversión de signo (`P13 > 0` fortaleza; `P13 < 0` vulnerabilidad).
+   - `P50_Choque_Portero_Rival = round(P06_Desperdicio_Ocasiones * max(0.15, 1.0 + P13_Portero_Goles_Evitados_Rival), 4)`.
+
+3. **Motor de Inferencia, Rachas Cronológicas y Sincronización con Matriz (`motor_inferencia.py` y `motor_mercados.py`):**
+   - Alerta dinámica en Patrón #26: si `abs(pL["P26_Poder_Cierre_2T"] - pV["P26_Poder_Cierre_2T"]) < 0.03`, mostrar `"Empate técnico en el poder de cierre del 2T"`.
+   - Orden estricto Local vs Visita en Patrón #39 y Patrón #13.
+   - Ordenamiento cronológico estricto antes de ponderar rachas (`60%` últimos 5 partidos + `40%` primeros 10 partidos); insignia `[EN CRISIS]` (`-10%` a Attack y $\lambda$ si $\ge 3$ derrotas en últimos 5) y `[EN RACHA]` (`+8%` si $\ge 4$ victorias en últimos 5).
+   - Separación estricta Pre-Partido vs En Vivo (`es_en_vivo`): castigo severo por roja en vivo (`* 0.60` al infractor y `* 1.25` al rival) solo cuando `es_en_vivo == True`.
+   - Sincronización matemática de la Matriz 7x7 vía Lambdas normalizando `P / P.sum() == 1.0000`.
+
+4. **Gatekeeper Blindado, Poisson Estricto en Córneres/Tarjetas y Exclusión de `"12 Sin Empate"` (`motor_mercados.py` y `servicio_mercados.py`):**
+   - Prohibición absoluta de `-0.5 Goles` en cualquier mercado o mitad; líneas FT exclusivas: `1.5`, `2.5`, `3.5` y `4.5`.
+   - Evaluación estrictamente monótona con `scipy.stats.poisson` (`poisson.cdf(k, lambda_corners_total)` y `poisson.cdf(k, lambda_tarjetas)`) modulada por `P54_Asedio_Corners_Matchup` y `P43_Agresividad_Defensiva`.
+   - Exclusión permanente de `"12 (Sin Empate)"` como Jugada #1 y cuando `prob_empate >= 0.22` o `xg_total_proyectado < 3.0`, priorizando `Menos de 2.5 / 3.5 Goles` o `Doble Oportunidad (1X / X2)` en sincronía con la `JUGADA ÓPTIMA` de la Caja Gris.
+
+5. **Pulido Final UI/UX: Badges con EV% + Stake Kelly (25%), Nota de Calibración de Varianza y Bloque Narrativo `🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?` (`cuadro_especialista.py`, `motor_inferencia.py`, `servicio_mercados.py`, `bot_interactivo.py`):**
+   - **Badges del Top 5 con EV% y Stake (Kelly 25%):** Mostrar siempre `f"{prob_pct:.1f}% (SÓLIDA · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"` ensanchando la pastilla derecha (`width=0.27`, `fontsize=7.8` en negrita) para que nunca se trunque.
+   - **Nota de Calibración de Probabilidades (Matriz Base vs Ticket Top 5):** Guardar `prob_base_poisson` y `prob_ajustada_ticket` e imprimir en el subtítulo del Top 5 y bajo la Caja Gris:
+     `Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. Base Matriz Poisson: {prob_base_top1:.1f}% -> Ajustada Ticket: {prob_ajustada_top1:.1f}%.`
+   - **Etiqueta `[EN CRISIS]` / `[EN RACHA]` en segunda línea y Equipo en `GOLES POR EQUIPO`:** Colocar `f"{nombre} ({condicion})\n[{estado_racha}]"` con `fontsize=8.0` en la celda `EQUIPO (CONDICIÓN)` e incluir siempre el nombre corto del club y el periodo en cada pastilla de `GOLES POR EQUIPO` (`"Nottingham +0.5 Goles (FT) 75%"`, `"Man. City +1.5 Goles (2T) 75%"`).
+   - **Sección Obligatoria `🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?` (`generar_veredicto_tactico_partido` / `generar_veredicto_tactico_4_conclusiones`):** Redactar e imprimir tanto al pie de la segunda imagen (Cuadro B + Cuadro C) como en el mensaje de Telegram las 4 conclusiones irrefutables conectando Ratings, Cuadro B (15P), Cuadro C (Timeline 15 min), Tarjetas/Posesión/Pressing y 2º Tiempo.
