@@ -1386,6 +1386,10 @@ def _verificar_red_neuronal(
     if motor is None:
         return {"aplicado": False, "motivo": "analisis sin motor"}
     rec = getattr(motor, "recursivo", None) or {}
+    if rec.get("aplicado"):
+        # El motor ya aplicó la red recursiva y la sincronización de los 55 patrones,
+        # rachas 60/40, contexto avanzado y freno de mano en crisis; se preserva íntegra.
+        return dict(rec, diferencia_matriz=0.0)
     try:
         import cuadro_especialista as ce
         import motor_recursivo_45_dcn as red

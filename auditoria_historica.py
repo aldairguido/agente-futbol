@@ -531,7 +531,6 @@ def _auditar_equipo_interno(
         if (
             partidos_con_datos < objetivo_datos
             and getattr(fuente_obj, "nombre", "") == "fotmob"
-            and getattr(fuente_obj, "ctx", None) is not None
         ):
             try:
                 from fuentes_xg import FuenteFlashscore

@@ -473,3 +473,31 @@ La Capa Oculta Estructurada sintetiza las 45 métricas normalizadas en 5 Factore
      `Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. Base Matriz Poisson: {prob_base_top1:.1f}% -> Ajustada Ticket: {prob_ajustada_top1:.1f}%.`
    - **Etiqueta `[EN CRISIS]` / `[EN RACHA]` en segunda línea y Equipo en `GOLES POR EQUIPO`:** Colocar `f"{nombre} ({condicion})\n[{estado_racha}]"` con `fontsize=8.0` en la celda `EQUIPO (CONDICIÓN)` e incluir siempre el nombre corto del club y el periodo en cada pastilla de `GOLES POR EQUIPO` (`"Nottingham +0.5 Goles (FT) 75%"`, `"Man. City +1.5 Goles (2T) 75%"`).
    - **Sección Obligatoria `🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?` (`generar_veredicto_tactico_partido` / `generar_veredicto_tactico_4_conclusiones`):** Redactar e imprimir tanto al pie de la segunda imagen (Cuadro B + Cuadro C) como en el mensaje de Telegram las 4 conclusiones irrefutables conectando Ratings, Cuadro B (15P), Cuadro C (Timeline 15 min), Tarjetas/Posesión/Pressing y 2º Tiempo.
+
+
+
+---
+
+## 11. NIVEL TOP 1%: ARQUITECTURA DUAL FOTMOB <-> FLASHSCORE, LOS 5 MÓDULOS DE CONTEXTO (`contexto_avanzado.py`) Y LOS 5 AJUSTES MATEMÁTICOS FINOS (VALENCIA-REAL MADRID, OSASUNA-ATHLETIC, FOREST-MAN CITY)
+
+1. **Arquitectura Dual FotMob $\leftrightarrow$ Flashscore con Validación Estricta (`fuentes_xg.py`, `auditoria_historica.py`):**
+   - `validar_identidad_club(candidato, nombre_buscado, pais_esperado, liga_esperada)` valida país y competición nacional tanto en FotMob como en Flashscore.
+   - Failover automático bidireccional FotMob $\to$ Flashscore sin depender de un contexto compartido de navegador (`ctx`), completando hasta 15 partidos únicos oficiales (`FT`, `1T`, `2T`) sin detener nunca la ejecución.
+
+2. **Los 5 Módulos de Contexto de Nivel Top 1% (`contexto_avanzado.py`):**
+   - **Módulo 1 — Fatiga y Descanso (`dias_descanso <= 3`):** Penalización automática de `-15%` a $\lambda$ (`* 0.85`), `-20%` a `Pressing_Intensity` y `-10%` a `Attack_Strength`.
+   - **Módulo 2 — Motivación / Posición en Tabla:** Penalización de `-10%` en `zona_muerta` (`* 0.90`) y bono `+6%` en `pelea_titulo_o_descenso` / `alta_urgencia` (`* 1.06`).
+   - **Módulo 3 — Lesiones y Alineaciones Confirmadas:** `-20%` a $\lambda$ si falta el goleador titular (`sin_goleador_titular`) y `+15%` al $\lambda$ rival si falta el portero o central titular (`sin_portero_titular`).
+   - **Módulo 4 — Perfil del Árbitro Designado:** Multiplicador `+18%` (`* 1.18`) si promedia $\ge 5.5$ tarjetas/partido; `-15%` (`* 0.85`) si promedia $\le 3.4$ tarjetas/partido.
+   - **Módulo 5 — Movimiento de Cuotas (`Sharp Money`):** Si la cuota del favorito sube $\ge 10\%$ respecto a la cuota de apertura, activa `⚠️ ALERTA SHARP MONEY` y descarta el `1X2` directo del favorito en el Top 1 (priorizando Doble Oportunidad o Goles).
+
+3. **Los 5 Ajustes Matemáticos Finos Post-Auditoría (`motor_mercados.py`, `motor_patrones.py`, `motor_inferencia.py`, `cuadro_especialista.py`):**
+   - **a) Regla de Córneres vs. Volumen de Remates (Valencia 0-3 Real Madrid):** Si un equipo promedia `remates_totales > 15.0` (finaliza jugadas por dentro en vez de forzar córneres), multiplicar su proyección de córneres por `0.80` (además de ponderar `P54_Asedio_Corners_Matchup`).
+   - **b) "Freno de Mano" / Techo de Lambda para Equipos en Crisis (Valencia y Osasuna):**
+     * *Caso Crítico (Valencia):* Si `Attack_Rating < 20.0` y está `[EN CRISIS]` (o `goles_ult5_prom < 0.50`), `lam_red = min(lam_red, 0.60)`.
+     * *Caso Moderado (Osasuna / Forest):* Si está `[EN CRISIS]` o `Attack_Rating < 35.0`, `lam_red = min(lam_red, 1.10)`.
+   - **c) Eliminación Permanente de `"12 (Sin Empate)"` (Osasuna 1-1 Athletic):** Prohibir `"12 (Sin Empate)"` tanto en el **Top 5** como en la **Sección 1: Alta Probabilidad** siempre que `prob_empate >= 0.15` (15%) o `prob_empate + prob_equipo_en_crisis >= 0.42`.
+   - **d) Factor "Matagigantes" (Bloque Bajo Letal) y Regresión por Sobre-Rendimiento (Forest 3-1 Man City):**
+     * *Bloque Bajo Letal:* Si el local tiene baja posesión proyectada (`< 36%`) frente a un favorito visitante pero alta puntería (`P07_Precision_Disparo >= 0.38` o `P05_Conversion_Real >= 0.30` con `P55_Contraataque_Letal >= 0.45`), reducir el $\lambda$ del favorito visitante un `-20%` (`* 0.80`) y activar `"⚠️ ALERTA MATAGIGANTES"`.
+     * *Sobre-Rendimiento:* Si `goles_ult5 / max(0.5, xg_ult5) > 1.30`, aplicar `-10%` (`* 0.90`) a su $\lambda$ por regresión a la media.
+   - **e) Límite de Tarjetas por Monopolio de Posesión:** Si la posesión proyectada del favorito supera el `68%` (o `|lam_l - lam_v| >= 0.75`), reducir `lambda_tarjetas` un `-15%` (`* 0.85`) y prohibir recomendar `+4.5 Tarjetas Totales` en el Top 5 (salvo árbitro con $\ge 5.5$ tarjetas/partido).

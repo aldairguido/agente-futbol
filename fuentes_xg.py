@@ -1736,6 +1736,46 @@ def es_equipo_o_torneo_no_senior(nombre_eq: str, nombre_liga: str | None = None)
     return False
 
 
+def validar_identidad_club(
+    candidato: dict[str, Any],
+    nombre_buscado: str,
+    pais_esperado: str | None = None,
+    liga_esperada: str | None = None,
+) -> bool:
+    """
+    Sección 1 (Entity Resolution sin Homonimia):
+    Valida que el candidato devuelto por FotMob o Flashscore corresponda al mismo
+    país y competición nacional que el rival o la liga esperada (ej. Platense de
+    Argentina vs Platense FC de Honduras).
+    """
+    if not isinstance(candidato, dict):
+        return False
+    nom_cand = _sin_acentos(str(candidato.get("nombre") or candidato.get("name") or "")).lower().strip()
+    liga_cand = _sin_acentos(str(candidato.get("liga") or candidato.get("leagueName") or "")).lower().strip()
+    pais_cand = _sin_acentos(str(candidato.get("pais") or candidato.get("country") or _pais_de_liga(liga_cand) or "")).lower().strip()
+
+    if not usuario_solicito_no_senior(nombre_buscado):
+        if es_equipo_o_torneo_no_senior(nom_cand, liga_cand):
+            return False
+
+    def _es_int(t: str | None) -> bool:
+        return _pais_de_liga(str(t or "")) in ("europa", "sudamerica")
+
+    if pais_esperado:
+        p_esp = _sin_acentos(str(pais_esperado)).lower().strip()
+        if pais_cand and p_esp and pais_cand != p_esp:
+            if not _es_int(liga_esperada) and not _es_int(liga_cand):
+                return False
+
+    if liga_esperada:
+        l_esp = _sin_acentos(str(liga_esperada)).lower().strip()
+        p_liga_esp = _sin_acentos(str(_pais_de_liga(l_esp) or "")).lower().strip()
+        if p_liga_esp and pais_cand and pais_cand != p_liga_esp and not _es_int(l_esp):
+            return False
+
+    return True
+
+
 def usuario_solicito_no_senior(texto: str) -> bool:
     """Detecta si el usuario pidió explícitamente un equipo femenino o juvenil."""
     t = " " + _sin_acentos(str(texto or "")).lower() + " "

@@ -1453,17 +1453,29 @@ class MotorMercados:
         resultado["lambda_base_local"] = float(lam_l)
         resultado["lambda_base_visita"] = float(lam_v)
 
-        # Puntos 7, 9, 11, 13, 15 y 18: Rachas 60/40 + Reglas Matchup 55 Patrones + En Vivo
+        # Puntos 7, 9, 11, 13, 15, 18 y Sección 7 (Contexto Avanzado + 5 Ajustes Finos):
         try:
             from motor_patrones import calcular_promedios_racha_60_40, calcular_patrones_completos_partido
             from motor_inferencia import aplicar_reglas_matchup_55
+            from contexto_avanzado import evaluar_contexto_avanzado_partido
 
-            racha_l = calcular_promedios_racha_60_40(self.doc_local.get("partidos") or partidos_l_red, self.nombre_local)
-            racha_v = calcular_promedios_racha_60_40(self.doc_visitante.get("partidos") or partidos_v_red, self.nombre_visitante)
+            pts_l_doc = self.doc_local.get("partidos") or partidos_l_red
+            pts_v_doc = self.doc_visitante.get("partidos") or partidos_v_red
+            racha_l = calcular_promedios_racha_60_40(pts_l_doc, self.nombre_local)
+            racha_v = calcular_promedios_racha_60_40(pts_v_doc, self.nombre_visitante)
             self.racha_local = racha_l
             self.racha_visita = racha_v
             resultado["racha_local"] = racha_l
             resultado["racha_visita"] = racha_v
+
+            info_ctx_partido = getattr(self.p, "contexto_avanzado", None) or {}
+            ctx_av = evaluar_contexto_avanzado_partido(
+                pts_l_doc, pts_v_doc,
+                fecha_partido_actual=str(getattr(self.p, "fecha_partido", "") or ""),
+                info_contexto_fs_fm=info_ctx_partido if isinstance(info_ctx_partido, dict) else {},
+            )
+            self.contexto_avanzado = ctx_av
+            resultado["contexto_avanzado"] = ctx_av
 
             mat_base_red = ce.matriz_red_para_dibujar(resultado)
             r_1x2_orig = resultado_1x2(mat_base_red)
@@ -1494,6 +1506,7 @@ class MotorMercados:
                 es_en_vivo=es_vivo,
                 tarjeta_roja_local=roja_l,
                 tarjeta_roja_visita=roja_v,
+                contexto_partido=ctx_av,
             )
             resultado["patrones_55_local"] = pat_l
             resultado["patrones_55_visita"] = pat_v
@@ -1502,12 +1515,31 @@ class MotorMercados:
             # Punto 13: Ajustar lambdas si las reglas de los 55 patrones o las rachas 60/40 movieron las probabilidades
             ratio_55_l = max(0.82, min(1.22, (p1_55 / p1_o) ** 0.45))
             ratio_55_v = max(0.82, min(1.22, (p2_55 / p2_o) ** 0.45))
-            # Ponderar suavemente factor de racha 60/40 (crisis -10%, racha +8%)
-            f_racha_l = 1.0 + (float(racha_l.get("factor_lambda", 1.0)) - 1.0) * 0.50
-            f_racha_v = 1.0 + (float(racha_v.get("factor_lambda", 1.0)) - 1.0) * 0.50
+            # Ponderar suavemente factor de racha 60/40 (crisis -10%, racha +8%) + regresión a la media por sobre-rendimiento (>1.30 -> *0.90)
+            f_racha_l = (1.0 + (float(racha_l.get("factor_lambda", 1.0)) - 1.0) * 0.50) * float(racha_l.get("factor_regresion_media", 1.0))
+            f_racha_v = (1.0 + (float(racha_v.get("factor_lambda", 1.0)) - 1.0) * 0.50) * float(racha_v.get("factor_regresion_media", 1.0))
+            f_ctx_l = float(ctx_av.get("mult_lambda_local", 1.0))
+            f_ctx_v = float(ctx_av.get("mult_lambda_visita", 1.0))
 
-            mult_sinc_l = max(0.75, min(1.28, ratio_55_l * f_racha_l))
-            mult_sinc_v = max(0.75, min(1.28, ratio_55_v * f_racha_v))
+            mult_sinc_l = max(0.68, min(1.28, ratio_55_l * f_racha_l * f_ctx_l))
+            mult_sinc_v = max(0.68, min(1.28, ratio_55_v * f_racha_v * f_ctx_v))
+
+            # Ajuste d) Factor "Matagigantes" (Bloque Bajo Letal - ej. Forest 3-1 Man City):
+            # Si el local tiene baja posesión proyectada (< 36%) frente a un favorito visitante pero alta puntería (P07 >= 0.38 o P05 >= 0.30 con P55 >= 0.45), reducir -20% el λ del favorito visitante.
+            mu_l_c = resultado.get("mu_local_casa") or {}
+            mu_v_f = resultado.get("mu_visita_fuera") or {}
+            pos_l_raw = float(mu_l_c.get("posesion_pct", 50.0) or 50.0)
+            pos_v_raw = float(mu_v_f.get("posesion_pct", 50.0) or 50.0)
+            pos_sum = max(1.0, pos_l_raw + pos_v_raw)
+            pos_proy_l = (pos_l_raw / pos_sum) * 100.0
+            p07_l = float(pat_l.get("P07_Precision_Disparo", 0.32))
+            p05_l = float(pat_l.get("P05_Conversion_Real", 0.25))
+            p55_l = float(pat_l.get("P55_Contraataque_Letal", 0.30))
+            if pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45)):
+                mult_sinc_v *= 0.80
+                al_mg = f"⚠️ ALERTA MATAGIGANTES ({self.nombre_local}): Bloque bajo local ({pos_proy_l:.1f}% pos.) con alta letalidad al contragolpe (precisión {p07_l*100:.0f}%) -> -20% λ rival."
+                if isinstance(resultado.get("alertas_xai"), list) and al_mg not in resultado["alertas_xai"]:
+                    resultado["alertas_xai"].append(al_mg)
 
             if es_vivo and (roja_l or roja_v):
                 if roja_l and not roja_v:
@@ -1517,9 +1549,34 @@ class MotorMercados:
                     mult_sinc_v *= 0.60
                     mult_sinc_l *= 1.25
 
-            if abs(mult_sinc_l - 1.0) > 0.015 or abs(mult_sinc_v - 1.0) > 0.015:
-                lam_l_red = round(max(0.25, min(4.20, lam_l_red * mult_sinc_l)), 2)
-                lam_v_red = round(max(0.25, min(4.20, lam_v_red * mult_sinc_v)), 2)
+            lam_l_nuevo = lam_l_red * mult_sinc_l
+            lam_v_nuevo = lam_v_red * mult_sinc_v
+
+            # Ajuste b) "Freno de Mano" / Techo de Lambda para Equipos en Crisis (Valencia y Osasuna):
+            # - Caso Crítico (ej. Valencia Attack < 20 y en crisis): lam_red <= 0.60
+            # - Caso Moderado (ej. Osasuna/Forest en crisis o Attack < 35): lam_red <= 1.10
+            r_l_0_100 = (perfil_l_gen.get("ratings_0_100") or {}) if isinstance(perfil_l_gen, dict) else {}
+            r_v_0_100 = (perfil_v_gen.get("ratings_0_100") or {}) if isinstance(perfil_v_gen, dict) else {}
+            atk_l = float(r_l_0_100.get("Final_Attack_Strength", 50.0) or 50.0)
+            atk_v = float(r_v_0_100.get("Final_Attack_Strength", 50.0) or 50.0)
+            crisis_l = bool(racha_l.get("en_crisis", False))
+            crisis_v = bool(racha_v.get("en_crisis", False))
+            g_ult5_l = float(racha_l.get("goles_ult5_prom", 1.2) or 1.2)
+            g_ult5_v = float(racha_v.get("goles_ult5_prom", 1.2) or 1.2)
+
+            if atk_l < 20.0 and (crisis_l or g_ult5_l < 0.50):
+                lam_l_nuevo = min(lam_l_nuevo, 0.60)
+            elif crisis_l or atk_l < 35.0:
+                lam_l_nuevo = min(lam_l_nuevo, 1.10)
+
+            if atk_v < 20.0 and (crisis_v or g_ult5_v < 0.50):
+                lam_v_nuevo = min(lam_v_nuevo, 0.60)
+            elif crisis_v or atk_v < 35.0:
+                lam_v_nuevo = min(lam_v_nuevo, 1.10)
+
+            if abs(lam_l_nuevo - lam_l_red) > 0.01 or abs(lam_v_nuevo - lam_v_red) > 0.01:
+                lam_l_red = round(max(0.25, min(4.20, lam_l_nuevo)), 2)
+                lam_v_red = round(max(0.25, min(4.20, lam_v_nuevo)), 2)
                 resultado["lambda_local_recursivo"] = lam_l_red
                 resultado["lambda_visita_recursivo"] = lam_v_red
                 # Re-ponderar matriz conjunta con las nuevas marginales Poisson y normalizar a 1.0000
@@ -2141,20 +2198,23 @@ class MotorMercados:
             return None
         base = concedido if propio is None else (propio if concedido is None else (propio + concedido) / 2.0)
 
-        # ── Calibración de córneres por bloqueos rivales y guion de partido (Sección 8 / Champions) ──
+        # ── Calibración de córneres por bloqueos rivales, P54 y guion de partido (Sección 7 / Valencia 0-3 Real Madrid) ──
         try:
             xai = getattr(self, "xai_factores", None) or {}
             rec = getattr(self, "recursivo", None) or {}
             mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
             mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
+            pat_55 = rec.get("patrones_55_local" if bando == "local" else "patrones_55_visita") or {}
             if bando == "local":
                 centros = float(mu_l.get("centros") or 18.0)
+                rem_tot = float(mu_l.get("remates_totales") or 12.0)
                 bloq_riv = float(mu_v.get("bloqueos") or 2.5)
                 desp_riv = float(mu_v.get("despejes") or 18.0)
                 lam_p = float(rec.get("lambda_local_recursivo") or getattr(getattr(self, "tasas", None), "lambda_local_ft", 1.35) or 1.35)
                 lam_r = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
             else:
                 centros = float(mu_v.get("centros") or 16.0)
+                rem_tot = float(mu_v.get("remates_totales") or 11.5)
                 bloq_riv = float(mu_l.get("bloqueos") or 2.5)
                 desp_riv = float(mu_l.get("despejes") or 18.0)
                 lam_p = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
@@ -2162,7 +2222,9 @@ class MotorMercados:
 
             # factor_bloqueo_bandas = 0.60 + 0.20 * (centros_propios / 18.0) + 0.20 * (bloqueos_rival + despejes_rival / 8.0) / 5.0
             factor_bloqueo = 0.60 + 0.20 * (centros / 18.0) + 0.20 * ((bloq_riv + (desp_riv / 8.0)) / 5.0)
-            factor_bloqueo = max(0.78, min(1.18, factor_bloqueo))
+            p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
+            factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
+            factor_bloqueo = max(0.76, min(1.18, factor_bloqueo))
 
             # Ajuste dinámico por guion de marcador proyectado:
             diff_lam = lam_p - lam_r
@@ -2172,6 +2234,12 @@ class MotorMercados:
             elif abs(diff_lam) <= 0.35 and centros >= 20.0:
                 # Duelo parejo cerrado en 1T con equipo de alto volumen de centros -> +8% por asedio
                 factor_bloqueo *= 1.08
+
+            # Ajuste a) Regla de Córneres vs. Volumen de Remates (Valencia 0-3 Real Madrid):
+            # Si un equipo promedia remates_totales > 15.0 (finaliza jugadas por dentro en vez de forzar córneres),
+            # multiplicar su proyección de córneres por 0.80.
+            if rem_tot > 15.0:
+                factor_bloqueo *= 0.80
 
             base = base * factor_bloqueo
         except Exception:
@@ -2343,12 +2411,23 @@ class MotorMercados:
                 fal_l = max(5.0, float(mu_l.get("faltas", 11.5) or 11.5))
                 fal_v = max(5.0, float(mu_v.get("faltas", 12.0) or 12.0))
                 ratio_agresividad = ((am_l / fal_l) + (am_v / fal_v)) / 2.0
-                # Ratio medio ~0.18; modulador suave entre 0.88 y 1.15
+                # Ratio medio ~0.18; modulador suave entre 0.88 y 1.15 (P43_Agresividad_Defensiva)
                 mod_agr = max(0.88, min(1.15, 0.82 + ratio_agresividad))
                 base_tarj *= mod_agr
+                # Ajuste por perfil de árbitro si está disponible en contexto_avanzado
+                ctx_av = getattr(self, "contexto_avanzado", None) or rec.get("contexto_avanzado") or {}
+                mult_arb = float(ctx_av.get("mult_tarjetas", 1.0) or 1.0)
+                base_tarj *= mult_arb
+                # Ajuste e) Límite de Tarjetas por Monopolio de Posesión (> 68% o |lam_l - lam_v| >= 0.75):
+                # Si la posesión proyectada del favorito supera el 68% (ej. Man City ~65-72%), reducir lambda_tarjetas un -15%.
+                pos_l = float(mu_l.get("posesion_pct", 50.0) or 50.0)
+                pos_v = float(mu_v.get("posesion_pct", 50.0) or 50.0)
+                pos_tot = max(1.0, pos_l + pos_v)
+                pos_max_proy = max(pos_l / pos_tot, pos_v / pos_tot) * 100.0
                 lam_l = float(rec.get("lambda_local_recursivo") or getattr(getattr(self, "tasas", None), "lambda_local_ft", 1.35) or 1.35)
                 lam_v = float(rec.get("lambda_visita_recursivo") or getattr(getattr(self, "tasas", None), "lambda_visitante_ft", 1.10) or 1.10)
-                if abs(lam_l - lam_v) >= 0.75:
+                self.monopolio_posesion_tarjetas = bool(pos_max_proy >= 68.0 or abs(lam_l - lam_v) >= 0.75)
+                if self.monopolio_posesion_tarjetas:
                     base_tarj *= 0.85
             except Exception:
                 pass
@@ -3469,6 +3548,16 @@ def es_seleccion_competitiva_ticket(
 
     # 3. HÁNDICAP / 1X2 / DC / DNB
     if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in ev for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate", "h0_", "h1_", "h2_", "h3_", "h-1_", "h_minus1_")):
+        # Ajuste c) Eliminación Permanente de "12 (Sin Empate)" (Osasuna 1-1 Athletic):
+        # Prohibido "12 (Sin Empate)" tanto en Top 5 como en Sección 1: Alta Probabilidad.
+        es_dc12 = (
+            ev in ("12", "dc_12")
+            or ev.endswith("_12")
+            or "doble oportunidad 12" in et
+            or ("12" in et and "sin empate" in et)
+        )
+        if es_dc12:
+            return False
         if per != "FT":
             # En 1T/2T solo permitir Doble Oportunidad o Ganador si está en rango de valor [0.70, 0.92]
             if any(h in ev for h in ("h1_", "h2_", "h3_", "h0_")):
@@ -3616,10 +3705,21 @@ def seleccionar_top_5_jugadas_recomendadas(
     lam_l = float(getattr(getattr(motor, "tasas", None), "lambda_local_ft", 0.0) or rec.get("lambda_local_recursivo") or 1.35)
     lam_v = float(getattr(getattr(motor, "tasas", None), "lambda_visitante_ft", 0.0) or rec.get("lambda_visita_recursivo") or 1.10)
 
-    # ── Punto 6: Exclusión de "12 (Sin Empate)" en duelos de bajo/medio gol o empate >= 24% ──
+    # ── Punto 6 y Ajuste c): Exclusión Permanente de "12 (Sin Empate)" cuando P(X) >= 15.0% o duelo de bajo/medio gol ──
     px_actual = p_1x2[1] if p_1x2 is not None else 0.25
+    racha_l_top = getattr(motor, "racha_local", None) or rec.get("racha_local") or {}
+    racha_v_top = getattr(motor, "racha_visita", None) or rec.get("racha_visita") or {}
+    ctx_av_top = getattr(motor, "contexto_avanzado", None) or rec.get("contexto_avanzado") or {}
+    p_crisis_max = 0.0
+    if p_1x2 is not None:
+        if racha_l_top.get("en_crisis"):
+            p_crisis_max = max(p_crisis_max, float(p_1x2[0]))
+        if racha_v_top.get("en_crisis"):
+            p_crisis_max = max(p_crisis_max, float(p_1x2[2]))
+
     prohibir_dc_12 = (
-        px_actual >= 0.24
+        px_actual >= 0.15
+        or (px_actual + p_crisis_max) >= 0.42
         or (lam_l + lam_v) < 3.0
         or marcador_mas_probable in ((0, 0), (1, 1))
     )
@@ -3631,11 +3731,25 @@ def seleccionar_top_5_jugadas_recomendadas(
             ev_s in ("12", "dc_12")
             or ev_s.endswith("_12")
             or "doble oportunidad 12" in et_s
-            or ("12 (" in et_s and "empate" in et_s)
+            or ("12" in et_s and "empate" in et_s)
         )
 
     if prohibir_dc_12:
         candidatas = [s for s in candidatas if not _es_dc_12(s)]
+
+    # Ajuste e) Límite de Tarjetas por Monopolio de Posesión:
+    # Si la posesión proyectada del favorito supera el 68%, prohibir recomendar +4.5 o +5.5 Tarjetas Totales en el Top 5 (salvo árbitro >= 5.5).
+    monopolio_tarj = bool(getattr(motor, "monopolio_posesion_tarjetas", False))
+    arb_prom = float((ctx_av_top.get("info_contexto_fs_fm") or {}).get("arbitro_promedio_tarjetas", 0.0) or 0.0) if isinstance(ctx_av_top, dict) else 0.0
+    if monopolio_tarj and arb_prom < 5.5:
+        def _es_over_tarj_alta(s: Any) -> bool:
+            ev_t = str(_v(s, "evento") or "").lower()
+            m_t = str(_v(s, "mercado") or "").lower()
+            lin_t = _v(s, "linea", None)
+            es_t = ("tarjeta" in ev_t or "amarilla" in ev_t or "tarjeta" in m_t or "amarilla" in m_t)
+            es_ov = ("over" in ev_t or "mas" in str(_v(s, "etiqueta") or "").lower() or "más" in str(_v(s, "etiqueta") or "").lower())
+            return bool(es_t and es_ov and lin_t is not None and float(lin_t) >= 4.5)
+        candidatas = [s for s in candidatas if not _es_over_tarj_alta(s)]
 
     # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
     candidatas_filtradas_ev: list[Any] = []
@@ -3944,7 +4058,13 @@ def seleccionar_top_5_jugadas_recomendadas(
     n_tarjetas = 0
 
     # Paso 1: El slot 1 (Resultado / DC) o Goles Under en duelos cerrados tiene prioridad en #1 (jamás "12")
-    cands_s1 = [c for c in por_slot.get(1, []) if not _es_dc_12(c)]
+    # Si hay alerta Sharp Money (subida >= 10% en cuota del favorito), descartar 1X2 directo en Top 1 y priorizar DC.
+    descartar_1x2_top1 = bool((ctx_av_top or {}).get("descartar_1x2_favorito_top1", False)) if isinstance(ctx_av_top, dict) else False
+    cands_s1 = [
+        c for c in por_slot.get(1, [])
+        if not _es_dc_12(c)
+        and not (descartar_1x2_top1 and str(_v(c, "evento") or "").lower().strip() in ("1", "2", "local_gana", "visitante_gana"))
+    ]
     if cands_s1:
         best_s1 = cands_s1[0]
         elegidas.append((1, best_s1))

@@ -432,3 +432,17 @@ Ver sección 10 íntegra en `D:\agente_futbol\AGENTS.md`:
 1. Validación de identidad de clubes (`validar_identidad_club` / `validar_coherencia_nacional_15_partidos`) y fin de la homonimia.
 2. `_val()` con soporte regex `'98/124 (79%)'`, derivación dinámica de `P26_Poder_Cierre_2T` y `P13_Portero_Goles_Evitados = round(xgot_enf - goles_c, 2)` en `motor_patrones.py`.
 3. Badges con `EV%` + `Stake Kelly (25%)` en el Top 5, `Nota de Calibración` (Base Matriz Poisson -> Ajustada Ticket), `[EN CRISIS]` en segunda línea, equipo + periodo en `GOLES POR EQUIPO` y bloque narrativo obligatorio `🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?` en la segunda imagen y en Telegram.
+
+
+
+---
+
+## 11. NIVEL TOP 1%: ARQUITECTURA DUAL FOTMOB <-> FLASHSCORE, LOS 5 MÓDULOS DE CONTEXTO (`contexto_avanzado.py`) Y LOS 5 AJUSTES MATEMÁTICOS FINOS
+- **Arquitectura Dual FotMob $\leftrightarrow$ Flashscore:** `validar_identidad_club` y failover automático FotMob $\to$ Flashscore sin requerir `ctx` compartido.
+- **5 Módulos de Contexto (`contexto_avanzado.py`):** Fatiga (`<= 3 días` $\to$ `-15%` $\lambda$), Motivación (`zona_muerta` `-10%`, `alta_urgencia` `+6%`), Bajas Clave (`sin_goleador_titular` `-20%`, `sin_portero_titular` `+15%` rival), Árbitro (`>= 5.5` `+18%`, `<= 3.4` `-15%` tarjetas) y Sharp Money (subida $\ge 10\%$ descarta 1X2 directo en Top 1).
+- **5 Ajustes Matemáticos Finos:**
+  1) Córneres `* 0.80` cuando `remates_totales > 15.0`.
+  2) Freno de Mano / Techo de $\lambda$ en crisis (`<= 0.60` si `Attack < 20` y crisis; `<= 1.10` si `[EN CRISIS]` o `Attack < 35`).
+  3) Eliminación permanente de `"12 (Sin Empate)"` en Top 5 y Sección 1 cuando `P(X) >= 15%`.
+  4) Factor Matagigantes (`pos_local < 36%` + alta puntería $\to$ `-20%` $\lambda$ visitante favorito) y regresión `-10%` por sobre-rendimiento (`goles_ult5 / xg_ult5 > 1.30`).
+  5) Límite de tarjetas `-15%` por monopolio de posesión (`>= 68%`) y exclusión de `+4.5 Tarjetas` en Top 5.

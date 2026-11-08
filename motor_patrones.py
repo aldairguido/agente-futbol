@@ -154,6 +154,15 @@ def calcular_promedios_racha_60_40(
                     fila_d["goles_contra"] = float(gc)
                 except (TypeError, ValueError):
                     pass
+            if "xg" not in fila_d or fila_d.get("xg") is None:
+                filas_ft = ((item.get("periodos") or {}).get("FT") or {}).get("filas") or []
+                for f_m in filas_ft:
+                    if isinstance(f_m, dict) and f_m.get("clave") == "xg" and f_m.get("equipo") is not None:
+                        try:
+                            fila_d["xg"] = float(f_m["equipo"])
+                        except (TypeError, ValueError):
+                            pass
+                        break
             filas.append(fila_d)
         if filas:
             df_tmp = pd.DataFrame(filas)
@@ -183,13 +192,22 @@ def calcular_promedios_racha_60_40(
     victorias_5 = 0
     empates_5 = 0
     derrotas_5 = 0
+    goles_u5_vals: List[float] = []
+    xg_u5_vals: List[float] = []
     for r in ultimos_5_rows:
         res_letra = str(r.get("resultado_letra") or r.get("res") or "").upper().strip()
         gf = r.get("goles_favor", r.get("goles_equipo", r.get("goles")))
         gc = r.get("goles_contra", r.get("goles_rival", r.get("goles_concedidos")))
+        xg_r = r.get("xg", r.get("xg_favor", r.get("expected_goals")))
+        if xg_r is not None:
+            try:
+                xg_u5_vals.append(float(xg_r))
+            except (TypeError, ValueError):
+                pass
         if gf is not None and gc is not None:
             try:
                 gf_f, gc_f = float(gf), float(gc)
+                goles_u5_vals.append(gf_f)
                 if gf_f > gc_f:
                     victorias_5 += 1
                 elif gf_f < gc_f:
@@ -206,7 +224,16 @@ def calcular_promedios_racha_60_40(
         elif res_letra in ("E", "T", "EMPATE"):
             empates_5 += 1
 
-    if derrotas_5 >= 3:
+    goles_ult5_prom = float(sum(goles_u5_vals) / len(goles_u5_vals)) if goles_u5_vals else 1.20
+    xg_ult5_prom = float(sum(xg_u5_vals) / len(xg_u5_vals)) if xg_u5_vals else goles_ult5_prom
+    goles_ult5_sum = float(sum(goles_u5_vals)) if goles_u5_vals else goles_ult5_prom * 5.0
+    xg_ult5_sum = float(sum(xg_u5_vals)) if xg_u5_vals else xg_ult5_prom * 5.0
+    ratio_overperf = goles_ult5_sum / max(0.5, xg_ult5_sum) if xg_u5_vals and goles_u5_vals else 1.0
+    sobre_rendimiento = ratio_overperf > 1.30
+    factor_regresion_media = 0.90 if sobre_rendimiento else 1.00
+
+    es_crisis = (derrotas_5 >= 3) or (len(ultimos_5_rows) >= 5 and victorias_5 == 0 and derrotas_5 >= 2)
+    if es_crisis:
         estado = "EN CRISIS"
         badge = "[EN CRISIS]"
         icono_tg = "❄️ En crisis"
@@ -227,8 +254,13 @@ def calcular_promedios_racha_60_40(
         "victorias_ult5": victorias_5,
         "empates_ult5": empates_5,
         "derrotas_ult5": derrotas_5,
+        "goles_ult5_prom": round(goles_ult5_prom, 2),
+        "xg_ult5_prom": round(xg_ult5_prom, 2),
+        "ratio_overperformance": round(ratio_overperf, 3),
+        "sobre_rendimiento": sobre_rendimiento,
+        "factor_regresion_media": factor_regresion_media,
         "estado_racha": estado,
-        "en_crisis": derrotas_5 >= 3,
+        "en_crisis": es_crisis,
         "en_racha": victorias_5 >= 4,
         "etiqueta_visual": badge,
         "etiqueta_racha": badge,

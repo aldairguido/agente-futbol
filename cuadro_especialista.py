@@ -1124,16 +1124,28 @@ def _organizar_sec1_para_cuadro(
         if not lista_sels and hasattr(analisis, "selecciones_validadas"):
             lista_sels = getattr(analisis, "selecciones_validadas", []) or []
 
-    # Filtrar estrictamente con Gatekeeper (prohibiendo -6.5 Goles, -5.5 Goles, etc.)
+    p_1x2_mat = None
+    if matriz_prob:
+        try:
+            R_p = len(matriz_prob)
+            C_p = len(matriz_prob[0]) if R_p else 0
+            p1_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i > j)
+            px_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i == j)
+            p2_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i < j)
+            p_1x2_mat = (p1_m, px_m, p2_m)
+        except Exception:
+            p_1x2_mat = None
+
+    # Filtrar estrictamente con Gatekeeper (prohibiendo -6.5 Goles, -5.5 Goles, y 12 Sin Empate si P(X) >= 15%)
     validadas = []
     for s in (lista_sels or []):
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
-        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V):
+        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat):
             validadas.append(s)
 
     # Si vienen más de 18, acotar a las 18 más competitivas
     if len(validadas) > 18:
-        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, max_opciones=18)
+        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, p_1x2=p_1x2_mat, max_opciones=18)
 
     def _clasificar(s: Any) -> tuple[str, str]:
         m_l = str(_v(s, "mercado") or "").lower()

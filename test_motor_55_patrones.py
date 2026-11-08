@@ -208,9 +208,11 @@ def test_especificacion_20_puntos_produccion():
     u125 = prob_under(dist_c, 12.5)
     assert u65 < u85 < u105 < u125, "Las probabilidades Under de córneres deben ser estrictamente crecientes"
 
-    # 6, 10, 12, 14 & 20. Exclusión de "12 Sin Empate" como #1 + Cuota Mínima y Stake Kelly
+    # 6, 10, 12, 14 & 20. Exclusión de "12 Sin Empate" en Sección 1 y Top 5 + Cuota Mínima y Stake Kelly
+    sel_dc12 = {"mercado": "Doble oportunidad", "evento": "dc_12", "etiqueta": "12 (Sin Empate)", "periodo": "FT", "probabilidad": 0.85, "estado": "mantiene"}
+    assert es_seleccion_competitiva_ticket(sel_dc12, "Osasuna", "Athletic Club", p_1x2=(0.45, 0.25, 0.30)) is False
     sels_test = [
-        {"mercado": "Doble oportunidad", "evento": "dc_12", "etiqueta": "12 (Sin Empate)", "periodo": "FT", "probabilidad": 0.75, "estado": "mantiene"},
+        sel_dc12,
         {"mercado": "Doble oportunidad", "evento": "dc_1x", "etiqueta": "1X (San Lorenzo o empate)", "periodo": "FT", "probabilidad": 0.78, "estado": "mantiene"},
         {"mercado": "Total de goles", "evento": "under_2.5", "etiqueta": "Menos de 2.5 goles", "periodo": "FT", "linea": 2.5, "probabilidad": 0.76, "estado": "mantiene"},
         {"mercado": "Total de córneres", "evento": "corners_under_10.5", "etiqueta": "Menos de 10.5 córneres", "periodo": "FT", "linea": 10.5, "probabilidad": 0.74, "estado": "mantiene"},
@@ -218,7 +220,7 @@ def test_especificacion_20_puntos_produccion():
     ]
     top5 = seleccionar_top_5_jugadas_recomendadas(sels_test, motor=None, eq_l="San Lorenzo", eq_v="Platense")
     assert len(top5) >= 3
-    assert "Sin Empate" not in top5[0]["etiqueta"], f"La jugada #1 jamás puede ser 12 Sin Empate: {top5[0]}"
+    assert all("Sin Empate" not in it["etiqueta"] for it in top5), f"12 Sin Empate debe quedar excluido del Top 5: {top5}"
     assert "cuota_minima" in top5[0] and top5[0]["cuota_minima"] > 1.05
     assert "stake_sugerido_pct" in top5[0] and 1.0 <= top5[0]["stake_sugerido_pct"] <= 8.0
 
@@ -260,10 +262,63 @@ def test_especificacion_20_puntos_produccion():
     assert "3. " in veredicto_txt and "4. " in veredicto_txt
 
 
+def test_contexto_avanzado_y_5_ajustes_finos():
+    """Verifica el módulo contexto_avanzado.py, validar_identidad_club y los 5 ajustes matemáticos finos."""
+    from contexto_avanzado import evaluar_contexto_avanzado_partido
+    from fuentes_xg import validar_identidad_club
+    from motor_patrones import calcular_promedios_racha_60_40, calcular_patrones_completos_partido
+    from motor_inferencia import aplicar_reglas_matchup_55
+
+    # 1. Validación estricta de club sin homonimia
+    cand_arg = {"nombre": "Club Atlético Platense", "liga": "Liga Profesional", "pais": "Argentina"}
+    cand_hon = {"nombre": "Platense FC", "liga": "Liga Nacional", "pais": "Honduras"}
+    assert validar_identidad_club(cand_arg, "Platense", pais_esperado="Argentina", liga_esperada="Liga Profesional") is True
+    assert validar_identidad_club(cand_hon, "Platense", pais_esperado="Argentina", liga_esperada="Liga Profesional") is False
+
+    # 2. Los 5 módulos de contexto_avanzado.py (Fatiga <= 3 días, Motivación, Bajas, Árbitro, Sharp Money)
+    partidos_fatiga = [{"fecha": "2026-11-05"}]
+    partidos_descanso = [{"fecha": "2026-10-31"}]
+    ctx = evaluar_contexto_avanzado_partido(
+        partidos_fatiga,
+        partidos_descanso,
+        fecha_partido_actual="2026-11-07",
+        info_contexto_fs_fm={
+            "motivacion_local": "zona_muerta",
+            "motivacion_visita": "alta_urgencia",
+            "bajas_local": {"sin_goleador_titular": True},
+            "arbitro_promedio_tarjetas": 5.8,
+            "cuota_apertura_favorito": 1.60,
+            "cuota_actual_favorito": 1.82,
+        },
+    )
+    assert ctx["dias_descanso_local"] == 2
+    assert ctx["mult_lambda_local"] < 0.70  # Fatiga (0.85) * zona_muerta (0.90) * sin_goleador (0.80)
+    assert ctx["mult_lambda_visita"] == 1.06
+    assert ctx["mult_tarjetas"] == 1.18
+    assert ctx["alerta_sharp_money"] is True and ctx["descartar_1x2_favorito_top1"] is True
+
+    # 3. Sobre-rendimiento (> 1.30x xG en últimos 5) -> factor_regresion_media == 0.90
+    pts_over = [
+        {"fecha": f"2026-10-{20+i:02d}", "local": "Man City", "visita": "Rival", "goles_local": 3, "goles_visita": 0, "xg": 1.4}
+        for i in range(5)
+    ]
+    racha_over = calcular_promedios_racha_60_40(pts_over, "Man City")
+    assert racha_over["sobre_rendimiento"] is True and racha_over["factor_regresion_media"] == 0.90
+
+    # 4. Patrón Matagigantes (Bloque Bajo Letal: pos_local < 36% + P07 >= 0.38 frente a favorito visitante)
+    d_forest = {"xg": 1.35, "remates_totales": 9.0, "remates_puerta": 4.2, "goles_favor": 1.5, "posesion_pct": 31.0, "pases_largos_pct": 58.0}
+    d_city = {"xg": 2.10, "remates_totales": 17.5, "remates_puerta": 6.5, "goles_favor": 2.2, "posesion_pct": 69.0, "pases_largos_pct": 65.0}
+    P_for, P_cit = calcular_patrones_completos_partido(d_forest, d_city)
+    p1_m, px_m, p2_m, al_m = aplicar_reglas_matchup_55(P_for, P_cit, 0.15, 0.22, 0.63, "Nottingham Forest", "Manchester City")
+    assert p2_m < 0.63, f"El favorito visitante debe reducir su prob ante bloque bajo letal: {p2_m}"
+    assert any("ALERTA MATAGIGANTES" in a for a in al_m), f"Falta alerta Matagigantes: {al_m}"
+
+
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     test_motor_55_patrones_completo()
     test_sevilla_alaves_cuadro_b_hibrido()
     test_especificacion_20_puntos_produccion()
-    print("OK: todos los tests de los 20 puntos superados en verde.")
+    test_contexto_avanzado_y_5_ajustes_finos()
+    print("OK: todos los tests de los 20 puntos y los 5 ajustes finos superados en verde.")

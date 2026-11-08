@@ -387,15 +387,33 @@ def aplicar_reglas_matchup_55(
     es_en_vivo: bool = False,
     tarjeta_roja_local: bool = False,
     tarjeta_roja_visita: bool = False,
+    info_contexto: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, float, float, List[str]]:
     """
-    Aplica las 10 reglas de inferencia táctica sobre los 55 patrones y retorna
+    Aplica las reglas de inferencia táctica sobre los 55 patrones y retorna
     (prob_final_local, prob_final_empate, prob_final_visita, lista_alertas_activadas).
     """
     p_loc = float(prob_poisson_local)
     p_emp = float(prob_poisson_empate)
     p_vis = float(prob_poisson_visita)
     alertas: List[str] = []
+
+    # Integración con contexto_avanzado.py (Fatiga, Motivación, Bajas, Árbitro, Sharp Money)
+    if isinstance(info_contexto, dict) and info_contexto:
+        try:
+            from contexto_avanzado import evaluar_contexto_avanzado_partido
+            ctx_res = evaluar_contexto_avanzado_partido(
+                info_contexto.get("partidos_local") or [],
+                info_contexto.get("partidos_visita") or [],
+                str(info_contexto.get("fecha_partido_actual") or ""),
+                info_contexto,
+            )
+            p_loc *= float(ctx_res.get("mult_lambda_local", 1.0))
+            p_vis *= float(ctx_res.get("mult_lambda_visita", 1.0))
+            for al_c in (ctx_res.get("alertas_contexto") or []):
+                alertas.append(al_c)
+        except Exception:
+            pass
 
     # Ajuste exclusivo en vivo por inferioridad numérica (Puntos 9 y 18)
     if es_en_vivo and (tarjeta_roja_local or tarjeta_roja_visita):
@@ -406,6 +424,22 @@ def aplicar_reglas_matchup_55(
             p_vis *= 0.60
             p_loc *= 1.25
         alertas.append("[ALERTA: Inferioridad numérica detectada (Roja). El modelo ajustó los Lambdas]")
+
+    # Patrón Matagigantes / Bloque Bajo Letal (Sección 7.2d: Forest 3-1 Man City)
+    pos_l_raw = float(patrones_local.get("posesion_pct", 50.0))
+    pos_v_raw = float(patrones_visita.get("posesion_pct", 50.0))
+    pos_proy_l = (100.0 * pos_l_raw / max(1.0, pos_l_raw + pos_v_raw))
+    p07_l = float(patrones_local.get("P07_Precision_Disparo", 0.30))
+    p05_l = float(patrones_local.get("P05_Conversion_Real", 0.25))
+    p55_l = float(patrones_local.get("P55_Contraataque_Letal", 0.30))
+    if (pos_proy_l < 36.0 or pos_l_raw < 36.0) and p_vis > p_loc and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45)):
+        p_vis *= 0.80
+        p_loc += 0.06
+        p_emp += 0.04
+        alertas.append(
+            f"⚠️ ALERTA MATAGIGANTES: Bloque bajo local ({nombre_local}, {pos_proy_l:.1f}% pos. proyectada) con alta letalidad al contragolpe "
+            f"(P07 Puntería {p07_l*100:.1f}%, P05 Conversión {p05_l*100:.1f}%)."
+        )
 
     # 1. Regla del Espejismo de Posesión (Patrón #01 y #49)
     if patrones_local["posesion_pct"] > 54.0 and patrones_local["P01_xG_por_Remate"] < 0.145 and patrones_visita["P15_Muro_Asedio"] > 0.55:
