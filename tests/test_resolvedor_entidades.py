@@ -285,7 +285,7 @@ class TestResolvedorEntidades(unittest.TestCase):
         test_resolver_laliga_ea_sports_celta_vs_levante()
 
     def test_5_argentina_san_lorenzo_platense(self):
-        test_resolver_argentina_san_lorenzo_platense_descarta_honduras()
+        test_resolver_argentina_san_lorenzo_vs_platense_descarta_honduras()
 
     def test_6_bundesliga_femenina_bayern_vs_wolfsburgo(self):
         test_resolver_bundesliga_femenina_bayern_vs_wolfsburgo()
