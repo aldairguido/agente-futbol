@@ -114,6 +114,268 @@ def limpiar_cache_memoria_auditorias() -> None:
         _CACHE_MEMORIA_AUDITORIAS.clear()
 
 
+def eliminar_cache_equipo(nombre_o_doc: Any, pais_iso: str = "") -> int:
+    """
+    Invalida inmediatamente cualquier entrada en memoria y en disco (cache/ e informes/auditorias/)
+    asociada a un equipo (p.ej. cuando se detecta un FALSO HOMÓNIMO EXTRANJERO como CD Universitario [PAN]).
+    """
+    eliminados = 0
+    nombres: set[str] = set()
+    ids_eq: set[str] = set()
+    claves_cache: set[str] = set()
+
+    if isinstance(nombre_o_doc, dict):
+        eq = nombre_o_doc.get("equipo") if isinstance(nombre_o_doc.get("equipo"), dict) else nombre_o_doc
+        for k in ("nombre", "name", "nombre_solicitado"):
+            if (eq or {}).get(k):
+                nombres.add(str(eq[k]).strip())
+        if nombre_o_doc.get("equipo_solicitado"):
+            nombres.add(str(nombre_o_doc["equipo_solicitado"]).strip())
+        if (eq or {}).get("id"):
+            ids_eq.add(str(eq["id"]).strip())
+        if (eq or {}).get("clave_cache"):
+            claves_cache.add(str(eq["clave_cache"]).strip())
+    elif isinstance(nombre_o_doc, str) and nombre_o_doc.strip():
+        nombres.add(nombre_o_doc.strip())
+
+    slugs: set[str] = set()
+    for n in list(nombres):
+        s = re.sub(
+            r"[^A-Za-z0-9]+",
+            "_",
+            unicodedata.normalize("NFKD", n).encode("ascii", "ignore").decode(),
+        ).strip("_").lower()
+        if s:
+            slugs.add(s)
+        try:
+            from resolvedor_entidades import construir_clave_cache_entidad
+            for iso_c in {pais_iso, "INT", "BOL", "PAN", "PER", "HND", "ARG"}:
+                if iso_c:
+                    claves_cache.add(construir_clave_cache_entidad(n, iso_c, False, False))
+        except Exception:
+            pass
+
+    with _LOCK_GLOBAL_LOCKS:
+        for k_mem in list(_CACHE_MEMORIA_AUDITORIAS.keys()):
+            doc_m = _CACHE_MEMORIA_AUDITORIAS.get(k_mem) or {}
+            eq_m = doc_m.get("equipo") or {}
+            id_m = str(eq_m.get("id") or "")
+            nom_m = str(eq_m.get("nombre") or "").strip()
+            slug_m = re.sub(
+                r"[^A-Za-z0-9]+",
+                "_",
+                unicodedata.normalize("NFKD", nom_m).encode("ascii", "ignore").decode(),
+            ).strip("_").lower()
+            if (
+                k_mem in slugs
+                or k_mem in claves_cache
+                or (id_m and id_m in ids_eq)
+                or (slug_m and slug_m in slugs)
+            ):
+                _CACHE_MEMORIA_AUDITORIAS.pop(k_mem, None)
+                eliminados += 1
+
+    # Limpiar archivos de caché de resiliencia en disco (D:\agente_futbol\cache\)
+    cache_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+    for s in slugs:
+        ruta_c = os.path.join(cache_dir, f"cache_{s}.json")
+        if os.path.isfile(ruta_c):
+            try:
+                os.remove(ruta_c)
+                eliminados += 1
+            except Exception:
+                pass
+
+    return eliminados
+
+
+class ResultadoCoherenciaCompetitiva(dict):
+    """
+    Resultado de `validar_coherencia_competitiva_local_visita`.
+    Se comporta como dict y también evalúa a True/False en contextos booleanos
+    según `self['coherente']`.
+    """
+
+    def __bool__(self) -> bool:
+        return bool(self.get("coherente", False))
+
+    def __getattr__(self, item: str) -> Any:
+        if item in self:
+            return self[item]
+        raise AttributeError(item)
+
+
+def validar_coherencia_competitiva_local_visita(
+    audit_local: dict[str, Any],
+    audit_visita: dict[str, Any],
+    pais_iso: str = "INT",
+    liga_pref: Any = None,
+) -> ResultadoCoherenciaCompetitiva:
+    """
+    COMPUERTA OBLIGATORIA DE COHERENCIA DE LIGA Y RIVALES COMUNES (Sección 3):
+    Verifica inmediatamente después de obtener los 15 partidos de ambos equipos que,
+    si el partido NO es un torneo internacional (`pais_iso != "INT"`):
+      - Extrae el conjunto de nombres de ligas (`ligas_local` vs `ligas_visita`) y
+        el conjunto de rivales (`rivales_local` vs `rivales_visita`) de los 15 partidos.
+      - Si `ligas_local` y `ligas_visita` tienen 0 ligas en común Y `rivales_local` y
+        `rivales_visita` tienen 0 rivales en común (como Aurora en 'Bolivia' vs
+        CD Universitario en 'LPF Apertura'):
+        1) Marca como `FALSO HOMÓNIMO EXTRANJERO` al equipo cuya liga no coincida con `pais_iso`/`liga_pref`.
+        2) Invalida su caché inmediatamente (`eliminar_cache_equipo`).
+    """
+    from resolvedor_entidades import normalizar_pais_iso, normalizar_texto
+
+    iso_esp = normalizar_pais_iso(pais_iso or (liga_pref.get("pais_iso") if isinstance(liga_pref, dict) else str(liga_pref or ""))) or "INT"
+
+    def _extraer_ligas_y_rivales(doc: dict[str, Any]) -> tuple[set[str], set[str], set[str]]:
+        ligas_norm: set[str] = set()
+        ligas_raw: set[str] = set()
+        rivales_norm: set[str] = set()
+        if not isinstance(doc, dict):
+            return ligas_norm, rivales_norm, ligas_raw
+        eq = doc.get("equipo") if isinstance(doc.get("equipo"), dict) else {}
+        liga_eq = str((eq or {}).get("liga") or (eq or {}).get("leagueName") or "").strip()
+        if liga_eq and liga_eq.lower() not in ("desconocida", "oficial"):
+            ligas_raw.add(liga_eq)
+            ligas_norm.add(normalizar_texto(liga_eq))
+        for p in (doc.get("partidos") or [])[:15]:
+            if not isinstance(p, dict):
+                continue
+            t = str(p.get("torneo") or p.get("competicion") or p.get("liga") or "").strip()
+            if t:
+                ligas_raw.add(t)
+                ligas_norm.add(normalizar_texto(t))
+            r = str(p.get("rival") or "").strip()
+            if r:
+                rivales_norm.add(normalizar_texto(r))
+        return ligas_norm, rivales_norm, ligas_raw
+
+    ligas_l, rivales_l, ligas_raw_l = _extraer_ligas_y_rivales(audit_local)
+    ligas_v, rivales_v, ligas_raw_v = _extraer_ligas_y_rivales(audit_visita)
+
+    eq_l = (audit_local.get("equipo") or {}) if isinstance(audit_local, dict) else {}
+    eq_v = (audit_visita.get("equipo") or {}) if isinstance(audit_visita, dict) else {}
+    nom_l = normalizar_texto(str(eq_l.get("nombre") or eq_l.get("name") or ""))
+    nom_v = normalizar_texto(str(eq_v.get("nombre") or eq_v.get("name") or ""))
+
+    ligas_comunes = {x for x in (ligas_l & ligas_v) if x}
+    rivales_comunes = {x for x in (rivales_l & rivales_v) if x}
+    if nom_l and nom_l in rivales_v:
+        rivales_comunes.add(nom_l)
+    if nom_v and nom_v in rivales_l:
+        rivales_comunes.add(nom_v)
+
+    if iso_esp == "INT":
+        # Incluso si pais_iso se pasó vacío/INT, inferirlo si alguno de los dos equipos tiene país nacional claro
+        iso_inf_l = normalizar_pais_iso(eq_l.get("pais_iso") or eq_l.get("liga") or next(iter(ligas_raw_l), ""))
+        iso_inf_v = normalizar_pais_iso(eq_v.get("pais_iso") or eq_v.get("liga") or next(iter(ligas_raw_v), ""))
+        if iso_inf_l and iso_inf_l != "INT" and iso_inf_v and iso_inf_v != "INT" and iso_inf_l != iso_inf_v:
+            iso_esp = iso_inf_l
+
+    if iso_esp == "INT":
+        return ResultadoCoherenciaCompetitiva({
+            "coherente": True,
+            "estado": "OK",
+            "falso_homonimo": None,
+            "equipo_invalido": None,
+            "ligas_local": sorted(ligas_raw_l),
+            "ligas_visita": sorted(ligas_raw_v),
+            "ligas_comunes": sorted(ligas_comunes),
+            "rivales_comunes": sorted(rivales_comunes),
+            "motivo": "Torneo internacional o sin restricción nacional.",
+        })
+
+    def _coincide_pais_equipo(eq_d: dict[str, Any], ligas_raw_s: set[str]) -> bool:
+        isos_detectados: set[str] = set()
+        for l_txt in ligas_raw_s:
+            iso_l = normalizar_pais_iso(l_txt)
+            if not iso_l:
+                from fuentes_xg import _pais_de_liga
+                iso_l = normalizar_pais_iso(_pais_de_liga(l_txt))
+            if iso_l and iso_l != "INT":
+                isos_detectados.add(iso_l)
+        iso_eq = normalizar_pais_iso(eq_d.get("pais_iso") or eq_d.get("pais") or eq_d.get("ccode") or "")
+        if iso_eq and iso_eq != "INT" and not isos_detectados:
+            isos_detectados.add(iso_eq)
+        if not isos_detectados:
+            return True
+        return iso_esp in isos_detectados
+
+    ok_pais_l = _coincide_pais_equipo(eq_l, ligas_raw_l)
+    ok_pais_v = _coincide_pais_equipo(eq_v, ligas_raw_v)
+
+    # Condición de rechazo: 0 ligas en común Y 0 rivales en común
+    sin_ligas_ni_rivales_comunes = (len(ligas_comunes) == 0 and len(rivales_comunes) == 0)
+    # Excepción únicamente para mocks sintéticos vacíos donde ambos equipos son del mismo país y no traen rivales ni torneos en partidos
+    partidos_tienen_metadatos = bool(
+        rivales_l or rivales_v
+        or any((p.get("torneo") or p.get("competicion")) for p in (audit_local.get("partidos") or []) if isinstance(p, dict))
+        or any((p.get("torneo") or p.get("competicion")) for p in (audit_visita.get("partidos") or []) if isinstance(p, dict))
+    )
+
+    if (sin_ligas_ni_rivales_comunes and (partidos_tienen_metadatos or not ok_pais_l or not ok_pais_v)) or (not ok_pais_l) or (not ok_pais_v):
+        # Si ambos pertenecen explícitamente al mismo país (p.ej. Copa Nacional Primera A vs Torneo BetPlay en COL)
+        # y al menos uno no es de una liga extranjera, verificar si alguno tiene liga extranjera incompatible
+        if ok_pais_l and ok_pais_v and not rivales_l and not rivales_v and ligas_raw_l and ligas_raw_v:
+            from fuentes_xg import _pais_de_liga
+            p_l = {_pais_de_liga(x) for x in ligas_raw_l if _pais_de_liga(x)}
+            p_v = {_pais_de_liga(x) for x in ligas_raw_v if _pais_de_liga(x)}
+            if p_l and p_v and p_l == p_v:
+                return ResultadoCoherenciaCompetitiva({
+                    "coherente": True,
+                    "estado": "OK",
+                    "falso_homonimo": None,
+                    "equipo_invalido": None,
+                    "ligas_local": sorted(ligas_raw_l),
+                    "ligas_visita": sorted(ligas_raw_v),
+                    "ligas_comunes": sorted(ligas_comunes),
+                    "rivales_comunes": sorted(rivales_comunes),
+                    "motivo": "Mismo país verificado en categorías nacionales.",
+                })
+
+        if not ok_pais_v and ok_pais_l:
+            lado_invalido = "visita"
+            doc_inv = audit_visita
+            eq_inv_nom = str(eq_v.get("nombre") or eq_v.get("name") or "Visitante")
+        elif not ok_pais_l and ok_pais_v:
+            lado_invalido = "local"
+            doc_inv = audit_local
+            eq_inv_nom = str(eq_l.get("nombre") or eq_l.get("name") or "Local")
+        else:
+            lado_invalido = "visita"
+            doc_inv = audit_visita
+            eq_inv_nom = str(eq_v.get("nombre") or eq_v.get("name") or "Visitante")
+
+        eliminar_cache_equipo(doc_inv, pais_iso=iso_esp)
+        return ResultadoCoherenciaCompetitiva({
+            "coherente": False,
+            "estado": "FALSO HOMÓNIMO EXTRANJERO",
+            "falso_homonimo": lado_invalido,
+            "equipo_invalido": eq_inv_nom,
+            "ligas_local": sorted(ligas_raw_l),
+            "ligas_visita": sorted(ligas_raw_v),
+            "ligas_comunes": sorted(ligas_comunes),
+            "rivales_comunes": sorted(rivales_comunes),
+            "motivo": (
+                f"FALSO HOMÓNIMO EXTRANJERO detectado en {lado_invalido} ({eq_inv_nom}): "
+                f"0 ligas en común ({sorted(ligas_raw_l)} vs {sorted(ligas_raw_v)}) y "
+                f"0 rivales en común para país esperado {iso_esp}."
+            ),
+        })
+
+    return ResultadoCoherenciaCompetitiva({
+        "coherente": True,
+        "estado": "OK",
+        "falso_homonimo": None,
+        "equipo_invalido": None,
+        "ligas_local": sorted(ligas_raw_l),
+        "ligas_visita": sorted(ligas_raw_v),
+        "ligas_comunes": sorted(ligas_comunes),
+        "rivales_comunes": sorted(rivales_comunes),
+        "motivo": "Coherencia competitiva validada.",
+    })
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # UTILIDADES
 # ═══════════════════════════════════════════════════════════════════════════════

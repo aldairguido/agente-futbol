@@ -202,20 +202,22 @@ def test_async_playwright_y_bolivia_division_profesional():
             "/mercados división profesional Aurora vs universitario de vinto",
         )
         assert p_bol["equipo_local"] == "Aurora"
-        assert p_bol["equipo_visita"] == "FC Universitario"
+        assert p_bol["equipo_visita"] == "Universitario de Vinto"
+        assert p_bol["equipo_visita"] not in ("FC Universitario", "CD Universitario")
         assert p_bol["pais_iso"] == "BOL"
 
         res_bol = ejecutar_sync_seguro(
             resolver,
-            "División Profesional",
+            "división profesional",
             "Aurora",
             "universitario de vinto",
         )
-        assert tuple(res_bol) == ("Aurora", "FC Universitario", "BOL")
+        assert tuple(res_bol) == ("Aurora", "Universitario de Vinto", "BOL")
+        assert res_bol[1] not in ("FC Universitario", "CD Universitario")
 
         # Sin escribir liga explícita también detecta BOL por los clubes
         res_bol_auto = ejecutar_sync_seguro(resolver, "", "Aurora", "universitario de vinto")
-        assert tuple(res_bol_auto) == ("Aurora", "FC Universitario", "BOL")
+        assert tuple(res_bol_auto) == ("Aurora", "Universitario de Vinto", "BOL")
         assert tuple(resolver("", "GV San José", "San Antonio Bulo Bulo")) == ("GV San José", "San Antonio Bulo Bulo", "BOL")
 
         # 2. Verificar que ejecutar_sync_seguro corre en un hilo separado sin running asyncio loop
@@ -233,26 +235,170 @@ def test_async_playwright_y_bolivia_division_profesional():
         # 3. Ejecutar servicio_mercados.resolver_enfrentamiento dentro del loop asyncio
         doc_aurora_mock = {
             "equipo": {"id": "20201", "nombre": "Aurora", "liga": "División Profesional", "id_liga": 301, "pais_iso": "BOL"},
-            "partidos": [{"id_partido": f"au{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-10", "goles_equipo": 2, "goles_rival": 0, "condicion": "casa"} for i in range(15)],
+            "partidos": [
+                {"id_partido": f"au{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-10", "torneo": "Bolivia", "rival": "Universitario de Vinto" if i == 0 else "Bolívar", "goles_equipo": 2, "goles_rival": 0, "condicion": "casa"}
+                for i in range(15)
+            ],
             "resumen": {"partidos_con_datos": 15},
         }
         doc_vinto_mock = {
-            "equipo": {"id": "20202", "nombre": "FC Universitario", "liga": "División Profesional", "id_liga": 301, "pais_iso": "BOL"},
-            "partidos": [{"id_partido": f"uv{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-12", "goles_equipo": 1, "goles_rival": 1, "condicion": "fuera"} for i in range(15)],
+            "equipo": {"id": "20202", "nombre": "Universitario de Vinto", "liga": "División Profesional", "id_liga": 301, "pais_iso": "BOL"},
+            "partidos": [
+                {"id_partido": f"uv{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-12", "torneo": "Bolivia", "rival": "Aurora" if i == 0 else "The Strongest", "goles_equipo": 1, "goles_rival": 1, "condicion": "fuera"}
+                for i in range(15)
+            ],
             "resumen": {"partidos_con_datos": 15},
         }
         guardar_auditoria_en_memoria(construir_clave_cache_entidad("Aurora", "BOL", False, False), doc_aurora_mock)
         guardar_auditoria_en_memoria("aurora", doc_aurora_mock)
-        guardar_auditoria_en_memoria(construir_clave_cache_entidad("FC Universitario", "BOL", False, False), doc_vinto_mock)
-        guardar_auditoria_en_memoria("fc_universitario", doc_vinto_mock)
+        guardar_auditoria_en_memoria(construir_clave_cache_entidad("Universitario de Vinto", "BOL", False, False), doc_vinto_mock)
+        guardar_auditoria_en_memoria("universitario_de_vinto", doc_vinto_mock)
+        guardar_auditoria_en_memoria("universitario_vinto", doc_vinto_mock)
 
         enf_bol = servicio_mercados.resolver_enfrentamiento(
             "división profesional Aurora vs universitario de vinto", limite=15
         )
         assert enf_bol["equipo_local"] == "Aurora"
-        assert enf_bol["equipo_visitante"] == "FC Universitario"
+        assert enf_bol["equipo_visitante"] == "Universitario de Vinto"
 
     asyncio.run(_correr_en_loop_asyncio())
+
+
+def test_coherencia_competitiva_y_veto_falso_homonimo_cd_universitario():
+    from fuentes_xg import resolver_pareja_misma_liga, variantes_de_busqueda
+    from auditoria_historica import (
+        guardar_auditoria_en_memoria,
+        obtener_auditoria_en_memoria,
+        validar_coherencia_competitiva_local_visita,
+    )
+
+    # 1. Prohibido borrar el apellido/ciudad en resolver y variantes_de_busqueda
+    res = resolver("división profesional", "Aurora", "universitario de vinto")
+    assert tuple(res) == ("Aurora", "Universitario de Vinto", "BOL")
+    assert res[1] != "FC Universitario"
+    assert res[1] != "CD Universitario"
+
+    vars_vinto = variantes_de_busqueda("universitario de vinto")
+    assert "Universitario de Vinto" in vars_vinto
+    assert "universitario" not in [v.lower() for v in vars_vinto]
+
+    # 2. puntuar_candidato para "universitario de vinto" con pais_iso="BOL" da máxima puntuación
+    #    a "Universitario de Vinto" (Bolivia) y descarta (< 0, -99999) a "CD Universitario" (Panamá, LPF Apertura)
+    meta_bol = {"liga": "División Profesional", "pais": "bolivia", "pais_iso": "BOL", "liga_forzada": True}
+    cand_vinto_bol = {
+        "id": "1352110",
+        "name": "Universitario de Vinto",
+        "leagueName": "División Profesional",
+        "ccode": "BOL",
+        "score": 80.0,
+    }
+    cand_cd_univ_pan = {
+        "id": "594210",
+        "name": "CD Universitario",
+        "leagueName": "LPF Apertura",
+        "ccode": "PAN",
+        "score": 950.0,
+    }
+    cand_univ_peru = {
+        "id": "5021",
+        "name": "Universitario de Deportes",
+        "leagueName": "Liga 1",
+        "ccode": "PER",
+        "score": 990.0,
+    }
+    cand_tec_univ_ecu = {
+        "id": "6021",
+        "name": "Técnico Universitario",
+        "leagueName": "LigaPro",
+        "ccode": "ECU",
+        "score": 700.0,
+    }
+
+    pts_vinto = puntuar_candidato(cand_vinto_bol, "universitario de vinto", rival_meta=meta_bol)
+    pts_pan = puntuar_candidato(cand_cd_univ_pan, "universitario de vinto", rival_meta=meta_bol)
+    pts_per = puntuar_candidato(cand_univ_peru, "universitario de vinto", rival_meta=meta_bol)
+    pts_ecu = puntuar_candidato(cand_tec_univ_ecu, "universitario de vinto", rival_meta=meta_bol)
+
+    assert pts_vinto > pts_pan
+    assert pts_vinto[0] >= 0 and pts_vinto[4] > 0
+    assert pts_pan[0] == -99999
+    assert pts_per[0] == -99999
+    assert pts_ecu[0] == -99999
+
+    # 3. League-Peer & Fixture Graph Resolver: resolver_pareja_misma_liga extrae Universitario de Vinto
+    #    directamente de la tabla/calendario de Aurora
+    datos_fotmob_aurora = {
+        "overview": {
+            "table": [
+                {
+                    "data": {
+                        "leagueName": "División Profesional",
+                        "leagueId": 301,
+                        "table": {
+                            "all": [
+                                {"id": 20201, "name": "Aurora"},
+                                {"id": 1352110, "name": "Universitario de Vinto"},
+                                {"id": 10001, "name": "Bolívar"},
+                            ]
+                        },
+                    }
+                }
+            ]
+        },
+        "fixtures": {
+            "allFixtures": {
+                "fixtures": [
+                    {
+                        "id": "4500123",
+                        "tournament": {"name": "Bolivia", "leagueId": 301},
+                        "home": {"id": 20201, "name": "Aurora"},
+                        "away": {"id": 1352110, "name": "Universitario de Vinto"},
+                        "status": {"finished": True, "utcTime": "2026-09-19T20:00:00Z"},
+                    }
+                ]
+            }
+        },
+    }
+    par_resuelto = resolver_pareja_misma_liga(
+        "Aurora",
+        "universitario de vinto",
+        pais_iso="BOL",
+        liga_pref="División Profesional",
+        datos_team_fotmob=datos_fotmob_aurora,
+    )
+    assert par_resuelto is not None
+    assert str(par_resuelto["id"]) == "1352110"
+    assert par_resuelto["nombre"] == "Universitario de Vinto"
+    assert par_resuelto["resuelto_por_tabla_comun"] is True
+
+    # 4. Compuerta validar_coherencia_competitiva_local_visita detecta y rechaza cualquier cruce
+    #    donde el Local juegue en "Bolivia" y el Visitante juegue en "LPF Apertura" (Panamá),
+    #    invalidando su caché inmediatamente
+    audit_aurora_bol = {
+        "equipo": {"id": "20201", "nombre": "Aurora", "liga": "Bolivia", "pais_iso": "BOL"},
+        "partidos": [
+            {"id_partido": f"b{i}", "torneo": "Bolivia", "rival": r}
+            for i, r in enumerate(["Bolívar", "The Strongest", "Always Ready", "GV San José", "Universitario de Vinto"])
+        ],
+    }
+    audit_cd_univ_pan = {
+        "equipo": {"id": "594210", "nombre": "CD Universitario", "liga": "LPF Apertura", "pais_iso": "PAN"},
+        "partidos": [
+            {"id_partido": f"p{i}", "torneo": "LPF Apertura", "rival": r}
+            for i, r in enumerate(["Tauro FC", "Plaza Amador", "Veraguas", "Árabe Unido", "San Francisco"])
+        ],
+    }
+    guardar_auditoria_en_memoria("cd_universitario", audit_cd_univ_pan)
+    assert obtener_auditoria_en_memoria("cd_universitario") is not None
+
+    veredicto = validar_coherencia_competitiva_local_visita(audit_aurora_bol, audit_cd_univ_pan, pais_iso="BOL")
+    assert bool(veredicto) is False
+    assert veredicto["coherente"] is False
+    assert veredicto["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
+    assert veredicto["falso_homonimo"] == "visita"
+    assert veredicto["equipo_invalido"] == "CD Universitario"
+    # El caché contaminado de CD Universitario debe haber sido invalidado automáticamente
+    assert obtener_auditoria_en_memoria("cd_universitario") is None
 
 
 if __name__ == "__main__":
@@ -265,6 +411,7 @@ if __name__ == "__main__":
     test_separador_ligas_compuestas_y_cache_entidad()
     test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan()
     test_async_playwright_y_bolivia_division_profesional()
+    test_coherencia_competitiva_y_veto_falso_homonimo_cd_universitario()
     print("OK: Todos los tests de test_resolvedor_entidades.py pasaron en verde (0 failed).")
 
 
@@ -298,3 +445,6 @@ class TestResolvedorEntidades(unittest.TestCase):
 
     def test_9_async_playwright_y_bolivia_division_profesional(self):
         test_async_playwright_y_bolivia_division_profesional()
+
+    def test_10_coherencia_competitiva_y_veto_falso_homonimo_cd_universitario(self):
+        test_coherencia_competitiva_y_veto_falso_homonimo_cd_universitario()

@@ -129,7 +129,8 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "ecuador": "ECU", "liga pro": "ECU", "ligapro": "ECU", "liga pro serie b": "ECU",
     "peru": "PER", "liga 1": "PER", "liga 1 te apuesto": "PER", "liga 1 peru": "PER",
     "liga 2 peru": "PER", "copa peru": "PER", "liga femenina": "PER",
-    "bolivia": "BOL", "division profesional": "BOL", "copa simon bolivar": "BOL",
+    "bolivia": "BOL", "division profesional": "BOL", "copa pacena": "BOL", "copa simon bolivar": "BOL",
+    "panama": "PAN", "lpf": "PAN", "lpf apertura": "PAN", "lpf clausura": "PAN", "liga panamena": "PAN",
     "paraguay": "PRY", "copa de primera": "PRY", "primera division paraguay": "PRY", "division intermedia": "PRY",
     "venezuela": "VEN", "liga futve": "VEN", "liga futve 2": "VEN",
     "uruguay": "URY", "primera division uruguay": "URY", "liga auf uruguaya": "URY", "liga auf": "URY",
@@ -525,12 +526,12 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "real cartagena": ("Real Cartagena", "COL"),
     "quindio": ("Deportes Quindío", "COL"),
     "huila": ("Atlético Huila", "COL"),
-    # BOLIVIA (División Profesional)
+    # BOLIVIA (División Profesional) — Prohibido borrar el apellido/ciudad ("de Vinto", "Potosí", "Oruro", "Bulo Bulo")
     "aurora": ("Aurora", "BOL"),
     "club aurora": ("Aurora", "BOL"),
-    "universitario de vinto": ("FC Universitario", "BOL"),
-    "fc universitario": ("FC Universitario", "BOL"),
-    "universitario vinto": ("FC Universitario", "BOL"),
+    "universitario de vinto": ("Universitario de Vinto", "BOL"),
+    "universitario vinto": ("Universitario de Vinto", "BOL"),
+    "fc universitario": ("Universitario de Vinto", "BOL"),
     "bolivar": ("Bolívar", "BOL"),
     "the strongest": ("The Strongest", "BOL"),
     "always ready": ("Always Ready", "BOL"),
@@ -539,6 +540,8 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "blooming": ("Blooming", "BOL"),
     "oriente petrolero": ("Oriente Petrolero", "BOL"),
     "nacional potosi": ("Nacional Potosí", "BOL"),
+    "real potosi": ("Real Potosí", "BOL"),
+    "real oruro": ("Real Oruro", "BOL"),
     "independiente petrolero": ("Independiente Petrolero", "BOL"),
     "real tomayapo": ("Real Tomayapo", "BOL"),
     "tomayapo": ("Real Tomayapo", "BOL"),
@@ -669,6 +672,7 @@ MAPA_PAIS_A_ISO3: Dict[str, str] = {
     "gtm": "GTM", "gua": "GTM", "guatemala": "GTM",
     "hnd": "HND", "hon": "HND", "honduras": "HND",
     "slv": "SLV", "esa": "SLV", "el salvador": "SLV",
+    "pan": "PAN", "panama": "PAN",
     "jam": "JAM", "jamaica": "JAM",
     "can": "CAN", "canada": "CAN",
     "sur": "SUR", "surinam": "SUR", "suriname": "SUR",
@@ -791,6 +795,7 @@ MAPA_ISO3_A_PAIS_INTERNO: Dict[str, str] = {
     "GTM": "guatemala",
     "HND": "honduras",
     "SLV": "el salvador",
+    "PAN": "panama",
     "JAM": "jamaica",
     "CAN": "canada",
     "SUR": "surinam",
@@ -1379,12 +1384,39 @@ def validar_y_puntuar_candidato_fotmob(
     # 3. Filtro por Código de País (pais_iso) y Coherencia Nacional
     iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
     iso_cand = normalizar_pais_iso(ccode_cand) or normalizar_pais_iso(liga_cand)
-    # También inferir país del candidato si coincide con un club de otro país conocido
+    # También inferir país del candidato si coincide con un club o liga de otro país conocido
+    liga_cand_low = normalizar_texto(liga_cand)
     if not iso_cand:
-        if "honduras" in liga_cand.lower() or "platense fc" == norm_cand:
+        if "honduras" in liga_cand_low or "platense fc" == norm_cand:
             iso_cand = "HND"
-        elif "uruguay" in liga_cand.lower() or "plaza colonia" in norm_cand or "colonia" == norm_cand:
+        elif "uruguay" in liga_cand_low or "plaza colonia" in norm_cand or "colonia" == norm_cand:
             iso_cand = "URY"
+        elif any(k in liga_cand_low for k in ("lpf", "panama", "tauro", "plaza amador", "veraguas")) or norm_cand == "cd universitario":
+            iso_cand = "PAN"
+        elif norm_cand == "universitario de deportes":
+            iso_cand = "PER"
+        elif norm_cand == "tecnico universitario":
+            iso_cand = "ECU"
+        elif "vinto" in tokens_cand or any(k in liga_cand_low for k in ("bolivia", "division profesional", "copa pacena", "simon bolivar")):
+            iso_cand = "BOL"
+
+    # Veto absoluto de falsos homónimos de Universitario (CD Universitario [PAN], Universitario de Deportes [PER], Técnico Universitario [ECU])
+    if "vinto" in tokens_buscados or iso_esperado == "BOL":
+        if norm_cand in ("cd universitario", "universitario de deportes", "tecnico universitario") or (
+            "universitario" in tokens_cand and "vinto" not in tokens_cand and iso_cand != "BOL"
+        ):
+            return -99999.0
+
+    # Veto general cuando la consulta tiene un apellido/ciudad distintivo y el candidato solo coincide en una raíz genérica
+    _RAICES_GENERICAS = {
+        "universitario", "universidad", "real", "nacional", "deportivo", "atletico",
+        "club", "sporting", "union", "independiente", "san", "defensor", "alianza",
+        "fc", "cd", "ca", "cf", "sc", "de", "del", "la", "el",
+    }
+    apellidos_distintivos = tokens_buscados - _RAICES_GENERICAS
+    if apellidos_distintivos and not (apellidos_distintivos & tokens_cand):
+        if not (iso_esperado and iso_cand == iso_esperado):
+            return -99999.0
 
     if iso_esperado and iso_esperado != "INT":
         if iso_cand:

@@ -34,8 +34,12 @@ from typing import Any
 import config
 from auditoria_h2h import (H2H_DIR, buscar_auditoria, cargar_o_crear_auditoria,
                            extraer_equipos, extraer_equipos_y_liga)
-from auditoria_historica import LIMITE_PARTIDOS_POR_DEFECTO
-from fuentes_xg import FuenteXG, extraer_liga_de_texto
+from auditoria_historica import (
+    LIMITE_PARTIDOS_POR_DEFECTO,
+    eliminar_cache_equipo,
+    validar_coherencia_competitiva_local_visita,
+)
+from fuentes_xg import FuenteXG, extraer_liga_de_texto, resolver_pareja_misma_liga
 from motor_mercados import (
     NOMBRE_MODELO,
     VERSION_MODELO,
@@ -335,9 +339,90 @@ def resolver_enfrentamiento(
     doc_a, meta_a = ejecutar_sync_seguro(
         cargar_o_crear_auditoria, equipo_local, rival=equipo_visitante, **kwargs
     )
-    doc_b, meta_b = ejecutar_sync_seguro(
-        cargar_o_crear_auditoria, equipo_visitante, rival=doc_a.get("equipo") or equipo_local, **kwargs
+
+    # PASO #2 OBLIGATORIO: Resolución cruzada por tabla y calendario del rival (League-Peer & Fixture Graph Resolver)
+    ctx_rival_para_b: dict[str, Any] = dict(doc_a.get("equipo") or {})
+    if doc_a.get("partidos"):
+        ctx_rival_para_b["partidos"] = doc_a.get("partidos")
+    if doc_a.get("partidos_futuros"):
+        ctx_rival_para_b["partidos_futuros"] = doc_a.get("partidos_futuros")
+    par_b = resolver_pareja_misma_liga(
+        equipo_local,
+        equipo_visitante,
+        pais_iso=str(ctx_rival_para_b.get("pais_iso") or res_puente.pais_iso or ""),
+        liga_pref=liga_final,
+        doc_referencia=doc_a,
     )
+    if par_b and par_b.get("nombre"):
+        equipo_visitante = str(par_b["nombre"])
+        if par_b.get("id"):
+            ctx_rival_para_b.setdefault("pares_misma_liga", []).insert(0, par_b)
+
+    doc_b, meta_b = ejecutar_sync_seguro(
+        cargar_o_crear_auditoria, equipo_visitante, rival=ctx_rival_para_b or equipo_local, **kwargs
+    )
+
+    # PASO #3 OBLIGATORIO: Auditoría de coherencia de liga y rivales comunes antes de generar el ticket
+    pais_iso_esperado = (
+        res_puente.pais_iso
+        or (liga_final.get("pais_iso") if isinstance(liga_final, dict) else "")
+        or (doc_a.get("equipo") or {}).get("pais_iso")
+        or "INT"
+    )
+    coherencia = validar_coherencia_competitiva_local_visita(
+        doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_final
+    )
+    if not coherencia.get("coherente", True):
+        avisar(f"⚠️ {coherencia.get('motivo')}")
+        kwargs_reintento = {**kwargs, "forzar": True}
+        if coherencia.get("falso_homonimo") == "visita":
+            eliminar_cache_equipo(doc_b, pais_iso=str(pais_iso_esperado))
+            eliminar_cache_equipo(equipo_visitante, pais_iso=str(pais_iso_esperado))
+            ligas_permitidas = list(coherencia.get("ligas_local") or [])
+            ctx_reintento_b = {
+                **ctx_rival_para_b,
+                "pais_iso": str(pais_iso_esperado),
+                "liga_forzada": True,
+                "keywords_liga": ligas_permitidas,
+            }
+            if ligas_permitidas and not ctx_reintento_b.get("liga"):
+                ctx_reintento_b["liga"] = ligas_permitidas[0]
+            par_reintento = resolver_pareja_misma_liga(
+                equipo_local,
+                equipo_visitante,
+                pais_iso=str(pais_iso_esperado),
+                liga_pref=ctx_reintento_b,
+                doc_referencia=doc_a,
+            )
+            nom_reintento_b = str(par_reintento.get("nombre") if par_reintento else equipo_visitante)
+            doc_b, meta_b = ejecutar_sync_seguro(
+                cargar_o_crear_auditoria, nom_reintento_b, rival=ctx_reintento_b, **kwargs_reintento
+            )
+        elif coherencia.get("falso_homonimo") == "local":
+            eliminar_cache_equipo(doc_a, pais_iso=str(pais_iso_esperado))
+            eliminar_cache_equipo(equipo_local, pais_iso=str(pais_iso_esperado))
+            ligas_permitidas = list(coherencia.get("ligas_visita") or [])
+            ctx_reintento_a = {
+                **dict(doc_b.get("equipo") or {}),
+                "partidos": doc_b.get("partidos") or [],
+                "partidos_futuros": doc_b.get("partidos_futuros") or [],
+                "pais_iso": str(pais_iso_esperado),
+                "liga_forzada": True,
+                "keywords_liga": ligas_permitidas,
+            }
+            if ligas_permitidas and not ctx_reintento_a.get("liga"):
+                ctx_reintento_a["liga"] = ligas_permitidas[0]
+            par_reintento = resolver_pareja_misma_liga(
+                equipo_visitante,
+                equipo_local,
+                pais_iso=str(pais_iso_esperado),
+                liga_pref=ctx_reintento_a,
+                doc_referencia=doc_b,
+            )
+            nom_reintento_a = str(par_reintento.get("nombre") if par_reintento else equipo_local)
+            doc_a, meta_a = ejecutar_sync_seguro(
+                cargar_o_crear_auditoria, nom_reintento_a, rival=ctx_reintento_a, **kwargs_reintento
+            )
 
     nombre_a = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
     nombre_b = (doc_b.get("equipo") or {}).get("nombre") or equipo_visitante

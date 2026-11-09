@@ -1100,9 +1100,9 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     # Bolivia (División Profesional)
     "aurora": ["Aurora", "Club Aurora"],
     "club aurora": ["Aurora", "Club Aurora"],
-    "universitario de vinto": ["FC Universitario", "Universitario de Vinto", "Universitario"],
-    "fc universitario": ["FC Universitario", "Universitario de Vinto"],
-    "universitario vinto": ["FC Universitario", "Universitario de Vinto"],
+    "universitario de vinto": ["Universitario de Vinto", "FC Universitario"],
+    "fc universitario": ["Universitario de Vinto", "FC Universitario"],
+    "universitario vinto": ["Universitario de Vinto", "FC Universitario"],
     "bolivar": ["Bolívar", "Bolivar", "Club Bolívar"],
     "the strongest": ["The Strongest"],
     "always ready": ["Always Ready"],
@@ -1111,6 +1111,8 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "blooming": ["Blooming"],
     "oriente petrolero": ["Oriente Petrolero"],
     "nacional potosi": ["Nacional Potosí", "Nacional Potosi"],
+    "real potosi": ["Real Potosí", "Real Potosi"],
+    "real oruro": ["Real Oruro"],
     "independiente petrolero": ["Independiente Petrolero"],
     "real tomayapo": ["Real Tomayapo", "CD Real Tomayapo"],
     "tomayapo": ["Real Tomayapo", "CD Real Tomayapo"],
@@ -1281,6 +1283,10 @@ CATALOGO_LIGAS_PREFIJO: list[tuple[list[str], dict[str, Any]]] = [
         ["major league soccer", "mls"],
         {"nombre": "MLS", "pais": "usa", "ids_liga": [130], "keywords_liga": ["mls", "major league soccer"]},
     ),
+    (
+        ["division profesional de bolivia", "division profesional bolivia", "division profesional", "copa pacena", "liga de bolivia", "bolivia"],
+        {"nombre": "División Profesional", "pais": "bolivia", "pais_iso": "BOL", "ids_liga": [301], "keywords_liga": ["division profesional", "bolivia", "copa pacena"]},
+    ),
 ]
 
 # Ordenar todos los patrones de liga de mayor a menor longitud para que "la liga ea sports"
@@ -1407,6 +1413,13 @@ _LIGA_POR_EQUIPO_CONOCIDO: dict[str, dict[str, Any]] = {
     **{k: {"liga": "LigaPro Ecuador", "id_liga": 246, "pais": "ecuador"} for k in (
         "independiente del valle", "idv", "ldu quito", "ldu de quito", "liga de quito",
         "barcelona sc", "barcelona de guayaquil", "emelec", "cs emelec",
+    )},
+    **{k: {"liga": "División Profesional", "id_liga": 301, "pais": "bolivia", "pais_iso": "BOL"} for k in (
+        "aurora", "club aurora", "universitario de vinto", "universitario vinto", "fc universitario",
+        "bolivar", "the strongest", "always ready", "wilstermann", "jorge wilstermann",
+        "blooming", "oriente petrolero", "nacional potosi", "real potosi", "real oruro",
+        "independiente petrolero", "real tomayapo", "tomayapo", "guabira", "royal pari",
+        "real santa cruz", "gv san jose", "gualberto villarroel", "san antonio bulo bulo", "bulo bulo",
     )},
 }
 
@@ -1667,8 +1680,10 @@ def _pais_de_liga(nombre_liga: str | None, ccode: str | None = None) -> str:
         return "peru"
     if any(k in n for k in ("colombia", "liga betplay", "primera a", "torneo betplay")):
         return "colombia"
-    if any(k in n for k in ("bolivia", "division profesional", "copa simon bolivar")):
+    if any(k in n for k in ("bolivia", "division profesional", "copa pacena", "copa simon bolivar")):
         return "bolivia"
+    if any(k in n for k in ("panama", "lpf", "lpf apertura", "lpf clausura", "tauro", "plaza amador", "veraguas", "arabe unido", "san francisco", "potros del este", "umecit", "herrera", "sporting san miguelito")):
+        return "panama"
     if any(k in n for k in ("uzbekistan", "super league uzbekistan", "pro liga")):
         return "uzbekistan"
     if any(k in n for k in ("brasil", "brazil", "brasileirao", "serie a brazil", "copa do brasil", "paulista", "carioca", "gaucho", "baiano", "copa do nordeste")):
@@ -1757,11 +1772,22 @@ def _inferir_meta_rival_desde_texto(rival_texto: str) -> dict[str, Any] | None:
     return None
 
 
+_RAICES_GENERICAS_PROHIBIDAS_SOLAS: frozenset[str] = frozenset({
+    "universitario", "universidad", "real", "nacional", "deportivo", "club", "san",
+    "atletico", "athletic", "sporting", "union", "independiente", "central", "alianza",
+    "defensor", "racing", "gimnasia", "estudiantes", "tecnico",
+})
+
+
 def variantes_de_busqueda(nombre: str, maximo: int = 8) -> list[str]:
     """
     Construye variantes de búsqueda tolerantes a tildes, palabras vacías,
     siglas de club ('fc fulham' -> 'Fulham'), variantes fonéticas ('ñ' <-> 'ny')
     y alias hispanos ('español' -> 'Espanyol', 'friburgo' -> 'SC Freiburg').
+    PROHIBIDO recortar un nombre con ciudad/apellido distintivo ('Universitario de Vinto',
+    'Universitario de Deportes', 'Técnico Universitario', 'Universidad Católica',
+    'San Antonio Bulo Bulo', 'Real Oruro', 'Real Potosí', 'Nacional Potosí',
+    'Real Tomayapo', 'GV San José') a una sola palabra genérica ('Universitario', 'Real', 'Nacional').
     """
     _, nombre_sin_liga = extraer_liga_de_texto(nombre or "")
     limpio = " ".join((nombre_sin_liga or nombre or "").split())
@@ -1776,16 +1802,19 @@ def variantes_de_busqueda(nombre: str, maximo: int = 8) -> list[str]:
     clave_nucleo = " ".join(nucleo)
     nucleo_canonico = _palabras_nucleo(canonico)
     clave_nucleo_canonico = " ".join(nucleo_canonico)
+    tiene_apellido_distintivo = len(nucleo_canonico) >= 2 or len(nucleo) >= 2
 
     # 1. Alias hispanos (tanto por nombre completo como por núcleo sin siglas 'fc'/'cf')
     alias_candidatos: list[str] = []
-    if canonico and canonico.lower() != norm_clave:
+    if canonico:
         alias_candidatos.append(canonico)
         if canonico_sin_ac != canonico:
             alias_candidatos.append(canonico_sin_ac)
     for k in (norm_clave, limpio.lower(), clave_nucleo, canonico_sin_ac.lower(), clave_nucleo_canonico):
         if k and k in ALIAS_EQUIPOS_HISPANOS:
             for a in ALIAS_EQUIPOS_HISPANOS[k]:
+                if tiene_apellido_distintivo and _sin_acentos(a).lower().strip() in _RAICES_GENERICAS_PROHIBIDAS_SOLAS:
+                    continue
                 if a not in alias_candidatos:
                     alias_candidatos.append(a)
                 a_sin_ac = _sin_acentos(a)
@@ -1799,28 +1828,30 @@ def variantes_de_busqueda(nombre: str, maximo: int = 8) -> list[str]:
 
     palabras = [p for p in sin_ac.split() if p]
     significativas = [p for p in palabras if p.lower() not in _PALABRAS_VACIAS]
-    # Palabras específicas (excluyendo siglas 'fc' y modificadores genéricos 'athletic', 'city', 'united')
+    # Palabras específicas (excluyendo siglas 'fc' y modificadores genéricos 'athletic', 'city', 'united', 'universitario', 'real', 'nacional')
     especificas = [
         p for p in (nucleo_canonico or nucleo)
-        if p.lower() not in _MODIFICADORES_GENERICOS_CLUB and len(p) >= 3
+        if p.lower() not in _MODIFICADORES_GENERICOS_CLUB
+        and p.lower() not in _RAICES_GENERICAS_PROHIBIDAS_SOLAS
+        and len(p) >= 3
     ]
 
     candidatas = (
         alias_candidatos
-        + foneticas
         + [
-            clave_nucleo_canonico if (clave_nucleo_canonico and clave_nucleo_canonico != norm_clave) else "",
-            # Si lleva sigla ('fc fulham', 'Liverpool fc'), priorizar el nombre nuclear ('fulham', 'liverpool')
-            # porque FotMob indexa a los clubes ingleses/europeos sin 'FC' ('Fulham', 'Liverpool', 'Chelsea').
-            clave_nucleo if (clave_nucleo and clave_nucleo != norm_clave) else "",
             limpio,
             sin_ac,
+            clave_nucleo_canonico if (clave_nucleo_canonico and clave_nucleo_canonico != norm_clave) else "",
+            clave_nucleo if (clave_nucleo and clave_nucleo != norm_clave) else "",
             sin_ac.lower(),
             " ".join(significativas),
+        ]
+        + foneticas
+        + [
             " ".join(especificas) if len(especificas) > 1 else "",
-            max(especificas, key=len) if especificas else (max(nucleo, key=len) if nucleo else ""),
+            max(especificas, key=len) if especificas else ("" if tiene_apellido_distintivo else (max(nucleo, key=len) if nucleo else "")),
             especificas[-1] if len(especificas) > 1 else "",
-            especificas[0] if especificas else (nucleo[0] if nucleo else ""),
+            especificas[0] if especificas else ("" if tiene_apellido_distintivo else (nucleo[0] if nucleo else "")),
         ]
     )
 
@@ -1832,6 +1863,9 @@ def variantes_de_busqueda(nombre: str, maximo: int = 8) -> list[str]:
             continue
         # Jamás lanzar una búsqueda de una sola sigla de club ('fc', 'cf', 'sc', 'ac')
         if c.lower() in _SIGLAS_CLUB or c.lower() in _PALABRAS_VACIAS:
+            continue
+        # PROHIBIDO recortar un nombre compuesto con ciudad/apellido a una sola raíz genérica ('Universitario', 'Real', 'Nacional', 'Universidad')
+        if tiene_apellido_distintivo and c.lower() in _RAICES_GENERICAS_PROHIBIDAS_SOLAS:
             continue
         vistos.add(c.lower())
         salida.append(c)
@@ -2068,7 +2102,33 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     else:
         penal_filial = 0
 
-    # Validación dura anti-colisión (Bayer != Bayern, Platense ARG != Platense HND, Colonia DEU != Colonia URY)
+    # Validación dura anti-colisión (Bayer != Bayern, Platense ARG != Platense HND, Colonia DEU != Colonia URY,
+    # Universitario de Vinto [BOL] != CD Universitario [PAN] / Universitario de Deportes [PER] / Técnico Universitario [ECU])
+    pais_iso_meta_str = str((rival_meta or {}).get("pais_iso") or (rival_meta or {}).get("pais") or "").upper().strip()
+    liga_cand_norm = norm(candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"))
+    pais_cand_inf = _pais_de_liga(
+        candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
+        ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
+    )
+    if (
+        "vinto" in consulta_n
+        or "vinto" in canonico_n
+        or pais_iso_meta_str in ("BOL", "BOLIVIA")
+        or _pais_de_liga(str((rival_meta or {}).get("liga") or "")) == "bolivia"
+    ):
+        es_homonimo_univ_extranjero = (
+            nombre in ("cd universitario", "universitario de deportes", "tecnico universitario")
+            or ("lpf" in liga_cand_norm and "vinto" not in nombre)
+            or (
+                "universitario" in nombre
+                and "vinto" not in nombre
+                and pais_cand_inf != "bolivia"
+                and str(candidato.get("ccode") or "").upper().strip() != "BOL"
+            )
+        )
+        if es_homonimo_univ_extranjero:
+            return (-99999, 0, 0, 0, -99999, -99999, 0, 0, -99999.0)
+
     try:
         from resolvedor_entidades import validar_y_puntuar_candidato_fotmob
         pais_iso_meta = (rival_meta or {}).get("pais_iso") or (rival_meta or {}).get("pais") or ""
@@ -2081,6 +2141,8 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             es_femenino_pedido=bool((rival_meta or {}).get("es_femenino")) if (rival_meta and "es_femenino" in rival_meta) else None,
             es_juvenil_pedido=bool((rival_meta or {}).get("es_juvenil")) if (rival_meta and "es_juvenil" in rival_meta) else None,
         )
+        if pts_duro <= -90000.0:
+            return (-99999, 0, 0, 0, -99999, -99999, 0, 0, -99999.0)
         if pts_duro <= -9000.0:
             return (-9999, 0, 0, 0, -9999, -9999, 0, 0, -9999.0)
         if pts_duro >= 100.0:
@@ -2165,6 +2227,209 @@ def resolver_par_equipos_coherentes(
         res_b = dict(ctx_para_a)
 
     return res_a, res_b
+
+
+def extraer_pares_misma_liga_fotmob(
+    datos_team: dict[str, Any] | None = None,
+    doc_referencia: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Extrae todos los pares (opponent_id, opponent_name, league_name, league_id)
+    de la tabla de posiciones (overview.table), del calendario de FotMob
+    (fixtures.allFixtures.fixtures) y de los últimos 30 partidos de un equipo ya resuelto.
+    """
+    pares: list[dict[str, Any]] = []
+    vistos: set[tuple[str, str]] = set()
+
+    def _agregar(oid: Any, onom: Any, lnom: Any = "", lid: Any = "") -> None:
+        nom_s = str(onom or "").strip()
+        if not nom_s:
+            return
+        id_s = str(oid or "").strip()
+        liga_s = str(lnom or "").strip()
+        lid_s = str(lid or "").strip()
+        clave = (id_s.lower(), _sin_acentos(nom_s).lower())
+        if clave in vistos:
+            return
+        vistos.add(clave)
+        pares.append({
+            "id": id_s,
+            "name": nom_s,
+            "nombre": nom_s,
+            "leagueName": liga_s,
+            "liga": liga_s,
+            "leagueId": lid_s,
+            "id_liga": lid_s,
+        })
+
+    if isinstance(datos_team, dict):
+        overview = datos_team.get("overview") or {}
+        tablas_ov = overview.get("table") or []
+        if isinstance(tablas_ov, dict):
+            tablas_ov = [tablas_ov]
+        for bloque_t in tablas_ov:
+            if not isinstance(bloque_t, dict):
+                continue
+            data_t = bloque_t.get("data") or bloque_t
+            liga_t = str(data_t.get("leagueName") or bloque_t.get("leagueName") or data_t.get("name") or "")
+            lid_t = str(data_t.get("leagueId") or bloque_t.get("leagueId") or "")
+            filas_all = ((data_t.get("table") or {}).get("all")) or []
+            for fila in filas_all:
+                if isinstance(fila, dict):
+                    _agregar(fila.get("id"), fila.get("name") or fila.get("shortName"), liga_t, lid_t)
+            for sub_t in (data_t.get("tables") or []):
+                if not isinstance(sub_t, dict):
+                    continue
+                liga_sub = str(sub_t.get("leagueName") or liga_t)
+                lid_sub = str(sub_t.get("leagueId") or lid_t)
+                for fila in ((sub_t.get("table") or {}).get("all") or []):
+                    if isinstance(fila, dict):
+                        _agregar(fila.get("id"), fila.get("name") or fila.get("shortName"), liga_sub, lid_sub)
+
+        fixtures = (((datos_team.get("fixtures") or {}).get("allFixtures")) or {}).get("fixtures") or []
+        for f in fixtures[-45:]:
+            if not isinstance(f, dict):
+                continue
+            torneo_f = f.get("tournament") or {}
+            lnom_f = str(torneo_f.get("name") or "")
+            if es_competicion_amistosa(lnom_f):
+                continue
+            lid_f = torneo_f.get("leagueId") or torneo_f.get("id") or ""
+            for lado in ("home", "away"):
+                b = f.get(lado) or {}
+                if isinstance(b, dict):
+                    _agregar(b.get("id"), b.get("name"), lnom_f, lid_f)
+
+    if isinstance(doc_referencia, dict):
+        eq_ref = doc_referencia.get("equipo") if "equipo" in doc_referencia and isinstance(doc_referencia.get("equipo"), dict) else doc_referencia
+        liga_def = str((eq_ref or {}).get("liga") or (eq_ref or {}).get("leagueName") or "")
+        lid_def = str((eq_ref or {}).get("id_liga") or (eq_ref or {}).get("leagueId") or "")
+        for par_prev in (eq_ref or {}).get("pares_misma_liga") or []:
+            if isinstance(par_prev, dict):
+                _agregar(
+                    par_prev.get("id"),
+                    par_prev.get("name") or par_prev.get("nombre"),
+                    par_prev.get("leagueName") or par_prev.get("liga") or liga_def,
+                    par_prev.get("leagueId") or par_prev.get("id_liga") or lid_def,
+                )
+        for fut in (doc_referencia.get("partidos_futuros") or []):
+            if isinstance(fut, dict):
+                comp_f = str(fut.get("competicion") or liga_def)
+                _agregar(fut.get("home_id"), fut.get("home_nombre"), comp_f, lid_def)
+                _agregar(fut.get("away_id"), fut.get("away_nombre"), comp_f, lid_def)
+        for part in (doc_referencia.get("partidos") or [])[:30]:
+            if isinstance(part, dict):
+                comp_p = str(part.get("torneo") or part.get("competicion") or liga_def)
+                if es_competicion_amistosa(comp_p):
+                    continue
+                extra_p = part.get("extra") or {}
+                _agregar(extra_p.get("rival_id") or part.get("rival_id"), part.get("rival"), comp_p, lid_def)
+
+    return pares
+
+
+def resolver_pareja_misma_liga(
+    nombre_local: str,
+    nombre_visita: str,
+    pais_iso: str = "",
+    liga_pref: Any = None,
+    doc_referencia: dict[str, Any] | None = None,
+    fuente_obj: Any = None,
+    datos_team_fotmob: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """
+    LEAGUE-PEER & FIXTURE GRAPH RESOLVER (Sección 2):
+    Cuando uno de los dos equipos ya tiene candidato de alta confianza en el país correcto
+    (ej. Aurora en Bolivia), inspecciona su tabla de posiciones (overview.table), su calendario
+    (fixtures.allFixtures.fixtures) y sus últimos 30 partidos para encontrar al segundo equipo
+    ('universitario de vinto' -> 'Universitario de Vinto' en Bolivia) dentro de su misma liga/calendario
+    antes de buscar clubes sueltos en otros países.
+    """
+    from resolvedor_entidades import normalizar_pais_iso, resolver_equipo_individual
+
+    pais_iso_norm = normalizar_pais_iso(pais_iso or (liga_pref.get("pais_iso") if isinstance(liga_pref, dict) else str(liga_pref or "")))
+    if not pais_iso_norm and isinstance(doc_referencia, dict):
+        eq_r = doc_referencia.get("equipo") if isinstance(doc_referencia.get("equipo"), dict) else doc_referencia
+        pais_iso_norm = normalizar_pais_iso(
+            (eq_r or {}).get("pais_iso") or (eq_r or {}).get("pais") or (eq_r or {}).get("liga") or ""
+        )
+
+    pares = extraer_pares_misma_liga_fotmob(datos_team=datos_team_fotmob, doc_referencia=doc_referencia)
+    if not pares and fuente_obj is not None and isinstance(doc_referencia, dict):
+        eq_r = doc_referencia.get("equipo") if isinstance(doc_referencia.get("equipo"), dict) else doc_referencia
+        tid_ref = str((eq_r or {}).get("id") or "")
+        if tid_ref and hasattr(fuente_obj, "_pares_misma_liga_equipo"):
+            try:
+                pares = fuente_obj._pares_misma_liga_equipo(tid_ref)
+            except Exception:
+                pares = []
+
+    if not pares:
+        return None
+
+    # Determinar cuál es el nombre objetivo a buscar en los pares del otro equipo
+    objetivo_raw = nombre_visita or nombre_local
+    if isinstance(doc_referencia, dict):
+        eq_r = doc_referencia.get("equipo") if isinstance(doc_referencia.get("equipo"), dict) else doc_referencia
+        nom_ref = _sin_acentos(str((eq_r or {}).get("nombre") or (eq_r or {}).get("name") or "")).lower().strip()
+        if nom_ref and nom_ref == _sin_acentos(nombre_visita or "").lower().strip():
+            objetivo_raw = nombre_local
+
+    canon_obj, _ = resolver_equipo_individual(objetivo_raw, pais_iso_contexto=pais_iso_norm or None)
+    consulta_efectiva = canon_obj or normalizar_nombre_club(objetivo_raw) or objetivo_raw
+    tokens_obj = _palabras_nucleo(objetivo_raw)
+    tokens_canon = _palabras_nucleo(consulta_efectiva)
+    tokens_especificos = [
+        t for t in (tokens_obj + [x for x in tokens_canon if x not in tokens_obj])
+        if t not in _MODIFICADORES_GENERICOS_CLUB and t not in _RAICES_GENERICAS_PROHIBIDAS_SOLAS
+    ]
+
+    mejor_par: dict[str, Any] | None = None
+    mejor_score = -1.0
+
+    for par in pares:
+        nom_par = str(par.get("name") or par.get("nombre") or "").strip()
+        if not nom_par:
+            continue
+        liga_par = str(par.get("leagueName") or par.get("liga") or "").strip()
+        if pais_iso_norm and pais_iso_norm != "INT":
+            iso_par = normalizar_pais_iso(liga_par)
+            if iso_par and iso_par not in (pais_iso_norm, "INT"):
+                continue
+
+        tokens_par = _palabras_nucleo(nom_par)
+        if not tokens_par:
+            continue
+
+        str_par = " ".join(tokens_par)
+        str_obj = " ".join(tokens_obj)
+        str_canon = " ".join(tokens_canon)
+
+        score = 0.0
+        # 1. Coincidencia exacta de todos los tokens (ej. "universitario" + "vinto")
+        if str_par in (str_obj, str_canon):
+            score = 200.0
+        elif tokens_obj and all(t in tokens_par for t in tokens_obj):
+            score = 180.0
+        elif tokens_canon and all(t in tokens_par for t in tokens_canon):
+            score = 175.0
+        elif tokens_especificos and all(t in tokens_par for t in tokens_especificos):
+            score = 160.0
+        # 2. Prefijo/raíz común dentro de la misma liga nacional (ej. "universitario" en Bolivia -> "Universitario de Vinto")
+        elif tokens_obj and tokens_par[0] == tokens_obj[0] and len(tokens_obj[0]) >= 5:
+            score = 120.0
+
+        if score > 0 and par.get("id"):
+            score += 10.0
+        if score > mejor_score:
+            mejor_score = score
+            mejor_par = dict(par)
+
+    if mejor_par and mejor_score >= 120.0:
+        mejor_par["pais_iso"] = pais_iso_norm or mejor_par.get("pais_iso") or "INT"
+        mejor_par["resuelto_por_tabla_comun"] = True
+        return mejor_par
+    return None
 
 
 def validar_coherencia_nacional_15_partidos(
@@ -2280,6 +2545,25 @@ class FuenteFotMob(FuenteXG):
         self._cache_ligas_historicas: dict[str, list[tuple[str, str, list[str]]]] = {}
         # Próximos partidos programados por equipo (para resolver la fecha de un cruce)
         self._cache_futuros: dict[str, list[dict[str, Any]]] = {}
+        # Pares de la misma liga y calendario extraídos de overview.table y fixtures
+        self._cache_pares_liga: dict[str, list[dict[str, Any]]] = {}
+
+    def _pares_misma_liga_equipo(self, tid: str) -> list[dict[str, Any]]:
+        """Obtiene los clubes que comparten tabla de posiciones o calendario con `tid` en FotMob."""
+        tid_s = str(tid or "").strip()
+        if not tid_s:
+            return []
+        if tid_s in self._cache_pares_liga:
+            return self._cache_pares_liga[tid_s]
+        try:
+            datos = self._api(f"/teams?id={tid_s}&ccode3=PER&lang={self.idioma}")
+            if isinstance(datos, dict):
+                pares = extraer_pares_misma_liga_fotmob(datos_team=datos)
+                self._cache_pares_liga[tid_s] = pares
+                return pares
+        except Exception:
+            pass
+        return []
 
     # ── log ────────────────────────────────────────────────────────────────
     def _log(self, msg: str) -> None:
@@ -2414,13 +2698,47 @@ class FuenteFotMob(FuenteXG):
                 meta_combinada.update(liga_pref)
                 meta_rival = meta_combinada
 
+        # PASO #2 OBLIGATORIO: LEAGUE-PEER & FIXTURE GRAPH RESOLVER
+        # Si ya tenemos un rival resuelto en la misma liga/país (ej. Aurora en Bolivia),
+        # inspeccionar primero su tabla de posiciones (overview.table) y calendario (fixtures)
+        # antes de buscar clubes sueltos en otros países.
+        par_misma_liga: dict[str, Any] | None = None
+        if isinstance(meta_rival, dict) and (meta_rival.get("id") or meta_rival.get("pares_misma_liga") or meta_rival.get("partidos")):
+            try:
+                par_misma_liga = resolver_pareja_misma_liga(
+                    str(meta_rival.get("nombre") or meta_rival.get("name") or ""),
+                    consulta_efectiva,
+                    pais_iso=str(meta_rival.get("pais_iso") or meta_rival.get("pais") or ""),
+                    liga_pref=liga_pref or meta_rival,
+                    doc_referencia=meta_rival,
+                    fuente_obj=self,
+                )
+            except Exception:
+                par_misma_liga = None
+
         variantes = variantes_de_busqueda(consulta_efectiva)
-        if not variantes:
+        if not variantes and not par_misma_liga:
             return None
 
         candidatos: list[dict[str, Any]] = []
         variante_usada = ""
         variantes_probadas: list[str] = []
+        if par_misma_liga and par_misma_liga.get("id"):
+            cand_par = {
+                "id": str(par_misma_liga["id"]),
+                "name": str(par_misma_liga.get("name") or par_misma_liga.get("nombre") or consulta_efectiva),
+                "leagueName": str(par_misma_liga.get("leagueName") or par_misma_liga.get("liga") or (meta_rival or {}).get("liga") or ""),
+                "leagueId": par_misma_liga.get("leagueId") or par_misma_liga.get("id_liga") or (meta_rival or {}).get("id_liga"),
+                "ccode": str(par_misma_liga.get("pais_iso") or (meta_rival or {}).get("pais_iso") or ""),
+                "score": 999999.0,
+                "type": "team",
+            }
+            candidatos.append(cand_par)
+            variante_usada = f"tabla_comun:{cand_par['name']}"
+            self._log(
+                f"equipo localizado en la misma tabla/calendario del rival: "
+                f"{cand_par['name']} (id={cand_par['id']}, liga={cand_par['leagueName']})"
+            )
         pide_no_senior = (
             usuario_solicito_no_senior(nombre)
             or usuario_solicito_no_senior(consulta_efectiva)
@@ -2480,10 +2798,20 @@ class FuenteFotMob(FuenteXG):
                     dos_primeras = f"{nucleo_palabras[0]} {nucleo_palabras[1]}"
                     if dos_primeras.lower() not in [v.lower() for v in variantes_probadas]:
                         reintentos_principales.append(dos_primeras)
+                    apellido_dist = nucleo_palabras[-1]
+                    if (
+                        len(apellido_dist) >= 4
+                        and apellido_dist.lower() not in _RAICES_GENERICAS_PROHIBIDAS_SOLAS
+                        and apellido_dist.lower() not in [v.lower() for v in variantes_probadas]
+                    ):
+                        reintentos_principales.append(apellido_dist)
                 if nucleo_palabras and len(nucleo_palabras[0]) >= 4:
                     primera_pal = nucleo_palabras[0]
-                    if primera_pal.lower() not in [v.lower() for v in variantes_probadas]:
-                        reintentos_principales.append(primera_pal)
+                    # PROHIBIDO buscar una sola raíz genérica ('Universitario', 'Universidad', 'Real', 'Nacional')
+                    # cuando el club tiene apellido/ciudad distintivo ('Universitario de Vinto', 'Real Tomayapo').
+                    if not (len(nucleo_palabras) >= 2 and primera_pal.lower() in _RAICES_GENERICAS_PROHIBIDAS_SOLAS):
+                        if primera_pal.lower() not in [v.lower() for v in variantes_probadas]:
+                            reintentos_principales.append(primera_pal)
                 for term_p in reintentos_principales:
                     variantes_probadas.append(term_p)
                     datos_p = self._api(f"/search/suggest?term={term_p.replace(' ', '%20')}&lang={self.idioma}")
@@ -2733,6 +3061,8 @@ class FuenteFotMob(FuenteXG):
         # «Vasco da Gama» de Sudáfrica frente al brasileño, que figura como
         # «Vasco»). Se cachea para no repetir la resolución por cada partido.
         self._preparar_identidad_secundaria(equipo, oficiales)
+        if tid in self._cache_pares_liga:
+            equipo["pares_misma_liga"] = self._cache_pares_liga[tid]
         return ResultadoEscaneo(
             oficiales=oficiales,
             amistosos_reservados=amistosos_reservados,
@@ -2915,6 +3245,10 @@ class FuenteFotMob(FuenteXG):
             if not isinstance(datos, dict):
                 cache[pagina] = None
                 return None
+            try:
+                self._cache_pares_liga[tid] = extraer_pares_misma_liga_fotmob(datos_team=datos)
+            except Exception:
+                pass
             fixtures = (((datos.get("fixtures") or {}).get("allFixtures")) or {}).get("fixtures", []) or []
             crudos = [(f, (f.get("tournament") or {}).get("name", ""))
                       for f in fixtures if (f.get("status") or {}).get("finished")]
@@ -3027,7 +3361,10 @@ class FuenteFotMob(FuenteXG):
             es_local_el_equipo=str(home.get("id")) == tid,
             url=str(f.get("pageUrl") or ""),
             extra={"razon_fin": (estado.get("reason") or {}).get("short"),
-                   "marcador_texto": estado.get("scoreStr")},
+                   "marcador_texto": estado.get("scoreStr"),
+                   "home_id": str(home.get("id") or ""),
+                   "away_id": str(away.get("id") or ""),
+                   "rival_id": str((away.get("id") if str(home.get("id")) == tid else home.get("id")) or "")},
         )
 
     # ── matriz de un partido ───────────────────────────────────────────────
