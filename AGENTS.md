@@ -525,3 +525,10 @@ La Capa Oculta Estructurada sintetiza las 45 métricas normalizadas en 5 Factore
   - Sincronización garantizada de la fila `HÁNDICAP / 1X2 / DC` de `SECCIÓN 1` con el Puesto #1 del Top 5 (`>= 70%`).
   - Desempate técnico en Patrón #01 cuando `|P01_L - P01_V| < 0.015` usando `P03_Calidad_xGOT_vs_xG`.
   - Normalización de alias compuestos y truncados en Cuadro B (`Atlético == Atletico`, `Barça == Barcelona`, `Deportivo Alavés == Deportivo A`, `Real Sociedad == Real Socied`).
+
+---
+
+## 13. PUNTO 31: SISTEMA UNIVERSAL DE RESOLUCIÓN DE ENTIDADES FLASHSCORE (ES) <-> FOTMOB (NATIVO/EN) PARA +110 PAÍSES Y +250 LIGAS (`resolvedor_entidades.py`, `fuentes_xg.py`, `servicio_mercados.py`)
+- **Separador Inteligente de Ligas (`parsear_comando_mercados`):** Ordena el catálogo de +250 ligas y +110 países de mayor a menor longitud antes de separar `equipo_local` y `equipo_visita` (evitando que `2. Bundesliga`, `LaLiga EA Sports`, `Primera Federación - Grupo 1` o `Liga 1 - Clausura` contaminen el nombre del equipo local).
+- **Puente Bilingüe y Regla Dura Anti-Colisión (`DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB`):** Traduce exónimos e hispanismos (`colonia -> 1. FC Köln`, `bayer -> Bayer 04 Leverkusen`, `maguncia -> 1. FSV Mainz 05`, `friburgo -> SC Freiburg`, `platense -> CA Platense [ARG]`) prohibiendo con `-9999` confundir `Bayer` con `Bayern München` o `CA Platense [ARG]` con `Platense FC [HND]`.
+- **Filtro Contextual de Categoría y Caché por Entidad:** Descarta con `-9999` equipos Femeninos `(W)` o Juveniles (`U19..U23`, `II`, `B`) salvo que el comando lo pida (`+50` puntos), exige coherencia `country_code == pais_iso` (`+100` puntos), indexa la caché en memoria por `f"{team_id}_{pais_iso}_{es_femenino}_{es_juvenil}"` e imprime en Telegram `✅ Entidades verificadas: 1. FC Köln [DEU] vs Bayer 04 Leverkusen [DEU] (Liga: Bundesliga).`.

@@ -711,15 +711,26 @@ def auditar_equipo(
             base_riv = _inferir_meta_rival_desde_texto(rival.strip()) or {"nombre": rival.strip()}
             rival = {**base_riv, **liga_pref}
 
-    slug_equipo = _slug(nombre_equipo)
-    lock_equipo = _obtener_lock_equipo(slug_equipo)
-    meta_ctx = rival if isinstance(rival, dict) else (
-        _inferir_meta_rival_desde_texto(rival) if isinstance(rival, str) and rival.strip() else None
+    from resolvedor_entidades import construir_clave_cache_entidad, detectar_categoria_desde_texto
+    pais_iso_ctx = (
+        (meta_ctx or {}).get("pais_iso")
+        or (meta_ctx or {}).get("pais")
+        or (liga_pref or {}).get("pais_iso")
+        or (liga_pref or {}).get("pais")
+        or ""
     )
+    es_fem_ctx, es_juv_ctx = detectar_categoria_desde_texto(
+        f"{nombre_equipo} {(meta_ctx or {}).get('liga', '')} {(meta_ctx or {}).get('nombre', '')}"
+    )
+    clave_cache_entidad = construir_clave_cache_entidad(
+        nombre_equipo, str(pais_iso_ctx), es_fem_ctx, es_juv_ctx
+    )
+    slug_equipo = _slug(nombre_equipo)
+    lock_equipo = _obtener_lock_equipo(clave_cache_entidad)
 
     with lock_equipo:
         if fuente_obj is None:
-            doc_mem = obtener_auditoria_en_memoria(slug_equipo)
+            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad) or obtener_auditoria_en_memoria(slug_equipo)
             if doc_mem is not None:
                 eq_doc = doc_mem.get("equipo") or {}
                 pts_mem = puntuar_candidato(
@@ -767,9 +778,18 @@ def auditar_equipo(
                 return doc_resiliencia
             raise
 
+        eq_res = res.get("equipo") or {}
+        clave_id_oficial = eq_res.get("clave_cache") or construir_clave_cache_entidad(
+            eq_res.get("id") or eq_res.get("nombre") or nombre_equipo,
+            str(eq_res.get("pais_iso") or pais_iso_ctx or ""),
+            bool(eq_res.get("es_femenino", es_fem_ctx)),
+            bool(eq_res.get("es_juvenil", es_juv_ctx)),
+        )
+        guardar_auditoria_en_memoria(clave_id_oficial, res)
+        guardar_auditoria_en_memoria(clave_cache_entidad, res)
         guardar_auditoria_en_memoria(slug_equipo, res)
         _guardar_cache_resiliencia(slug_equipo, res)
-        nom_resuelto = (res.get("equipo") or {}).get("nombre")
+        nom_resuelto = eq_res.get("nombre")
         if nom_resuelto and _slug(nom_resuelto) != slug_equipo:
             guardar_auditoria_en_memoria(_slug(nom_resuelto), res)
             _guardar_cache_resiliencia(_slug(nom_resuelto), res)

@@ -160,6 +160,29 @@ def extraer_equipos_y_liga(texto: str, comando: str = "h2h") -> tuple[str, str, 
         return None
     cuerpo = re.sub(rf"^/{comando}(@\w+)?", "", texto.strip(), flags=re.I).strip()
 
+    # PASO #1 OBLIGATORIO: Separador inteligente con el Catálogo Oficial de Ligas Flashscore (resolvedor_entidades)
+    try:
+        from resolvedor_entidades import parsear_comando_mercados
+        parsed = parsear_comando_mercados(cuerpo)
+        if parsed.get("equipo_local") and parsed.get("equipo_visita"):
+            a_res = parsed["equipo_local"]
+            b_res = parsed["equipo_visita"]
+            if not (re.fullmatch(r"[\d:]+", a_res) or re.fullmatch(r"[\d:]+", b_res)):
+                liga_final_fs = None
+                if parsed.get("liga"):
+                    liga_info_xg, _ = extraer_liga_de_texto(parsed["liga"] + " " + a_res)
+                    liga_final_fs = liga_info_xg or {
+                        "nombre": parsed["liga"],
+                        "liga": parsed["liga"],
+                        "pais_iso": parsed.get("pais_iso", ""),
+                        "es_femenino": parsed.get("es_femenino", False),
+                        "es_juvenil": parsed.get("es_juvenil", False),
+                        "liga_forzada": True,
+                    }
+                return a_res, b_res, liga_final_fs
+    except Exception:
+        pass
+
     # Primero dividir limpiamente por el separador 'vs' / 'contra' / '-'
     partes = _SEPARADOR_RE.split(cuerpo, maxsplit=1)
     if len(partes) != 2:
@@ -445,8 +468,21 @@ def cargar_o_crear_auditoria(
     previo: dict[str, Any] | None = None
 
     if not forzar and directorio is None:
-        # 1. Comprobar caché en memoria
-        doc_mem = obtener_auditoria_en_memoria(_slug(equipo_efectivo))
+        # 1. Comprobar caché en memoria indexada por (fotmob_team_id, pais_iso, es_femenino, es_juvenil)
+        from resolvedor_entidades import construir_clave_cache_entidad, detectar_categoria_desde_texto
+        pais_iso_cache = (
+            (liga_info or {}).get("pais_iso")
+            or (liga_info or {}).get("pais")
+            or (rival_efectivo.get("pais_iso") if isinstance(rival_efectivo, dict) else "")
+            or (rival_efectivo.get("pais") if isinstance(rival_efectivo, dict) else "")
+        )
+        es_fem_c, es_juv_c = detectar_categoria_desde_texto(
+            f"{equipo} {(liga_info or {}).get('nombre', '')}"
+        )
+        clave_cache_entidad = construir_clave_cache_entidad(
+            equipo_efectivo, str(pais_iso_cache or ""), es_fem_c, es_juv_c
+        )
+        doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad) or obtener_auditoria_en_memoria(_slug(equipo_efectivo))
         if doc_mem is not None:
             ok_mem, _ = _auditoria_corresponde_a_consulta(doc_mem, equipo_efectivo, rival=rival_efectivo)
             pais_doc = _pais_de_liga((doc_mem.get("equipo") or {}).get("liga"))

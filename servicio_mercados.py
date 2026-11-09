@@ -284,6 +284,32 @@ def resolver_enfrentamiento(
 
     liga_final = liga or liga_extraida
 
+    # PASO #1 OBLIGATORIO: Puente Bilingüe Flashscore -> FotMob (resolvedor_entidades)
+    from resolvedor_entidades import resolver as _resolver_entidades, formatear_mensaje_entidades_verificadas
+    nombre_liga_txt = (
+        liga_final.get("nombre") if isinstance(liga_final, dict)
+        else (str(liga_final) if liga_final else "")
+    ) or ""
+    res_puente = _resolver_entidades(nombre_liga_txt, equipo_local, equipo_visitante)
+    if res_puente.equipo_local:
+        equipo_local = res_puente.equipo_local
+    if res_puente.equipo_visita:
+        equipo_visitante = res_puente.equipo_visita
+    if isinstance(liga_final, dict):
+        liga_final = dict(liga_final)
+        if res_puente.pais_iso and not liga_final.get("pais_iso"):
+            liga_final["pais_iso"] = res_puente.pais_iso
+        liga_final["es_femenino"] = bool(liga_final.get("es_femenino") or res_puente.es_femenino)
+        liga_final["es_juvenil"] = bool(liga_final.get("es_juvenil") or res_puente.es_juvenil)
+    elif res_puente.pais_iso or res_puente.es_femenino or res_puente.es_juvenil:
+        liga_final = {
+            "nombre": nombre_liga_txt or res_puente.liga or "",
+            "liga": nombre_liga_txt or res_puente.liga or "",
+            "pais_iso": res_puente.pais_iso,
+            "es_femenino": res_puente.es_femenino,
+            "es_juvenil": res_puente.es_juvenil,
+        }
+
     kwargs: dict[str, Any] = {"limite": limite, "forzar": forzar, "headless": headless,
                               "progreso": avisar}
     if frescura_horas is not None:
@@ -303,6 +329,15 @@ def resolver_enfrentamiento(
 
     nombre_a = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
     nombre_b = (doc_b.get("equipo") or {}).get("nombre") or equipo_visitante
+    pais_iso_a = (doc_a.get("equipo") or {}).get("pais_iso") or res_puente.pais_iso or (doc_a.get("equipo") or {}).get("liga") or ""
+    pais_iso_b = (doc_b.get("equipo") or {}).get("pais_iso") or res_puente.pais_iso or (doc_b.get("equipo") or {}).get("liga") or ""
+    liga_verif = (
+        nombre_liga_txt
+        or (doc_a.get("equipo") or {}).get("liga")
+        or (doc_b.get("equipo") or {}).get("liga")
+        or "Oficial"
+    )
+    avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
     if not contexto.get("competicion") and isinstance(liga_final, dict) and liga_final.get("nombre"):

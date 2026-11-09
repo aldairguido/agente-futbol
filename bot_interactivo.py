@@ -1476,12 +1476,23 @@ def _lanzar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             return
         auditoria_en_curso = True
 
+    from resolvedor_entidades import resolver as _resolver_ent, formatear_mensaje_entidades_verificadas
+    nombre_liga_acuse = liga.get("nombre", "") if isinstance(liga, dict) else (str(liga) if liga else "")
+    res_acuse = _resolver_ent(nombre_liga_acuse, equipo_a, equipo_b)
+    linea_entidades = formatear_mensaje_entidades_verificadas(
+        res_acuse.equipo_local or equipo_a,
+        res_acuse.pais_iso or "INT",
+        res_acuse.equipo_visita or equipo_b,
+        res_acuse.pais_iso or "INT",
+        nombre_liga_acuse or res_acuse.liga or "Oficial",
+    )
     linea_liga = f"• Liga / Competición: *{liga['nombre']}*\n" if liga else ""
     # ── ACUSE INMEDIATO (antes de tocar el scraper) ─────────────────────────
     enviar_seguro(
         bot, chat_id,
         f"⏳ *Recibido.* Extrayendo historial de {limite} partidos y procesando "
-        f"matrices para *{equipo_a}* vs *{equipo_b}*... Esto tomará un momento.\n"
+        f"matrices para *{res_acuse.equipo_local or equipo_a}* vs *{res_acuse.equipo_visita or equipo_b}*... Esto tomará un momento.\n"
+        f"{linea_entidades}\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         f"{linea_liga}"
         f"• Umbral del filtro central: `{umbral:.0%}` (estricto, sin redondeo)\n"
@@ -1512,6 +1523,9 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
 
         def progreso(msg: str) -> None:
             ahora = time.time()
+            if "Entidades verificadas:" in msg:
+                enviar_seguro(bot, chat_id, msg)
+                return
             if "reutilizada" in msg or "reescaneada" in msg or ahora - ultimo["t"] > 90:
                 ultimo["t"] = ahora
                 if "reutilizada" in msg or "reescaneada" in msg:

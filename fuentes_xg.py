@@ -759,8 +759,14 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "bayern munich": ["FC Bayern München", "Bayern München", "Bayern Munich"],
     "bayern munchen": ["FC Bayern München", "Bayern München"],
     "bayern münchen": ["FC Bayern München", "Bayern München", "Bayern Munich"],
-    "leverkusen": ["Bayer Leverkusen", "Bayer 04 Leverkusen"],
-    "bayer leverkusen": ["Bayer Leverkusen", "Bayer 04 Leverkusen"],
+    "bayer": ["Bayer 04 Leverkusen", "Bayer Leverkusen"],
+    "bayer 04": ["Bayer 04 Leverkusen", "Bayer Leverkusen"],
+    "bayer 04 leverkusen": ["Bayer 04 Leverkusen", "Bayer Leverkusen"],
+    "leverkusen": ["Bayer 04 Leverkusen", "Bayer Leverkusen"],
+    "bayer leverkusen": ["Bayer 04 Leverkusen", "Bayer Leverkusen"],
+    "magdeburgo": ["1. FC Magdeburg", "Magdeburg"],
+    "magdeburg": ["1. FC Magdeburg", "Magdeburg"],
+    "braunschweig": ["Eintracht Braunschweig", "Braunschweig"],
     "dortmund": ["Borussia Dortmund", "BVB"],
     "borussia dortmund": ["Borussia Dortmund"],
     "leipzig": ["RB Leipzig"],
@@ -1240,7 +1246,8 @@ _LIGA_POR_EQUIPO_CONOCIDO: dict[str, dict[str, Any]] = {
     )},
     # Alemania
     **{k: {"liga": "Bundesliga", "id_liga": 54, "pais": "alemania"} for k in (
-        "bayern", "bayern munich", "bayern munchen", "bayern münchen", "leverkusen", "bayer leverkusen",
+        "bayern", "bayern munich", "bayern munchen", "bayern münchen",
+        "bayer", "bayer 04", "bayer 04 leverkusen", "leverkusen", "bayer leverkusen",
         "dortmund", "borussia dortmund", "leipzig", "rb leipzig", "mainz", "mainz 05",
         "fsv mainz", "maguncia", "friburgo", "sc friburgo", "freiburg", "sc freiburg",
         "stuttgart", "vfb stuttgart", "frankfurt", "francfort", "eintracht",
@@ -1249,10 +1256,10 @@ _LIGA_POR_EQUIPO_CONOCIDO: dict[str, dict[str, Any]] = {
         "werder bremen", "augsburgo", "augsburg", "fc augsburg", "union berlin",
         "bochum", "vfl bochum", "heidenheim", "st pauli", "sankt pauli",
         "holstein kiel", "kiel", "hoffenheim", "tsg hoffenheim", "colonia", "koln",
-        "fc koln", "hamburgo", "hamburg", "hamburger sv", "schalke", "schalke 04",
+        "fc koln", "1. fc koln", "hamburgo", "hamburg", "hamburger sv", "schalke", "schalke 04",
         "hertha", "hertha berlin", "hannover", "hannover 96", "nuremberg", "nurnberg",
         "dusseldorf", "fortuna dusseldorf", "kaiserslautern", "karlsruher", "darmstadt",
-        "paderborn",
+        "paderborn", "magdeburgo", "magdeburg", "1. fc magdeburg", "braunschweig",
     )},
     # Italia
     **{k: {"liga": "Serie A", "id_liga": 55, "pais": "italia"} for k in (
@@ -1337,6 +1344,22 @@ def extraer_liga_de_texto(texto: str) -> tuple[dict[str, Any] | None, str]:
     if not original:
         return None, ""
 
+    # PASO #1 OBLIGATORIO: Consultar el Catálogo Mundial de +250 Ligas y +110 Países de Flashscore (resolvedor_entidades)
+    try:
+        from resolvedor_entidades import extraer_liga_flashscore
+        info_fs, resto_fs = extraer_liga_flashscore(original)
+        if info_fs and resto_fs:
+            norm_fs = _sin_acentos(info_fs.get("liga_norm") or info_fs.get("nombre") or "").lower().strip()
+            for patron, info_cat in _PATRONES_LIGA_ORDENADOS:
+                if norm_fs == patron or norm_fs.startswith(patron):
+                    info_combinada = dict(info_cat)
+                    info_combinada.update(info_fs)
+                    info_combinada["id_liga"] = info_cat["ids_liga"][0] if info_cat.get("ids_liga") else None
+                    return info_combinada, resto_fs
+            return info_fs, resto_fs
+    except Exception:
+        pass
+
     # Limpiar posible etiqueta "liga:" o "torneo:" o corchetes al inicio
     trabajo = re.sub(r"^(?:liga|competicion|competici[oó]n|torneo)\s*[:=]\s*", "", original, flags=re.I).strip()
 
@@ -1407,8 +1430,21 @@ def normalizar_nombre_club(nombre: str) -> str:
     """
     if not nombre or not str(nombre).strip():
         return ""
-    _, sin_liga = extraer_liga_de_texto(str(nombre).strip())
+    liga_pref, sin_liga = extraer_liga_de_texto(str(nombre).strip())
     base = " ".join((sin_liga or str(nombre)).split()).strip()
+
+    # PASO #1 OBLIGATORIO: Puente Bilingüe Flashscore -> FotMob (resolvedor_entidades)
+    try:
+        from resolvedor_entidades import resolver_equipo_individual, DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB, normalizar_texto
+        pais_iso_pref = (liga_pref or {}).get("pais_iso")
+        norm_b = normalizar_texto(base)
+        if norm_b in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB:
+            nom_res, _ = resolver_equipo_individual(base, pais_iso_contexto=pais_iso_pref)
+            if nom_res:
+                return nom_res
+    except Exception:
+        pass
+
     sin_ac = _sin_acentos(base)
     low = sin_ac.lower().strip()
 
@@ -1925,12 +1961,40 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
 
     # Femeninos y filiales van después, salvo que el usuario los pida explícitamente
     es_no_senior = es_equipo_o_torneo_no_senior(candidato.get("name"), candidato.get("leagueName"))
-    pedido = 1 if usuario_solicito_no_senior(consulta_n) else 0
+    texto_contexto_cat = f"{consulta} {(rival_meta or {}).get('liga', '')} {(rival_meta or {}).get('nombre', '')}"
+    pedido = 1 if (
+        usuario_solicito_no_senior(texto_contexto_cat)
+        or bool((rival_meta or {}).get("es_femenino"))
+        or bool((rival_meta or {}).get("es_juvenil"))
+    ) else 0
     if not pedido and es_no_senior:
-        penal_filial = 100
-        coherencia_pais -= 500
+        penal_filial = 9999
+        coherencia_pais -= 9999
+    elif pedido and es_no_senior:
+        penal_filial = -50
+        coherencia_pais += 50
     else:
         penal_filial = 0
+
+    # Validación dura anti-colisión (Bayer != Bayern, Platense ARG != Platense HND, Colonia DEU != Colonia URY)
+    try:
+        from resolvedor_entidades import validar_y_puntuar_candidato_fotmob
+        pais_iso_meta = (rival_meta or {}).get("pais_iso") or (rival_meta or {}).get("pais") or ""
+        liga_txt_meta = str((rival_meta or {}).get("liga") or (rival_meta or {}).get("nombre") or "")
+        pts_duro = validar_y_puntuar_candidato_fotmob(
+            candidato,
+            consulta_sin_liga or consulta,
+            texto_liga_o_contexto=liga_txt_meta,
+            pais_iso_esperado=pais_iso_meta,
+            es_femenino_pedido=bool((rival_meta or {}).get("es_femenino")) if (rival_meta and "es_femenino" in rival_meta) else None,
+            es_juvenil_pedido=bool((rival_meta or {}).get("es_juvenil")) if (rival_meta and "es_juvenil" in rival_meta) else None,
+        )
+        if pts_duro <= -9000.0:
+            return (-9999, 0, 0, 0, -9999, -9999, 0, 0, -9999.0)
+        if pts_duro >= 100.0:
+            coherencia_pais += 100
+    except Exception:
+        pass
 
     # Un homónimo de otro país (coherencia_pais < 0) jamás debe superar por nombre exacto a un club del mismo país
     es_alias_coherente = es_alias_exacto if coherencia_pais >= 0 else 0
@@ -2231,7 +2295,12 @@ class FuenteFotMob(FuenteXG):
         candidatos: list[dict[str, Any]] = []
         variante_usada = ""
         variantes_probadas: list[str] = []
-        pide_no_senior = usuario_solicito_no_senior(nombre) or usuario_solicito_no_senior(consulta_efectiva)
+        pide_no_senior = (
+            usuario_solicito_no_senior(nombre)
+            or usuario_solicito_no_senior(consulta_efectiva)
+            or bool((meta_rival or {}).get("es_femenino"))
+            or bool((meta_rival or {}).get("es_juvenil"))
+        )
         for variante in variantes:
             variantes_probadas.append(variante)
             datos = self._api(
@@ -2244,6 +2313,9 @@ class FuenteFotMob(FuenteXG):
                             # Descartar estrictamente femeninos / juveniles si no se solicitaron
                             if not pide_no_senior and es_equipo_o_torneo_no_senior(sug.get("name"), sug.get("leagueName")):
                                 continue
+                            # Regla dura anti-colisión Bayer != Bayern y país
+                            if puntuar_candidato(sug, consulta_efectiva, rival_meta=meta_rival)[0] <= -9000:
+                                continue
                             encontrados.append(sug)
             if encontrados:
                 candidatos.extend(encontrados)
@@ -2253,7 +2325,7 @@ class FuenteFotMob(FuenteXG):
                 # con coincidencia exacta nuclear/alias (pts[2] > 0) y coherencia geográfica positiva con el rival/liga.
                 exige_coherencia = bool(meta_rival and (meta_rival.get("pais") or meta_rival.get("liga") or meta_rival.get("leagueName")))
                 if any(
-                    (pts := puntuar_candidato(c, consulta_efectiva, rival_meta=meta_rival))[0] == 0
+                    (pts := puntuar_candidato(c, consulta_efectiva, rival_meta=meta_rival))[0] >= 0
                     and pts[2] > 0
                     and (pts[4] > 0 if exige_coherencia else pts[4] >= 0)
                     for c in encontrados
@@ -2301,12 +2373,30 @@ class FuenteFotMob(FuenteXG):
         if not pide_no_senior:
             nombre_final = re.sub(r"\s*\((?:w|women)\)\s*", "", str(nombre_final), flags=re.IGNORECASE).strip()
 
+        from resolvedor_entidades import construir_clave_cache_entidad, normalizar_pais_iso, detectar_categoria_desde_texto
+        es_fem_eq, es_juv_eq = detectar_categoria_desde_texto(
+            f"{nombre} {(meta_rival or {}).get('liga', '')} {(meta_rival or {}).get('nombre', '')}"
+        )
+        if meta_rival and "es_femenino" in meta_rival:
+            es_fem_eq = bool(meta_rival["es_femenino"])
+        if meta_rival and "es_juvenil" in meta_rival:
+            es_juv_eq = bool(meta_rival["es_juvenil"])
+        pais_iso_eq = (
+            normalizar_pais_iso(elegido.get("ccode") or elegido.get("country") or elegido.get("leagueName"))
+            or normalizar_pais_iso((meta_rival or {}).get("pais_iso") or (meta_rival or {}).get("pais") or (meta_rival or {}).get("liga"))
+            or "INT"
+        )
+        tid_str = str(elegido.get("id"))
         equipo = {
-            "id": str(elegido.get("id")),
+            "id": tid_str,
             "nombre": nombre_final,
             "nombre_solicitado": consulta_efectiva,
             "liga": elegido.get("leagueName"),
             "id_liga": elegido.get("leagueId"),
+            "pais_iso": pais_iso_eq,
+            "es_femenino": es_fem_eq,
+            "es_juvenil": es_juv_eq,
+            "clave_cache": construir_clave_cache_entidad(tid_str, pais_iso_eq, es_fem_eq, es_juv_eq),
             "alternativas": [c.get("name") for c in candidatos[1:6]],
             "variante_busqueda": variante_usada,
             "ambiguous": len(empatados) > 1,
