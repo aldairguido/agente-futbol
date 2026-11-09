@@ -602,3 +602,141 @@ def calcular_patrones_completos_partido(
     p_l = calcular_55_patrones_equipo(metricas_local, m1_l, m2_l, timeline_local)
     p_v = calcular_55_patrones_equipo(metricas_visita, m1_v, m2_v, timeline_visita)
     return calcular_55_patrones_matchup(p_l, p_v)
+
+
+def aplicar_freno_de_mano_y_matchup_21_22(
+    lam_base_local: float,
+    lam_base_visita: float,
+    lam_red_local: float,
+    lam_red_visita: float,
+    ratings_local: Optional[Dict[str, Any]] = None,
+    ratings_visita: Optional[Dict[str, Any]] = None,
+    posesion_proyectada_local: float = 50.0,
+    posesion_proyectada_visita: float = 50.0,
+    en_crisis_local: bool = False,
+    en_crisis_visita: bool = False,
+    goles_ult5_local: float = 1.2,
+    goles_ult5_visita: float = 1.2,
+) -> Tuple[float, float, float, float]:
+    """
+    Implementa los Puntos 21 y 22 de la Evolución Quirúrgica Post-Auditoría:
+      - Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating
+        y Prohibición de Inflación Dual (suma <= +25.0%, o <= +10.0% si ambos Attack < 40.0).
+      - Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús").
+      - Punto 22: Multiplicador de Matchup contra Defensas Rotas (Defense < 30.0 -> * 1.35),
+        Asedio de Posesión Local (Pos >= 60% y Defense_V < 42.0 -> * 1.15) y Amortiguador de
+        "Fortín Defensivo Local" (Defense_L >= 60.0 y lam_V > 2.05 -> 1.95 + (lam_V - 1.95) * 0.40).
+    Retorna: (lam_final_local, lam_final_visita, delta_pct_local, delta_pct_visita).
+    """
+    rL = ratings_local or {}
+    rV = ratings_visita or {}
+
+    attack_rating_local = float(rL.get("Final_Attack_Strength", rL.get("attack", 50.0)) or 50.0)
+    attack_rating_visita = float(rV.get("Final_Attack_Strength", rV.get("attack", 50.0)) or 50.0)
+    defense_rating_local = float(rL.get("Final_Defense_Strength", rL.get("defense", 50.0)) or 50.0)
+    defense_rating_visita = float(rV.get("Final_Defense_Strength", rV.get("defense", 50.0)) or 50.0)
+    pressing_rating_visita = float(rV.get("Pressing_Intensity_Score", rV.get("pressing", 50.0)) or 50.0)
+
+    lam_b_l = max(0.10, float(lam_base_local))
+    lam_b_v = max(0.10, float(lam_base_visita))
+    lam_l = max(0.20, float(lam_red_local))
+    lam_v = max(0.20, float(lam_red_visita))
+
+    # ── Punto 22: Multiplicadores de Matchup (Defensa Rota, Asedio y Fortín Local) ──
+    # a) Multiplicador contra Defensa Pésima (Defense_Rating < 30):
+    if defense_rating_visita < 30.0:
+        lam_l *= 1.35
+    if defense_rating_local < 30.0:
+        lam_v *= 1.35
+
+    # b) Multiplicador de Asedio Local por Posesión Alta:
+    if posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0:
+        lam_l *= 1.15
+
+    # c) Amortiguador de "Fortín Defensivo Local" (Defense_Local >= 60.0):
+    if defense_rating_local >= 60.0 and lam_v > 2.05:
+        lam_v = 1.95 + (lam_v - 1.95) * 0.40
+
+    # ── Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús") ──
+    # 1. Local con ataque paupérrimo:
+    if attack_rating_local < 25.0:
+        lam_l = min(lam_l, 0.90)
+    if attack_rating_local < 20.0 and (en_crisis_local or goles_ult5_local < 0.50):
+        lam_l = min(lam_l, 0.60)
+    elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
+        lam_l = min(lam_l, 1.10)
+
+    # 2. Visitante en Bloque Bajo ("Autobús"):
+    if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        lam_v = min(lam_v, 0.80)
+    if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        lam_v = min(lam_v, 0.60)
+    if attack_rating_visita < 20.0 and (en_crisis_visita or goles_ult5_visita < 0.50):
+        lam_v = min(lam_v, 0.60)
+    elif (en_crisis_visita or attack_rating_visita < 35.0) and defense_rating_local >= 30.0:
+        lam_v = min(lam_v, 1.10)
+
+    # ── Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating ──
+    delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
+    delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
+
+    if attack_rating_local < 26.0:
+        delta_pct_l = min(0.0, delta_pct_l)
+        lam_l = min(0.90, lam_b_l * (1.0 + delta_pct_l / 100.0))
+        delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
+    elif attack_rating_local < 35.0 and defense_rating_visita >= 30.0:
+        if delta_pct_l > 12.0:
+            delta_pct_l = 12.0
+            lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
+
+    if attack_rating_visita < 26.0:
+        delta_pct_v = min(0.0, delta_pct_v)
+        lam_v = min(0.90, lam_b_v * (1.0 + delta_pct_v / 100.0))
+        delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
+    elif attack_rating_visita < 35.0 and defense_rating_local >= 30.0:
+        if delta_pct_v > 12.0:
+            delta_pct_v = 12.0
+            lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+
+    # Prohibición de Inflación Dual:
+    # La suma de los cambios porcentuales de ambos equipos en la Caja Azul jamás puede superar +25.0%
+    # (y si ambos tienen Attack_Rating < 40.0, jamás puede superar +10.0%),
+    # salvo que alguno enfrente una defensa rota (Defense_Rating < 30.0) o asedio extremo (Defense < 42 y Pos >= 60%).
+    hay_defensa_rota_o_asedio = (
+        defense_rating_local < 30.0
+        or defense_rating_visita < 30.0
+        or (posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0)
+    )
+    techo_suma_dual = 10.0 if (attack_rating_local < 40.0 and attack_rating_visita < 40.0 and not hay_defensa_rota_o_asedio) else (65.0 if hay_defensa_rota_o_asedio else 25.0)
+    suma_actual = delta_pct_l + delta_pct_v
+    if suma_actual > techo_suma_dual:
+        exceso_dual = suma_actual - techo_suma_dual
+        pos_l = max(0.0, delta_pct_l)
+        pos_v = max(0.0, delta_pct_v)
+        tot_pos = pos_l + pos_v
+        if tot_pos > 0:
+            delta_pct_l -= exceso_dual * (pos_l / tot_pos)
+            delta_pct_v -= exceso_dual * (pos_v / tot_pos)
+        else:
+            delta_pct_l -= exceso_dual * 0.5
+            delta_pct_v -= exceso_dual * 0.5
+        lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
+        lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+
+    # Re-aplicar techos absolutos de Doble Freno de Mano tras ajuste porcentual
+    if attack_rating_local < 26.0:
+        lam_l = min(lam_l, 0.90)
+    if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        lam_v = min(lam_v, 0.80)
+    if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        lam_v = min(lam_v, 0.60)
+    if defense_rating_local >= 60.0 and lam_v > 2.05:
+        lam_v = 1.95 + (lam_v - 1.95) * 0.40
+
+    lam_l = round(max(0.25, min(4.20, lam_l)), 2)
+    lam_v = round(max(0.25, min(4.20, lam_v)), 2)
+    delta_pct_l = round(((lam_l - lam_b_l) / lam_b_l) * 100.0, 1)
+    delta_pct_v = round(((lam_v - lam_b_v) / lam_b_v) * 100.0, 1)
+
+    return lam_l, lam_v, delta_pct_l, delta_pct_v
+

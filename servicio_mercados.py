@@ -571,6 +571,26 @@ def obtener_top5_y_seccion1_filtrados(
     if not mantiene_raw and sels_top_tabla:
         mantiene_raw = sels_top_tabla
 
+    # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
+    tiene_res_sec1 = any(_clasificar_cat(s) == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
+    if not tiene_res_sec1 and top5_podio:
+        for item_t5 in top5_podio:
+            if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+                et_t5 = str(item_t5.get("etiqueta") or "")
+                ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
+                mantiene_raw.append({
+                    "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
+                    "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
+                    "evento": ev_t5,
+                    "etiqueta": et_t5,
+                    "periodo": "FT",
+                    "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
+                    "linea": None,
+                    "probabilidad": float(item_t5.get("probabilidad", 0.72)),
+                    "estado": "mantiene",
+                })
+                break
+
     total_validadas = len(mantiene_raw)
     return top5_podio, mantiene_raw, total_validadas
 
@@ -681,7 +701,11 @@ def renderizar_ticket_mercados_png(
             if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
                 return "", "", 0.0
             suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
+                lbl = "+0.5 Goles (1T)"
+            elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
+                lbl = "+0.5 Goles (2T)"
+            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
                 lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
                 lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
@@ -979,6 +1003,26 @@ def renderizar_ticket_mercados_png(
 
         mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
         sensibles_raw = [s for s in sels_top_tabla if _val(s, "estado") != "mantiene"]
+
+        # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
+        tiene_res_sec1 = any(_clasificar_categoria_ambito(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
+        if not tiene_res_sec1 and top5_podio:
+            for item_t5 in top5_podio:
+                if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+                    et_t5 = str(item_t5.get("etiqueta") or "")
+                    ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
+                    mantiene_raw.append({
+                        "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
+                        "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
+                        "evento": ev_t5,
+                        "etiqueta": et_t5,
+                        "periodo": "FT",
+                        "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
+                        "linea": None,
+                        "probabilidad": float(item_t5.get("probabilidad", 0.72)),
+                        "estado": "mantiene",
+                    })
+                    break
 
         sec1_data = _organizar_bloque(mantiene_raw)
         sec2_data = _organizar_bloque(sensibles_raw)

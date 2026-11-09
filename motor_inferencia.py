@@ -10,21 +10,66 @@ def _limpiar_txt(s: str) -> str:
         c for c in unicodedata.normalize("NFD", str(s or "").lower().strip())
         if unicodedata.category(c) != "Mn"
     )
-    return re.sub(r"[^a-z0-9\s]", "", txt).strip()
+    txt = re.sub(r"[^a-z0-9\s]", " ", txt)
+    txt = re.sub(r"\s+", " ", txt).strip()
+    # Normalización de alias frecuentes sin tildes ni partículas de relleno
+    reemplazos = {
+        "fc barcelona": "barcelona",
+        "barca": "barcelona",
+        "atletico de madrid": "atletico madrid",
+        "atletico": "atletico madrid",
+        "club atletico de madrid": "atletico madrid",
+        "real betis balompie": "real betis",
+        "betis": "real betis",
+        "real sociedad de futbol": "real sociedad",
+        "real socied": "real sociedad",
+        "rc celta de vigo": "celta vigo",
+        "rc celta": "celta vigo",
+        "celta de vigo": "celta vigo",
+        "celta": "celta vigo",
+        "deportivo alaves": "alaves",
+        "deportivo a": "alaves",
+        "alaves": "alaves",
+        "rayo vallecano": "rayo",
+        "elche cf": "elche",
+        "levante ud": "levante",
+        "villarreal cf": "villarreal",
+        "getafe cf": "getafe",
+        "sevilla fc": "sevilla",
+        "valencia cf": "valencia",
+        "ca osasuna": "osasuna",
+        "athletic club": "athletic",
+        "athletic bilbao": "athletic",
+    }
+    return reemplazos.get(txt, txt)
 
 
 def _es_mismo_equipo(nombre_buscado: str, nombre_en_partido: str) -> bool:
-    """Detecta coincidencia incluso si el nombre está truncado (ej. 'Deportivo Alavés' vs 'Deportivo A')."""
+    """Detecta coincidencia incluso si el nombre está truncado o usa alias compuestos ('Deportivo Alavés' vs 'Deportivo A', 'Barça' vs 'Barcelona')."""
     a = _limpiar_txt(nombre_buscado)
     b = _limpiar_txt(nombre_en_partido)
     if not a or not b:
         return False
+    if a == b:
+        return True
+    # Evitar falsos positivos cuando ambos empiezan con 'real ' o 'atletico ' pero difieren en la segunda palabra
+    for pref in ("real ", "atletico ", "deportivo ", " sporting "):
+        p_s = pref.strip() + " "
+        if a.startswith(p_s) and b.startswith(p_s):
+            resto_a = a[len(p_s):].strip()
+            resto_b = b[len(p_s):].strip()
+            if resto_a and resto_b:
+                return resto_a in resto_b or resto_b in resto_a or (len(resto_a) >= 4 and len(resto_b) >= 4 and resto_a[:4] == resto_b[:4])
     if a in b or b in a:
         return True
-    # Comparar por prefijo de 7 caracteres o palabras clave
-    if len(a) >= 6 and len(b) >= 6 and a[:7] == b[:7]:
+    # Comparar por prefijo de 7 caracteres si no empieza por 'real '/'deportivo '
+    if not a.startswith(("real ", "deportivo ", "atletico ")) and len(a) >= 6 and len(b) >= 6 and a[:7] == b[:7]:
         return True
-    palabras_a = [w for w in a.split() if len(w) >= 4 and w not in ("club", "real", "deportivo")]
+    stop_words = {"club", "real", "deportivo", "futbol", "balompie", "atletico", "unidos", "racing", "sporting"}
+    palabras_a = [w for w in a.split() if len(w) >= 4 and w not in stop_words]
+    palabras_b = [w for w in b.split() if len(w) >= 4 and w not in stop_words]
+    if palabras_a and palabras_b:
+        return any(wa == wb or (len(wa) >= 5 and len(wb) >= 5 and (wa in wb or wb in wa)) for wa in palabras_a for wb in palabras_b)
     return any(w in b for w in palabras_a)
 
 
@@ -441,14 +486,50 @@ def aplicar_reglas_matchup_55(
             f"(P07 Puntería {p07_l*100:.1f}%, P05 Conversión {p05_l*100:.1f}%)."
         )
 
-    # 1. Regla del Espejismo de Posesión (Patrón #01 y #49)
-    if patrones_local["posesion_pct"] > 54.0 and patrones_local["P01_xG_por_Remate"] < 0.145 and patrones_visita["P15_Muro_Asedio"] > 0.55:
+    # 1. Regla del Espejismo de Posesión y Calidad de Tiro (Patrón #01 y #49) + Empate Técnico (Punto 28)
+    p01_l = float(patrones_local.get("P01_xG_por_Remate", 0.12))
+    p01_v = float(patrones_visita.get("P01_xG_por_Remate", 0.12))
+    p03_l = float(patrones_local.get("P03_Calidad_xGOT_vs_xG", 1.0))
+    p03_v = float(patrones_visita.get("P03_Calidad_xGOT_vs_xG", 1.0))
+    if abs(p01_l - p01_v) < 0.015:
+        if abs(p03_l - p03_v) >= 0.05:
+            dom_01 = nombre_local if p03_l > p03_v else nombre_visita
+            txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Desempate por xGOT/xG: {dom_01} ({max(p03_l, p03_v):.2f})"
+        else:
+            txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Paridad en calidad de tiro por remate"
+    else:
+        dom_01 = nombre_local if p01_l > p01_v else nombre_visita
+        txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}"
+
+    if patrones_local["posesion_pct"] > 54.0 and p01_l < 0.145 and patrones_visita["P15_Muro_Asedio"] > 0.55:
         p_loc -= 0.08
         p_emp += 0.03
         p_vis += 0.05
         alertas.append(
             f"Patrón #01 Activado: {nombre_local} promedia {patrones_local['posesion_pct']:.1f}% de posesión, "
-            f"pero su xG por remate es de {patrones_local['P01_xG_por_Remate']:.2f} (bajo el óptimo de 0.15). Posesión estéril."
+            f"pero su xG por remate es de {p01_l:.2f} (bajo el óptimo de 0.15). Posesión estéril ({txt_p01})."
+        )
+    else:
+        alertas.append(f"Patrón #01 Activado: {txt_p01}.")
+
+    # Punto 23c: Alerta de Posesión Estéril vs. Portero Figura (Caso Celta 0-0 Levante)
+    p06_l = float(patrones_local.get("P06_Desperdicio_Ocasiones", 0.45))
+    p06_v = float(patrones_visita.get("P06_Desperdicio_Ocasiones", 0.45))
+    p14_l = float(patrones_local.get("P14_Portero_Tasa_Paradas", 0.68))
+    p14_v = float(patrones_visita.get("P14_Portero_Tasa_Paradas", 0.68))
+    if (p01_l < 0.11 or p06_l >= 0.55) and p14_v >= 0.70:
+        p_emp += 0.05
+        p_loc -= 0.05
+        alertas.append(
+            f"⚠️ ALERTA POSESIÓN ESTÉRIL VS PORTERO FIGURA: {nombre_local} falla el {p06_l*100:.0f}% de ocasiones claras (P01 {p01_l:.2f}) "
+            f"ante el arquero de {nombre_visita} ({p14_v*100:.0f}% paradas P14) -> Priorizar Under 2.5 / 3.5 Goles."
+        )
+    elif (p01_v < 0.11 or p06_v >= 0.55) and p14_l >= 0.70:
+        p_emp += 0.05
+        p_vis -= 0.05
+        alertas.append(
+            f"⚠️ ALERTA POSESIÓN ESTÉRIL VS PORTERO FIGURA: {nombre_visita} falla el {p06_v*100:.0f}% de ocasiones claras (P01 {p01_v:.2f}) "
+            f"ante el arquero de {nombre_local} ({p14_l*100:.0f}% paradas P14) -> Priorizar Under 2.5 / 3.5 Goles."
         )
 
     # 2. Regla del Portero Imbatible (Patrón #13 y #50)

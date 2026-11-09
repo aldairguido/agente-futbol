@@ -446,3 +446,27 @@ Ver sección 10 íntegra en `D:\agente_futbol\AGENTS.md`:
   3) Eliminación permanente de `"12 (Sin Empate)"` en Top 5 y Sección 1 cuando `P(X) >= 15%`.
   4) Factor Matagigantes (`pos_local < 36%` + alta puntería $\to$ `-20%` $\lambda$ visitante favorito) y regresión `-10%` por sobre-rendimiento (`goles_ult5 / xg_ult5 > 1.30`).
   5) Límite de tarjetas `-15%` por monopolio de posesión (`>= 68%`) y exclusión de `+4.5 Tarjetas` en Top 5.
+
+
+---
+
+## 15. EVOLUCIÓN QUIRÚRGICA v5 POST-AUDITORÍA DE LOS 5 TICKETS DE LALIGA (PUNTOS 21 AL 30)
+- **21. Doble Freno de Mano y Techo de Inflación en Caja Azul (`motor_patrones.py`, `motor_recursivo_45_dcn.py`, `motor_mercados.py`):**
+  - Techo según `Attack_Rating`: si `< 26.0` $\to$ `delta_pct <= 0.0%` y `lam_red <= 0.90`; si `< 35.0` $\to$ bono máx `+12.0%` (salvo defensa rota `< 30.0`).
+  - Prohibición de inflación dual (`delta_L + delta_V <= +25.0%`, o `<= +10.0%` si ambos tienen `Attack < 40.0` sin defensa rota).
+  - Visitante en Bloque Bajo ("Autobús"): si `Pos_V < 45%` y `Attack_V < 35` $\to$ `lam_V <= 0.80`; si `Pressing_V < 30` y `Pos_V < 42%` $\to$ `lam_V <= 0.60`.
+  - Prohibido recomendar `"[Equipo] +0.5 Goles"` en el Top 5 cuando `Pos < 43%` o `Attack < 34` o `lam_red < 0.95`.
+- **22. Multiplicador de Defensa Rota, Asedio de Posesión y Amortiguador de Fortín Local:**
+  - `Defense_Rating < 30.0` $\to$ `lam_rival *= 1.35`; `Pos_L >= 60%` y `Defense_V < 42.0` $\to$ `lam_L *= 1.15`; `Defense_L >= 60.0` y `lam_V > 2.05` $\to$ `lam_V = 1.95 + (lam_V - 1.95) * 0.40`.
+- **23. Candado de 1er Tiempo, Reemplazo por `Goles 2T: +0.5 Goles` y Posesión Estéril vs Portero Figura:**
+  - Prohibido `"Goles 1T: +0.5 Goles"` en Top 5 ante sesgo 2T (`P26 >= 0.51` o `> 55%` goles en 2T en Cuadro C) o Bloque Bajo (`Pos < 44%`, `despejes >= 20` o `Attack < 35`), reemplazándolo por `"Goles 2T: +0.5 Goles"` o `"[Equipo] -1.5 / -2.5 Goles"`. Solo se permite `1T +0.5` con `Attack >= 70.0` y `lam_1t_combinado >= 1.45`.
+  - Si hay Posesión Estéril (`P01 < 0.11` o `P06 >= 0.55`) frente a Portero Figura (`P14_rival >= 0.70`), prohibir `+1.5 / +2.5 Goles FT` en Top 5 y priorizar `Menos de 2.5 / 3.5 Goles FT`.
+- **24. Reductor de Córneres por Embudo Interior y Tope en Top 5:**
+  - Si `(remates_area_L + remates_area_V) > 15.0` o `P11 > 2.6` o `remates_totales > 15.0`, aplicar `* 0.80` a córneres. Prohibido `+10.5` y `+11.5 Córneres` en Top 5.
+- **25. Triple Check de Convergencia (Red Neuronal + Cuadro B + Cuadro C):**
+  - Bono `+5.0` de prioridad cuando `Prob >= 72%` y Cuadro B/C converge (`>= 60%`); descarte automático si ambos equipos tienen `<= 5/15 (33%)` en Cuadro B.
+- **26–30. Limpieza de `SECCIÓN 1`, Sincronización con Puesto #1, Desempate de `P01` y Parser Cuadro B:**
+  - Unificación de `"Al menos un gol en el 1T"` y `"+0.5 Goles (1T)"` en un único badge `"+0.5 Goles (1T)"` (y análogo en `2T`).
+  - Sincronización garantizada de la fila `HÁNDICAP / 1X2 / DC` de `SECCIÓN 1` con el Puesto #1 del Top 5 (`>= 70%`).
+  - Desempate técnico en Patrón #01 cuando `|P01_L - P01_V| < 0.015` usando `P03_Calidad_xGOT_vs_xG`.
+  - Normalización de alias compuestos y truncados en Cuadro B (`Atlético == Atletico`, `Barça == Barcelona`, `Deportivo Alavés == Deportivo A`, `Real Sociedad == Real Socied`).

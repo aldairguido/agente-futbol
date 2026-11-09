@@ -314,6 +314,147 @@ def test_contexto_avanzado_y_5_ajustes_finos():
     assert any("ALERTA MATAGIGANTES" in a for a in al_m), f"Falta alerta Matagigantes: {al_m}"
 
 
+def test_5_escenarios_laliga_puntos_21_30():
+    """
+    Punto 30: Verifica con pytest los 5 escenarios reales de LaLiga (Puntos 21 al 30):
+      1. Atlético vs Barcelona (Fortín Defensivo Local + Embudo Interior de Córneres)
+      2. Elche vs Betis (Doble Freno de Mano a local débil Attack < 26 + Techo Caja Azul <= 0%)
+      3. Real Sociedad vs Rayo (Prohibición de Inflación Dual <= +10%, Bloque Bajo Visitante y Sincronización HÁNDICAP/1X2/DC)
+      4. Celta vs Levante (Multiplicador Asedio / Defensa Rota, Posesión Estéril vs Portero Figura y Reemplazo 1T +0.5 -> 2T +0.5)
+      5. Villarreal vs Getafe (Autobús Visitante Pressing < 30 y Posesión < 42% -> lam_red_visita <= 0.60 y prohibición Getafe +0.5)
+      Además verifica eliminación de badges duplicados en Sección 1, empate técnico en Patrón #01 y parser Cuadro B sin tildes.
+    """
+    from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22, calcular_patrones_completos_partido
+    from motor_inferencia import _es_mismo_equipo, aplicar_reglas_matchup_55
+    from motor_mercados import seleccionar_top_5_jugadas_recomendadas
+    from cuadro_especialista import _organizar_sec1_para_cuadro
+
+    # 1. Atlético vs Barcelona: Amortiguador de Fortín Defensivo Local (Defense_Local >= 60.0 y lam_V > 2.05)
+    lam_at, lam_bar, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.45,
+        lam_base_visita=2.30,
+        lam_red_local=1.55,
+        lam_red_visita=2.45,
+        ratings_local={"Final_Attack_Strength": 68.0, "Final_Defense_Strength": 64.5},
+        ratings_visita={"Final_Attack_Strength": 88.0, "Final_Defense_Strength": 58.0},
+        posesion_proyectada_local=42.0,
+        posesion_proyectada_visita=58.0,
+    )
+    assert lam_bar <= 2.20, f"El amortiguador de Fortín Local debe contener lam_visita de Barça (<= 2.20): {lam_bar}"
+
+    # 2. Elche vs Betis: Local con Attack < 26.0 (22.7) -> delta_pct_local <= 0.0 y lam_red_local <= 0.90
+    lam_elc, lam_bet, d_elc, d_bet = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.07,
+        lam_base_visita=1.55,
+        lam_red_local=1.52,
+        lam_red_visita=1.70,
+        ratings_local={"Final_Attack_Strength": 22.7, "Final_Defense_Strength": 40.0},
+        ratings_visita={"Final_Attack_Strength": 58.0, "Final_Defense_Strength": 52.0},
+        posesion_proyectada_local=45.0,
+        posesion_proyectada_visita=55.0,
+    )
+    assert lam_elc <= 0.90 and d_elc <= 0.0, f"Elche (Attack 22.7) no puede inflarse en Caja Azul: lam={lam_elc}, delta={d_elc}%"
+
+    # 3. Real Sociedad vs Rayo Vallecano: Ambos Attack < 40 (31.3 vs 27.4) -> suma Caja Azul <= +10.0% y Rayo lam <= 0.80
+    lam_rso, lam_ray, d_rso, d_ray = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.18,
+        lam_base_visita=1.09,
+        lam_red_local=1.71,
+        lam_red_visita=1.48,
+        ratings_local={"Final_Attack_Strength": 31.3, "Final_Defense_Strength": 55.0},
+        ratings_visita={"Final_Attack_Strength": 27.4, "Final_Defense_Strength": 48.0, "Pressing_Intensity_Score": 44.0},
+        posesion_proyectada_local=56.5,
+        posesion_proyectada_visita=43.5,
+    )
+    assert (d_rso + d_ray) <= 10.0, f"Prohibición de Inflación Dual violada en Real Sociedad vs Rayo: {d_rso}% + {d_ray}%"
+    assert lam_ray <= 0.80, f"Rayo en bloque bajo (<45% pos y Attack <35) debe toparse en 0.80: {lam_ray}"
+
+    # 4. Celta vs Levante: Multiplicador contra Defensa Pésima (Defense_V 24.4 < 30 y Pos_L 60.4% >= 60%)
+    lam_cel, lam_lev, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.35,
+        lam_base_visita=0.95,
+        lam_red_local=1.35,
+        lam_red_visita=0.90,
+        ratings_local={"Final_Attack_Strength": 52.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 36.0, "Final_Defense_Strength": 24.4},
+        posesion_proyectada_local=60.4,
+        posesion_proyectada_visita=39.6,
+    )
+    assert lam_cel >= 1.85, f"Celta ante defensa rota (24.4) y asedio (60.4% pos) debe superar 1.85: {lam_cel}"
+
+    # 5. Villarreal vs Getafe: Autobús visitante (Pressing 24.0 < 30 y Posesión 39.6% < 42%) -> lam_visita <= 0.60
+    lam_vil, lam_get, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.65,
+        lam_base_visita=0.98,
+        lam_red_local=1.80,
+        lam_red_visita=1.22,
+        ratings_local={"Final_Attack_Strength": 64.0, "Final_Defense_Strength": 55.0},
+        ratings_visita={"Final_Attack_Strength": 28.5, "Final_Defense_Strength": 52.0, "Pressing_Intensity_Score": 24.0},
+        posesion_proyectada_local=60.4,
+        posesion_proyectada_visita=39.6,
+    )
+    assert lam_get <= 0.60, f"Getafe en modo autobús (Pressing 24.0, Pos 39.6%) debe toparse en 0.60: {lam_get}"
+
+    # Gatekeeper Puntos 21c, 23 y 24b:
+    # - Prohibido recomendar "Getafe +0.5 Goles" o "Goles 1T: +0.5 Goles" o "+10.5 Córneres"
+    # - Reemplazo automático de 1T +0.5 por "Goles 2T: +0.5 Goles"
+    class _DummyMotor:
+        matriz_ft = [[0.10, 0.05, 0.01], [0.28, 0.14, 0.03], [0.22, 0.12, 0.05]]
+        recursivo = {
+            "lambda_local_recursivo": 1.80,
+            "lambda_visita_recursivo": 0.58,
+            "mu_local_casa": {"posesion_pct": 60.4, "despejes": 14.0},
+            "mu_visita_fuera": {"posesion_pct": 39.6, "despejes": 24.0},
+            "patrones_55_local": {"P26_Poder_Cierre_2T": 0.56, "posesion_pct": 60.4},
+            "patrones_55_visita": {"P26_Poder_Cierre_2T": 0.58, "posesion_pct": 39.6},
+            "ratings_local": {"Final_Attack_Strength": 64.0},
+            "ratings_visita": {"Final_Attack_Strength": 28.5},
+        }
+
+    sels_gate = [
+        {"mercado": "Doble oportunidad", "evento": "1x", "etiqueta": "1X (Villarreal o empate)", "periodo": "FT", "equipo": "Villarreal", "probabilidad": 0.84, "estado": "mantiene"},
+        {"mercado": "Total de goles", "evento": "under_3.5", "etiqueta": "menos de 3.5 goles", "periodo": "FT", "linea": 3.5, "probabilidad": 0.78, "estado": "mantiene"},
+        {"mercado": "Total de goles Getafe", "evento": "visitante_over_0.5", "etiqueta": "Getafe: más de 0.5 goles", "periodo": "FT", "equipo": "Getafe", "linea": 0.5, "probabilidad": 0.75, "estado": "mantiene"},
+        {"mercado": "Gol en ambos tiempos", "evento": "gol_1t", "etiqueta": "Al menos un gol en el 1T", "periodo": "1T", "probabilidad": 0.76, "estado": "mantiene"},
+        {"mercado": "Total de córneres", "evento": "corners_over_10.5", "etiqueta": "más de 10.5 córneres", "periodo": "FT", "linea": 10.5, "probabilidad": 0.74, "estado": "mantiene"},
+        {"mercado": "Total de córneres", "evento": "corners_over_8.5", "etiqueta": "más de 8.5 córneres", "periodo": "FT", "linea": 8.5, "probabilidad": 0.79, "estado": "mantiene"},
+        {"mercado": "Total de tarjetas", "evento": "amarillas_under_4.5", "etiqueta": "menos de 4.5 tarjetas amarillas", "periodo": "FT", "linea": 4.5, "probabilidad": 0.80, "estado": "mantiene"},
+    ]
+    top5_vg = seleccionar_top_5_jugadas_recomendadas(sels_gate, motor=_DummyMotor(), eq_l="Villarreal", eq_v="Getafe")
+    etiquetas_top5 = [it["etiqueta"] for it in top5_vg]
+    assert not any("Getafe" in e and "+0.5" in e for e in etiquetas_top5), f"Prohibido Getafe +0.5 Goles en Top 5: {etiquetas_top5}"
+    assert not any("1T" in e and "+0.5" in e for e in etiquetas_top5), f"Prohibido 1T +0.5 Goles ante bloque bajo: {etiquetas_top5}"
+    assert any("Goles 2T: +0.5 Goles" in e for e in etiquetas_top5), f"Debe reemplazar 1T +0.5 por Goles 2T: +0.5 Goles: {etiquetas_top5}"
+    assert not any("+10.5 Córn" in e for e in etiquetas_top5), f"Prohibido +10.5 Córneres en Top 5: {etiquetas_top5}"
+
+    # Puntos 26 y 27: Eliminación de badges duplicados en Sección 1 ("Al menos un gol en el 1T" == "+0.5 Goles (1T)")
+    # y sincronización de HÁNDICAP / 1X2 / DC con el Puesto #1 del Top 5
+    sels_sec1_dup = [
+        {"mercado": "Total de goles", "evento": "over_0.5", "etiqueta": "más de 0.5 goles", "periodo": "1T", "linea": 0.5, "probabilidad": 0.85, "estado": "mantiene"},
+        {"mercado": "Gol en ambos tiempos", "evento": "gol_1t", "etiqueta": "Al menos un gol en el 1T", "periodo": "1T", "probabilidad": 0.85, "estado": "mantiene"},
+    ]
+    sec1_org = _organizar_sec1_para_cuadro(None, sels_sec1_dup, "Real Sociedad", "Rayo Vallecano", top5_podio=top5_vg)
+    cat_goles = [c for c in sec1_org if c["categoria"] == "GOLES PARTIDO"][0]
+    assert len(cat_goles["pildoras"]) == 1 and cat_goles["pildoras"][0]["lbl"] == "+0.5 Goles (1T)", f"Duplicado en 1T no eliminado: {cat_goles['pildoras']}"
+    cat_dc = [c for c in sec1_org if c["categoria"] == "HÁNDICAP / 1X2 / DC"][0]
+    assert cat_dc["pildoras"][0]["lbl"] != "Sin líneas validadas >= 70%", f"Fila HÁNDICAP/1X2/DC desincronizada con Top 5: {cat_dc}"
+
+    # Punto 28: Empate técnico en Patrón #01 cuando abs(P01_L - P01_V) < 0.015
+    d_p01_l = {"xg": 1.21, "remates_totales": 11.0, "xgot": 1.21}
+    d_p01_v = {"xg": 1.20, "remates_totales": 11.0, "xgot": 1.20}
+    P1_L, P1_V = calcular_patrones_completos_partido(d_p01_l, d_p01_v)
+    _, _, _, al_p01 = aplicar_reglas_matchup_55(P1_L, P1_V, 0.45, 0.30, 0.25, "Real Sociedad", "Rayo Vallecano")
+    txt_al01 = [a for a in al_p01 if "Patrón #01" in a][0]
+    assert "Paridad en calidad de tiro por remate" in txt_al01, f"Falta empate técnico en Patrón #01: {txt_al01}"
+
+    # Punto 29: Parser Cuadro B sin tildes ni colisiones en clubes que llevan "Real"
+    assert _es_mismo_equipo("Atlético de Madrid", "Atletico") is True
+    assert _es_mismo_equipo("FC Barcelona", "Barça") is True
+    assert _es_mismo_equipo("Deportivo Alavés", "Deportivo A") is True
+    assert _es_mismo_equipo("Real Sociedad", "Real Betis") is False
+    assert _es_mismo_equipo("Real Sociedad", "Real Socied") is True
+
+
 if __name__ == "__main__":
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -321,4 +462,5 @@ if __name__ == "__main__":
     test_sevilla_alaves_cuadro_b_hibrido()
     test_especificacion_20_puntos_produccion()
     test_contexto_avanzado_y_5_ajustes_finos()
-    print("OK: todos los tests de los 20 puntos y los 5 ajustes finos superados en verde.")
+    test_5_escenarios_laliga_puntos_21_30()
+    print("OK: todos los tests de los 30 puntos y los 5 escenarios de LaLiga superados en verde.")

@@ -1552,33 +1552,50 @@ class MotorMercados:
             lam_l_nuevo = lam_l_red * mult_sinc_l
             lam_v_nuevo = lam_v_red * mult_sinc_v
 
-            # Ajuste b) "Freno de Mano" / Techo de Lambda para Equipos en Crisis (Valencia y Osasuna):
-            # - Caso Crítico (ej. Valencia Attack < 20 y en crisis): lam_red <= 0.60
-            # - Caso Moderado (ej. Osasuna/Forest en crisis o Attack < 35): lam_red <= 1.10
-            r_l_0_100 = (perfil_l_gen.get("ratings_0_100") or {}) if isinstance(perfil_l_gen, dict) else {}
-            r_v_0_100 = (perfil_v_gen.get("ratings_0_100") or {}) if isinstance(perfil_v_gen, dict) else {}
-            atk_l = float(r_l_0_100.get("Final_Attack_Strength", 50.0) or 50.0)
-            atk_v = float(r_v_0_100.get("Final_Attack_Strength", 50.0) or 50.0)
+            # ── Puntos 21 y 22: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio y Fortín Local ──
+            from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
+            r_l_0_100 = (perfil_l_gen.get("ratings_0_100") or resultado.get("ratings_local") or {}) if isinstance(perfil_l_gen, dict) else (resultado.get("ratings_local") or {})
+            r_v_0_100 = (perfil_v_gen.get("ratings_0_100") or resultado.get("ratings_visita") or {}) if isinstance(perfil_v_gen, dict) else (resultado.get("ratings_visita") or {})
             crisis_l = bool(racha_l.get("en_crisis", False))
             crisis_v = bool(racha_v.get("en_crisis", False))
             g_ult5_l = float(racha_l.get("goles_ult5_prom", 1.2) or 1.2)
             g_ult5_v = float(racha_v.get("goles_ult5_prom", 1.2) or 1.2)
+            pos_proy_v = 100.0 - pos_proy_l
 
-            if atk_l < 20.0 and (crisis_l or g_ult5_l < 0.50):
-                lam_l_nuevo = min(lam_l_nuevo, 0.60)
-            elif crisis_l or atk_l < 35.0:
-                lam_l_nuevo = min(lam_l_nuevo, 1.10)
-
-            if atk_v < 20.0 and (crisis_v or g_ult5_v < 0.50):
-                lam_v_nuevo = min(lam_v_nuevo, 0.60)
-            elif crisis_v or atk_v < 35.0:
-                lam_v_nuevo = min(lam_v_nuevo, 1.10)
+            lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
+                lam_base_local=float(lam_l),
+                lam_base_visita=float(lam_v),
+                lam_red_local=lam_l_nuevo,
+                lam_red_visita=lam_v_nuevo,
+                ratings_local=r_l_0_100,
+                ratings_visita=r_v_0_100,
+                posesion_proyectada_local=pos_proy_l,
+                posesion_proyectada_visita=pos_proy_v,
+                en_crisis_local=crisis_l,
+                en_crisis_visita=crisis_v,
+                goles_ult5_local=g_ult5_l,
+                goles_ult5_visita=g_ult5_v,
+            )
 
             if abs(lam_l_nuevo - lam_l_red) > 0.01 or abs(lam_v_nuevo - lam_v_red) > 0.01:
                 lam_l_red = round(max(0.25, min(4.20, lam_l_nuevo)), 2)
                 lam_v_red = round(max(0.25, min(4.20, lam_v_nuevo)), 2)
                 resultado["lambda_local_recursivo"] = lam_l_red
                 resultado["lambda_visita_recursivo"] = lam_v_red
+                try:
+                    from motor_recursivo_45_dcn import reescalar_factores_a_delta
+                    ct = resultado.get("cruces_tacticos")
+                    if isinstance(ct, dict):
+                        fl_old = ct.get("factores_local") or {}
+                        fv_old = ct.get("factores_visita") or {}
+                        if fl_old:
+                            fl_new = reescalar_factores_a_delta(fl_old, delta_pct_l_21, fijos=("F_posesion_progresiva",))
+                            ct["factores_local"] = fl_new
+                        if fv_old:
+                            fv_new = reescalar_factores_a_delta(fv_old, delta_pct_v_21, fijos=("F_posesion_progresiva",))
+                            ct["factores_visita"] = fv_new
+                except Exception:
+                    pass
                 # Re-ponderar matriz conjunta con las nuevas marginales Poisson y normalizar a 1.0000
                 import numpy as _np
                 M_arr = _np.asarray(mat_base_red, dtype=float)
@@ -2235,10 +2252,13 @@ class MotorMercados:
                 # Duelo parejo cerrado en 1T con equipo de alto volumen de centros -> +8% por asedio
                 factor_bloqueo *= 1.08
 
-            # Ajuste a) Regla de Córneres vs. Volumen de Remates (Valencia 0-3 Real Madrid):
-            # Si un equipo promedia remates_totales > 15.0 (finaliza jugadas por dentro en vez de forzar córneres),
+            # Ajuste a) y Punto 24a: Regla de Córneres vs. Volumen de Remates y "Embudo Interior":
+            # Si remates_totales > 15.0 O (remates_area_local + remates_area_visita) > 15.0 O P11_Peligro_Area_vs_Fuera > 2.6,
             # multiplicar su proyección de córneres por 0.80.
-            if rem_tot > 15.0:
+            rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
+            rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
+            p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
+            if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
                 factor_bloqueo *= 0.80
 
             base = base * factor_bloqueo
@@ -3817,6 +3837,217 @@ def seleccionar_top_5_jugadas_recomendadas(
     p_u15_1t_val = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
     patron_diesel_1t = es_diesel and (lam_1t_comb < 1.25) and (p_u15_1t_val >= 68.0)
 
+    # ── Puntos 21c, 23, 24b y 25: Gatekeeper Avanzado (Doble Freno, Candado 1T -> 2T, Córneres Top 5 y Triple Convergencia) ──
+    pat_l_top = rec.get("patrones_55_local") or {}
+    pat_v_top = rec.get("patrones_55_visita") or {}
+    r_l_top = (rec.get("ratings_local") or {}) if isinstance(rec.get("ratings_local"), dict) else {}
+    r_v_top = (rec.get("ratings_visita") or {}) if isinstance(rec.get("ratings_visita"), dict) else {}
+    atk_l_top = float(r_l_top.get("Final_Attack_Strength", r_l_top.get("attack", 50.0)) or 50.0)
+    atk_v_top = float(r_v_top.get("Final_Attack_Strength", r_v_top.get("attack", 50.0)) or 50.0)
+    if atk_l_top == 50.0 and getattr(motor, "doc_local", None):
+        atk_l_top = float(((motor.doc_local.get("perfil") or {}).get("ratings_0_100") or {}).get("Final_Attack_Strength", 50.0) or 50.0)
+    if atk_v_top == 50.0 and getattr(motor, "doc_visitante", None):
+        atk_v_top = float(((motor.doc_visitante.get("perfil") or {}).get("ratings_0_100") or {}).get("Final_Attack_Strength", 50.0) or 50.0)
+
+    pos_l_raw_t = float(mu_l.get("posesion_pct", pat_l_top.get("posesion_pct", 50.0)) or 50.0)
+    pos_v_raw_t = float(mu_v.get("posesion_pct", pat_v_top.get("posesion_pct", 50.0)) or 50.0)
+    pos_sum_t = max(1.0, pos_l_raw_t + pos_v_raw_t)
+    pos_proy_l_t = (pos_l_raw_t / pos_sum_t) * 100.0
+    pos_proy_v_t = (pos_v_raw_t / pos_sum_t) * 100.0
+
+    # Punto 21c: Prohibido recomendar "[Equipo] +0.5 Goles" si posesion_proyectada < 43.0% O attack_rating < 34.0 O lam_red < 0.95
+    prohibir_over05_local = (pos_proy_l_t < 43.0 or atk_l_top < 34.0 or lam_l < 0.95)
+    prohibir_over05_visita = (pos_proy_v_t < 43.0 or atk_v_top < 34.0 or lam_v < 0.95)
+
+    def _es_equipo_over_05(s: Any, bando_check: str) -> bool:
+        ev_s = str(_v(s, "evento") or "").lower()
+        et_s = str(_v(s, "etiqueta") or "").lower()
+        eq_s = str(_v(s, "equipo") or "").strip().lower()
+        lin_s = _v(s, "linea", None)
+        nom_eq = (eq_l if bando_check == "local" else eq_v).strip().lower()
+        es_bando = (
+            ev_s.startswith(f"{bando_check}_")
+            or (eq_s and (eq_s == nom_eq or eq_s in nom_eq or nom_eq in eq_s))
+        )
+        if not es_bando:
+            return False
+        if ("over_0.5" in ev_s) or ("al_menos_1" in ev_s):
+            return True
+        if lin_s is not None and abs(float(lin_s) - 0.5) < 1e-6 and ("over" in ev_s or "mas" in et_s or "más" in et_s):
+            return True
+        if lin_s is not None and abs(float(lin_s) - 1.0) < 1e-6 and ("al_menos" in ev_s or "al menos" in et_s):
+            return True
+        return False
+
+    if prohibir_over05_local:
+        candidatas = [s for s in candidatas if not _es_equipo_over_05(s, "local")]
+    if prohibir_over05_visita:
+        candidatas = [s for s in candidatas if not _es_equipo_over_05(s, "visitante")]
+
+    # Cuadro B y Cuadro C para Triple Check (Punto 25) y Candado 1T -> 2T (Punto 23)
+    cb_l_top: dict[str, Any] = {}
+    cb_v_top: dict[str, Any] = {}
+    cc_l_top: dict[str, Any] = {}
+    cc_v_top: dict[str, Any] = {}
+    try:
+        from motor_inferencia import calcular_cuadro_b_tendencias, calcular_cuadro_c_timeline
+        pts_l_b = (getattr(motor, "doc_local", None) or {}).get("partidos") or []
+        pts_v_b = (getattr(motor, "doc_visitante", None) or {}).get("partidos") or []
+        cb_l_top = getattr(motor, "cuadro_b_local", None) or rec.get("cuadro_b_local") or calcular_cuadro_b_tendencias(pts_l_b, eq_l, pat_l_top or mu_l)
+        cb_v_top = getattr(motor, "cuadro_b_visita", None) or rec.get("cuadro_b_visita") or calcular_cuadro_b_tendencias(pts_v_b, eq_v, pat_v_top or mu_v)
+        cc_l_top = getattr(motor, "cuadro_c_local", None) or rec.get("cuadro_c_local") or calcular_cuadro_c_timeline(pts_l_b, eq_l, pat_l_top or mu_l)
+        cc_v_top = getattr(motor, "cuadro_c_visita", None) or rec.get("cuadro_c_visita") or calcular_cuadro_c_timeline(pts_v_b, eq_v, pat_v_top or mu_v)
+    except Exception:
+        pass
+
+    def _prop_goles_2t_cc(cc_d: dict[str, Any]) -> float:
+        if not isinstance(cc_d, dict):
+            return 0.54
+        g1 = 0
+        g2 = 0
+        for fr in ("00_15", "16_30", "31_45", "00'-15'", "16'-30'", "31'-45'"):
+            if isinstance(cc_d.get(fr), dict):
+                g1 += int(cc_d[fr].get("anotados", 0))
+        for fr in ("46_60", "61_75", "76_90", "46'-60'", "61'-75'", "76'-90'"):
+            if isinstance(cc_d.get(fr), dict):
+                g2 += int(cc_d[fr].get("anotados", 0))
+        tot = g1 + g2
+        return (g2 / tot) if tot > 0 else 0.54
+
+    p26_l_t = float(pat_l_top.get("P26_Poder_Cierre_2T", 0.52) or 0.52)
+    p26_v_t = float(pat_v_top.get("P26_Poder_Cierre_2T", 0.52) or 0.52)
+    prom_p26 = (p26_l_t + p26_v_t) / 2.0
+    prop_2t_cc = (_prop_goles_2t_cc(cc_l_top) + _prop_goles_2t_cc(cc_v_top)) / 2.0
+    desp_l_t = float(mu_l.get("despejes", pat_l_top.get("despejes", 18.0)) or 18.0)
+    desp_v_t = float(mu_v.get("despejes", pat_v_top.get("despejes", 18.0)) or 18.0)
+
+    hay_bloque_bajo_23 = (
+        pos_proy_l_t < 44.0 or pos_proy_v_t < 44.0
+        or desp_l_t >= 20.0 or desp_v_t >= 20.0
+        or atk_l_top < 35.0 or atk_v_top < 35.0
+    )
+    permitir_1t_over_05 = (max(atk_l_top, atk_v_top) >= 70.0 and lam_1t_comb >= 1.45) and not hay_bloque_bajo_23
+    prohibir_1t_over_05 = (
+        not permitir_1t_over_05
+        or prom_p26 >= 0.51
+        or prop_2t_cc > 0.55
+        or hay_bloque_bajo_23
+    )
+
+    def _es_1t_over_05(s: Any) -> bool:
+        ev_s = str(_v(s, "evento") or "").lower()
+        et_s = str(_v(s, "etiqueta") or "").lower()
+        per_s = str(_v(s, "periodo") or "FT").strip().upper()
+        lin_s = _v(s, "linea", None)
+        eq_s = _v(s, "equipo", None)
+        if eq_s and str(eq_s).strip() not in ("None", "Total", "null", ""):
+            return False
+        if ev_s == "gol_1t" or "al menos un gol en el 1t" in et_s:
+            return True
+        if per_s == "1T":
+            if lin_s is not None and abs(float(lin_s) - 0.5) < 1e-6 and ("over" in ev_s or "mas" in et_s or "más" in et_s):
+                return True
+            if lin_s is not None and abs(float(lin_s) - 1.0) < 1e-6 and ("al_menos" in ev_s or "al menos" in et_s):
+                return True
+        return False
+
+    if prohibir_1t_over_05:
+        tiene_1t = any(_es_1t_over_05(s) for s in candidatas)
+        candidatas = [s for s in candidatas if not _es_1t_over_05(s)]
+        # Si no había una selección 2T +0.5 en candidatas, inyectarla con probabilidad Poisson 2T real
+        tiene_2t_05 = any(
+            str(_v(s, "periodo") or "").upper() == "2T"
+            and (
+                str(_v(s, "evento") or "").lower() in ("gol_2t", "over_0.5", "al_menos_1")
+                or (_v(s, "linea") is not None and abs(float(_v(s, "linea")) - 0.5) < 1e-6 and "over" in str(_v(s, "evento") or "").lower())
+            )
+            for s in candidatas
+        )
+        if not tiene_2t_05 and (tiene_1t or prom_p26 >= 0.51):
+            lam_2t_c = ((t2_l or 0.65) + (t2_v or 0.55)) if (t2_l is not None) else max(0.85, 0.56 * (lam_l + lam_v))
+            p_2t_05 = round(min(0.88, max(0.72, 1.0 - math.exp(-lam_2t_c))), 4)
+            candidatas.append({
+                "id_mercado": "total_goles",
+                "mercado": "Total de goles",
+                "evento": "over_0.5",
+                "etiqueta": "más de 0.5 goles",
+                "periodo": "2T",
+                "equipo": None,
+                "linea": 0.5,
+                "probabilidad": p_2t_05,
+                "estado": "mantiene",
+            })
+
+    # Punto 23c: Alerta de Posesión Estéril vs. Portero Figura (Caso Celta 0-0 Levante)
+    p01_l_t = float(pat_l_top.get("P01_xG_por_Remate", 0.12) or 0.12)
+    p01_v_t = float(pat_v_top.get("P01_xG_por_Remate", 0.12) or 0.12)
+    p06_l_t = float(pat_l_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
+    p06_v_t = float(pat_v_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
+    p14_l_t = float(pat_l_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
+    p14_v_t = float(pat_v_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
+    posesion_esteril_vs_portero = (
+        ((p01_l_t < 0.11 or p06_l_t >= 0.55) and p14_v_t >= 0.70)
+        or ((p01_v_t < 0.11 or p06_v_t >= 0.55) and p14_l_t >= 0.70)
+    )
+    if posesion_esteril_vs_portero:
+        def _es_over_ft_15_25(s: Any) -> bool:
+            ev_s = str(_v(s, "evento") or "").lower()
+            et_s = str(_v(s, "etiqueta") or "").lower()
+            per_s = str(_v(s, "periodo") or "FT").strip().upper()
+            lin_s = _v(s, "linea", None)
+            eq_s = _v(s, "equipo", None)
+            if per_s != "FT" or (eq_s and str(eq_s).strip() not in ("None", "Total", "null", "")):
+                return False
+            es_ov = ("over" in ev_s or "mas" in et_s or "más" in et_s or "al_menos" in ev_s)
+            if not es_ov or lin_s is None:
+                return False
+            lf = float(lin_s) - 0.5 if "al_menos" in ev_s else float(lin_s)
+            return lf in (1.5, 2.5)
+        candidatas = [s for s in candidatas if not _es_over_ft_15_25(s)]
+
+    # Punto 24b: Prohibido recomendar +10.5 o +11.5 Córneres en el Top 5
+    def _es_over_corners_excesivo(s: Any) -> bool:
+        m_s = str(_v(s, "mercado") or "").lower()
+        ev_s = str(_v(s, "evento") or "").lower()
+        et_s = str(_v(s, "etiqueta") or "").lower()
+        lin_s = _v(s, "linea", None)
+        es_c = any(k in m_s for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev_s
+        es_ov = ("over" in ev_s or "mas" in et_s or "más" in et_s)
+        return bool(es_c and es_ov and lin_s is not None and float(lin_s) >= 10.5)
+
+    candidatas = [s for s in candidatas if not _es_over_corners_excesivo(s)]
+
+    # Punto 25: Triple Check de Convergencia (Descartar contradicción frontal con Cuadro B)
+    def _cnt_cb(cb_d: dict[str, Any], k: str, default: int = 8) -> int:
+        if not isinstance(cb_d, dict) or not cb_d:
+            return default
+        v = cb_d.get(k)
+        if isinstance(v, dict):
+            return int(v.get("conteo", v.get("cumple", default)))
+        if isinstance(v, (int, float)):
+            return int(v)
+        return default
+
+    c_m25_l = _cnt_cb(cb_l_top, "mas_2_5_goles", 8)
+    c_m25_v = _cnt_cb(cb_v_top, "mas_2_5_goles", 8)
+    c_btts_l = _cnt_cb(cb_l_top, "btts", 8)
+    c_btts_v = _cnt_cb(cb_v_top, "btts", 8)
+    if c_m25_l <= 5 and c_m25_v <= 5:
+        candidatas = [
+            s for s in candidatas
+            if not (
+                str(_v(s, "periodo") or "FT").upper() == "FT"
+                and _v(s, "linea") is not None
+                and float(_v(s, "linea")) >= 2.5
+                and ("over" in str(_v(s, "evento") or "").lower() or "al_menos_3" in str(_v(s, "evento") or "").lower())
+            )
+        ]
+    if c_btts_l <= 5 and c_btts_v <= 5:
+        candidatas = [
+            s for s in candidatas
+            if "btts_si" not in str(_v(s, "evento") or "").lower()
+        ]
+
     def _slot_seleccion(s: Any) -> int:
         m_l = str(_v(s, "mercado") or "").lower()
         ev = str(_v(s, "evento") or "").lower()
@@ -3890,6 +4121,10 @@ def seleccionar_top_5_jugadas_recomendadas(
             if eq:
                 signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev) else "-"
                 return f"Goles {eq} ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles {eq} ({per}): {et}"
+            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
+                return "Goles 1T: +0.5 Goles"
+            if ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
+                return "Goles 2T: +0.5 Goles"
             signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
             return f"Goles {per}: {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
         # Slot 2: Goles Totales FT
@@ -4000,11 +4235,37 @@ def seleccionar_top_5_jugadas_recomendadas(
             return -5.0
 
         # Punto 12: Coherencia entre Marcador Exacto (1-0, 0-1, 0-0) y Jugada Principal
-        if es_duelo_cerrado:
+        if es_duelo_cerrado or posesion_esteril_vs_portero:
             if sl == 2 and per == "FT" and lin is not None and float(lin) in (2.5, 3.5) and ("under" in ev or "menos" in str(_v(s, "etiqueta", "")).lower()):
                 est_bonus += 0.65
             if sl == 1 and (ev in ("1x", "x2", "dc_1x", "dc_x2") or ev.endswith("_1x") or ev.endswith("_x2")):
                 est_bonus += 0.55
+
+        # Punto 23b: Si está prohibido 1T +0.5, impulsar Goles 2T: +0.5 Goles o [Equipo] -1.5/-2.5 Goles (FT) en Slot 3
+        if prohibir_1t_over_05 and sl == 3:
+            if per == "2T" and (ev == "gol_2t" or (lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower()))):
+                est_bonus += 1.25
+            elif per == "FT" and _v(s, "equipo") and lin is not None and float(lin) in (1.5, 2.5) and ("under" in ev or "menos" in str(_v(s, "etiqueta", "")).lower()):
+                est_bonus += 0.90
+
+        # Punto 25: Triple Check de Convergencia (Red Neuronal + Cuadro B + Cuadro C): +5.0 puntos de prioridad
+        if p >= 0.72:
+            n_tot_l = max(1, int(cb_l_top.get("n_partidos", 15) or 15))
+            n_tot_v = max(1, int(cb_v_top.get("n_partidos", 15) or 15))
+            if sl == 1 and (ev in ("1x", "dc_1x") or ev.endswith("_1x")):
+                if (_cnt_cb(cb_l_top, "sin_derrotas", 9) / n_tot_l) >= 0.60:
+                    est_bonus += 5.0
+            elif sl == 1 and (ev in ("x2", "dc_x2") or ev.endswith("_x2")):
+                if (_cnt_cb(cb_v_top, "sin_derrotas", 9) / n_tot_v) >= 0.60:
+                    est_bonus += 5.0
+            elif sl == 5 and "tarjeta" in ev and lin is not None and float(lin) == 4.5 and "under" in ev:
+                if (((_cnt_cb(cb_l_top, "menos_4_5_tarjetas", 9) / n_tot_l) + (_cnt_cb(cb_v_top, "menos_4_5_tarjetas", 9) / n_tot_v)) / 2.0) >= 0.60:
+                    est_bonus += 5.0
+            elif sl == 2 and lin is not None and float(lin) == 2.5 and "over" in ev:
+                if (((_cnt_cb(cb_l_top, "mas_2_5_goles", 8) / n_tot_l) + (_cnt_cb(cb_v_top, "mas_2_5_goles", 8) / n_tot_v)) / 2.0) >= 0.60:
+                    est_bonus += 5.0
+            elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and prom_p26 >= 0.52:
+                est_bonus += 5.0
 
         # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad
         if sl == 1:

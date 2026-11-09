@@ -1098,6 +1098,7 @@ def _organizar_sec1_para_cuadro(
     eq_L: str,
     eq_V: str,
     matriz_prob: list[list[float]] | None = None,
+    top5_podio: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
     Organiza las selecciones >= 70% en las 5 categorías completas:
@@ -1217,7 +1218,11 @@ def _organizar_sec1_para_cuadro(
             if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
                 return "", "", 0.0
             suf_p = f" ({per_s})" if per_s in ("1T", "2T") else ""
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
+                lbl = "+0.5 Goles (1T)"
+            elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
+                lbl = "+0.5 Goles (2T)"
+            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
                 lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
             elif "under_" in ev or "menos de" in et.lower():
                 lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
@@ -1294,6 +1299,30 @@ def _organizar_sec1_para_cuadro(
             continue
         pill = {"lbl": lbl, "pct": pct, "prob": prob}
         agrupado.setdefault(cat, {}).setdefault(amb, []).append(pill)
+
+    # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
+    if not agrupado.get("HÁNDICAP / 1X2 / DC") and top5_podio:
+        for item_t5 in top5_podio:
+            if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+                et_t5 = str(item_t5.get("etiqueta") or "")
+                prob_t5 = float(item_t5.get("probabilidad", 0.72))
+                ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_L.lower() in et_t5.lower() else "2"))
+                sel_sinc = {
+                    "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
+                    "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
+                    "evento": ev_t5,
+                    "etiqueta": et_t5,
+                    "periodo": "FT",
+                    "equipo": eq_L if ev_t5 in ("1", "1x") else eq_V,
+                    "linea": None,
+                    "probabilidad": prob_t5,
+                    "estado": "mantiene",
+                }
+                cat_s, amb_s = _clasificar(sel_sinc)
+                lbl_s, pct_s, prob_s = _fmt_pill(sel_sinc, cat_s)
+                if lbl_s:
+                    agrupado.setdefault("HÁNDICAP / 1X2 / DC", {}).setdefault(amb_s, []).append({"lbl": lbl_s, "pct": pct_s, "prob": prob_s})
+                break
 
     res = []
     for cat in orden_cats:
@@ -1432,11 +1461,22 @@ def _construir_4_alertas_motor_55(
         )
 
         p01_l, p01_v = float(P_L.get("P01_xG_por_Remate", 0.12)), float(P_V.get("P01_xG_por_Remate", 0.12))
+        p03_l, p03_v = float(P_L.get("P03_Calidad_xGOT_vs_xG", 1.0)), float(P_V.get("P03_Calidad_xGOT_vs_xG", 1.0))
         p13_l, p13_v = float(P_L.get("P13_Portero_Goles_Evitados", 0.0)), float(P_V.get("P13_Portero_Goles_Evitados", 0.0))
         p26_l, p26_v = float(P_L.get("P26_Poder_Cierre_2T", 0.50)), float(P_V.get("P26_Poder_Cierre_2T", 0.50))
         p39_l, p39_v = float(P_L.get("P39_Estilo_Directo", 0.45)), float(P_V.get("P39_Estilo_Directo", 0.45))
 
-        dom_01 = eq_L if p01_l >= p01_v else eq_V
+        # Punto 28: Empate Técnico en el Texto del Patrón #01 (Calidad de Tiro)
+        if abs(p01_l - p01_v) < 0.015:
+            if abs(p03_l - p03_v) >= 0.05:
+                dom_01 = eq_L if p03_l > p03_v else eq_V
+                det_01 = f"{eq_L}: {p01_l:.2f} xG/tiro vs {eq_V}: {p01_v:.2f} xG/tiro  ·  Desempate por xGOT/xG: {dom_01} ({max(p03_l, p03_v):.2f})"
+            else:
+                det_01 = f"{eq_L}: {p01_l:.2f} xG/tiro vs {eq_V}: {p01_v:.2f} xG/tiro  ·  Paridad en calidad de tiro por remate"
+        else:
+            dom_01 = eq_L if p01_l > p01_v else eq_V
+            det_01 = f"{eq_L}: {p01_l:.2f} xG/tiro vs {eq_V}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}"
+
         dom_13 = eq_L if p13_l >= p13_v else eq_V
         dom_39 = eq_L if p39_l >= p39_v else eq_V
 
@@ -1450,7 +1490,7 @@ def _construir_4_alertas_motor_55(
             {
                 "codigo": "Patrón #01",
                 "titulo": "Calidad de Tiro (xG por Remate = xG / Remates Totales)",
-                "detalle": f"{eq_L}: {p01_l:.2f} xG/tiro vs {eq_V}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}",
+                "detalle": det_01,
             },
             {
                 "codigo": "Patrón #13",
@@ -2057,7 +2097,7 @@ def generar_cuadro_visual_partido(
     ax_sec1.axis("off")
 
     # Extraer y organizar selecciones >= 70%
-    sec1_organizada = _organizar_sec1_para_cuadro(analisis, sec1_data, eq_L, eq_V, matriz_prob)
+    sec1_organizada = _organizar_sec1_para_cuadro(analisis, sec1_data, eq_L, eq_V, matriz_prob, top5_podio=top5_podio_calc)
     total_validadas_cnt = sum(
         len(c["pildoras"]) for c in sec1_organizada
         if c.get("pildoras") and c["pildoras"][0]["pct"] != "-"

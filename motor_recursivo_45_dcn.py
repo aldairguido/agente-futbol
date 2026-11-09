@@ -2042,6 +2042,57 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             break
         entropia_previa = entropia_k
 
+    # ── Puntos 21 y 22: Doble Freno de Mano, Techo de Caja Azul y Multiplicadores de Matchup ──
+    try:
+        from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
+        pos_l_raw_m = float(mu_L_casa.get("posesion_pct", mL.get("posesion_pct", 50.0)) or 50.0)
+        pos_v_raw_m = float(mu_V_fuera.get("posesion_pct", mV.get("posesion_pct", 50.0)) or 50.0)
+        pos_sum_m = max(1.0, pos_l_raw_m + pos_v_raw_m)
+        pos_proy_l_m = (pos_l_raw_m / pos_sum_m) * 100.0
+        pos_proy_v_m = (pos_v_raw_m / pos_sum_m) * 100.0
+        lam_21_l, lam_21_v, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+            lam_base_local=lam_base_local,
+            lam_base_visita=lam_base_visita,
+            lam_red_local=lam_k_L,
+            lam_red_visita=lam_k_V,
+            ratings_local=rL,
+            ratings_visita=rV,
+            posesion_proyectada_local=pos_proy_l_m,
+            posesion_proyectada_visita=pos_proy_v_m,
+        )
+        if abs(lam_21_l - lam_k_L) > 0.01 or abs(lam_21_v - lam_k_V) > 0.01:
+            lam_k_L = lam_21_l
+            lam_k_V = lam_21_v
+            p0_base_L = math.exp(-lam_k_L)
+            p0_base_V = math.exp(-lam_k_V)
+            p0_L = clip((1.0 - peso_seq_L) * p0_base_L + peso_seq_L * max(p0_base_L, tasa_sequia_L), 0.02, 0.68)
+            p0_V = clip((1.0 - peso_seq_V) * p0_base_V + peso_seq_V * max(p0_base_V, tasa_sequia_V), 0.02, 0.68)
+            if cerrojo_L_activo:
+                p0_L = clip(p0_L + bonus_cerrojo_L, 0.02, 0.75)
+            if cerrojo_V_activo:
+                p0_V = clip(p0_V + bonus_cerrojo_V, 0.02, 0.75)
+            m_L = marginal_recursiva(lam_k_L, p0_L, vent_L, tasa_explosion_3mas_L, delta_cerrojo=bonus_cerrojo_L if cerrojo_L_activo else 0.0)
+            m_V = marginal_recursiva(lam_k_V, p0_V, vent_V, tasa_explosion_3mas_V, delta_cerrojo=bonus_cerrojo_V if cerrojo_V_activo else 0.0)
+            asimetria = abs(lam_k_L - lam_k_V) + abs(brecha_overall) * 2.2
+            rho_k = clip(0.06 * (asimetria - 0.25), 0.01, 0.09) if asimetria >= 0.32 else -0.03
+            for i in range(max_goles + 1):
+                for j in range(max_goles + 1):
+                    p_ij = m_L[i] * m_V[j]
+                    if i == 0 and j == 0:
+                        tau = max(0.2, 1.0 - lam_k_L * lam_k_V * rho_k)
+                    elif i == 0 and j == 1:
+                        tau = max(0.2, 1.0 + lam_k_L * rho_k)
+                    elif i == 1 and j == 0:
+                        tau = max(0.2, 1.0 + lam_k_V * rho_k)
+                    elif i == 1 and j == 1:
+                        tau = max(0.2, 1.0 - rho_k)
+                    else:
+                        tau = 1.0
+                    matriz_actual[i, j] = max(0.0, p_ij * tau)
+            matriz_actual /= np.sum(matriz_actual)
+    except Exception:
+        pass
+
     # Simulación de Monte Carlo de 100,000 iteraciones sobre el grafo convergente
     rng = np.random.default_rng(seed=42)
     flat_p = matriz_actual.ravel()
