@@ -1027,8 +1027,49 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "america de cali": ["América de Cali", "America de Cali"],
     "junior": ["Junior FC", "Junior", "Atlético Junior"],
     "junior fc": ["Junior FC", "Junior"],
+    "junior barranquilla": ["Junior FC", "Junior"],
     "junior de barranquilla": ["Junior FC", "Junior"],
     "atletico junior": ["Junior FC", "Junior"],
+    "cucuta": ["Cúcuta Deportivo", "Cucuta Deportivo", "Cúcuta"],
+    "cucuta deportivo": ["Cúcuta Deportivo", "Cucuta Deportivo", "Cúcuta"],
+    "once caldas": ["Once Caldas"],
+    "deportivo cali": ["Deportivo Cali"],
+    "cali": ["Deportivo Cali"],
+    "independiente medellin": ["Independiente Medellín", "DIM"],
+    "medellin": ["Independiente Medellín", "DIM"],
+    "dim": ["Independiente Medellín", "DIM"],
+    "santa fe": ["Independiente Santa Fe", "Santa Fe"],
+    "independiente santa fe": ["Independiente Santa Fe", "Santa Fe"],
+    "tolima": ["Deportes Tolima", "Tolima"],
+    "deportes tolima": ["Deportes Tolima", "Tolima"],
+    "bucaramanga": ["Atlético Bucaramanga", "Bucaramanga"],
+    "atletico bucaramanga": ["Atlético Bucaramanga", "Bucaramanga"],
+    "pereira": ["Deportivo Pereira", "Pereira"],
+    "deportivo pereira": ["Deportivo Pereira", "Pereira"],
+    "la equidad": ["La Equidad", "Equidad"],
+    "equidad": ["La Equidad", "Equidad"],
+    "aguilas doradas": ["Águilas Doradas", "Aguilas Doradas"],
+    "envigado": ["Envigado FC", "Envigado"],
+    "deportivo pasto": ["Deportivo Pasto", "Pasto"],
+    "pasto": ["Deportivo Pasto", "Pasto"],
+    "patriotas": ["Patriotas Boyacá", "Patriotas"],
+    "boyaca chico": ["Boyacá Chicó", "Boyaca Chico"],
+    "fortaleza ceif": ["Fortaleza CEIF", "Fortaleza FC"],
+    "alianza fc": ["Alianza FC"],
+    "llaneros": ["Llaneros FC", "Llaneros"],
+    "real cartagena": ["Real Cartagena"],
+    "quindio": ["Deportes Quindío", "Quindío"],
+    "huila": ["Atlético Huila", "Huila"],
+    "gazalkent": ["FK Gazalkent", "Gazalkent"],
+    "fk gazalkent": ["FK Gazalkent", "Gazalkent"],
+    "respublika fa": ["Respublika FA"],
+    "paxtakor": ["Pakhtakor Tashkent", "Pakhtakor"],
+    "pakhtakor": ["Pakhtakor Tashkent", "Pakhtakor"],
+    "nasaf": ["FC Nasaf", "Nasaf"],
+    "navbahor": ["Navbahor Namangan", "Navbahor"],
+    "agmk": ["FC AGMK", "AGMK"],
+    "sogdiana": ["Sogdiana Jizzakh", "Sogdiana"],
+    "bunyodkor": ["FC Bunyodkor", "Bunyodkor"],
     "independiente del valle": ["Independiente del Valle"],
     "idv": ["Independiente del Valle"],
     "ldu quito": ["LDU de Quito", "LDU Quito", "Liga de Quito"],
@@ -1532,6 +1573,7 @@ _MAPA_CCODE_PAIS: dict[str, str] = {
     "par": "paraguay", "pry": "paraguay", "paraguay": "paraguay",
     "bol": "bolivia", "bolivia": "bolivia",
     "ven": "venezuela", "venezuela": "venezuela",
+    "uzb": "uzbekistan", "uzbekistan": "uzbekistan",
     "int": "internacional",
 }
 
@@ -1911,7 +1953,8 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             ids_esperados.append(str(r_liga_id))
 
         keywords_liga = [norm(k) for k in (rival_meta.get("keywords_liga") or []) if k]
-        r_lname = norm(rival_meta.get("liga") or rival_meta.get("leagueName") or rival_meta.get("primaryLeagueName"))
+        r_lname_raw = rival_meta.get("liga") or rival_meta.get("leagueName") or rival_meta.get("primaryLeagueName")
+        r_lname = norm(r_lname_raw) if str(r_lname_raw or "").strip().lower() not in ("", "desconocida", "oficial") else ""
         if r_lname and r_lname not in keywords_liga:
             keywords_liga.append(r_lname)
 
@@ -1921,10 +1964,13 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
         elif c_lname and any(k == c_lname or k in c_lname or c_lname in k for k in keywords_liga if k):
             bono_liga = 20 if es_forzada else 8
 
+        ccode_r = rival_meta.get("pais") or rival_meta.get("pais_iso") or rival_meta.get("ccode") or rival_meta.get("country")
+        if str(ccode_r or "").strip().upper() == "INT":
+            ccode_r = ""
         r_pais = _pais_de_liga(
-            rival_meta.get("liga") or rival_meta.get("leagueName") or rival_meta.get("primaryLeagueName"),
-            ccode=rival_meta.get("pais") or rival_meta.get("ccode") or rival_meta.get("country"),
-        ) or norm(rival_meta.get("pais") or "")
+            r_lname_raw if r_lname else None,
+            ccode=ccode_r,
+        ) or (norm(rival_meta.get("pais") or "") if norm(rival_meta.get("pais") or "") != "int" else "")
         c_pais = _pais_de_liga(
             candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
             ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),

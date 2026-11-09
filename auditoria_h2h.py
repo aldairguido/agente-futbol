@@ -252,13 +252,30 @@ def _auditoria_corresponde_a_consulta(
         return True, ""
 
     liga_pref, consulta_limpia = extraer_liga_de_texto(equipo_consulta or "")
-    meta_ctx: dict[str, Any] | None = None
+    meta_ctx: dict[str, Any] = {
+        "pais_iso": "INT",
+        "liga": "Desconocida",
+        "es_femenino": False,
+        "es_juvenil": False,
+    }
     if isinstance(rival, dict):
-        meta_ctx = dict(rival)
+        for k, v in rival.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
     elif isinstance(rival, str) and rival.strip():
-        meta_ctx = _inferir_meta_rival_desde_texto(rival)
+        inf_riv = _inferir_meta_rival_desde_texto(rival) or {}
+        for k, v in inf_riv.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
     if liga_pref:
-        meta_ctx = {**(meta_ctx or {}), **liga_pref}
+        for k, v in liga_pref.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
+    tiene_ctx_real = bool(
+        (meta_ctx.get("pais_iso") and meta_ctx.get("pais_iso") != "INT")
+        or (meta_ctx.get("liga") and meta_ctx.get("liga") != "Desconocida")
+        or meta_ctx.get("pais")
+    )
 
     cand_doc = {
         "id": eq_doc.get("id"),
@@ -267,7 +284,7 @@ def _auditoria_corresponde_a_consulta(
         "leagueId": eq_doc.get("id_liga"),
         "score": 100.0,
     }
-    pts = puntuar_candidato(cand_doc, consulta_limpia or equipo_consulta, rival_meta=meta_ctx)
+    pts = puntuar_candidato(cand_doc, consulta_limpia or equipo_consulta, rival_meta=meta_ctx if tiene_ctx_real else None)
     # pts[0] < 0 significa que es equipo femenino o filial no solicitado
     if pts[0] < 0:
         return False, f"el equipo en caché ({nombre_doc}) es filial/femenino no solicitado"
@@ -275,7 +292,7 @@ def _auditoria_corresponde_a_consulta(
     if pts[1] == 0:
         return False, f"el equipo en caché ({nombre_doc}) no coincide con «{consulta_limpia or equipo_consulta}»"
     # pts[4] < 0 con contexto de liga o rival significa incoherencia geográfica/liga
-    if pts[4] < 0 and meta_ctx:
+    if pts[4] < 0 and tiene_ctx_real:
         return False, (
             f"incoherencia de liga/país con el contexto solicitado "
             f"({nombre_doc} en {eq_doc.get('liga')})"

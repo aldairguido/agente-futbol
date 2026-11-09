@@ -652,6 +652,7 @@ def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
 
 def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = None) -> dict[str, Any] | None:
     """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando coherencia de país."""
+    meta_ctx = dict(meta_ctx) if isinstance(meta_ctx, dict) else {"pais_iso": "INT", "liga": "Desconocida", "es_femenino": False, "es_juvenil": False}
     try:
         ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
         if not os.path.isfile(ruta):
@@ -659,6 +660,11 @@ def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = Non
         with open(ruta, "r", encoding="utf-8") as f:
             doc = json.load(f)
         eq_doc = doc.get("equipo") or {}
+        tiene_ctx_real = bool(
+            (meta_ctx.get("pais_iso") and meta_ctx.get("pais_iso") != "INT")
+            or (meta_ctx.get("liga") and meta_ctx.get("liga") != "Desconocida")
+            or meta_ctx.get("pais")
+        )
         pts = puntuar_candidato(
             {
                 "id": eq_doc.get("id"),
@@ -668,9 +674,9 @@ def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = Non
                 "score": 100.0,
             },
             nombre_equipo,
-            rival_meta=meta_ctx,
+            rival_meta=meta_ctx if tiene_ctx_real else None,
         )
-        if pts[0] < 0 or pts[1] == 0 or (pts[4] < 0 and meta_ctx):
+        if pts[0] < 0 or pts[1] == 0 or (pts[4] < 0 and tiene_ctx_real):
             return None
         aviso = "[Aviso: Datos leídos desde caché local por intermitencia temporal del proveedor]"
         advs = doc.setdefault("advertencias", [])
@@ -700,6 +706,12 @@ def auditar_equipo(
     Implementa Lock por equipo para serializar ejecuciones y evitar descargas duplicadas,
     así como caché en memoria y caché de resiliencia en disco (D:\\agente_futbol\\cache\\).
     """
+    meta_ctx: dict[str, Any] = {
+        "pais_iso": "INT",
+        "liga": "Desconocida",
+        "es_femenino": False,
+        "es_juvenil": False,
+    }
     liga_pref, nombre_sin_liga = extraer_liga_de_texto(nombre_equipo or "")
     if liga_pref and nombre_sin_liga:
         nombre_equipo = nombre_sin_liga.strip()
@@ -711,22 +723,52 @@ def auditar_equipo(
             base_riv = _inferir_meta_rival_desde_texto(rival.strip()) or {"nombre": rival.strip()}
             rival = {**base_riv, **liga_pref}
 
-    from resolvedor_entidades import construir_clave_cache_entidad, detectar_categoria_desde_texto
+    if isinstance(rival, dict):
+        for k, v in rival.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
+    elif isinstance(rival, str) and rival.strip():
+        inf_riv = _inferir_meta_rival_desde_texto(rival.strip()) or {"nombre": rival.strip()}
+        for k, v in inf_riv.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
+    if isinstance(liga_pref, dict):
+        for k, v in liga_pref.items():
+            if v is not None and v != "":
+                meta_ctx[k] = v
+
+    from resolvedor_entidades import construir_clave_cache_entidad, detectar_categoria_desde_texto, resolver_equipo_individual
+    nom_res_eq, iso_res_eq = resolver_equipo_individual(
+        nombre_equipo,
+        pais_iso_contexto=str(meta_ctx.get("pais_iso") or "") if meta_ctx.get("pais_iso") != "INT" else None,
+    )
+    if iso_res_eq and meta_ctx.get("pais_iso") in (None, "", "INT"):
+        meta_ctx["pais_iso"] = iso_res_eq
+
     pais_iso_ctx = (
-        (meta_ctx or {}).get("pais_iso")
-        or (meta_ctx or {}).get("pais")
+        (meta_ctx.get("pais_iso") if meta_ctx.get("pais_iso") != "INT" else "")
+        or meta_ctx.get("pais")
         or (liga_pref or {}).get("pais_iso")
         or (liga_pref or {}).get("pais")
-        or ""
+        or iso_res_eq
+        or "INT"
     )
     es_fem_ctx, es_juv_ctx = detectar_categoria_desde_texto(
-        f"{nombre_equipo} {(meta_ctx or {}).get('liga', '')} {(meta_ctx or {}).get('nombre', '')}"
+        f"{nombre_equipo} {meta_ctx.get('liga', '') if meta_ctx.get('liga') != 'Desconocida' else ''} {meta_ctx.get('nombre', '')}"
     )
+    meta_ctx["es_femenino"] = bool(meta_ctx.get("es_femenino") or es_fem_ctx)
+    meta_ctx["es_juvenil"] = bool(meta_ctx.get("es_juvenil") or es_juv_ctx)
+
     clave_cache_entidad = construir_clave_cache_entidad(
-        nombre_equipo, str(pais_iso_ctx), es_fem_ctx, es_juv_ctx
+        nombre_equipo, str(pais_iso_ctx), meta_ctx["es_femenino"], meta_ctx["es_juvenil"]
     )
     slug_equipo = _slug(nombre_equipo)
     lock_equipo = _obtener_lock_equipo(clave_cache_entidad)
+    tiene_ctx_real = bool(
+        (meta_ctx.get("pais_iso") and meta_ctx.get("pais_iso") != "INT")
+        or (meta_ctx.get("liga") and meta_ctx.get("liga") != "Desconocida")
+        or meta_ctx.get("pais")
+    )
 
     with lock_equipo:
         if fuente_obj is None:
@@ -742,9 +784,9 @@ def auditar_equipo(
                         "score": 100.0,
                     },
                     nombre_equipo,
-                    rival_meta=meta_ctx,
+                    rival_meta=meta_ctx if tiene_ctx_real else None,
                 )
-                coherente_mem = pts_mem[0] >= 0 and pts_mem[1] > 0 and not (pts_mem[4] < 0 and meta_ctx)
+                coherente_mem = pts_mem[0] >= 0 and pts_mem[1] > 0 and not (pts_mem[4] < 0 and tiene_ctx_real)
                 if coherente_mem:
                     partidos_mem = doc_mem.get("partidos") or []
                     res_mem = doc_mem.get("resumen") or {}

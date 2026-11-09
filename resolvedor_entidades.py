@@ -125,7 +125,7 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "chile": "CHL", "liga de primera": "CHL", "primera division chile": "CHL", "campeonato chileno": "CHL",
     "primera b chile": "CHL", "segunda division": "CHL", "copa chile": "CHL",
     "colombia": "COL", "primera a": "COL", "liga betplay": "COL", "liga betplay dimayor": "COL",
-    "torneo betplay": "COL", "copa betplay": "COL",
+    "torneo betplay": "COL", "primera b": "COL", "copa betplay": "COL",
     "ecuador": "ECU", "liga pro": "ECU", "ligapro": "ECU", "liga pro serie b": "ECU",
     "peru": "PER", "liga 1": "PER", "liga 1 te apuesto": "PER", "liga 1 peru": "PER",
     "liga 2 peru": "PER", "copa peru": "PER", "liga femenina": "PER",
@@ -159,7 +159,7 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "iran": "IRN", "persian gulf pro league": "IRN", "azadegan league": "IRN",
     "israel": "ISR", "ligat ha'al": "ISR", "leumit league": "ISR", "liga alef norte": "ISR",
     "jordania": "JOR", "kuwait": "KWT", "libano": "LBN",
-    "uzbekistan": "UZB", "super league uzbekistan": "UZB",
+    "uzbekistan": "UZB", "super league uzbekistan": "UZB", "pro liga": "UZB", "pro liga uzbekistan": "UZB",
     "kirguistan": "KGZ", "premier liga": "KGZ", "turkmenistan": "TKM", "yokary liga": "TKM",
     # ÁFRICA
     "egipto": "EGY", "premier league egipto": "EGY", "egypt cup": "EGY",
@@ -486,9 +486,57 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "colo-colo": ("Colo-Colo", "CHL"),
     "universidad de chile": ("Universidad de Chile", "CHL"),
     "universidad catolica": ("Universidad Católica", "CHL"),
+    # COLOMBIA (Primera A y Torneo BetPlay)
     "atletico nacional": ("Atlético Nacional", "COL"),
     "millonarios": ("Millonarios", "COL"),
     "america de cali": ("América de Cali", "COL"),
+    "junior": ("Junior FC", "COL"),
+    "junior fc": ("Junior FC", "COL"),
+    "junior barranquilla": ("Junior FC", "COL"),
+    "junior de barranquilla": ("Junior FC", "COL"),
+    "atletico junior": ("Junior FC", "COL"),
+    "cucuta": ("Cúcuta Deportivo", "COL"),
+    "cucuta deportivo": ("Cúcuta Deportivo", "COL"),
+    "once caldas": ("Once Caldas", "COL"),
+    "deportivo cali": ("Deportivo Cali", "COL"),
+    "cali": ("Deportivo Cali", "COL"),
+    "independiente medellin": ("Independiente Medellín", "COL"),
+    "medellin": ("Independiente Medellín", "COL"),
+    "dim": ("Independiente Medellín", "COL"),
+    "santa fe": ("Independiente Santa Fe", "COL"),
+    "independiente santa fe": ("Independiente Santa Fe", "COL"),
+    "tolima": ("Deportes Tolima", "COL"),
+    "deportes tolima": ("Deportes Tolima", "COL"),
+    "bucaramanga": ("Atlético Bucaramanga", "COL"),
+    "atletico bucaramanga": ("Atlético Bucaramanga", "COL"),
+    "pereira": ("Deportivo Pereira", "COL"),
+    "deportivo pereira": ("Deportivo Pereira", "COL"),
+    "la equidad": ("La Equidad", "COL"),
+    "equidad": ("La Equidad", "COL"),
+    "aguilas doradas": ("Águilas Doradas", "COL"),
+    "envigado": ("Envigado FC", "COL"),
+    "deportivo pasto": ("Deportivo Pasto", "COL"),
+    "pasto": ("Deportivo Pasto", "COL"),
+    "patriotas": ("Patriotas Boyacá", "COL"),
+    "boyaca chico": ("Boyacá Chicó", "COL"),
+    "fortaleza ceif": ("Fortaleza CEIF", "COL"),
+    "alianza fc": ("Alianza FC", "COL"),
+    "llaneros": ("Llaneros FC", "COL"),
+    "real cartagena": ("Real Cartagena", "COL"),
+    "quindio": ("Deportes Quindío", "COL"),
+    "huila": ("Atlético Huila", "COL"),
+    # UZBEKISTÁN (Super League y Pro Liga)
+    "gazalkent": ("FK Gazalkent", "UZB"),
+    "fk gazalkent": ("FK Gazalkent", "UZB"),
+    "respublika fa": ("Respublika FA", "UZB"),
+    "paxtakor": ("Pakhtakor Tashkent", "UZB"),
+    "pakhtakor": ("Pakhtakor Tashkent", "UZB"),
+    "nasaf": ("FC Nasaf", "UZB"),
+    "navbahor": ("Navbahor Namangan", "UZB"),
+    "neftchi": ("Neftchi Fergana", "UZB"),
+    "agmk": ("FC AGMK", "UZB"),
+    "sogdiana": ("Sogdiana Jizzakh", "UZB"),
+    "bunyodkor": ("FC Bunyodkor", "UZB"),
 }
 
 # IDs oficiales conocidos en FotMob para indexar caché de forma determinista incluso antes de llamada HTTP
@@ -1205,16 +1253,23 @@ def resolver(
     pais_iso = normalizar_pais_iso(liga_str)
     es_fem, es_juv = detectar_categoria_desde_texto(f"{liga_str} {loc_str} {vis_str}")
 
-    nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=pais_iso, es_femenino=es_fem, es_juvenil=es_juv)
-    # Si la liga no especificó país pero el local sí tiene país conocido, usarlo como contexto para la visita
-    iso_ctx_vis = pais_iso or iso_loc
+    ctx_inicial = pais_iso if (pais_iso and pais_iso != "INT") else None
+    nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=ctx_inicial, es_femenino=es_fem, es_juvenil=es_juv)
+    # Si la liga no especificó país (o era INT) pero el local sí tiene país conocido, propagarlo a la visita
+    iso_ctx_vis = ctx_inicial or (iso_loc if iso_loc and iso_loc != "INT" else None)
     nom_vis, iso_vis = resolver_equipo_individual(vis_str, pais_iso_contexto=iso_ctx_vis, es_femenino=es_fem, es_juvenil=es_juv)
 
-    # Si el visitante reveló el país y el local aún no estaba resuelto por país, re-evaluar local con el país del visitante
-    if not pais_iso and not iso_loc and iso_vis:
+    # Si el visitante reveló el país y el local aún no tenía país definido, propagarlo al local
+    if not ctx_inicial and (not iso_loc or iso_loc == "INT") and iso_vis and iso_vis != "INT":
         nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=iso_vis, es_femenino=es_fem, es_juvenil=es_juv)
 
-    pais_final = pais_iso if (pais_iso and pais_iso != "INT") else (iso_loc or iso_vis or pais_iso or "")
+    pais_final = (
+        ctx_inicial
+        or (iso_loc if iso_loc and iso_loc != "INT" else "")
+        or (iso_vis if iso_vis and iso_vis != "INT" else "")
+        or pais_iso
+        or ""
+    )
 
     return ResultadoResolucion(
         nom_loc,
@@ -1379,7 +1434,21 @@ def formatear_mensaje_entidades_verificadas(
     Genera el mensaje oficial de verificación de entidades para Telegram:
     ✅ Entidades verificadas: 1. FC Köln [DEU] vs Bayer 04 Leverkusen [DEU] (Liga: Bundesliga).
     """
-    iso_l = normalizar_pais_iso(pais_local) or normalizar_pais_iso(liga) or "INT"
-    iso_v = normalizar_pais_iso(pais_visita) or normalizar_pais_iso(liga) or iso_l
+    _, iso_eq_l = resolver_equipo_individual(nombre_local)
+    _, iso_eq_v = resolver_equipo_individual(nombre_visita)
+    iso_l = (
+        (normalizar_pais_iso(pais_local) if normalizar_pais_iso(pais_local) != "INT" else "")
+        or (normalizar_pais_iso(liga) if normalizar_pais_iso(liga) != "INT" else "")
+        or iso_eq_l
+        or iso_eq_v
+        or normalizar_pais_iso(pais_local)
+        or "INT"
+    )
+    iso_v = (
+        (normalizar_pais_iso(pais_visita) if normalizar_pais_iso(pais_visita) != "INT" else "")
+        or (normalizar_pais_iso(liga) if normalizar_pais_iso(liga) != "INT" else "")
+        or iso_eq_v
+        or iso_l
+    )
     liga_txt = liga.strip() if liga and str(liga).strip() else "Oficial"
     return f"✅ Entidades verificadas: {nombre_local} [{iso_l}] vs {nombre_visita} [{iso_v}] (Liga: {liga_txt})."

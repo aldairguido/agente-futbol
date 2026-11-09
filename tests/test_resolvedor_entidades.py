@@ -129,6 +129,66 @@ def test_separador_ligas_compuestas_y_cache_entidad():
     assert msg == "✅ Entidades verificadas: 1. FC Köln [DEU] vs Bayer 04 Leverkusen [DEU] (Liga: Bundesliga)."
 
 
+def test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan():
+    from auditoria_historica import auditar_equipo, guardar_auditoria_en_memoria
+    import servicio_mercados
+
+    # 1. Con liga explícita: "/mercados primera a junior vs Cúcuta"
+    p_col_liga = parsear_comando_mercados("/mercados primera a junior vs Cúcuta")
+    assert p_col_liga["equipo_local"] == "Junior FC"
+    assert p_col_liga["equipo_visita"] == "Cúcuta Deportivo"
+    assert p_col_liga["pais_iso"] == "COL"
+    assert tuple(resolver("primera a", "junior", "Cúcuta")) == ("Junior FC", "Cúcuta Deportivo", "COL")
+
+    # 2. Sin liga explícita: "/mercados junior vs Cúcuta" -> propaga automáticamente COL
+    p_col_sin_liga = parsear_comando_mercados("/mercados junior vs Cúcuta")
+    assert p_col_sin_liga["equipo_local"] == "Junior FC"
+    assert p_col_sin_liga["equipo_visita"] == "Cúcuta Deportivo"
+    assert p_col_sin_liga["pais_iso"] == "COL"
+    assert tuple(resolver("", "junior", "Cúcuta")) == ("Junior FC", "Cúcuta Deportivo", "COL")
+    msg_col = formatear_mensaje_entidades_verificadas(
+        p_col_sin_liga["equipo_local"],
+        p_col_sin_liga["pais_iso"],
+        p_col_sin_liga["equipo_visita"],
+        p_col_sin_liga["pais_iso"],
+        p_col_sin_liga["liga"] or "Primera A",
+    )
+    assert msg_col == "✅ Entidades verificadas: Junior FC [COL] vs Cúcuta Deportivo [COL] (Liga: Primera A)."
+
+    # 3. Uzbekistán con y sin liga: "/mercados Gazalkent vs Respublika FA"
+    p_uzb = parsear_comando_mercados("/mercados Gazalkent vs Respublika FA")
+    assert p_uzb["equipo_local"] == "FK Gazalkent"
+    assert p_uzb["equipo_visita"] == "Respublika FA"
+    assert p_uzb["pais_iso"] == "UZB"
+    assert tuple(resolver("Pro Liga", "Gazalkent", "Respublika FA")) == ("FK Gazalkent", "Respublika FA", "UZB")
+
+    # 4. Ejecución real del pipeline de auditar_equipo y servicio_mercados.resolver_enfrentamiento
+    # para verificar que JAMÁS se lance NameError: name 'meta_ctx' is not defined
+    doc_junior_mock = {
+        "equipo": {"id": "10101", "nombre": "Junior FC", "liga": "Primera A", "id_liga": 274, "pais_iso": "COL"},
+        "partidos": [{"id_partido": f"j{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-10", "goles_equipo": 2, "goles_rival": 1, "condicion": "casa"} for i in range(15)],
+        "resumen": {"partidos_con_datos": 15},
+    }
+    doc_cucuta_mock = {
+        "equipo": {"id": "10102", "nombre": "Cúcuta Deportivo", "liga": "Torneo BetPlay", "id_liga": 275, "pais_iso": "COL"},
+        "partidos": [{"id_partido": f"c{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-12", "goles_equipo": 1, "goles_rival": 1, "condicion": "fuera"} for i in range(15)],
+        "resumen": {"partidos_con_datos": 15},
+    }
+    guardar_auditoria_en_memoria(construir_clave_cache_entidad("Junior FC", "COL", False, False), doc_junior_mock)
+    guardar_auditoria_en_memoria("junior_fc", doc_junior_mock)
+    guardar_auditoria_en_memoria(construir_clave_cache_entidad("Cúcuta Deportivo", "COL", False, False), doc_cucuta_mock)
+    guardar_auditoria_en_memoria("cucuta_deportivo", doc_cucuta_mock)
+
+    doc_j = auditar_equipo("Junior FC", limite=15, rival="Cúcuta Deportivo")
+    assert doc_j["equipo"]["nombre"] == "Junior FC"
+    doc_c = auditar_equipo("Cúcuta Deportivo", limite=15, rival=doc_j["equipo"])
+    assert doc_c["equipo"]["nombre"] == "Cúcuta Deportivo"
+
+    enf = servicio_mercados.resolver_enfrentamiento("primera a junior vs Cúcuta", limite=15)
+    assert enf["equipo_local"] == "Junior FC"
+    assert enf["equipo_visitante"] == "Cúcuta Deportivo"
+
+
 if __name__ == "__main__":
     test_resolver_bundesliga_colonia_vs_bayer_leverkusen()
     test_resolver_bundesliga_colonia_vs_bayer_sin_colision_bayern()
@@ -137,6 +197,7 @@ if __name__ == "__main__":
     test_resolver_argentina_san_lorenzo_vs_platense_descarta_honduras()
     test_resolver_bundesliga_femenina_bayern_vs_wolfsburgo()
     test_separador_ligas_compuestas_y_cache_entidad()
+    test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan()
     print("OK: Todos los tests de test_resolvedor_entidades.py pasaron en verde (0 failed).")
 
 
@@ -159,8 +220,11 @@ class TestResolvedorEntidades(unittest.TestCase):
     def test_5_argentina_san_lorenzo_platense(self):
         test_resolver_argentina_san_lorenzo_vs_platense_descarta_honduras()
 
-    def test_6_bundesliga_femenina_bayern_wolfsburgo(self):
+    def test_6_bundesliga_femenina_bayern_vs_wolfsburgo(self):
         test_resolver_bundesliga_femenina_bayern_vs_wolfsburgo()
 
     def test_7_ligas_compuestas_y_cache_entidad(self):
         test_separador_ligas_compuestas_y_cache_entidad()
+
+    def test_8_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan(self):
+        test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan()

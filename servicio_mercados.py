@@ -267,6 +267,13 @@ def resolver_enfrentamiento(
             except Exception:
                 pass
 
+    meta_ctx: dict[str, Any] = {
+        "pais_iso": "INT",
+        "liga": "Desconocida",
+        "es_femenino": False,
+        "es_juvenil": False,
+    }
+
     liga_extraida: dict[str, Any] | None = None
     if equipo_b is None:
         res_eq = extraer_equipos_y_liga(texto_o_equipo_a)
