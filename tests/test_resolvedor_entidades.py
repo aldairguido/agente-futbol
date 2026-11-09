@@ -189,6 +189,72 @@ def test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan():
     assert enf["equipo_visitante"] == "Cúcuta Deportivo"
 
 
+def test_async_playwright_y_bolivia_division_profesional():
+    import asyncio
+    from fuentes_xg import ejecutar_sync_seguro
+    from auditoria_historica import guardar_auditoria_en_memoria
+    import servicio_mercados
+
+    async def _correr_en_loop_asyncio():
+        # 1. Resolución directa de "división profesional Aurora vs universitario de vinto" dentro de asyncio loop
+        p_bol = ejecutar_sync_seguro(
+            parsear_comando_mercados,
+            "/mercados división profesional Aurora vs universitario de vinto",
+        )
+        assert p_bol["equipo_local"] == "Aurora"
+        assert p_bol["equipo_visita"] == "FC Universitario"
+        assert p_bol["pais_iso"] == "BOL"
+
+        res_bol = ejecutar_sync_seguro(
+            resolver,
+            "División Profesional",
+            "Aurora",
+            "universitario de vinto",
+        )
+        assert tuple(res_bol) == ("Aurora", "FC Universitario", "BOL")
+
+        # Sin escribir liga explícita también detecta BOL por los clubes
+        res_bol_auto = ejecutar_sync_seguro(resolver, "", "Aurora", "universitario de vinto")
+        assert tuple(res_bol_auto) == ("Aurora", "FC Universitario", "BOL")
+        assert tuple(resolver("", "GV San José", "San Antonio Bulo Bulo")) == ("GV San José", "San Antonio Bulo Bulo", "BOL")
+
+        # 2. Verificar que ejecutar_sync_seguro corre en un hilo separado sin running asyncio loop
+        def _verificar_hilo_limpio():
+            try:
+                loop_interno = asyncio.get_running_loop()
+            except RuntimeError:
+                loop_interno = None
+            assert loop_interno is None, "El hilo de ejecutar_sync_seguro NO debe tener un asyncio loop corriendo"
+            return "HILO_LIMPIO_OK"
+
+        resultado_hilo = ejecutar_sync_seguro(_verificar_hilo_limpio)
+        assert resultado_hilo == "HILO_LIMPIO_OK"
+
+        # 3. Ejecutar servicio_mercados.resolver_enfrentamiento dentro del loop asyncio
+        doc_aurora_mock = {
+            "equipo": {"id": "20201", "nombre": "Aurora", "liga": "División Profesional", "id_liga": 301, "pais_iso": "BOL"},
+            "partidos": [{"id_partido": f"au{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-10", "goles_equipo": 2, "goles_rival": 0, "condicion": "casa"} for i in range(15)],
+            "resumen": {"partidos_con_datos": 15},
+        }
+        doc_vinto_mock = {
+            "equipo": {"id": "20202", "nombre": "FC Universitario", "liga": "División Profesional", "id_liga": 301, "pais_iso": "BOL"},
+            "partidos": [{"id_partido": f"uv{i}", "fecha": f"2026-0{min(9, i//2 + 1)}-12", "goles_equipo": 1, "goles_rival": 1, "condicion": "fuera"} for i in range(15)],
+            "resumen": {"partidos_con_datos": 15},
+        }
+        guardar_auditoria_en_memoria(construir_clave_cache_entidad("Aurora", "BOL", False, False), doc_aurora_mock)
+        guardar_auditoria_en_memoria("aurora", doc_aurora_mock)
+        guardar_auditoria_en_memoria(construir_clave_cache_entidad("FC Universitario", "BOL", False, False), doc_vinto_mock)
+        guardar_auditoria_en_memoria("fc_universitario", doc_vinto_mock)
+
+        enf_bol = servicio_mercados.resolver_enfrentamiento(
+            "división profesional Aurora vs universitario de vinto", limite=15
+        )
+        assert enf_bol["equipo_local"] == "Aurora"
+        assert enf_bol["equipo_visitante"] == "FC Universitario"
+
+    asyncio.run(_correr_en_loop_asyncio())
+
+
 if __name__ == "__main__":
     test_resolver_bundesliga_colonia_vs_bayer_leverkusen()
     test_resolver_bundesliga_colonia_vs_bayer_sin_colision_bayern()
@@ -198,6 +264,7 @@ if __name__ == "__main__":
     test_resolver_bundesliga_femenina_bayern_vs_wolfsburgo()
     test_separador_ligas_compuestas_y_cache_entidad()
     test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan()
+    test_async_playwright_y_bolivia_division_profesional()
     print("OK: Todos los tests de test_resolvedor_entidades.py pasaron en verde (0 failed).")
 
 
@@ -218,7 +285,7 @@ class TestResolvedorEntidades(unittest.TestCase):
         test_resolver_laliga_ea_sports_celta_vs_levante()
 
     def test_5_argentina_san_lorenzo_platense(self):
-        test_resolver_argentina_san_lorenzo_vs_platense_descarta_honduras()
+        test_resolver_argentina_san_lorenzo_platense_descarta_honduras()
 
     def test_6_bundesliga_femenina_bayern_vs_wolfsburgo(self):
         test_resolver_bundesliga_femenina_bayern_vs_wolfsburgo()
@@ -228,3 +295,6 @@ class TestResolvedorEntidades(unittest.TestCase):
 
     def test_8_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan(self):
         test_integracion_sin_nameerror_meta_ctx_y_colombia_uzbekistan()
+
+    def test_9_async_playwright_y_bolivia_division_profesional(self):
+        test_async_playwright_y_bolivia_division_profesional()

@@ -315,12 +315,14 @@ def _auditar_equipo_interno(
     }
 
     fuente_obj: FuenteXG | None = fuente_obj
+    fuente_primaria_abierta: FuenteXG | None = None
     try:
         if fuente_obj is None:
             fuente_obj = obtener_fuente(fuente, headless=headless, verbose=False)
         auditoria["fuente"] = fuente_obj.nombre
         avisar(f"fuente: {fuente_obj.nombre} · buscando «{nombre_equipo}»…")
         fuente_obj.abrir()
+        fuente_primaria_abierta = fuente_obj
 
         try:
             equipo = fuente_obj.resolver_equipo(nombre_equipo, rival_contexto=rival)
@@ -606,9 +608,9 @@ def _auditar_equipo_interno(
         avisar(f"❌ {type(e).__name__}: {e}")
         raise
     finally:
-        if fuente_obj:
+        for f_cerrar in {id(x): x for x in (fuente_obj, fuente_primaria_abierta) if x is not None}.values():
             try:
-                fuente_obj.cerrar()
+                f_cerrar.cerrar()
             except Exception:
                 pass
 
@@ -801,7 +803,9 @@ def auditar_equipo(
                         return doc_mem
 
         try:
-            res = _auditar_equipo_interno(
+            from fuentes_xg import ejecutar_sync_seguro
+            res = ejecutar_sync_seguro(
+                _auditar_equipo_interno,
                 nombre_equipo=nombre_equipo,
                 limite=limite,
                 fuente=fuente,

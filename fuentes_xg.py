@@ -29,6 +29,8 @@ registrada en `metricas_no_disponibles`. Nunca se inventan valores.
 
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 import re
@@ -43,6 +45,21 @@ from typing import Any
 import pytz
 
 import config
+
+
+def ejecutar_sync_seguro(fn, *args, **kwargs):
+    """Si hay un event loop asyncio corriendo en este hilo, ejecuta fn (ej. sync_playwright) en un hilo limpio."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            return executor.submit(fn, *args, **kwargs).result()
+    return fn(*args, **kwargs)
+
+
+_ejecutar_fuera_de_asyncio = ejecutar_sync_seguro
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -1080,6 +1097,31 @@ ALIAS_EQUIPOS_HISPANOS: dict[str, list[str]] = {
     "barcelona guayaquil": ["Barcelona SC"],
     "emelec": ["CS Emelec", "Emelec"],
     "cs emelec": ["CS Emelec", "Emelec"],
+    # Bolivia (División Profesional)
+    "aurora": ["Aurora", "Club Aurora"],
+    "club aurora": ["Aurora", "Club Aurora"],
+    "universitario de vinto": ["FC Universitario", "Universitario de Vinto", "Universitario"],
+    "fc universitario": ["FC Universitario", "Universitario de Vinto"],
+    "universitario vinto": ["FC Universitario", "Universitario de Vinto"],
+    "bolivar": ["Bolívar", "Bolivar", "Club Bolívar"],
+    "the strongest": ["The Strongest"],
+    "always ready": ["Always Ready"],
+    "wilstermann": ["Jorge Wilstermann", "Wilstermann"],
+    "jorge wilstermann": ["Jorge Wilstermann", "Wilstermann"],
+    "blooming": ["Blooming"],
+    "oriente petrolero": ["Oriente Petrolero"],
+    "nacional potosi": ["Nacional Potosí", "Nacional Potosi"],
+    "independiente petrolero": ["Independiente Petrolero"],
+    "real tomayapo": ["Real Tomayapo", "CD Real Tomayapo"],
+    "tomayapo": ["Real Tomayapo", "CD Real Tomayapo"],
+    "guabira": ["Guabirá", "Guabira"],
+    "royal pari": ["Royal Pari"],
+    "real santa cruz": ["Real Santa Cruz"],
+    "gv san jose": ["GV San José", "GV San Jose", "San José"],
+    "gualberto villarroel": ["GV San José", "GV San Jose"],
+    "san jose": ["GV San José", "GV San Jose", "San José"],
+    "san antonio bulo bulo": ["San Antonio Bulo Bulo", "San Antonio"],
+    "bulo bulo": ["San Antonio Bulo Bulo", "San Antonio"],
 }
 
 PAISES_EUROPA: frozenset[str] = frozenset({
@@ -1623,8 +1665,12 @@ def _pais_de_liga(nombre_liga: str | None, ccode: str | None = None) -> str:
         return "argentina"
     if any(k in n for k in ("peru", "liga 1", "liga 1 te apuesto")):
         return "peru"
-    if any(k in n for k in ("colombia", "liga betplay", "primera a")):
+    if any(k in n for k in ("colombia", "liga betplay", "primera a", "torneo betplay")):
         return "colombia"
+    if any(k in n for k in ("bolivia", "division profesional", "copa simon bolivar")):
+        return "bolivia"
+    if any(k in n for k in ("uzbekistan", "super league uzbekistan", "pro liga")):
+        return "uzbekistan"
     if any(k in n for k in ("brasil", "brazil", "brasileirao", "serie a brazil", "copa do brasil", "paulista", "carioca", "gaucho", "baiano", "copa do nordeste")):
         return "brasil"
     if any(k in n for k in ("ecuador", "ligapro", "liga pro")):
@@ -2246,7 +2292,7 @@ class FuenteFotMob(FuenteXG):
                 print(f"[AUDITORÍA {marca}] {safe_msg}")
 
     # ── ciclo de vida ──────────────────────────────────────────────────────
-    def abrir(self) -> None:
+    def _abrir_interno(self) -> None:
         from playwright.sync_api import sync_playwright
 
         self._pw = sync_playwright().start()
@@ -2264,7 +2310,20 @@ class FuenteFotMob(FuenteXG):
         self.page.wait_for_timeout(2000)
         self._log(f"sesión abierta en {self.nombre} ({'headless' if self.headless else 'visible'})")
 
-    def cerrar(self) -> None:
+    def abrir(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            en_loop = loop.is_running()
+        except RuntimeError:
+            en_loop = False
+        if en_loop:
+            self._executor = ThreadPoolExecutor(max_workers=1)
+            self._executor.submit(self._abrir_interno).result()
+        else:
+            self._executor = None
+            self._abrir_interno()
+
+    def _cerrar_interno(self) -> None:
         for obj, metodo in ((self.ctx, "close"), (self._browser, "close")):
             try:
                 if obj:
@@ -2278,6 +2337,21 @@ class FuenteFotMob(FuenteXG):
             pass
         self._pw = self._browser = self.ctx = self.page = None
 
+    def cerrar(self) -> None:
+        exec_worker = getattr(self, "_executor", None)
+        if exec_worker is not None:
+            try:
+                exec_worker.submit(self._cerrar_interno).result(timeout=15)
+            except Exception:
+                pass
+            try:
+                exec_worker.shutdown(wait=False)
+            except Exception:
+                pass
+            self._executor = None
+        else:
+            self._cerrar_interno()
+
     def __enter__(self) -> "FuenteFotMob":
         self.abrir()
         return self
@@ -2286,8 +2360,7 @@ class FuenteFotMob(FuenteXG):
         self.cerrar()
 
     # ── acceso a la API interna ────────────────────────────────────────────
-    def _api(self, ruta: str, reintentos: int = 3) -> Any:
-        """GET a la API interna de FotMob usando el contexto del navegador (3 reintentos, timeout 12s)."""
+    def _api_interno(self, ruta: str, reintentos: int = 3) -> Any:
         url = ruta if ruta.startswith("http") else FOTMOB_BASE + "/api/data" + ruta
         ultimo_error = None
         timeout_req = min(self.timeout_ms, 12_000) if self.timeout_ms else 12_000
@@ -2306,6 +2379,13 @@ class FuenteFotMob(FuenteXG):
                 time.sleep(2.0)
         self._log(f"⚠️  API {url} falló tras {reintentos} intentos: {ultimo_error}")
         return None
+
+    def _api(self, ruta: str, reintentos: int = 3) -> Any:
+        """GET a la API interna de FotMob usando el contexto del navegador (3 reintentos, timeout 12s)."""
+        exec_worker = getattr(self, "_executor", None)
+        if exec_worker is not None:
+            return exec_worker.submit(self._api_interno, ruta, reintentos).result()
+        return self._api_interno(ruta, reintentos)
 
     # ── resolución de equipo ───────────────────────────────────────────────
     def resolver_equipo(self, nombre: str, rival_contexto: dict[str, Any] | str | None = None) -> dict[str, Any] | None:
@@ -2384,6 +2464,45 @@ class FuenteFotMob(FuenteXG):
             candidatos_senior = [c for c in candidatos if not es_equipo_o_torneo_no_senior(c.get("name"), c.get("leagueName"))]
             if candidatos_senior:
                 candidatos = candidatos_senior
+
+        # Reintento automático por palabra principal filtrada estrictamente por pais_iso
+        # (ej. "Universitario de Vinto" -> "Universitario" con pais_iso == "BOL",
+        #  o "San Antonio Bulo Bulo" -> "San Antonio" con pais_iso == "BOL")
+        if not candidatos and meta_rival:
+            from resolvedor_entidades import normalizar_pais_iso
+            pais_iso_obj = normalizar_pais_iso(
+                meta_rival.get("pais_iso") or meta_rival.get("pais") or meta_rival.get("liga") or ""
+            )
+            if pais_iso_obj and pais_iso_obj != "INT":
+                nucleo_palabras = _palabras_nucleo(consulta_efectiva)
+                reintentos_principales: list[str] = []
+                if len(nucleo_palabras) >= 2:
+                    dos_primeras = f"{nucleo_palabras[0]} {nucleo_palabras[1]}"
+                    if dos_primeras.lower() not in [v.lower() for v in variantes_probadas]:
+                        reintentos_principales.append(dos_primeras)
+                if nucleo_palabras and len(nucleo_palabras[0]) >= 4:
+                    primera_pal = nucleo_palabras[0]
+                    if primera_pal.lower() not in [v.lower() for v in variantes_probadas]:
+                        reintentos_principales.append(primera_pal)
+                for term_p in reintentos_principales:
+                    variantes_probadas.append(term_p)
+                    datos_p = self._api(f"/search/suggest?term={term_p.replace(' ', '%20')}&lang={self.idioma}")
+                    if isinstance(datos_p, list):
+                        for bloque in datos_p:
+                            for sug in (bloque or {}).get("suggestions", []) or []:
+                                if sug.get("type") != "team":
+                                    continue
+                                if not pide_no_senior and es_equipo_o_torneo_no_senior(sug.get("name"), sug.get("leagueName")):
+                                    continue
+                                iso_sug = normalizar_pais_iso(
+                                    sug.get("ccode") or sug.get("country") or sug.get("leagueName") or ""
+                                )
+                                if iso_sug == pais_iso_obj:
+                                    candidatos.append(sug)
+                                    if not variante_usada:
+                                        variante_usada = term_p
+                    if candidatos:
+                        break
 
         if not candidatos:
             self._log(f"⚠️  sin resultados de equipo para {consulta_efectiva!r} "
@@ -4073,7 +4192,7 @@ class FuenteSofascore(FuenteXG):
             marca = datetime.now(pytz.timezone(config.TIMEZONE)).strftime("%H:%M:%S")
             print(f"[AUDITORÍA-SOFA {marca}] {msg}")
 
-    def abrir(self) -> None:
+    def _abrir_interno(self) -> None:
         from playwright.sync_api import sync_playwright
 
         self._pw = sync_playwright().start()
@@ -4092,7 +4211,20 @@ class FuenteSofascore(FuenteXG):
             )
         self._log("sesión de Sofascore abierta")
 
-    def cerrar(self) -> None:
+    def abrir(self) -> None:
+        try:
+            loop = asyncio.get_running_loop()
+            en_loop = loop.is_running()
+        except RuntimeError:
+            en_loop = False
+        if en_loop:
+            self._executor = ThreadPoolExecutor(max_workers=1)
+            self._executor.submit(self._abrir_interno).result()
+        else:
+            self._executor = None
+            self._abrir_interno()
+
+    def _cerrar_interno(self) -> None:
         for obj, metodo in ((self.ctx, "close"), (self._browser, "close")):
             try:
                 if obj:
@@ -4105,6 +4237,21 @@ class FuenteSofascore(FuenteXG):
         except Exception:
             pass
         self._pw = self._browser = self.ctx = self.page = None
+
+    def cerrar(self) -> None:
+        exec_worker = getattr(self, "_executor", None)
+        if exec_worker is not None:
+            try:
+                exec_worker.submit(self._cerrar_interno).result(timeout=15)
+            except Exception:
+                pass
+            try:
+                exec_worker.shutdown(wait=False)
+            except Exception:
+                pass
+            self._executor = None
+        else:
+            self._cerrar_interno()
 
     def _api(self, ruta: str) -> Any:
         try:

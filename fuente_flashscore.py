@@ -1354,15 +1354,21 @@ class ListadoEquipoFlashscore:
                     except Exception:
                         pass
             else:
+                from concurrent.futures import ThreadPoolExecutor
                 from playwright.sync_api import sync_playwright
-                with sync_playwright() as p:
-                    nav = p.chromium.launch(headless=True)
-                    ctx = nav.new_context(locale="es-ES", user_agent=USER_AGENT)
-                    try:
-                        extraer_de_pagina(ctx.new_page())
-                    finally:
-                        ctx.close()
-                        nav.close()
+
+                def _abrir_y_extraer() -> None:
+                    with sync_playwright() as p:
+                        nav = p.chromium.launch(headless=True)
+                        ctx = nav.new_context(locale="es-ES", user_agent=USER_AGENT)
+                        try:
+                            extraer_de_pagina(ctx.new_page())
+                        finally:
+                            ctx.close()
+                            nav.close()
+
+                with ThreadPoolExecutor(max_workers=1) as _pool_pw:
+                    _pool_pw.submit(_abrir_y_extraer).result()
         except Exception as e:
             print(f"[FLASHSCORE] no se pudo leer el listado de "
                   f"{cand['nombre']}: {type(e).__name__}: {e}")

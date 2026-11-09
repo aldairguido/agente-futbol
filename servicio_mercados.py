@@ -331,8 +331,13 @@ def resolver_enfrentamiento(
         etiqueta_liga = f" [{liga_final.strip()}]"
 
     avisar(f"resolviendo «{equipo_local}» vs «{equipo_visitante}»{etiqueta_liga}")
-    doc_a, meta_a = cargar_o_crear_auditoria(equipo_local, rival=equipo_visitante, **kwargs)
-    doc_b, meta_b = cargar_o_crear_auditoria(equipo_visitante, rival=doc_a.get("equipo") or equipo_local, **kwargs)
+    from fuentes_xg import ejecutar_sync_seguro
+    doc_a, meta_a = ejecutar_sync_seguro(
+        cargar_o_crear_auditoria, equipo_local, rival=equipo_visitante, **kwargs
+    )
+    doc_b, meta_b = ejecutar_sync_seguro(
+        cargar_o_crear_auditoria, equipo_visitante, rival=doc_a.get("equipo") or equipo_local, **kwargs
+    )
 
     nombre_a = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
     nombre_b = (doc_b.get("equipo") or {}).get("nombre") or equipo_visitante
