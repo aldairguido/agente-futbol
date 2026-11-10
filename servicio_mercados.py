@@ -73,8 +73,112 @@ def _clave_equipo(nombre: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# RESOLUCIÓN DEL ENFRENTAMIENTO
+# RESOLUCIÓN DEL ENFRENTAMIENTO Y ZONA HORARIA OFICIAL AMERICA/LIMA (PUNTO 42)
 # ═══════════════════════════════════════════════════════════════════════════════
+
+def resolver_fecha_encuentro_lima(
+    fecha_utc_o_iso: str | None = None,
+    es_partido_programado: bool = True,
+    ahora_utc: datetime | None = None,
+    estado_partido: str | None = None,
+) -> dict[str, Any]:
+    """
+    Punto 42 y Sección 7: Resuelve la fecha oficial del encuentro en `America/Lima` (UTC-5).
+    - Soporta timestamps ISO/UTC con hora (`2026-11-05T02:00:00Z` -> `2026-11-04` en Lima),
+      y fechas sin hora (`YYYY-MM-DD`, `DD/MM/YYYY`, `DD.MM.YYYY`) conservando la fecha
+      publicada sin aplicar una conversión UTC ficticia.
+    - Si el encuentro está marcado como aplazado/pospuesto/cancelado, no lo trata como
+      partido activo del día y devuelve `partido_activo=False`.
+    - Incluye `alcance_mercado="90_minutos_reglamentarios"` (separado de clasificación/prórroga/penaltis).
+    """
+    from datetime import timedelta
+    tz_lima = timezone(timedelta(hours=-5), name="America/Lima")
+    base_now = (ahora_utc or datetime.now(timezone.utc)).astimezone(tz_lima)
+    hoy_lima = base_now.strftime("%Y-%m-%d")
+
+    raw = str(fecha_utc_o_iso or "").strip()
+    est_txt = f"{estado_partido or ''} {raw}".lower()
+    if any(k in est_txt for k in ("aplazado", "postponed", "cancelled", "cancelado", "suspendido", "abandoned")):
+        etiqueta_apl = f"Partido aplazado (Análisis del {hoy_lima})"
+        return {
+            "fecha_partido": etiqueta_apl,
+            "etiqueta_fecha": etiqueta_apl,
+            "zona_horaria": "America/Lima",
+            "es_fecha_analisis": True,
+            "partido_activo": False,
+            "estado_encuentro": "aplazado",
+            "conversion_utc_aplicada": False,
+            "alcance_mercado": "90_minutos_reglamentarios",
+        }
+
+    if raw and raw.lower() not in ("none", "null", "no disponible", "s/f") and not raw.lower().startswith("análisis del"):
+        try:
+            # 1) Timestamp con hora explícita -> convertir a America/Lima
+            if "T" in raw or ":" in raw:
+                s_clean = raw.replace("Z", "+00:00")
+                if " " in s_clean and "T" not in s_clean and re.match(r"^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}", s_clean):
+                    s_clean = s_clean.replace(" ", "T", 1)
+                dt = datetime.fromisoformat(s_clean)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_lima = dt.astimezone(tz_lima)
+                f_str = dt_lima.strftime("%Y-%m-%d")
+                if es_partido_programado:
+                    return {
+                        "fecha_partido": f_str,
+                        "etiqueta_fecha": f_str,
+                        "zona_horaria": "America/Lima",
+                        "es_fecha_analisis": False,
+                        "partido_activo": True,
+                        "estado_encuentro": "programado",
+                        "conversion_utc_aplicada": True,
+                        "alcance_mercado": "90_minutos_reglamentarios",
+                    }
+            # 2) Fecha sin hora YYYY-MM-DD -> conservar fecha publicada sin conversión UTC ficticia
+            elif re.match(r"^\d{4}-\d{2}-\d{2}$", raw[:10]):
+                f_str = raw[:10]
+                if es_partido_programado:
+                    return {
+                        "fecha_partido": f_str,
+                        "etiqueta_fecha": f_str,
+                        "zona_horaria": "America/Lima",
+                        "es_fecha_analisis": False,
+                        "partido_activo": True,
+                        "estado_encuentro": "programado",
+                        "conversion_utc_aplicada": False,
+                        "alcance_mercado": "90_minutos_reglamentarios",
+                    }
+            # 3) Fecha sin hora DD/MM/YYYY o DD.MM.YYYY -> normalizar a YYYY-MM-DD sin conversión UTC ficticia
+            else:
+                m_dmy = re.match(r"^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$", raw[:10].strip())
+                if m_dmy and es_partido_programado:
+                    dd, mm_n, yyyy = int(m_dmy.group(1)), int(m_dmy.group(2)), int(m_dmy.group(3))
+                    f_str = f"{yyyy:04d}-{mm_n:02d}-{dd:02d}"
+                    return {
+                        "fecha_partido": f_str,
+                        "etiqueta_fecha": f_str,
+                        "zona_horaria": "America/Lima",
+                        "es_fecha_analisis": False,
+                        "partido_activo": True,
+                        "estado_encuentro": "programado",
+                        "conversion_utc_aplicada": False,
+                        "alcance_mercado": "90_minutos_reglamentarios",
+                    }
+        except Exception:
+            pass
+
+    etiqueta = raw if raw.lower().startswith("análisis del") else f"Análisis del {hoy_lima}"
+    return {
+        "fecha_partido": etiqueta,
+        "etiqueta_fecha": etiqueta,
+        "zona_horaria": "America/Lima",
+        "es_fecha_analisis": True,
+        "partido_activo": bool(es_partido_programado),
+        "estado_encuentro": "analisis_sin_fecha_futura",
+        "conversion_utc_aplicada": False,
+        "alcance_mercado": "90_minutos_reglamentarios",
+    }
+
 
 def _partido_futuro_en_comun(doc_local: dict[str, Any],
                              doc_visitante: dict[str, Any],
@@ -145,8 +249,13 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
         if not (es_directo or es_invertido):
             continue
 
-        fecha = str(f.get("fecha") or "")[:10]
-        if not fecha:
+        fecha_raw = str(f.get("utcTime") or f.get("fecha_iso") or f.get("fecha") or "")
+        estado_f = str(f.get("estado") or f.get("status") or f.get("reason") or "")
+        info_f = resolver_fecha_encuentro_lima(fecha_raw, es_partido_programado=True, estado_partido=estado_f)
+        if not info_f.get("partido_activo", True):
+            continue
+        fecha = str(info_f["fecha_partido"])
+        if not fecha or info_f.get("es_fecha_analisis"):
             continue
         clave = str(f.get("id_partido") or f"{fecha}|{home_id}|{away_id}")
         if clave in vistos:
@@ -156,12 +265,17 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
         candidatos.append((fecha, {
             "id_partido": str(f.get("id_partido") or ""),
             "fecha_partido": fecha,
+            "etiqueta_fecha": info_f["etiqueta_fecha"],
+            "zona_horaria": "America/Lima",
+            "es_fecha_analisis": False,
+            "partido_activo": True,
+            "alcance_mercado": "90_minutos_reglamentarios",
             "competicion": f.get("competicion"),
             "condicion_local": "casa" if es_casa else "fuera",
             "condicion_visitante": "fuera" if es_casa else "casa",
             "local_es": "local" if es_casa else "visitante",
             "evidencia_condicion": ("próximo enfrentamiento cruzado por ID numérico "
-                                    "y nombre en el calendario de la fuente"),
+                                    "y nombre en el calendario de la fuente (America/Lima)"),
         }))
     if not candidatos:
         return None
@@ -172,26 +286,22 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
 def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                              equipo_local: str, equipo_visitante: str) -> dict[str, Any]:
     """
-    Busca un partido común entre ambos reportes para obtener fecha, competición y
-    condición reales. Los reportes pueden repetir el mismo partido desde las dos
-    ópticas (mismo id_partido), lo que es la evidencia más fiable.
-
-    Orden de búsqueda:
-      1. PRÓXIMO enfrentamiento programado en el calendario, cruzado por ID de equipo.
-         Va PRIMERO: si los equipos tienen un partido pendiente, ése es el cruce que
-         se consulta, y su localía es la del calendario. Antes se prefería el último
-         H2H ya jugado, y el pronóstico quedaba anclado a una fecha pasada: al
-         liquidar se elegía el partido viejo (o ninguno) y todo salía «no verificable».
-      2. Partido común YA JUGADO (mismo id_partido en ambos reportes).
-      3. Si no hay ninguno, se declara explícitamente que no hay partido próximo en
-         el calendario (localía por orden de consulta), en vez de un «no disponible»
-         que parecía un fallo de lectura.
+    Punto 42: Resuelve la fecha y competición del enfrentamiento en `America/Lima`.
+      1. PRÓXIMO enfrentamiento programado en el calendario (`partidos_futuros`),
+         convirtiendo su timestamp UTC a `America/Lima`.
+      2. Si no existe partido futuro programado en el calendario, PROHIBIDO reciclar la
+         fecha de un enfrentamiento pasado (`2025-11-28`, `2026-03-07`, etc.) como si
+         fuera la fecha del partido actual: se rotula explícitamente
+         `"Análisis del YYYY-MM-DD"` en `America/Lima` y se comparte el mismo valor
+         en Foto 1 y Foto 2.
     """
     # 1) Próximo enfrentamiento programado: es el cruce que se está consultando.
     proximo = _partido_futuro_en_comun(doc_local, doc_visitante,
                                        equipo_local, equipo_visitante)
     if proximo:
         return proximo
+
+    info_analisis = resolver_fecha_encuentro_lima(None, es_partido_programado=False)
 
     por_id: dict[str, dict[str, Any]] = {}
     for doc, equipo in ((doc_local, equipo_local), (doc_visitante, equipo_visitante)):
@@ -208,7 +318,6 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
         if tiene_l and tiene_v and len(bandos) >= 2:
             pl = bandos.get(claves[0])
             pv = bandos.get(claves[1])
-            # Cada registro trae la condición de SU equipo
             cond_l = None
             cond_v = None
             for k, p in bandos.items():
@@ -218,16 +327,20 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                     cond_v = str(p.get("condicion", "")).lower()
             return {
                 "id_partido": pid,
-                "fecha_partido": pl.get("fecha") or pv.get("fecha"),
+                "fecha_partido": info_analisis["etiqueta_fecha"],
+                "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+                "fecha_ultimo_h2h": pl.get("fecha") or pv.get("fecha"),
+                "zona_horaria": "America/Lima",
+                "es_fecha_analisis": True,
+                "partido_activo": False,
+                "alcance_mercado": "90_minutos_reglamentarios",
                 "competicion": pl.get("torneo") or pv.get("torneo"),
                 "condicion_local": cond_l,
                 "condicion_visitante": cond_v,
-                "evidencia_condicion": "partido común registrado en ambos reportes",
+                "evidencia_condicion": "condición por enfrentamiento previo registrado (sin partido futuro en calendario)",
+                "sin_partido_proximo": True,
             }
 
-    # 3) Sin partido próximo ni partido común: se declara explícitamente. Antes decía
-    #    «sin partido común: condición no verificable», que parecía un fallo de
-    #    lectura cuando en realidad es que no hay enfrentamiento programado.
     def mas_reciente(doc: dict[str, Any]) -> dict[str, Any] | None:
         partidos = sorted(doc.get("partidos", []), key=lambda p: str(p.get("fecha") or ""),
                           reverse=True)
@@ -236,7 +349,12 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
     reciente_l, reciente_v = mas_reciente(doc_local), mas_reciente(doc_visitante)
     return {
         "id_partido": None,
-        "fecha_partido": None,
+        "fecha_partido": info_analisis["etiqueta_fecha"],
+        "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+        "zona_horaria": "America/Lima",
+        "es_fecha_analisis": True,
+        "partido_activo": False,
+        "alcance_mercado": "90_minutos_reglamentarios",
         "competicion": ((reciente_l or {}).get("torneo") or (reciente_v or {}).get("torneo")),
         "condicion_local": None,
         "condicion_visitante": None,
@@ -762,9 +880,8 @@ def renderizar_ticket_mercados_png(
     eq_v = str(meta.get("equipo_visitante") or "Visitante")
     partido_titulo = f"{eq_l} vs {eq_v}"
     competicion = str(meta.get("competicion") or "Competición oficial")
-    fecha = str(meta.get("fecha_partido") or meta.get("generado_en") or _ahora())
-    if len(fecha) > 19:
-        fecha = fecha[:19]
+    fecha_raw_t = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or meta.get("generado_en") or _ahora()).strip()
+    fecha = fecha_raw_t if fecha_raw_t.lower().startswith("análisis del") else (fecha_raw_t[:19] if len(fecha_raw_t) > 19 else fecha_raw_t)
 
     sels_raw = _val(analisis, "selecciones_filtradas", []) or []
     if not sels_raw and hasattr(analisis, "grupos"):
@@ -1136,13 +1253,57 @@ def renderizar_ticket_mercados_png(
         mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
         sensibles_raw = [s for s in sels_top_tabla if _val(s, "estado") != "mantiene"]
 
-        # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
+        # Punto 27 y Punto 40: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
+        # únicamente cuando su probabilidad real en la matriz final sea >= 70.0% (si se veta 1X y X2 < 70%, dejar sin jugada forzada)
+        if p_1x2 is not None:
+            p1_m, px_m, p2_m = p_1x2
+            mantiene_sinc: list[Any] = []
+            for s_m in mantiene_raw:
+                ev_m = str(_val(s_m, "evento") or "").lower().strip()
+                per_m = str(_val(s_m, "periodo") or "FT").strip().upper()
+                if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
+                    p_real_1x = round(p1_m + px_m, 6)
+                    if p_real_1x < 0.70:
+                        continue
+                    if isinstance(s_m, dict):
+                        s_m["probabilidad"] = p_real_1x
+                    else:
+                        try:
+                            s_m.probabilidad = p_real_1x
+                        except Exception:
+                            pass
+                elif per_m == "FT" and (ev_m in ("x2", "dc_x2") or ev_m.endswith("_x2")):
+                    p_real_x2 = round(px_m + p2_m, 6)
+                    if p_real_x2 < 0.70:
+                        continue
+                    if isinstance(s_m, dict):
+                        s_m["probabilidad"] = p_real_x2
+                    else:
+                        try:
+                            s_m.probabilidad = p_real_x2
+                        except Exception:
+                            pass
+                mantiene_sinc.append(s_m)
+            mantiene_raw = mantiene_sinc
+
         tiene_res_sec1 = any(_clasificar_categoria_ambito(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
         if not tiene_res_sec1 and top5_podio:
             for item_t5 in top5_podio:
-                if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+                prob_t5 = float(item_t5.get("probabilidad", 0.0) or 0.0)
+                if int(item_t5.get("slot", 0) or 0) == 1 and prob_t5 >= 0.70:
                     et_t5 = str(item_t5.get("etiqueta") or "")
                     ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
+                    if p_1x2 is not None:
+                        if ev_t5 == "1x":
+                            prob_t5 = round(p_1x2[0] + p_1x2[1], 6)
+                        elif ev_t5 == "x2":
+                            prob_t5 = round(p_1x2[1] + p_1x2[2], 6)
+                        elif ev_t5 == "1":
+                            prob_t5 = round(p_1x2[0], 6)
+                        elif ev_t5 == "2":
+                            prob_t5 = round(p_1x2[2], 6)
+                    if prob_t5 < 0.70:
+                        continue
                     mantiene_raw.append({
                         "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
                         "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
@@ -1151,7 +1312,7 @@ def renderizar_ticket_mercados_png(
                         "periodo": "FT",
                         "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
                         "linea": None,
-                        "probabilidad": float(item_t5.get("probabilidad", 0.72)),
+                        "probabilidad": prob_t5,
                         "estado": "mantiene",
                     })
                     break

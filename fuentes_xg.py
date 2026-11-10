@@ -464,6 +464,8 @@ class MatrizPartido:
     procedencia: dict[str, dict[str, dict[str, str]]] = field(default_factory=dict)
     # Identidad del partido en la fuente secundaria (trazabilidad)
     fuente_secundaria: dict[str, Any] = field(default_factory=dict)
+    # Inconsistencias aritméticas detectadas (ej. FT < 1T en magnitudes no negativas)
+    inconsistencias_aritmeticas: list[dict[str, Any]] = field(default_factory=list)
 
     @classmethod
     def desde_dict(cls, d: dict[str, Any]) -> MatrizPartido:
@@ -1564,9 +1566,10 @@ def normalizar_nombre_club(nombre: str) -> str:
         ("inter miami", "Inter Miami CF"),
         ("eintracht francfort", "Eintracht Frankfurt"),
         ("eintracht de francfort", "Eintracht Frankfurt"),
-        ("deportivo de a coruna", "Deportivo La Coruna"),
-        ("deportivo a coruna", "Deportivo La Coruna"),
-        ("deportivo la coruna", "Deportivo La Coruna"),
+        ("deportivo de a coruna", "Deportivo de La Coruña"),
+        ("deportivo de la coruna", "Deportivo de La Coruña"),
+        ("deportivo a coruna", "Deportivo de La Coruña"),
+        ("deportivo la coruna", "Deportivo de La Coruña"),
     )
     for origen, destino in reemplazos_frase:
         if origen in low:
@@ -4010,6 +4013,7 @@ PARES_ALIAS_CATALOGO: tuple[tuple[str, str], ...] = (
     ("xgot_enfrentados", "xgot_enfrentado"),
     ("saques_de_puerta", "saques_puerta"),
 )
+ALIAS_SINCRONIZADOS: tuple[tuple[str, str], ...] = PARES_ALIAS_CATALOGO
 
 METRICAS_CONTINUAS_ADITIVAS: frozenset[str] = frozenset({
     "xg", "xgot", "xg_juego_abierto", "xg_balon_parado", "xg_sin_penalti",
@@ -4050,24 +4054,37 @@ def _resolver_ecuaciones_periodo(
     riv: dict[str, float | None],
     goles_eq: float | None = None,
     goles_riv: float | None = None,
+    estimados_eq: set[str] | None = None,
+    estimados_riv: set[str] | None = None,
 ) -> None:
     """
     Aplica las ecuaciones exactas de consistencia estadística de la Sección 5
     dentro de un mismo periodo (`FT`, `1T` o `2T`).
     """
+    if estimados_eq is None:
+        estimados_eq = set()
+    if estimados_riv is None:
+        estimados_riv = set()
+
+    def _marcar_est(d_ref: dict[str, float | None], k: str) -> None:
+        s_ref = estimados_eq if d_ref is eq else estimados_riv
+        s_ref.add(k)
+        for a, b in ALIAS_SINCRONIZADOS:
+            if a == k:
+                s_ref.add(b)
+            elif b == k:
+                s_ref.add(a)
+
     _sincronizar_alias_dict(eq)
     _sincronizar_alias_dict(riv)
 
-    # 1. Posesión: eq + riv = 100%
+    # 1. Posesión: eq + riv = 100% (solo si al menos un bando fue publicado; no inventar 50/50 si falta)
     pos_eq = eq.get("posesion_pct")
     pos_riv = riv.get("posesion_pct")
     if pos_eq is not None and pos_riv is None:
         riv["posesion_pct"] = round(max(0.0, 100.0 - pos_eq), 1)
     elif pos_riv is not None and pos_eq is None:
         eq["posesion_pct"] = round(max(0.0, 100.0 - pos_riv), 1)
-    elif pos_eq is None and pos_riv is None:
-        eq["posesion_pct"] = 50.0
-        riv["posesion_pct"] = 50.0
     _sincronizar_alias_dict(eq)
     _sincronizar_alias_dict(riv)
 
@@ -4084,23 +4101,28 @@ def _resolver_ecuaciones_periodo(
             eq["goles_encajados"] = float(goles_riv)
 
     for propio, ajeno in ((eq, riv), (riv, eq)):
+        s_propio = estimados_eq if propio is eq else estimados_riv
+        s_ajeno = estimados_riv if propio is eq else estimados_eq
         if propio.get("xgot_enfrentados") is None and ajeno.get("xgot") is not None:
             propio["xgot_enfrentados"] = ajeno["xgot"]
+            if "xgot" in s_ajeno:
+                _marcar_est(propio, "xgot_enfrentados")
         elif ajeno.get("xgot") is None and propio.get("xgot_enfrentados") is not None:
             ajeno["xgot"] = propio["xgot_enfrentados"]
+            if "xgot_enfrentados" in s_propio:
+                _marcar_est(ajeno, "xgot")
 
-        # 2b. Saques de puerta (consistencia física):
-        # Los saques de puerta del equipo defensor se originan por los remates fuera del atacante.
-        # Si la fuente omite saques_puerta (devolviendo None o 0) y el atacante tuvo remates fuera:
-        # saques_puerta(defensor) = max(1, remates_fuera(atacante) - al_palo(atacante))
+        # 2b. Saques de puerta (estimación física):
         sp = propio.get("saques_puerta")
         rf_atk = ajeno.get("remates_fuera")
         al_palo_atk = ajeno.get("al_palo") or 0.0
-        if sp is None or sp == 0.0:
-            if rf_atk is not None and rf_atk > 0:
+        if (sp is None or sp == 0.0) and rf_atk is not None:
+            if rf_atk > 0:
                 propio["saques_puerta"] = float(max(1.0, round(rf_atk - al_palo_atk)))
-            else:
-                propio["saques_puerta"] = 1.0
+                _marcar_est(propio, "saques_puerta")
+            elif sp is None and goles_eq is not None:
+                propio["saques_puerta"] = 0.0
+                _marcar_est(propio, "saques_puerta")
 
         # 2c. Tiros libres directos: concedidos por faltas o fueras de juego cometidos por el rival
         tl = propio.get("tiros_libres")
@@ -4108,6 +4130,7 @@ def _resolver_ecuaciones_periodo(
         fj_riv = ajeno.get("fueras_juego") or ajeno.get("fueras_de_juego") or 0.0
         if (tl is None or tl == 0.0) and faltas_riv is not None and faltas_riv > 0:
             propio["tiros_libres"] = float(round(faltas_riv + fj_riv))
+            _marcar_est(propio, "tiros_libres")
 
         # 2d. Pases entre líneas (line breaking passes)
         pel = propio.get("pases_entre_lineas")
@@ -4115,11 +4138,13 @@ def _resolver_ecuaciones_periodo(
             ptf_comp = propio.get("pases_tercio_final_completados") or propio.get("pases_tercio_final") or 0.0
             if ptf_comp > 5:
                 propio["pases_entre_lineas"] = float(max(1.0, round(ptf_comp * 0.05)))
+                _marcar_est(propio, "pases_entre_lineas")
 
-        # 2e. Reconstrucción obligatoria de xG y xGOT en ligas menores (Serie C / 1ª RFEF)
-        # cuando FotMob devuelve 0.0 pero sí hubo remates reales:
-        rt_propio = propio.get("remates_totales") or 0.0
-        rp_propio = propio.get("remates_a_puerta") or propio.get("remates_puerta") or 0.0
+        # 2e. Reconstrucción de xG y xGOT cuando hubo remates observados pero xG no fue publicado (estimacion_modelo):
+        rt_raw = propio.get("remates_totales")
+        rp_raw = propio.get("remates_a_puerta") if propio.get("remates_a_puerta") is not None else propio.get("remates_puerta")
+        rt_propio = rt_raw or 0.0
+        rp_propio = rp_raw or 0.0
         rda_propio = propio.get("remates_dentro_area") or 0.0
         rfa_propio = propio.get("remates_fuera_area") or 0.0
         go_propio = propio.get("grandes_ocasiones") or 0.0
@@ -4130,32 +4155,45 @@ def _resolver_ecuaciones_periodo(
                 propio["xg"] = round(0.11 * rda_propio + 0.035 * rfa_propio + 0.28 * go_propio, 2)
             else:
                 propio["xg"] = round(0.09 * rt_propio + 0.14 * rp_propio, 2)
-        elif rt_propio <= 0:
-            # 2f. Protección en partidos sin hoja de estadísticas (ej. previas/femeninas donde remates_totales == 0):
-            # Asignar xg = goles_favor, xgot = goles_favor, xgot_enfrentado = goles_contra, goles_evitados = 0.0
-            gf_val = float(gf_propio if gf_propio is not None else 1.0)
+            _marcar_est(propio, "xg")
+        elif rt_raw is not None and rt_raw == 0.0 and goles_eq is not None and gf_propio is not None and gf_propio > 0:
+            # 2f. Protección en FT cuando un partido tuvo goles pero remates_totales == 0 reportado:
+            gf_val = float(gf_propio)
             gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
-            propio["xg"] = float(round(gf_val, 2))
-            propio["xgot"] = float(round(gf_val, 2))
-            propio["xgot_enfrentados"] = float(round(gc_val, 2))
-            propio["goles_evitados"] = 0.0
-            propio["remates_totales"] = float(max(6.0, round(gf_val * 4.0 + 4.0)))
-            propio["remates_a_puerta"] = float(max(2.0, round(gf_val * 2.0 + 1.0)))
-            propio["remates_puerta"] = propio["remates_a_puerta"]
-            propio["posesion_pct"] = 50.0
+            if propio.get("xg") is None:
+                propio["xg"] = float(round(gf_val, 2))
+                _marcar_est(propio, "xg")
+            if propio.get("xgot") is None:
+                propio["xgot"] = float(round(gf_val, 2))
+                _marcar_est(propio, "xgot")
+            if propio.get("xgot_enfrentados") is None:
+                propio["xgot_enfrentados"] = float(round(gc_val, 2))
+                _marcar_est(propio, "xgot_enfrentados")
+            if propio.get("goles_evitados") is None:
+                propio["goles_evitados"] = 0.0
+                _marcar_est(propio, "goles_evitados")
 
         if rp_propio > 0 and (propio.get("xgot") is None or propio.get("xgot") <= 0.001):
-            gf_val = float(gf_propio if gf_propio is not None else 1.0)
+            gf_val = float(gf_propio if gf_propio is not None else 0.0)
             propio["xgot"] = round(0.29 * rp_propio + 0.12 * gf_val, 2)
+            _marcar_est(propio, "xgot")
 
-        rp_ajeno = ajeno.get("remates_a_puerta") or ajeno.get("remates_puerta") or 0.0
-        gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
-        if propio.get("xgot_enfrentados") is None or propio.get("xgot_enfrentados") <= 0.001:
+        rp_ajeno_raw = ajeno.get("remates_a_puerta") if ajeno.get("remates_a_puerta") is not None else ajeno.get("remates_puerta")
+        rp_ajeno = rp_ajeno_raw or 0.0
+        gc_raw = ajeno.get("goles") if ajeno.get("goles") is not None else propio.get("goles_encajados")
+        gc_val = float(gc_raw or 0.0)
+        if propio.get("xgot_enfrentados") is None and (rp_ajeno_raw is not None or gc_raw is not None):
             if rp_ajeno > 0 or gc_val > 0:
                 propio["xgot_enfrentados"] = round(0.29 * max(1.0, rp_ajeno) + 0.12 * gc_val, 2)
+                _marcar_est(propio, "xgot_enfrentados")
+            elif rp_ajeno_raw == 0.0 and gc_val == 0.0:
+                propio["xgot_enfrentados"] = 0.0
+                _marcar_est(propio, "xgot_enfrentados")
 
-        if propio.get("goles_evitados") is None and propio.get("xgot_enfrentados") is not None:
+        if propio.get("goles_evitados") is None and propio.get("xgot_enfrentados") is not None and gc_raw is not None:
             propio["goles_evitados"] = round(propio["xgot_enfrentados"] - gc_val, 2)
+            if "xgot_enfrentados" in s_propio:
+                _marcar_est(propio, "goles_evitados")
 
     _sincronizar_alias_dict(eq)
     _sincronizar_alias_dict(riv)
@@ -4237,6 +4275,7 @@ def _resolver_ecuaciones_periodo(
                 float(max(comp_tf, round(comp_tf * 100.0 / pct_pases)))
                 if pct_pases > 0 else comp_tf
             )
+            _marcar_est(d, "pases_tercio_final")
 
         # Caso especial entradas cuando solo hay entradas_ganadas
         if d.get("entradas_ganadas") is not None and d.get("entradas") is None:
@@ -4247,81 +4286,109 @@ def _resolver_ecuaciones_periodo(
             else:
                 d["entradas"] = float(eg)
                 d["entradas_ganadas_pct"] = 100.0 if eg > 0 else 0.0
+                _marcar_est(d, "entradas_ganadas_pct")
+            _marcar_est(d, "entradas")
 
         # 3f. Desglose de xG cuando la fuente publica xG total pero omite sub-tipos
         xg_val = d.get("xg")
+        s_d = estimados_eq if d is eq else estimados_riv
         if xg_val is not None:
             if d.get("xg_sin_penalti") is None:
                 d["xg_sin_penalti"] = xg_val
+                _marcar_est(d, "xg_sin_penalti")
             if d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is not None:
                 d["xg_juego_abierto"] = round(max(0.0, xg_val - d["xg_balon_parado"]), 2)
+                if "xg" in s_d or "xg_balon_parado" in s_d:
+                    _marcar_est(d, "xg_juego_abierto")
             elif d.get("xg_balon_parado") is None and d.get("xg_juego_abierto") is not None:
                 d["xg_balon_parado"] = round(max(0.0, xg_val - d["xg_juego_abierto"]), 2)
+                if "xg" in s_d or "xg_juego_abierto" in s_d:
+                    _marcar_est(d, "xg_balon_parado")
             elif d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is None:
                 d["xg_juego_abierto"] = xg_val
                 d["xg_balon_parado"] = 0.0
+                _marcar_est(d, "xg_juego_abierto")
+                _marcar_est(d, "xg_balon_parado")
 
         # 3g. Goles evitados = xgot_enfrentados - goles_encajados
         xgot_enf = d.get("xgot_enfrentados")
         g_enc = d.get("goles_encajados")
         if xgot_enf is not None and g_enc is not None and d.get("goles_evitados") is None:
             d["goles_evitados"] = round(xgot_enf - g_enc, 2)
+            if "xgot_enfrentados" in s_d:
+                _marcar_est(d, "goles_evitados")
 
         _sincronizar_alias_dict(d)
 
 
 def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
     """
-    Garantiza:
-      1. Presencia de todas las métricas del catálogo en `FT`, `1T` y `2T`.
-      2. Coherencia aritmética multitiempo (`1T + 2T == FT`).
-      3. Ecuaciones de consistencia estadística de la Sección 5.
-      4. Cero valores `None`, `null`, `NaN` o `"sin_dato"` en los tres periodos.
+    Puntos 37 y 39:
+      1. Presencia de todas las 45 métricas del catálogo en `FT`, `1T` y `2T` (270 celdas).
+      2. Coherencia aritmética multitiempo (`1T + 2T == FT`) únicamente cuando se conocen
+         al menos 2 de los 3 periodos.
+      3. Prohibido el reparto sintético 50/50 (`ratio_1t = 0.5`) entre `1T` y `2T` cuando
+         solo existe el dato de `FT`. En ese caso, `1T` y `2T` quedan como `None` con
+         procedencia `PROC_SIN_DATO` (`"sin_dato"`), distinguiendo estrictamente un `0.0`
+         observado frente a un dato no publicado (`None`).
+      4. Ecuaciones de consistencia estadística de la Sección 5 intra-periodo.
     """
     from fuente_flashscore import PROC_DERIVADO, PROC_SIN_DATO, pases_ratio_derivado
 
-    # Construir diccionario de trabajo por_per[periodo][lado][clave]
+    # Construir diccionario de trabajo por_per[periodo][lado][clave] y snapshot de valores nativos
     por_per: dict[str, dict[str, dict[str, float | None]]] = {
         p: {"equipo": {}, "rival": {}} for p in ("FT", "1T", "2T")
     }
+    nativos_por_per: dict[str, dict[str, dict[str, float | None]]] = {
+        p: {"equipo": {}, "rival": {}} for p in ("FT", "1T", "2T")
+    }
+    estimados_por_per: dict[str, dict[str, set[str]]] = {
+        p: {"equipo": set(), "rival": set()} for p in ("FT", "1T", "2T")
+    }
+    inconsistencias: list[dict[str, Any]] = list(getattr(matriz, "inconsistencias_aritmeticas", None) or [])
     for p in ("FT", "1T", "2T"):
         bloque = matriz.periodos.get(p)
         if bloque is None:
             continue
         for fila in bloque.filas:
             cl = fila["clave"]
-            por_per[p]["equipo"][cl] = fila.get("equipo")
-            por_per[p]["rival"][cl] = fila.get("rival")
+            v_eq = fila.get("equipo")
+            v_rv = fila.get("rival")
+            por_per[p]["equipo"][cl] = v_eq
+            por_per[p]["rival"][cl] = v_rv
+            nativos_por_per[p]["equipo"][cl] = v_eq
+            nativos_por_per[p]["rival"][cl] = v_rv
 
     # Asegurar que todas las claves de CATALOGO_METRICAS existan en el mapa
     for p in ("FT", "1T", "2T"):
         for d in CATALOGO_METRICAS:
             por_per[p]["equipo"].setdefault(d.clave, None)
             por_per[p]["rival"].setdefault(d.clave, None)
+            nativos_por_per[p]["equipo"].setdefault(d.clave, None)
+            nativos_por_per[p]["rival"].setdefault(d.clave, None)
 
     # Pasada 1: resolver ecuaciones intra-periodo con los datos nativos
     _resolver_ecuaciones_periodo(
         por_per["FT"]["equipo"], por_per["FT"]["rival"],
         goles_eq=matriz.goles_equipo, goles_riv=matriz.goles_rival,
+        estimados_eq=estimados_por_per["FT"]["equipo"],
+        estimados_riv=estimados_por_per["FT"]["rival"],
     )
-    _resolver_ecuaciones_periodo(por_per["1T"]["equipo"], por_per["1T"]["rival"])
-    _resolver_ecuaciones_periodo(por_per["2T"]["equipo"], por_per["2T"]["rival"])
+    _resolver_ecuaciones_periodo(
+        por_per["1T"]["equipo"], por_per["1T"]["rival"],
+        estimados_eq=estimados_por_per["1T"]["equipo"],
+        estimados_riv=estimados_por_per["1T"]["rival"],
+    )
+    _resolver_ecuaciones_periodo(
+        por_per["2T"]["equipo"], por_per["2T"]["rival"],
+        estimados_eq=estimados_por_per["2T"]["equipo"],
+        estimados_riv=estimados_por_per["2T"]["rival"],
+    )
 
-    # Calcular proporción de actividad 1T / FT por bando (para desagregar métricas
-    # que la fuente primaria solo publique en FT cuando Flashscore no tenga 1T/2T)
-    ratio_1t: dict[str, float] = {"equipo": 0.5, "rival": 0.5}
-    for lado in ("equipo", "rival"):
-        for k_ref in ("pases_totales", "pases_total", "remates_totales", "toques_area_rival"):
-            v_ft = por_per["FT"][lado].get(k_ref)
-            v_1t = por_per["1T"][lado].get(k_ref)
-            if v_ft and v_ft > 0 and v_1t is not None and 0.0 <= v_1t <= v_ft:
-                ratio_1t[lado] = max(0.15, min(0.85, float(v_1t) / float(v_ft)))
-                break
-
-    # Pasada 2: coherencia aritmética multitiempo (1T + 2T == FT) para métricas aditivas
+    # Pasada 2: coherencia aritmética multitiempo (1T + 2T == FT) SOLO por identidad exacta
+    # (cuando se conocen 2 de los 3 periodos, o cuando FT == 0.0 observado en una métrica no negativa)
     todas_aditivas = METRICAS_CONTEO_ADITIVAS | METRICAS_CONTINUAS_ADITIVAS
     for lado in ("equipo", "rival"):
-        r1 = ratio_1t[lado]
         for cl in todas_aditivas:
             es_continua = cl in METRICAS_CONTINUAS_ADITIVAS
             v_ft = por_per["FT"][lado].get(cl)
@@ -4331,161 +4398,306 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
             if v_1t is not None and v_2t is not None and v_ft is None:
                 v_ft = round(v_1t + v_2t, 2) if es_continua else float(round(v_1t + v_2t))
                 por_per["FT"][lado][cl] = v_ft
+                if cl in estimados_por_per["1T"][lado] or cl in estimados_por_per["2T"][lado]:
+                    estimados_por_per["FT"][lado].add(cl)
             elif v_ft is not None and v_1t is not None and v_2t is None:
                 dif = v_ft - v_1t
-                if cl != "goles_evitados":
-                    dif = max(0.0, dif)
-                por_per["2T"][lado][cl] = round(dif, 2) if es_continua else float(round(dif))
+                if cl != "goles_evitados" and dif < -1e-6:
+                    por_per["2T"][lado][cl] = None
+                    inconsistencias.append({
+                        "clave": cl, "lado": lado, "periodo_afectado": "2T",
+                        "FT": v_ft, "1T": v_1t, "diferencia": round(dif, 4),
+                        "motivo": "FT < 1T en magnitud no negativa; no se convierte en 0.0",
+                    })
+                else:
+                    if cl != "goles_evitados":
+                        dif = max(0.0, dif)
+                    por_per["2T"][lado][cl] = round(dif, 2) if es_continua else float(round(dif))
+                    if cl in estimados_por_per["FT"][lado] or cl in estimados_por_per["1T"][lado]:
+                        estimados_por_per["2T"][lado].add(cl)
             elif v_ft is not None and v_2t is not None and v_1t is None:
                 dif = v_ft - v_2t
-                if cl != "goles_evitados":
-                    dif = max(0.0, dif)
-                por_per["1T"][lado][cl] = round(dif, 2) if es_continua else float(round(dif))
+                if cl != "goles_evitados" and dif < -1e-6:
+                    por_per["1T"][lado][cl] = None
+                    inconsistencias.append({
+                        "clave": cl, "lado": lado, "periodo_afectado": "1T",
+                        "FT": v_ft, "2T": v_2t, "diferencia": round(dif, 4),
+                        "motivo": "FT < 2T en magnitud no negativa; no se convierte en 0.0",
+                    })
+                else:
+                    if cl != "goles_evitados":
+                        dif = max(0.0, dif)
+                    por_per["1T"][lado][cl] = round(dif, 2) if es_continua else float(round(dif))
+                    if cl in estimados_por_per["FT"][lado] or cl in estimados_por_per["2T"][lado]:
+                        estimados_por_per["1T"][lado].add(cl)
             elif v_ft is not None and v_1t is None and v_2t is None:
-                if v_ft == 0:
+                # Si FT es exactamente 0.0 observado en un conteo no negativo, 1T=0.0 y 2T=0.0 es exacto
+                if v_ft == 0.0 and cl != "goles_evitados" and cl not in estimados_por_per["FT"][lado]:
                     por_per["1T"][lado][cl] = 0.0
                     por_per["2T"][lado][cl] = 0.0
-                elif es_continua:
-                    p1 = round(v_ft * r1, 2)
-                    p2 = round(v_ft - p1, 2)
-                    por_per["1T"][lado][cl] = p1
-                    por_per["2T"][lado][cl] = p2
-                else:
-                    p1 = float(round(v_ft * r1))
-                    p2 = float(max(0.0, v_ft - p1))
-                    por_per["1T"][lado][cl] = p1
-                    por_per["2T"][lado][cl] = p2
-            elif v_ft is None and v_1t is None and v_2t is None:
-                # Evento acumulativo omitido por valer 0 en el partido
-                por_per["FT"][lado][cl] = 0.0
-                por_per["1T"][lado][cl] = 0.0
-                por_per["2T"][lado][cl] = 0.0
+                # Si v_ft > 0 y faltan 1T y 2T, PROHIBIDO repartir 50/50: quedan en None ("sin_dato")
 
-    # Pasada 3: re-ejecutar ecuaciones de consistencia en cada periodo ya poblado
+    # Guardar snapshot de las celdas obtenidas por dato publicado o identidad aritmética estricta
+    despues_identidades_por_per: dict[str, dict[str, dict[str, float | None]]] = {
+        p: {
+            "equipo": dict(por_per[p]["equipo"]),
+            "rival": dict(por_per[p]["rival"]),
+        }
+        for p in ("FT", "1T", "2T")
+    }
+
+    # Pasada 3: re-ejecutar ecuaciones de consistencia en cada periodo con las derivaciones exactas
     for p in ("FT", "1T", "2T"):
         _resolver_ecuaciones_periodo(
             por_per[p]["equipo"], por_per[p]["rival"],
             goles_eq=(matriz.goles_equipo if p == "FT" else None),
             goles_riv=(matriz.goles_rival if p == "FT" else None),
+            estimados_eq=estimados_por_per[p]["equipo"],
+            estimados_riv=estimados_por_per[p]["rival"],
         )
 
-    # Pasada 3b: reconciliación estricta 1T + 2T == FT para todas las métricas aditivas
-    # tras resolver ecuaciones intra-periodo (ej. pases_entre_lineas, saques_puerta, tiros_libres)
+    # Pasada 3b: reconciliación estricta 1T + 2T == FT cuando ambos 1T y 2T están presentes
     for lado in ("equipo", "rival"):
-        r1 = ratio_1t[lado]
         for cl in todas_aditivas:
             es_continua = cl in METRICAS_CONTINUAS_ADITIVAS
             v_ft = por_per["FT"][lado].get(cl)
             v_1t = por_per["1T"][lado].get(cl)
             v_2t = por_per["2T"][lado].get(cl)
 
-            if v_ft is not None and (v_1t is not None or v_2t is not None):
-                v_1t_val = v_1t if v_1t is not None else 0.0
-                v_2t_val = v_2t if v_2t is not None else 0.0
-                suma_mitades = v_1t_val + v_2t_val
+            if v_ft is not None and v_1t is not None and v_2t is not None:
+                suma_mitades = v_1t + v_2t
                 tol = 0.05 if es_continua else 0.001
                 if abs(suma_mitades - v_ft) > tol:
-                    if v_ft == 0.0:
+                    if v_ft == 0.0 and cl != "goles_evitados":
                         por_per["1T"][lado][cl] = 0.0
                         por_per["2T"][lado][cl] = 0.0
-                    elif es_continua:
-                        p1 = round(v_ft * r1, 2)
-                        p2 = round(v_ft - p1, 2)
+                    elif suma_mitades > 0 and cl != "goles_evitados":
+                        # Ajustar proporcionalmente a las mitades reales observadas
+                        f_esc = v_ft / suma_mitades
+                        p1 = round(v_1t * f_esc, 2) if es_continua else float(round(v_1t * f_esc))
+                        p2 = round(v_ft - p1, 2) if es_continua else float(max(0.0, v_ft - p1))
                         por_per["1T"][lado][cl] = p1
                         por_per["2T"][lado][cl] = p2
-                    else:
-                        p1 = float(round(v_ft * r1))
-                        p2 = float(max(0.0, v_ft - p1))
-                        por_per["1T"][lado][cl] = p1
-                        por_per["2T"][lado][cl] = p2
-            elif (v_1t is not None or v_2t is not None) and v_ft is None:
-                v_1t_val = v_1t if v_1t is not None else 0.0
-                v_2t_val = v_2t if v_2t is not None else 0.0
-                v_ft = round(v_1t_val + v_2t_val, 2) if es_continua else float(round(v_1t_val + v_2t_val))
+            elif v_1t is not None and v_2t is not None and v_ft is None:
+                v_ft = round(v_1t + v_2t, 2) if es_continua else float(round(v_1t + v_2t))
                 por_per["FT"][lado][cl] = v_ft
 
-    # Pasada 4: métricas de porcentaje y ratios (pases_ratio, duelos_suelo_pct, etc.)
+    # Pasada 4: métricas de porcentaje y ratios (solo cuando existen los insumos reales del periodo)
     for p in ("FT", "1T", "2T"):
         for lado in ("equipo", "rival"):
             d = por_per[p][lado]
-            # Recalcular goles_evitados con xgot_enfrentados y goles_encajados del periodo
             xgot_enf = d.get("xgot_enfrentados")
             g_enc = d.get("goles_encajados")
             if xgot_enf is not None and g_enc is not None:
                 d["goles_evitados"] = round(xgot_enf - g_enc, 2)
 
-            # Porcentajes de duelos: si faltan en 1T/2T, heredar FT o 50.0
-            for k_duelo in ("duelos_suelo_pct", "duelos_aereos_pct"):
-                if d.get(k_duelo) is None:
-                    v_ft_d = por_per["FT"][lado].get(k_duelo)
-                    d[k_duelo] = v_ft_d if v_ft_d is not None else 50.0
-
-            # pases_ratio derivado
             if d.get("pases_ratio") is None:
-                p_tot = d.get("pases_total") or d.get("pases_totales") or 0.0
-                pos = d.get("posesion_pct") or 50.0
-                escala = 1.0 if p == "FT" else 2.0
-                ratio = pases_ratio_derivado(p_tot * escala, pos)
-                d["pases_ratio"] = ratio if ratio is not None else 0.0
+                p_tot = d.get("pases_total") if d.get("pases_total") is not None else d.get("pases_totales")
+                pos = d.get("posesion_pct")
+                if p_tot is not None and pos is not None:
+                    escala = 1.0 if p == "FT" else 2.0
+                    ratio = pases_ratio_derivado(p_tot * escala, pos)
+                    if ratio is not None:
+                        d["pases_ratio"] = ratio
 
             _sincronizar_alias_dict(d)
 
-            # Garantía final cero nulos / cero NaN
+            # Sanitizar únicamente NaN flotantes, preservando None para celdas sin dato real
             for definicion in CATALOGO_METRICAS:
                 val = d.get(definicion.clave)
-                if val is None or (isinstance(val, float) and val != val):
-                    d[definicion.clave] = 0.0
+                if isinstance(val, float) and val != val:
+                    d[definicion.clave] = None
 
     # Escribir los valores consolidados de vuelta en matriz.periodos y matriz.procedencia
     if not isinstance(matriz.procedencia, dict):
         matriz.procedencia = {}
 
+    proc_previa_top: dict[str, dict[str, str]] = {
+        "equipo": dict(matriz.procedencia.get("equipo") or {}) if isinstance(matriz.procedencia.get("equipo"), dict) else {},
+        "rival": dict(matriz.procedencia.get("rival") or {}) if isinstance(matriz.procedencia.get("rival"), dict) else {},
+    }
+
+    no_disp_ft: set[str] = set()
     for p in ("FT", "1T", "2T"):
         bloque = matriz.periodos.get(p)
+        no_disp_per: list[str] = []
         if bloque is None:
             filas_nuevas = []
             for d in CATALOGO_METRICAS:
+                v_eq = por_per[p]["equipo"].get(d.clave)
+                v_rv = por_per[p]["rival"].get(d.clave)
+                if v_eq is None or v_rv is None:
+                    no_disp_per.append(d.clave)
+                    if p == "FT":
+                        no_disp_ft.add(d.clave)
                 filas_nuevas.append({
                     "clave": d.clave,
                     "metrica": d.etiqueta,
                     "categoria": d.categoria,
-                    "equipo": por_per[p]["equipo"][d.clave],
-                    "rival": por_per[p]["rival"][d.clave],
+                    "equipo": v_eq,
+                    "rival": v_rv,
                 })
-            matriz.periodos[p] = PeriodoPartido(p, filas_nuevas, [])
+            matriz.periodos[p] = PeriodoPartido(p, filas_nuevas, no_disp_per)
         else:
             vistas: set[str] = set()
             for fila in bloque.filas:
                 cl = fila["clave"]
                 vistas.add(cl)
-                fila["equipo"] = por_per[p]["equipo"].get(cl, 0.0)
-                fila["rival"] = por_per[p]["rival"].get(cl, 0.0)
+                v_eq = por_per[p]["equipo"].get(cl)
+                v_rv = por_per[p]["rival"].get(cl)
+                fila["equipo"] = v_eq
+                fila["rival"] = v_rv
+                if v_eq is None or v_rv is None:
+                    no_disp_per.append(cl)
+                    if p == "FT":
+                        no_disp_ft.add(cl)
             for d in CATALOGO_METRICAS:
                 if d.clave not in vistas:
+                    v_eq = por_per[p]["equipo"].get(d.clave)
+                    v_rv = por_per[p]["rival"].get(d.clave)
+                    if v_eq is None or v_rv is None:
+                        no_disp_per.append(d.clave)
+                        if p == "FT":
+                            no_disp_ft.add(d.clave)
                     bloque.filas.append({
                         "clave": d.clave,
                         "metrica": d.etiqueta,
                         "categoria": d.categoria,
-                        "equipo": por_per[p]["equipo"].get(d.clave, 0.0),
-                        "rival": por_per[p]["rival"].get(d.clave, 0.0),
+                        "equipo": v_eq,
+                        "rival": v_rv,
                     })
-            bloque.no_disponibles = []
+            bloque.no_disponibles = no_disp_per
 
-    # Limpiar cualquier etiqueta PROC_SIN_DATO en procedencia tras la consolidación
-    for lado in ("equipo", "rival"):
-        if lado in matriz.procedencia and isinstance(matriz.procedencia[lado], dict):
+        # Actualizar procedencia por periodo y bando
+        mapa_p = matriz.procedencia.setdefault(p, {})
+        if not isinstance(mapa_p, dict):
+            mapa_p = {}
+            matriz.procedencia[p] = mapa_p
+        for lado in ("equipo", "rival"):
+            mapa_l = mapa_p.setdefault(lado, {})
             for d in CATALOGO_METRICAS:
-                if matriz.procedencia[lado].get(d.clave) in (None, PROC_SIN_DATO, "sin_dato"):
-                    matriz.procedencia[lado][d.clave] = PROC_DERIVADO
-    for p in ("FT", "1T", "2T"):
-        if p in matriz.procedencia and isinstance(matriz.procedencia[p], dict):
-            for lado in ("equipo", "rival"):
-                mapa_l = matriz.procedencia[p].setdefault(lado, {})
-                for d in CATALOGO_METRICAS:
-                    if mapa_l.get(d.clave) in (None, PROC_SIN_DATO, "sin_dato"):
-                        mapa_l[d.clave] = PROC_DERIVADO
+                cl = d.clave
+                val_final = por_per[p][lado].get(cl)
+                val_nativo = nativos_por_per[p][lado].get(cl)
+                proc_ant = mapa_l.get(cl) or (proc_previa_top[lado].get(cl) if p == "FT" else None)
+                if val_final is None:
+                    mapa_l[cl] = PROC_SIN_DATO
+                elif val_nativo is not None:
+                    if proc_ant and proc_ant not in (PROC_SIN_DATO, "sin_dato", PROC_DERIVADO, "estimacion_modelo"):
+                        mapa_l[cl] = proc_ant
+                    else:
+                        mapa_l[cl] = "fotmob"
+                elif cl in estimados_por_per[p][lado]:
+                    mapa_l[cl] = "estimacion_modelo"
+                else:
+                    mapa_l[cl] = PROC_DERIVADO
 
-    matriz.metricas_no_disponibles = []
+    # Sincronizar procedencia top-level con FT y registrar inconsistencias aritméticas
+    for lado in ("equipo", "rival"):
+        matriz.procedencia[lado] = dict(matriz.procedencia["FT"][lado])
+    matriz.inconsistencias_aritmeticas = inconsistencias
+    matriz.metricas_no_disponibles = sorted(no_disp_ft)
+
+
+VERSION_ESQUEMA_COBERTURA = "v43.0"
+
+
+def calcular_cobertura_y_promedio_metrica(
+    partidos: list[dict[str, Any]],
+    clave: str,
+    periodo: str = "FT",
+    lado: str = "equipo",
+    version_cobertura: str | None = None,
+) -> dict[str, Any]:
+    """
+    Punto 37: Calcula el promedio y la cobertura real de una métrica específica
+    distinguiendo estrictamente entre:
+      - `0.0` observado y confirmado por la fuente (sí entra en el denominador `n_con_dato`).
+      - `None` / `"sin_dato"` cuando la fuente no publicó esa métrica (NO entra en `n_con_dato`).
+      - Si una auditoría antigua en caché carece de `procedencia` o de `version_cobertura == 'v43.0'`,
+        un `0.0` antiguo sin procedencia explícita NO asciende a `0.0` observado (se trata como `None`),
+        excepto si el partido viene recién consolidado con `procedencia` explícita.
+    """
+    valores: list[float] = []
+    fuentes: dict[str, int] = {
+        "fotmob": 0,
+        "flashscore": 0,
+        "derivado": 0,
+        "estimacion_modelo": 0,
+        "sin_dato": 0,
+    }
+    n_ceros_observados = 0
+    n_total = 0
+
+    for p in partidos or []:
+        if not isinstance(p, dict) or p.get("es_amistoso"):
+            continue
+        n_total += 1
+        val_encontrado: float | None = None
+        proc_encontrada = ""
+
+        periodos = p.get("periodos") or {}
+        bloque = periodos.get(periodo) or {}
+        for fila in bloque.get("filas") or []:
+            if isinstance(fila, dict) and fila.get("clave") == clave:
+                v_raw = fila.get(lado)
+                if isinstance(v_raw, (int, float)) and not isinstance(v_raw, bool) and not (isinstance(v_raw, float) and v_raw != v_raw):
+                    val_encontrado = float(v_raw)
+                break
+
+        if val_encontrado is None and periodo == "FT" and lado == "equipo":
+            v_top = p.get(clave)
+            if isinstance(v_top, (int, float)) and not isinstance(v_top, bool) and not (isinstance(v_top, float) and v_top != v_top):
+                val_encontrado = float(v_top)
+
+        proc_p = p.get("procedencia") if isinstance(p.get("procedencia"), dict) else {}
+        proc_per = proc_p.get(periodo) if isinstance(proc_p.get(periodo), dict) else {}
+        proc_lado = proc_per.get(lado) if isinstance(proc_per.get(lado), dict) else (
+            proc_p.get(lado) if (periodo == "FT" and isinstance(proc_p.get(lado), dict)) else {}
+        )
+        if isinstance(proc_lado, dict) and proc_lado.get(clave):
+            proc_encontrada = str(proc_lado.get(clave)).lower().strip()
+
+        ver_p = str(p.get("version_cobertura") or version_cobertura or "").strip()
+        es_cache_antigua_sin_proc = bool(p.get("_cache_legacy") or (ver_p == "legacy_sin_procedencia"))
+        if val_encontrado is not None and abs(val_encontrado) < 1e-9:
+            if es_cache_antigua_sin_proc and not proc_encontrada:
+                val_encontrado = None
+            elif proc_encontrada in ("sin_dato", "dato_ausente", "relleno_legacy"):
+                val_encontrado = None
+
+        if val_encontrado is not None and proc_encontrada == "estimacion_modelo":
+            # Una reconstrucción del modelo se reporta separada de la cobertura observada
+            fuentes["estimacion_modelo"] += 1
+            continue
+
+        if val_encontrado is not None:
+            valores.append(val_encontrado)
+            if abs(val_encontrado) < 1e-9:
+                n_ceros_observados += 1
+            if proc_encontrada in ("fotmob", "flashscore", "derivado"):
+                fuentes[proc_encontrada] += 1
+            else:
+                fuentes["fotmob"] += 1
+        else:
+            fuentes["sin_dato"] += 1
+
+    n_con_dato = len(valores)
+    promedio = round(sum(valores) / n_con_dato, 4) if n_con_dato > 0 else None
+    cobertura_pct = round(100.0 * n_con_dato / n_total, 2) if n_total > 0 else 0.0
+    return {
+        "clave": clave,
+        "periodo": periodo,
+        "lado": lado,
+        "promedio": promedio,
+        "n_con_dato": n_con_dato,
+        "n_total_partidos": n_total,
+        "n_sin_dato": n_total - n_con_dato,
+        "n_ceros_observados": n_ceros_observados,
+        "cobertura_pct": cobertura_pct,
+        "fuentes": fuentes,
+        "version_cobertura": VERSION_ESQUEMA_COBERTURA,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -362,7 +362,7 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
 
     # 2. Fases previas / clasificación europea (UCL Qual., UEL Qual., UECL Qual.)
     if any(k in t for k in ["qual", "previa", "clasificaci"]):
-        return 0.65
+        return 0.68
 
     # 3. Ligas Nivel 3 / Torneos Menores / Hungría / Segundas divisiones
     if any(k in t for k in [

@@ -302,21 +302,61 @@ def _val(d: Optional[Dict[str, Any]], *claves: str, default: float = 0.01, allow
     return default
 
 
+def _val_opt(d: Optional[Dict[str, Any]], *claves: str) -> Optional[float]:
+    """Extrae un float opcional si alguna de las claves existe con dato real (distinguiendo 0.0 de None)."""
+    if not d:
+        return None
+    for k in claves:
+        if k in d and d[k] is not None:
+            nodo = d[k]
+            if isinstance(nodo, dict):
+                if nodo.get("sin_dato"):
+                    continue
+                v = nodo.get("promedio", nodo.get("valor"))
+                if v is None:
+                    continue
+            else:
+                v = nodo
+            if isinstance(v, str):
+                v_str = v.strip()
+                if not v_str or v_str.lower() in ("none", "null", "nan", "sin_dato", "n/d"):
+                    continue
+                m_paren = re.search(r"\((\d+(?:\.\d+)?)\s*%\)", v_str)
+                if m_paren and ("pct" in k or "precision" in k):
+                    v = float(m_paren.group(1))
+                else:
+                    m_num = re.search(r"[-+]?\d+(?:\.\d+)?", v_str.replace(",", "."))
+                    if not m_num:
+                        continue
+                    v = float(m_num.group(0))
+            try:
+                f = float(v)
+                if not math.isnan(f):
+                    return f
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
 def calcular_55_patrones_equipo(
-    datos_equipo: Any,
+    datos_equipo: Any = None,
     metricas_1t: Optional[Dict[str, Any]] = None,
     metricas_2t: Optional[Dict[str, Any]] = None,
     timeline_goles: Optional[Dict[str, Any]] = None,
-) -> Dict[str, float]:
+    metricas_ft: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Acepta un DataFrame de 15 partidos o un diccionario con las 45 variables del equipo.
     Si recibe un DataFrame de >5 partidos, aplica ponderación cronológica 60% (últimos 5) / 40% (primeros 10).
-    Calcula los 48 patrones base (P01 a P48) sin divisiones por cero ni constantes estáticas en 1T/2T.
+    Calcula los 48 patrones base (P01 a P48) sin sustituir `0.0` observado por `0.01`, sin divisiones por cero
+    (devolviendo `None` si el denominador real es `0`) y sin constantes estáticas en 1T/2T.
     """
+    if datos_equipo is None and metricas_ft is not None:
+        datos_equipo = metricas_ft
     info_racha: Optional[Dict[str, Any]] = None
     if isinstance(datos_equipo, pd.DataFrame):
         df_ord = ordenar_df_cronologico(datos_equipo)
-        df_num = df_ord.select_dtypes(include=[np.number]).replace(0, 0.01)
+        df_num = df_ord.select_dtypes(include=[np.number])
         if len(df_num) > 5:
             m_p10 = df_num.iloc[:-5].mean(numeric_only=True)
             m_u5 = df_num.iloc[-5:].mean(numeric_only=True)
@@ -335,22 +375,25 @@ def calcular_55_patrones_equipo(
     m2 = normalizar_alias_metricas(metricas_2t or {})
     tl = timeline_goles or {}
 
-    xg = max(0.05, _val(m, "xg", "xg_favor", default=1.35))
-    xgot = max(0.05, _val(m, "xgot", "xgot_favor", default=xg))
-    npxg = max(0.05, _val(m, "xg_sin_penalti", "npxg", default=xg * 0.90))
-    xg_bp = max(0.01, _val(m, "xg_balon_parado", default=xg * 0.15))
-    xg_abierto = max(0.05, _val(m, "xg_juego_abierto", default=max(0.05, xg - xg_bp)))
+    xg_obs = _val_opt(m, "xg", "xg_favor")
+    xg = max(0.0, xg_obs) if xg_obs is not None else 1.35
+    xgot = max(0.0, _val(m, "xgot", "xgot_favor", default=max(0.05, xg)))
+    npxg = max(0.0, _val(m, "xg_sin_penalti", "npxg", default=max(0.05, xg) * 0.90))
+    xg_bp = max(0.0, _val(m, "xg_balon_parado", default=max(0.05, xg) * 0.15))
+    xg_abierto = max(0.0, _val(m, "xg_juego_abierto", default=max(0.05, xg - xg_bp)))
+    xg_corners_obs = _val_opt(m, "xg_corners", "xg_corner", "xg_saques_esquina")
 
-    goles = max(0.05, _val(m, "goles", "goles_favor", "goles_favor_est", default=xg))
-    goles_c = max(0.05, _val(m, "goles_concedidos", "goles_contra", "goles_contra_real", "goles_encajados", default=1.20))
+    goles = max(0.0, _val(m, "goles", "goles_favor", "goles_favor_est", default=max(0.05, xg)))
+    goles_c = max(0.0, _val(m, "goles_concedidos", "goles_contra", "goles_contra_real", "goles_encajados", default=1.20))
 
     posesion = max(15.0, min(85.0, _val(m, "posesion_pct", default=50.0)))
     posesion_rival = max(15.0, 100.0 - posesion)
 
-    rem_tot = max(1.0, _val(m, "remates_totales", default=12.0))
+    rem_tot_obs = _val_opt(m, "remates_totales")
+    rem_tot = max(1.0, rem_tot_obs) if (rem_tot_obs is not None and rem_tot_obs > 0) else (12.0 if rem_tot_obs is None else 0.0)
     rem_pue = max(0.5, _val(m, "remates_puerta", default=4.2))
     rem_fue = max(0.5, _val(m, "remates_fuera", default=5.0))
-    rem_bloq = max(0.1, _val(m, "remates_bloqueados", "remates_rechazados", default=2.8))
+    rem_bloq = max(0.0, _val(m, "remates_bloqueados", "remates_rechazados", default=2.8))
     rem_area = max(0.5, _val(m, "remates_area", "remates_dentro_area", default=8.5))
     rem_f_area = max(0.5, _val(m, "remates_fuera_area", default=3.5))
 
@@ -400,46 +443,90 @@ def calcular_55_patrones_equipo(
     rem_puerta_rec = max(0.5, paradas + goles_c)
     rem_area_rec = max(1.0, _val(m, "remates_dentro_area_recibidos", default=rem_puerta_rec * 1.85))
 
-    # Lectura real de 1T y 2T buscando tanto en m1/m2 como en m
-    xg_1t_raw = _val(m1, "xg", "xg_1t", "xg_favor_1t", default=_val(m, "xg_1t", "xg_favor_1t", default=-1.0))
-    xg_2t_raw = _val(m2, "xg", "xg_2t", "xg_favor_2t", default=_val(m, "xg_2t", "xg_favor_2t", default=-1.0))
-    g1_raw = _val(m1, "goles", "goles_1t", "goles_favor_1t", default=_val(m, "goles_1t", "goles_favor_1t", default=-1.0))
-    g2_raw = _val(m2, "goles", "goles_2t", "goles_favor_2t", default=_val(m, "goles_2t", "goles_favor_2t", default=-1.0))
-    r1_raw = _val(m1, "remates_totales", "remates_totales_1t", default=_val(m, "remates_totales_1t", default=-1.0))
-    r2_raw = _val(m2, "remates_totales", "remates_totales_2t", default=_val(m, "remates_totales_2t", default=-1.0))
+    # Lectura real de 1T y 2T buscando tanto en m1/m2 como en m, distinguiendo 0.0 observado de None (no publicado)
+    xg_1t_opt = _val_opt(m1, "xg", "xg_1t", "xg_favor_1t")
+    if xg_1t_opt is None:
+        xg_1t_opt = _val_opt(m, "xg_1t", "xg_favor_1t")
+    xg_2t_opt = _val_opt(m2, "xg", "xg_2t", "xg_favor_2t")
+    if xg_2t_opt is None:
+        xg_2t_opt = _val_opt(m, "xg_2t", "xg_favor_2t")
 
-    # Si alguna mitad no trajo xG separado, derívalo de la proporción real de goles y remates en 1T vs 2T (nunca 0.45/0.55 fijo)
-    if xg_1t_raw <= 0.0 and xg_2t_raw <= 0.0:
-        if (g1_raw >= 0.0 and g2_raw >= 0.0 and (g1_raw + g2_raw) > 0.05) or (r1_raw >= 0.0 and r2_raw >= 0.0 and (r1_raw + r2_raw) > 0.5):
-            g1_use = max(0.02, g1_raw if g1_raw >= 0.0 else goles * 0.44)
-            g2_use = max(0.02, g2_raw if g2_raw >= 0.0 else max(0.02, goles - g1_use))
-            r1_use = max(0.5, r1_raw if r1_raw >= 0.0 else rem_tot * 0.45)
-            r2_use = max(0.5, r2_raw if r2_raw >= 0.0 else max(0.5, rem_tot - r1_use))
-            ratio_2t = 0.50 * (g2_use / max(0.1, g1_use + g2_use)) + 0.50 * (r2_use / max(1.0, r1_use + r2_use))
+    g1_opt = _val_opt(m1, "goles", "goles_1t", "goles_favor_1t")
+    if g1_opt is None:
+        g1_opt = _val_opt(m, "goles_1t", "goles_favor_1t")
+    g2_opt = _val_opt(m2, "goles", "goles_2t", "goles_favor_2t")
+    if g2_opt is None:
+        g2_opt = _val_opt(m, "goles_2t", "goles_favor_2t")
+
+    r1_opt = _val_opt(m1, "remates_totales", "remates_totales_1t")
+    if r1_opt is None:
+        r1_opt = _val_opt(m, "remates_totales_1t")
+    r2_opt = _val_opt(m2, "remates_totales", "remates_totales_2t")
+    if r2_opt is None:
+        r2_opt = _val_opt(m, "remates_totales_2t")
+
+    # P26_Poder_Cierre_2T:
+    # - Si xG_1T y xG_2T están ambos confirmados (incluyendo 0.0 observado):
+    #   si xG_1T + xG_2T > 0 -> P26 = xg_2t / (xg_1t + xg_2t) (exactamente 0.0 cuando xg_1t > 0 y xg_2t == 0.0).
+    # - Si solo una mitad de xG está presente y la otra es None -> P26 = None (no_evaluable).
+    # - Si ninguna mitad trajo xG directo pero sí existen goles y remates por mitad verificados -> derivar de goles/remates por mitad.
+    # - Si tampoco existen mitades verificadas y se pasó explicitamente un dict de mitad con None (ej. metricas_2t={"xg": None}) -> P26 = None.
+    mitad_explicita_incompleta = (
+        (isinstance(metricas_1t, dict) and "xg" in metricas_1t and metricas_1t.get("xg") is None)
+        or (isinstance(metricas_2t, dict) and "xg" in metricas_2t and metricas_2t.get("xg") is None)
+        or ("xg_1t" in m and m.get("xg_1t") is None)
+        or ("xg_2t" in m and m.get("xg_2t") is None)
+    )
+
+    p26_val: Optional[float] = None
+    if xg_1t_opt is not None and xg_2t_opt is not None:
+        xg_1t = max(0.0, float(xg_1t_opt))
+        xg_2t = max(0.0, float(xg_2t_opt))
+        if (xg_1t + xg_2t) > 0.0:
+            p26_val = round(xg_2t / (xg_1t + xg_2t), 4)
         else:
-            impulso_2t = (
-                0.50
-                + 0.0022 * (toques_area - 20.0)
-                + 0.0080 * (corners - 4.8)
-                - 0.0018 * (posesion - 50.0)
-                + 0.0015 * (pases_largos_pct - 48.0)
-                + 0.0150 * (xg - 1.35)
-            )
-            ratio_2t = max(0.36, min(0.66, impulso_2t))
+            p26_val = None
+    elif (xg_1t_opt is not None) ^ (xg_2t_opt is not None):
+        # Falta una de las dos mitades: no_evaluable (None)
+        xg_1t = max(0.0, float(xg_1t_opt)) if xg_1t_opt is not None else 0.0
+        xg_2t = max(0.0, float(xg_2t_opt)) if xg_2t_opt is not None else 0.0
+        p26_val = None
+    elif mitad_explicita_incompleta:
+        xg_1t = 0.0
+        xg_2t = 0.0
+        p26_val = None
+    elif (g1_opt is not None and g2_opt is not None and (g1_opt + g2_opt) > 0.0) or (r1_opt is not None and r2_opt is not None and (r1_opt + r2_opt) > 0.0):
+        if (g1_opt is not None and g2_opt is not None and (g1_opt + g2_opt) > 0.0) and (r1_opt is not None and r2_opt is not None and (r1_opt + r2_opt) > 0.0):
+            ratio_2t = 0.50 * (g2_opt / (g1_opt + g2_opt)) + 0.50 * (r2_opt / (r1_opt + r2_opt))
+        elif g1_opt is not None and g2_opt is not None and (g1_opt + g2_opt) > 0.0:
+            ratio_2t = g2_opt / (g1_opt + g2_opt)
+        else:
+            ratio_2t = float(r2_opt or 0.0) / max(1e-6, float((r1_opt or 0.0) + (r2_opt or 0.0)))
+        xg_2t = round(xg * ratio_2t, 4)
+        xg_1t = round(max(0.0, xg - xg_2t), 4)
+        p26_val = round(ratio_2t, 4)
+    else:
+        impulso_2t = (
+            0.50
+            + 0.0022 * (toques_area - 20.0)
+            + 0.0080 * (corners - 4.8)
+            - 0.0018 * (posesion - 50.0)
+            + 0.0015 * (pases_largos_pct - 48.0)
+            + 0.0150 * (xg - 1.35)
+        )
+        ratio_2t = max(0.36, min(0.66, impulso_2t))
         xg_2t = max(0.05, round(xg * ratio_2t, 4))
         xg_1t = max(0.05, round(xg - xg_2t, 4))
-    else:
-        xg_1t = max(0.05, xg_1t_raw if xg_1t_raw > 0 else max(0.05, xg - xg_2t_raw))
-        xg_2t = max(0.05, xg_2t_raw if xg_2t_raw > 0 else max(0.05, xg - xg_1t))
+        p26_val = round(xg_2t / max(0.10, xg_1t + xg_2t), 4)
 
     xg_sum_mitades = max(0.10, xg_1t + xg_2t)
-    ratio_1t_ref = xg_1t / xg_sum_mitades
-    ratio_2t_ref = xg_2t / xg_sum_mitades
+    ratio_1t_ref = (xg_1t / xg_sum_mitades) if (xg_1t + xg_2t) > 0 else 0.45
+    ratio_2t_ref = (xg_2t / xg_sum_mitades) if (xg_1t + xg_2t) > 0 else 0.55
 
-    goles_1t = max(0.02, g1_raw if g1_raw > 0 else goles * ratio_1t_ref)
-    goles_2t = max(0.02, g2_raw if g2_raw > 0 else max(0.02, goles - goles_1t))
-    rem_tot_1t = max(0.5, r1_raw if r1_raw > 0 else rem_tot * ratio_1t_ref)
-    rem_tot_2t = max(0.5, r2_raw if r2_raw > 0 else max(0.5, rem_tot - rem_tot_1t))
+    goles_1t = max(0.0, g1_opt if g1_opt is not None else goles * ratio_1t_ref)
+    goles_2t = max(0.0, g2_opt if g2_opt is not None else max(0.0, goles - goles_1t))
+    rem_tot_1t = max(0.5, r1_opt if (r1_opt is not None and r1_opt > 0) else max(0.5, rem_tot * ratio_1t_ref))
+    rem_tot_2t = max(0.5, r2_opt if (r2_opt is not None and r2_opt > 0) else max(0.5, rem_tot - rem_tot_1t))
     pos_1t = max(15.0, _val(m1, "posesion_pct", "posesion_1t", default=_val(m, "posesion_1t", default=posesion + (0.50 - ratio_2t_ref) * 6.0)))
     pos_2t = max(15.0, _val(m2, "posesion_pct", "posesion_2t", default=_val(m, "posesion_2t", default=posesion - (0.50 - ratio_2t_ref) * 6.0)))
     rem_pue_1t = max(0.3, _val(m1, "remates_puerta", "remates_puerta_1t", default=_val(m, "remates_puerta_1t", default=rem_pue * ratio_1t_ref)))
@@ -461,18 +548,21 @@ def calcular_55_patrones_equipo(
         prop_ult_15 = float(tl.get("prop_anotados_76_90", 0.26))
         prop_rec_0_15 = float(tl.get("prop_recibidos_00_15", 0.12))
 
-    p: Dict[str, float] = {}
+    p: Dict[str, Any] = {}
 
     # A. EFICIENCIA OFENSIVA (P01 - P12)
-    p["P01_xG_por_Remate"] = round(xg / rem_tot, 4)
+    if rem_tot_obs is not None and rem_tot_obs <= 0.0:
+        p["P01_xG_por_Remate"] = None
+    else:
+        p["P01_xG_por_Remate"] = round(xg / max(1.0, rem_tot), 4)
     p["P02_xG_Area_por_Remate"] = round(xg_abierto / rem_area, 4)
-    p["P03_Calidad_xGOT_vs_xG"] = round(xgot / xg, 4)
-    p["P04_Eficiencia_npxG"] = round(npxg / rem_tot, 4)
+    p["P03_Calidad_xGOT_vs_xG"] = round(xgot / max(0.05, xg), 4) if xg > 0 else None
+    p["P04_Eficiencia_npxG"] = round(npxg / max(1.0, rem_tot), 4) if rem_tot > 0 else None
     p["P05_Conversion_Real"] = round(goles / rem_pue, 4)
     p["P06_Desperdicio_Ocasiones"] = round(g_oc_fall / g_oc, 4)
-    p["P07_Precision_Disparo"] = round(rem_pue / rem_tot, 4)
-    p["P08_Tiros_Bloqueados_Ratio"] = round(rem_bloq / rem_tot, 4)
-    p["P09_Dependencia_Balon_Parado"] = round(xg_bp / xg, 4)
+    p["P07_Precision_Disparo"] = round(rem_pue / max(1.0, rem_tot), 4) if rem_tot > 0 else None
+    p["P08_Tiros_Bloqueados_Ratio"] = round(rem_bloq / max(1.0, rem_tot), 4) if rem_tot > 0 else None
+    p["P09_Dependencia_Balon_Parado"] = round(xg_bp / max(0.05, xg), 4) if xg > 0 else None
     p["P10_Creatividad_xA_Pases"] = round(xa / pases_lineas, 4)
     p["P11_Peligro_Area_vs_Fuera"] = round(rem_area / rem_f_area, 4)
     p["P12_Precision_Centros"] = round(centros_pct / 100.0, 4)
@@ -492,8 +582,8 @@ def calcular_55_patrones_equipo(
     p["P24_Ratio_Duelos_Aereos"] = round(duelos_aereos_pct / 100.0, 4)
 
     # C. RITMO, TEMPO Y FATIGA 1T vs 2T (P25 - P36)
-    p["P26_Poder_Cierre_2T"] = round(xg_2t / max(0.10, xg_1t + xg_2t), 4)
-    p["P25_Explosividad_1T"] = round(1.0 - p["P26_Poder_Cierre_2T"], 4)
+    p["P26_Poder_Cierre_2T"] = p26_val
+    p["P25_Explosividad_1T"] = round(1.0 - p26_val, 4) if p26_val is not None else None
     p["P27_Caida_Posesion_2T"] = round(pos_1t - pos_2t, 4)
     p["P28_Aceleracion_2T"] = round(pos_2t - pos_1t, 4)
     p["P29_Letalidad_1T"] = round(goles_1t / rem_pue_1t, 4)
@@ -506,7 +596,9 @@ def calcular_55_patrones_equipo(
     p["P36_Vulnerabilidad_Temprana"] = round(prop_rec_0_15, 4)
 
     # D. ASEDIO Y CONTEXTO (P37 - P48)
-    p["P37_Peligro_por_Corner"] = round(xg_bp / corners, 4)
+    # P37_Peligro_por_Corner: solo evaluable si existe xG exclusivo de córneres (`xg_corners`);
+    # si solo existe `xg_balon_parado` general, ese cociente pertenece a P09 y P37 queda en None (no_evaluable).
+    p["P37_Peligro_por_Corner"] = round(xg_corners_obs / corners, 4) if (xg_corners_obs is not None and corners > 0) else None
     p["P38_Densidad_Pases"] = round(pases_tot / posesion, 4)
     p["P39_Estilo_Directo"] = round(pases_largos_pct / 100.0, 4)
     p["P40_Rompe_Lineas"] = round(pases_lineas / pases_tot, 4)
@@ -514,10 +606,10 @@ def calcular_55_patrones_equipo(
     p["P42_Dependencia_Centros"] = round((centros_pct / 100.0) * 15.0 / toques_area, 4)
     p["P43_Agresividad_Defensiva"] = round(amarillas / faltas, 4)
     p["P44_Pressing_Alto"] = round((intercepciones + recuperaciones) / max(15.0, posesion_rival), 4)
-    p["P45_Fueras_Juego_Ratio"] = round(fueras_juego / (toques_area + rem_tot), 4)
+    p["P45_Fueras_Juego_Ratio"] = round(fueras_juego / max(1.0, toques_area + rem_tot), 4)
     p["P46_Tiros_Libres_Peligrosos"] = round(tiros_libres / faltas_rec, 4)
     p["P47_Ritmo_Juego_Roto"] = round(saques_banda, 4)
-    p["P48_Frecuencia_Corners"] = round((corners / rem_tot) * 10.0, 4)
+    p["P48_Frecuencia_Corners"] = round((corners / rem_tot) * 10.0, 4) if rem_tot > 0 else None
 
     # Métricas base auxiliares para el Narrador XAI
     p["posesion_pct"] = round(posesion, 2)
@@ -549,21 +641,37 @@ def calcular_55_patrones_equipo(
 
 
 def calcular_55_patrones_matchup(
-    patrones_local: Dict[str, float],
-    patrones_visita: Dict[str, float],
-) -> Tuple[Dict[str, float], Dict[str, float]]:
+    patrones_local: Dict[str, Any],
+    patrones_visita: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """Calcula los Patrones 49 a 55 (Matchup Adversarial Local vs Visita)."""
     pL = dict(patrones_local)
     pV = dict(patrones_visita)
 
-    pL["P49_Espejismo_Posesion"] = round((pL["posesion_pct"] / 50.0) * pV["P15_Muro_Asedio"] / max(0.05, pL["P01_xG_por_Remate"] * 10.0), 4)
-    pV["P49_Espejismo_Posesion"] = round((pV["posesion_pct"] / 50.0) * pL["P15_Muro_Asedio"] / max(0.05, pV["P01_xG_por_Remate"] * 10.0), 4)
+    p01_l = pL.get("P01_xG_por_Remate")
+    p01_v = pV.get("P01_xG_por_Remate")
+    pL["P49_Espejismo_Posesion"] = (
+        round((pL["posesion_pct"] / 50.0) * pV["P15_Muro_Asedio"] / max(0.05, float(p01_l) * 10.0), 4)
+        if p01_l is not None else None
+    )
+    pV["P49_Espejismo_Posesion"] = (
+        round((pV["posesion_pct"] / 50.0) * pL["P15_Muro_Asedio"] / max(0.05, float(p01_v) * 10.0), 4)
+        if p01_v is not None else None
+    )
 
     pL["P50_Choque_Portero_Rival"] = round(pL["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pV["P13_Portero_Goles_Evitados"]), 4)
     pV["P50_Choque_Portero_Rival"] = round(pV["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pL["P13_Portero_Goles_Evitados"]), 4)
 
-    pL["P51_Diferencial_Cierre_2T"] = round(pL["P26_Poder_Cierre_2T"] * (1.0 + max(0.0, pV["P27_Caida_Posesion_2T"]) / 10.0), 4)
-    pV["P51_Diferencial_Cierre_2T"] = round(pV["P26_Poder_Cierre_2T"] * (1.0 + max(0.0, pL["P27_Caida_Posesion_2T"]) / 10.0), 4)
+    p26_l = pL.get("P26_Poder_Cierre_2T")
+    p26_v = pV.get("P26_Poder_Cierre_2T")
+    pL["P51_Diferencial_Cierre_2T"] = (
+        round(float(p26_l) * (1.0 + max(0.0, float(pV.get("P27_Caida_Posesion_2T") or 0.0)) / 10.0), 4)
+        if p26_l is not None else None
+    )
+    pV["P51_Diferencial_Cierre_2T"] = (
+        round(float(p26_v) * (1.0 + max(0.0, float(pL.get("P27_Caida_Posesion_2T") or 0.0)) / 10.0), 4)
+        if p26_v is not None else None
+    )
 
     pL["P52_Superioridad_Aerea"] = round(pL["P24_Ratio_Duelos_Aereos"] * (15.0 / max(4.0, pV["P16_Fuerza_Aerea_Defensiva"])), 4)
     pV["P52_Superioridad_Aerea"] = round(pV["P24_Ratio_Duelos_Aereos"] * (15.0 / max(4.0, pL["P16_Fuerza_Aerea_Defensiva"])), 4)
@@ -604,6 +712,150 @@ def calcular_patrones_completos_partido(
     return calcular_55_patrones_matchup(p_l, p_v)
 
 
+def detectar_contexto_competicion(
+    competicion: str = "",
+    fase: str = "",
+    sede_neutral: bool = False,
+) -> Dict[str, Any]:
+    """
+    Puntos 34 y 40: Distingue estrictamente fase de grupos, eliminatoria directa,
+    ida, vuelta y sede neutral para evitar apilar multiplicadores excesivos.
+    """
+    txt = f"{competicion or ''} {fase or ''}".lower().strip()
+    es_grupos = any(k in txt for k in ("grupo", "group", "fase de liga", "league stage", "jornada", "apertura", "clausura"))
+    es_ida = any(k in txt for k in ("ida", "1st leg", "first leg", "partido 1"))
+    es_vuelta = any(k in txt for k in ("vuelta", "2nd leg", "second leg", "partido 2", "revancha"))
+    es_final = any(k in txt for k in ("final", "supercopa", "super cup", "trofeo")) and not any(k in txt for k in ("octavos", "cuartos", "semifinal", "semi-final", "quarter"))
+    es_eliminatoria = any(
+        k in txt
+        for k in (
+            "copa", "cup", "playoff", "play-off", "eliminatoria", "knockout",
+            "octavos", "cuartos", "semifinal", "semi-final", "final", "repechaje",
+            "libertadores", "sudamericana", "champions", "europa league", "conference",
+        )
+    ) and not es_grupos
+
+    es_neutral = bool(sede_neutral or es_final or "neutral" in txt)
+    if es_grupos:
+        tipo_fase = "fase_grupos"
+        factor_copa_local = 1.00
+    elif es_neutral:
+        tipo_fase = "sede_neutral"
+        factor_copa_local = 1.00
+    elif es_vuelta:
+        tipo_fase = "eliminatoria_vuelta"
+        factor_copa_local = 1.18
+    elif es_ida:
+        tipo_fase = "eliminatoria_ida"
+        factor_copa_local = 1.10
+    elif es_eliminatoria:
+        tipo_fase = "eliminatoria_directa"
+        factor_copa_local = 1.15
+    else:
+        tipo_fase = "liga_regular"
+        factor_copa_local = 1.00
+
+    return {
+        "tipo_fase": tipo_fase,
+        "es_copa_o_playoff": bool(es_eliminatoria),
+        "es_fase_grupos": bool(es_grupos),
+        "es_ida": bool(es_ida),
+        "es_vuelta": bool(es_vuelta),
+        "sede_neutral": bool(es_neutral),
+        "factor_copa_local": round(factor_copa_local, 4),
+    }
+
+
+def evaluar_condicion_gigante_visitante(
+    cuadro_b_local: Optional[Dict[str, Any]] = None,
+    cuadro_b_visita: Optional[Dict[str, Any]] = None,
+    attack_local: float = 50.0,
+    attack_visita: float = 50.0,
+) -> Dict[str, Any]:
+    """
+    Sección 8.3 (Puntos 35 y 40): Evalúa si se cumplen simultáneamente las 4 condiciones
+    de activación de 'Gigante Visitante' con cobertura real verificada (n >= 10).
+    """
+    cb_l = cuadro_b_local if isinstance(cuadro_b_local, dict) else {}
+    cb_v = cuadro_b_visita if isinstance(cuadro_b_visita, dict) else {}
+
+    def _extraer_n_y_pct(cb_d: Dict[str, Any], clave: str, clave_alt: str = "") -> Tuple[int, float]:
+        cel = cb_d.get(clave)
+        if cel is None and clave_alt:
+            cel = cb_d.get(clave_alt)
+        if cel is None and isinstance(cb_d.get("filas"), dict):
+            cel = cb_d["filas"].get(clave) or (cb_d["filas"].get(clave_alt) if clave_alt else None)
+        if isinstance(cel, dict) or hasattr(cel, "get"):
+            n_tot = int(cel.get("total", 0) or 0)
+            pct = float(cel.get("pct", 0.0) or 0.0)
+            return n_tot, pct
+        return 0, 0.0
+
+    n_vic_l, pct_vic_l = _extraer_n_y_pct(cb_l, "victorias")
+    n_vic_v, pct_vic_v = _extraer_n_y_pct(cb_v, "victorias")
+    n_pm_l, pct_pm_l = _extraer_n_y_pct(cb_l, "primero_en_marcar", "primero_marcar")
+    n_pm_v, pct_pm_v = _extraer_n_y_pct(cb_v, "primero_en_marcar", "primero_marcar")
+
+    if n_vic_l == 0:
+        n_vic_l = int(cb_l.get("n_con_marcador", cb_l.get("n_partidos", 0)) or 0)
+    if n_vic_v == 0:
+        n_vic_v = int(cb_v.get("n_con_marcador", cb_v.get("n_partidos", 0)) or 0)
+    if n_pm_l == 0:
+        n_pm_l = int(cb_l.get("n_con_eventos_gol", 0) or 0)
+    if n_pm_v == 0:
+        n_pm_v = int(cb_v.get("n_con_eventos_gol", 0) or 0)
+
+    cobertura_ok = bool(n_vic_l >= 10 and n_vic_v >= 10 and n_pm_l >= 10 and n_pm_v >= 10)
+    cond_victorias = bool(pct_vic_v >= (pct_vic_l + 25.0))
+    cond_primero_marcar = bool(pct_pm_v >= 65.0)
+    cond_attack = bool(float(attack_visita) >= (float(attack_local) + 8.0))
+    activo = bool(cobertura_ok and cond_victorias and cond_primero_marcar and cond_attack)
+
+    return {
+        "activo": activo,
+        "cobertura_ok": cobertura_ok,
+        "n_victorias_local": n_vic_l,
+        "n_victorias_visita": n_vic_v,
+        "n_primero_marcar_local": n_pm_l,
+        "n_primero_marcar_visita": n_pm_v,
+        "pct_victorias_local": round(pct_vic_l, 2),
+        "pct_victorias_visita": round(pct_vic_v, 2),
+        "pct_primero_marcar_local": round(pct_pm_l, 2),
+        "pct_primero_marcar_visita": round(pct_pm_v, 2),
+        "attack_local": round(float(attack_local), 2),
+        "attack_visita": round(float(attack_visita), 2),
+    }
+
+
+def aplicar_ajuste_gigante_visitante(
+    lam_local: float,
+    lam_visita: float,
+    bono_localia_aplicado: float = 1.0,
+    sede_neutral: bool = False,
+) -> Dict[str, float]:
+    """
+    Sección 8.3: Orden exacto de operaciones sobre λ cuando se activa 'Gigante Visitante':
+      1. Retirar primero el bono de localía aplicable (sin retirar ningún bono si sede_neutral=True
+         o si no se había aplicado bono de localía).
+      2. Definir `lam_local_ref` como la λ local después de retirar el bono de localía y ANTES de
+         multiplicar por 0.85.
+      3. Calcular `lam_visita_ajustada = max(lam_visita * 1.15, 1.15 * lam_local_ref)`.
+      4. Calcular `lam_local_ajustada = 0.85 * lam_local_ref`.
+    """
+    lam_l_in = max(0.05, float(lam_local))
+    lam_v_in = max(0.05, float(lam_visita))
+    bono_ef = float(bono_localia_aplicado) if (not sede_neutral and float(bono_localia_aplicado) > 1.0) else 1.0
+    lam_local_ref = lam_l_in / bono_ef
+    lam_visita_ajustada = max(lam_v_in * 1.15, 1.15 * lam_local_ref)
+    lam_local_ajustada = 0.85 * lam_local_ref
+    return {
+        "lam_local_ref": round(lam_local_ref, 6),
+        "lam_local_ajustada": round(lam_local_ajustada, 6),
+        "lam_visita_ajustada": round(lam_visita_ajustada, 6),
+        "bono_retirado": round(bono_ef, 4),
+    }
+
+
 def aplicar_freno_de_mano_y_matchup_21_22(
     lam_base_local: float,
     lam_base_visita: float,
@@ -617,15 +869,22 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     en_crisis_visita: bool = False,
     goles_ult5_local: float = 1.2,
     goles_ult5_visita: float = 1.2,
+    competicion: str = "",
+    fase: str = "",
+    sede_neutral: bool = False,
+    toques_area_local: Optional[float] = None,
+    cobertura_asedio_real: bool = True,
+    cuadro_b_local: Optional[Dict[str, Any]] = None,
+    cuadro_b_visita: Optional[Dict[str, Any]] = None,
+    es_gigante_visitante: Optional[bool] = None,
 ) -> Tuple[float, float, float, float]:
     """
-    Implementa los Puntos 21 y 22 de la Evolución Quirúrgica Post-Auditoría:
-      - Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating
-        y Prohibición de Inflación Dual (suma <= +25.0%, o <= +10.0% si ambos Attack < 40.0).
-      - Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús").
-      - Punto 22: Multiplicador de Matchup contra Defensas Rotas (Defense < 30.0 -> * 1.35),
-        Asedio de Posesión Local (Pos >= 60% y Defense_V < 42.0 -> * 1.15) y Amortiguador de
-        "Fortín Defensivo Local" (Defense_L >= 60.0 y lam_V > 2.05 -> 1.95 + (lam_V - 1.95) * 0.40).
+    Implementa los Puntos 21, 22, 34, 35 y 40:
+      - Punto 21a/21b: Doble Freno de Mano y Techo de Bono en Caja Azul.
+      - Punto 22: Multiplicador contra Defensas Rotas, Asedio Local y Amortiguador de Fortín Local.
+      - Punto 40: Prohibido multiplicar `1.35 * 1.25` (+68.75%) por duplicado entre Copa y Asedio.
+      - Punto 35/8.3: Si se activa 'Gigante Visitante', retira el bono de localía, calcula `lam_local_ref`,
+        `lam_visita_ajustada = max(lam_visita * 1.15, 1.15 * lam_local_ref)` y `lam_local_ajustada = 0.85 * lam_local_ref`.
     Retorna: (lam_final_local, lam_final_visita, delta_pct_local, delta_pct_visita).
     """
     rL = ratings_local or {}
@@ -642,16 +901,60 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     lam_l = max(0.20, float(lam_red_local))
     lam_v = max(0.20, float(lam_red_visita))
 
-    # ── Punto 22: Multiplicadores de Matchup (Defensa Rota, Asedio y Fortín Local) ──
-    # a) Multiplicador contra Defensa Pésima (Defense_Rating < 30):
-    if defense_rating_visita < 30.0:
-        lam_l *= 1.35
-    if defense_rating_local < 30.0:
-        lam_v *= 1.35
+    # ── Puntos 22, 34 y 40: Copa, Asedio y Defensa Rota SIN apilamiento 1.35 * 1.25 ──
+    ctx_comp = detectar_contexto_competicion(competicion=competicion, fase=fase, sede_neutral=sede_neutral)
+    factor_copa_l = float(ctx_comp.get("factor_copa_local", 1.0))
 
-    # b) Multiplicador de Asedio Local por Posesión Alta:
-    if posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0:
-        lam_l *= 1.15
+    if es_gigante_visitante is None and (cuadro_b_local is not None or cuadro_b_visita is not None):
+        info_gv = evaluar_condicion_gigante_visitante(
+            cuadro_b_local=cuadro_b_local,
+            cuadro_b_visita=cuadro_b_visita,
+            attack_local=attack_rating_local,
+            attack_visita=attack_rating_visita,
+        )
+        es_gigante_visitante = bool(info_gv.get("activo", False))
+
+    factor_def_rota_l = 1.35 if defense_rating_visita < 30.0 else 1.0
+    factor_def_rota_v = 1.35 if defense_rating_local < 30.0 else 1.0
+
+    # Evidencia independiente de asedio: exige cobertura real y (posesion >= 57% con toques_area >= 22, o posesion >= 60% con Defense_V < 42)
+    tiene_asedio_verificado_l = bool(
+        cobertura_asedio_real
+        and (
+            (posesion_proyectada_local >= 57.0 and toques_area_local is not None and float(toques_area_local) >= 22.0)
+            or (posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0)
+        )
+    )
+    factor_asedio_l = 1.18 if (tiene_asedio_verificado_l and posesion_proyectada_local >= 57.0 and (toques_area_local or 0.0) >= 22.0) else (
+        1.15 if (tiene_asedio_verificado_l and posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0) else 1.0
+    )
+
+    # Punto 40: Prohibido apilar copa/eliminatoria con asedio/defensa rota (+68.75%):
+    # Si es copa o torneo eliminatorio, el ajuste combinado está acotado estrictamente a <= 1.35x.
+    es_copa = bool(ctx_comp.get("es_copa_o_playoff", False)) or factor_copa_l > 1.0
+    if es_copa:
+        ajuste_l = min(1.35, max(factor_copa_l, factor_asedio_l, factor_def_rota_l))
+        ajuste_v = min(1.35, factor_def_rota_v)
+    else:
+        # En liga regular: Asedio (1.15x) y Defensa Rota rival (1.35x) aplican según Punto 22
+        bono_ofensivo_l = factor_asedio_l
+        ajuste_l = min(1.55, bono_ofensivo_l * factor_def_rota_l)
+        ajuste_v = min(1.55, factor_def_rota_v)
+
+    lam_l *= ajuste_l
+    lam_v *= ajuste_v
+
+    # ── Sección 8.3: Regla 'Gigante Visitante' con orden exacto de operaciones ──
+    if es_gigante_visitante:
+        bono_localia_a_retirar = factor_copa_l if (ajuste_unico_l == factor_copa_l and factor_copa_l > 1.0) else 1.0
+        res_gv = aplicar_ajuste_gigante_visitante(
+            lam_local=lam_l,
+            lam_visita=lam_v,
+            bono_localia_aplicado=bono_localia_a_retirar,
+            sede_neutral=bool(ctx_comp.get("sede_neutral", False)),
+        )
+        lam_l = float(res_gv["lam_local_ajustada"])
+        lam_v = float(res_gv["lam_visita_ajustada"])
 
     # c) Amortiguador de "Fortín Defensivo Local" (Defense_Local >= 60.0):
     if defense_rating_local >= 60.0 and lam_v > 2.05:

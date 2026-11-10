@@ -1334,13 +1334,13 @@ class MotorMercados:
             m_v_gen = self.muestras.get("visitante_general")
 
             perfil_l_gen = ce.construir_perfil_especialista_equipo(
-                ce.bloque_desde_muestra(m_l_gen, self.nombre_local, "global"))
+                ce.bloque_desde_muestra(m_l_gen, self.nombre_local, "global", doc=self.doc_local, condicion=None))
             perfil_v_gen = ce.construir_perfil_especialista_equipo(
-                ce.bloque_desde_muestra(m_v_gen, self.nombre_visitante, "global"))
+                ce.bloque_desde_muestra(m_v_gen, self.nombre_visitante, "global", doc=self.doc_visitante, condicion=None))
 
             if _n_pts(m_l_cond) > 0:
                 perfil_l_cond = ce.construir_perfil_especialista_equipo(
-                    ce.bloque_desde_muestra(m_l_cond, self.nombre_local, f"{self.cond_local}"))
+                    ce.bloque_desde_muestra(m_l_cond, self.nombre_local, f"{self.cond_local}", doc=self.doc_local, condicion=self.cond_local))
                 atq_L_cond = 0.50 * perfil_l_cond['metricas_clave']['goles_favor'] + 0.50 * perfil_l_cond['metricas_clave']['xg_favor']
                 def_L_cond = 0.50 * perfil_l_cond['metricas_clave']['goles_contra'] + 0.50 * perfil_l_cond['metricas_clave']['xgot_contra']
             else:
@@ -1350,7 +1350,7 @@ class MotorMercados:
 
             if _n_pts(m_v_cond) > 0:
                 perfil_v_cond = ce.construir_perfil_especialista_equipo(
-                    ce.bloque_desde_muestra(m_v_cond, self.nombre_visitante, f"{self.cond_visitante}"))
+                    ce.bloque_desde_muestra(m_v_cond, self.nombre_visitante, f"{self.cond_visitante}", doc=self.doc_visitante, condicion=self.cond_visitante))
                 atq_V_cond = 0.50 * perfil_v_cond['metricas_clave']['goles_favor'] + 0.50 * perfil_v_cond['metricas_clave']['xg_favor']
                 def_V_cond = 0.50 * perfil_v_cond['metricas_clave']['goles_contra'] + 0.50 * perfil_v_cond['metricas_clave']['xgot_contra']
             else:
@@ -1483,10 +1483,14 @@ class MotorMercados:
             px_o = max(0.05, float(r_1x2_orig["X"]))
             p2_o = max(0.05, float(r_1x2_orig["2"]))
 
-            m1_l = (perfil_l_gen.get("mitades") or {}).get("1T") or {}
-            m2_l = (perfil_l_gen.get("mitades") or {}).get("2T") or {}
-            m1_v = (perfil_v_gen.get("mitades") or {}).get("1T") or {}
-            m2_v = (perfil_v_gen.get("mitades") or {}).get("2T") or {}
+            mit_l_src = (perfil_l_cond.get("mitades") if isinstance(perfil_l_cond, dict) else None) or (perfil_l_gen.get("mitades") or {})
+            mit_v_src = (perfil_v_cond.get("mitades") if isinstance(perfil_v_cond, dict) else None) or (perfil_v_gen.get("mitades") or {})
+            m1_l = (mit_l_src.get("1T") if isinstance(mit_l_src, dict) else None) or {}
+            m2_l = (mit_l_src.get("2T") if isinstance(mit_l_src, dict) else None) or {}
+            m1_v = (mit_v_src.get("1T") if isinstance(mit_v_src, dict) else None) or {}
+            m2_v = (mit_v_src.get("2T") if isinstance(mit_v_src, dict) else None) or {}
+            resultado["mitades_adn_local"] = mit_l_src
+            resultado["mitades_adn_visita"] = mit_v_src
             pat_l, pat_v = calcular_patrones_completos_partido(
                 resultado.get("mu_local_casa") or {},
                 resultado.get("mu_visita_fuera") or {},
@@ -1506,6 +1510,7 @@ class MotorMercados:
                 es_en_vivo=es_vivo,
                 tarjeta_roja_local=roja_l,
                 tarjeta_roja_visita=roja_v,
+                info_contexto=ctx_av,
                 contexto_partido=ctx_av,
             )
             resultado["patrones_55_local"] = pat_l
@@ -1552,7 +1557,7 @@ class MotorMercados:
             lam_l_nuevo = lam_l_red * mult_sinc_l
             lam_v_nuevo = lam_v_red * mult_sinc_v
 
-            # ── Puntos 21 y 22: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio y Fortín Local ──
+            # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
             r_l_0_100 = (perfil_l_gen.get("ratings_0_100") or resultado.get("ratings_local") or {}) if isinstance(perfil_l_gen, dict) else (resultado.get("ratings_local") or {})
             r_v_0_100 = (perfil_v_gen.get("ratings_0_100") or resultado.get("ratings_visita") or {}) if isinstance(perfil_v_gen, dict) else (resultado.get("ratings_visita") or {})
@@ -1561,6 +1566,13 @@ class MotorMercados:
             g_ult5_l = float(racha_l.get("goles_ult5_prom", 1.2) or 1.2)
             g_ult5_v = float(racha_v.get("goles_ult5_prom", 1.2) or 1.2)
             pos_proy_v = 100.0 - pos_proy_l
+
+            # Conservar copia inmutable de los 5 factores neuronales puros antes de ajustes por reglas (Sección 9.2)
+            ct_orig = resultado.get("cruces_tacticos") if isinstance(resultado.get("cruces_tacticos"), dict) else {}
+            factores_red_l_puros = dict(ct_orig.get("factores_local") or {})
+            factores_red_v_puros = dict(ct_orig.get("factores_visita") or {})
+            suma_red_l_pura = round(float(sum(factores_red_l_puros.values())), 1)
+            suma_red_v_pura = round(float(sum(factores_red_v_puros.values())), 1)
 
             lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
                 lam_base_local=float(lam_l),
@@ -1575,6 +1587,12 @@ class MotorMercados:
                 en_crisis_visita=crisis_v,
                 goles_ult5_local=g_ult5_l,
                 goles_ult5_visita=g_ult5_v,
+                competicion=str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or ""),
+                sede_neutral=bool(sede_neutral_L),
+                toques_area_local=mu_l_c.get("toques_area_rival"),
+                cobertura_asedio_real=bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None),
+                cuadro_b_local=getattr(self, "cuadro_b_local", None),
+                cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
             )
 
             if abs(lam_l_nuevo - lam_l_red) > 0.01 or abs(lam_v_nuevo - lam_v_red) > 0.01:
@@ -1586,6 +1604,10 @@ class MotorMercados:
                     from motor_recursivo_45_dcn import reescalar_factores_a_delta
                     ct = resultado.get("cruces_tacticos")
                     if isinstance(ct, dict):
+                        ct["factores_red_neuronal_local"] = factores_red_l_puros
+                        ct["factores_red_neuronal_visita"] = factores_red_v_puros
+                        ct["ajuste_reglas_pct_local"] = round(delta_pct_l_21 - suma_red_l_pura, 1)
+                        ct["ajuste_reglas_pct_visita"] = round(delta_pct_v_21 - suma_red_v_pura, 1)
                         fl_old = ct.get("factores_local") or {}
                         fv_old = ct.get("factores_visita") or {}
                         if fl_old:
@@ -1653,11 +1675,16 @@ class MotorMercados:
             self.xai_factores["visita"]["lambda_efectivo"] = round(lam_v_red, 4)
             self.xai_factores["visita"]["total_pct"] = pct_v
             if "cruces_tacticos" in resultado and isinstance(resultado["cruces_tacticos"], dict):
-                self.xai_factores["local"]["factores"] = resultado["cruces_tacticos"].get("factores_local", {})
-                self.xai_factores["visita"]["factores"] = resultado["cruces_tacticos"].get("factores_visita", {})
-            self.xai_factores["alertas_xai"] = resultado.get("alertas_xai", [])
-            self.xai_factores["mu_local_casa"] = resultado.get("mu_local_casa", {})
-            self.xai_factores["mu_visita_fuera"] = resultado.get("mu_visita_fuera", {})
+                ct_d = resultado["cruces_tacticos"]
+                self.xai_factores["local"]["factores"] = dict(ct_d.get("factores_local", {}))
+                self.xai_factores["visita"]["factores"] = dict(ct_d.get("factores_visita", {}))
+                self.xai_factores["local"]["factores_red_neuronal"] = dict(ct_d.get("factores_red_neuronal_local") or ct_d.get("factores_local") or {})
+                self.xai_factores["visita"]["factores_red_neuronal"] = dict(ct_d.get("factores_red_neuronal_visita") or ct_d.get("factores_visita") or {})
+                self.xai_factores["local"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_local", 0.0))
+                self.xai_factores["visita"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_visita", 0.0))
+            self.xai_factores["alertas_xai"] = list(resultado.get("alertas_xai", []))
+            self.xai_factores["mu_local_casa"] = dict(resultado.get("mu_local_casa", {}))
+            self.xai_factores["mu_visita_fuera"] = dict(resultado.get("mu_visita_fuera", {}))
 
         # ── Mitades: reescaladas a la λ de la red (λ_1T + λ_2T = λ_FT) ──────
         if self.matriz_1t and self.matriz_2t:
@@ -3716,7 +3743,13 @@ def seleccionar_top_5_jugadas_recomendadas(
                     prob_marcador_max = float(mat[i][j])
                     marcador_mas_probable = (i, j)
 
-    candidatas = [s for s in selecciones if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)]
+    import copy as _copy
+    candidatas = [
+        (dict(s) if isinstance(s, dict) else _copy.copy(s))
+        for s in selecciones
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        and float(_v(s, "probabilidad", 0.0) or 0.0) >= 0.70
+    ]
 
     xai = getattr(motor, "xai_factores", None) or {}
     rec = getattr(motor, "recursivo", None) or {}
@@ -3884,11 +3917,12 @@ def seleccionar_top_5_jugadas_recomendadas(
     if prohibir_over05_visita:
         candidatas = [s for s in candidatas if not _es_equipo_over_05(s, "visitante")]
 
-    # Cuadro B y Cuadro C para Triple Check (Punto 25) y Candado 1T -> 2T (Punto 23)
+    # Cuadro B y Cuadro C para Triple Check (Punto 25), Candado 1T -> 2T (Punto 23) y Gigante Visitante (Puntos 35 y 40)
     cb_l_top: dict[str, Any] = {}
     cb_v_top: dict[str, Any] = {}
     cc_l_top: dict[str, Any] = {}
     cc_v_top: dict[str, Any] = {}
+    mercados_mitad_bloq: set[str] = set()
     try:
         from motor_inferencia import calcular_cuadro_b_tendencias, calcular_cuadro_c_timeline
         pts_l_b = (getattr(motor, "doc_local", None) or {}).get("partidos") or []
@@ -3897,12 +3931,157 @@ def seleccionar_top_5_jugadas_recomendadas(
         cb_v_top = getattr(motor, "cuadro_b_visita", None) or rec.get("cuadro_b_visita") or calcular_cuadro_b_tendencias(pts_v_b, eq_v, pat_v_top or mu_v)
         cc_l_top = getattr(motor, "cuadro_c_local", None) or rec.get("cuadro_c_local") or calcular_cuadro_c_timeline(pts_l_b, eq_l, pat_l_top or mu_l)
         cc_v_top = getattr(motor, "cuadro_c_visita", None) or rec.get("cuadro_c_visita") or calcular_cuadro_c_timeline(pts_v_b, eq_v, pat_v_top or mu_v)
+        for doc_side in (getattr(motor, "doc_local", None), getattr(motor, "doc_visitante", None)):
+            if isinstance(doc_side, dict):
+                cob_side = (doc_side.get("cobertura_matriz") or {})
+                for cl_b in (cob_side.get("mercados_mitad_bloqueados") or []):
+                    mercados_mitad_bloq.add(str(cl_b).lower())
     except Exception:
         pass
 
+    # Punto 39: Si una métrica tiene 1T/2T como "sin_dato" (en mercados_mitad_bloqueados),
+    # cualquier recomendación de ese mercado por mitad queda bloqueada.
+    bloq_mot = getattr(motor, "mercados_mitad_bloqueados", None)
+    if isinstance(bloq_mot, (set, list, tuple)):
+        for b_m in bloq_mot:
+            mercados_mitad_bloq.add(str(b_m).lower())
+    sin_mitades_goles = ("goles" in mercados_mitad_bloq)
+    if sin_mitades_goles:
+        candidatas = [
+            s for s in candidatas
+            if str(_v(s, "periodo") or "FT").strip().upper() not in ("1T", "2T")
+            and str(_v(s, "evento") or "").lower() not in ("gol_1t", "gol_2t")
+        ]
+    if "corners" in mercados_mitad_bloq:
+        candidatas = [
+            s for s in candidatas
+            if not (
+                str(_v(s, "periodo") or "FT").strip().upper() in ("1T", "2T")
+                and ("corner" in str(_v(s, "evento") or "").lower() or "córner" in str(_v(s, "mercado") or "").lower() or "corner" in str(_v(s, "mercado") or "").lower())
+            )
+        ]
+
+    # Puntos 34, 35, 36 y 40 (Sección 8): Contexto de Copa/Playoff, Asedio verificado y Gigante Visitante
+    from motor_patrones import detectar_contexto_competicion, evaluar_condicion_gigante_visitante
+    comp_top = str(
+        getattr(getattr(motor, "p", None), "competicion", "")
+        or (((getattr(motor, "doc_local", None) or {}).get("partidos") or [{}])[0] if ((getattr(motor, "doc_local", None) or {}).get("partidos")) else {}).get("torneo")
+        or rec.get("competicion")
+        or ""
+    )
+    ctx_comp_top = detectar_contexto_competicion(competicion=comp_top)
+    es_eliminatoria_copa = bool(ctx_comp_top.get("es_copa_o_playoff", False))
+
+    toq_l_obs = mu_l.get("toques_area_rival", pat_l_top.get("toques_area_rival"))
+    toq_v_obs = mu_v.get("toques_area_rival", pat_v_top.get("toques_area_rival"))
+    asedio_verificado_top = bool(
+        (pos_l_raw_t >= 57.0 and toq_l_obs is not None and float(toq_l_obs) >= 22.0)
+        or (pos_v_raw_t >= 57.0 and toq_v_obs is not None and float(toq_v_obs) >= 22.0)
+    )
+
+    # Sección 8.2: Si existe eliminatoria de copa o asedio verificado, vetar Under de tarjetas en el Top 5
+    if es_eliminatoria_copa or asedio_verificado_top:
+        def _es_under_tarjetas(s: Any) -> bool:
+            m_t = str(_v(s, "mercado") or "").lower()
+            ev_t = str(_v(s, "evento") or "").lower()
+            et_t = str(_v(s, "etiqueta") or "").lower()
+            es_t = any(k in m_t for k in ("tarjeta", "amarilla")) or any(k in ev_t for k in ("tarjeta", "amarilla"))
+            es_un = ("under" in ev_t or "menos" in et_t or "-" in et_t)
+            return bool(es_t and es_un)
+        candidatas = [s for s in candidatas if not _es_under_tarjetas(s)]
+
+    # Sección 8.4: En eliminatoria de copa, vetar Under 9.5 córneres (y líneas Under <= 9.5 de córneres) en el Top 5
+    if es_eliminatoria_copa:
+        def _es_under_corners_copa(s: Any) -> bool:
+            m_c = str(_v(s, "mercado") or "").lower()
+            ev_c = str(_v(s, "evento") or "").lower()
+            et_c = str(_v(s, "etiqueta") or "").lower()
+            lin_c = _v(s, "linea", None)
+            es_c = any(k in m_c for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev_c
+            es_un = ("under" in ev_c or "menos" in et_c)
+            return bool(es_c and es_un and lin_c is not None and float(lin_c) <= 9.5)
+        candidatas = [s for s in candidatas if not _es_under_corners_copa(s)]
+
+    info_gv = evaluar_condicion_gigante_visitante(
+        cuadro_b_local=cb_l_top,
+        cuadro_b_visita=cb_v_top,
+        attack_local=atk_l_top,
+        attack_visita=atk_v_top,
+    )
+    es_gigante_visitante = bool(info_gv.get("activo", False))
+    vetar_1x_por_gigante_visita = bool(
+        es_gigante_visitante
+        or (p_1x2 is not None and float(p_1x2[0] + p_1x2[1]) < 0.70)
+    )
+    if es_gigante_visitante:
+        # Vetar 1X, 1 directo local y cualquier hándicap/DNB a favor del local
+        def _es_favor_local_slot1(s: Any) -> bool:
+            ev_s_l = str(_v(s, "evento") or "").lower().strip()
+            eq_s_l = str(_v(s, "equipo") or "").strip().lower()
+            if ev_s_l in ("1", "local_gana", "1x", "dc_1x") or ev_s_l.endswith("_1x") or "local" in ev_s_l:
+                return True
+            if eq_s_l and (eq_s_l == eq_l.strip().lower() or eq_s_l in eq_l.strip().lower()):
+                if any(k in ev_s_l for k in ("dnb", "h0_", "h1_", "h-1_", "h_minus1_")):
+                    return True
+            return False
+        candidatas = [s for s in candidatas if not _es_favor_local_slot1(s)]
+
+    # Garantizar coherencia exacta de 1X y X2 con P(Local)+P(Empate) y P(Empate)+P(Visita) de la matriz final,
+    # evaluando el umbral >= 0.70 en punto flotante ANTES de redondear (0.6996 < 0.70 queda fuera).
+    if p_1x2 is not None:
+        p1_f, px_f, p2_f = p_1x2
+        p_1x_exacta = float(p1_f + px_f)
+        p_x2_exacta = float(px_f + p2_f)
+        candidatas_sinc: list[Any] = []
+        for s in candidatas:
+            ev_s_low = str(_v(s, "evento") or "").lower().strip()
+            per_s_up = str(_v(s, "periodo") or "FT").strip().upper()
+            if per_s_up == "FT" and (ev_s_low in ("1x", "dc_1x") or ev_s_low.endswith("_1x")):
+                if p_1x_exacta < 0.70 or vetar_1x_por_gigante_visita:
+                    continue
+                if isinstance(s, dict):
+                    s["probabilidad"] = p_1x_exacta
+                else:
+                    try:
+                        s.probabilidad = p_1x_exacta
+                    except Exception:
+                        pass
+            elif per_s_up == "FT" and (ev_s_low in ("x2", "dc_x2") or ev_s_low.endswith("_x2")):
+                if p_x2_exacta < 0.70:
+                    continue
+                if isinstance(s, dict):
+                    s["probabilidad"] = p_x2_exacta
+                else:
+                    try:
+                        s.probabilidad = p_x2_exacta
+                    except Exception:
+                        pass
+            elif per_s_up == "FT" and ev_s_low in ("1", "local_gana"):
+                if float(p1_f) < 0.70 or es_gigante_visitante:
+                    continue
+                if isinstance(s, dict):
+                    s["probabilidad"] = float(p1_f)
+                else:
+                    try:
+                        s.probabilidad = float(p1_f)
+                    except Exception:
+                        pass
+            elif per_s_up == "FT" and ev_s_low in ("2", "visitante_gana"):
+                if float(p2_f) < 0.70:
+                    continue
+                if isinstance(s, dict):
+                    s["probabilidad"] = float(p2_f)
+                else:
+                    try:
+                        s.probabilidad = float(p2_f)
+                    except Exception:
+                        pass
+            candidatas_sinc.append(s)
+        candidatas = candidatas_sinc
+
     def _prop_goles_2t_cc(cc_d: dict[str, Any]) -> float:
         if not isinstance(cc_d, dict):
-            return 0.54
+            return 0.50
         g1 = 0
         g2 = 0
         for fr in ("00_15", "16_30", "31_45", "00'-15'", "16'-30'", "31'-45'"):
@@ -3912,11 +4091,13 @@ def seleccionar_top_5_jugadas_recomendadas(
             if isinstance(cc_d.get(fr), dict):
                 g2 += int(cc_d[fr].get("anotados", 0))
         tot = g1 + g2
-        return (g2 / tot) if tot > 0 else 0.54
+        return (g2 / tot) if tot > 0 else 0.50
 
-    p26_l_t = float(pat_l_top.get("P26_Poder_Cierre_2T", 0.52) or 0.52)
-    p26_v_t = float(pat_v_top.get("P26_Poder_Cierre_2T", 0.52) or 0.52)
-    prom_p26 = (p26_l_t + p26_v_t) / 2.0
+    # Sección 5.3: Preservar 0.0 real y None en P26_Poder_Cierre_2T (jamás sustituir 0.0 ni None por 0.52)
+    p26_l_raw = pat_l_top.get("P26_Poder_Cierre_2T") if "P26_Poder_Cierre_2T" in pat_l_top else None
+    p26_v_raw = pat_v_top.get("P26_Poder_Cierre_2T") if "P26_Poder_Cierre_2T" in pat_v_top else None
+    vals_p26 = [float(x) for x in (p26_l_raw, p26_v_raw) if x is not None]
+    prom_p26: float | None = (sum(vals_p26) / len(vals_p26)) if vals_p26 else None
     prop_2t_cc = (_prop_goles_2t_cc(cc_l_top) + _prop_goles_2t_cc(cc_v_top)) / 2.0
     desp_l_t = float(mu_l.get("despejes", pat_l_top.get("despejes", 18.0)) or 18.0)
     desp_v_t = float(mu_v.get("despejes", pat_v_top.get("despejes", 18.0)) or 18.0)
@@ -3929,10 +4110,12 @@ def seleccionar_top_5_jugadas_recomendadas(
     permitir_1t_over_05 = (max(atk_l_top, atk_v_top) >= 70.0 and lam_1t_comb >= 1.45) and not hay_bloque_bajo_23
     prohibir_1t_over_05 = (
         not permitir_1t_over_05
-        or prom_p26 >= 0.51
+        or (prom_p26 is not None and prom_p26 >= 0.51)
         or prop_2t_cc > 0.55
         or hay_bloque_bajo_23
     )
+    # Sección 8.4: En copa/eliminatoria con λ_L + λ_V < 2.2, eliminar prioridad automática de Goles 2T: +0.5 Goles
+    desactivar_prioridad_2t_copa = bool(es_eliminatoria_copa and (lam_l + lam_v) < 2.2)
 
     def _es_1t_over_05(s: Any) -> bool:
         ev_s = str(_v(s, "evento") or "").lower()
@@ -3954,7 +4137,7 @@ def seleccionar_top_5_jugadas_recomendadas(
     if prohibir_1t_over_05:
         tiene_1t = any(_es_1t_over_05(s) for s in candidatas)
         candidatas = [s for s in candidatas if not _es_1t_over_05(s)]
-        # Si no había una selección 2T +0.5 en candidatas, inyectarla con probabilidad Poisson 2T real
+        # Si no había una selección 2T +0.5 en candidatas y prom_p26 real >= 0.51 (y no está desactivado por copa baja ni bloqueado por mitad), inyectarla
         tiene_2t_05 = any(
             str(_v(s, "periodo") or "").upper() == "2T"
             and (
@@ -3963,7 +4146,13 @@ def seleccionar_top_5_jugadas_recomendadas(
             )
             for s in candidatas
         )
-        if not tiene_2t_05 and (tiene_1t or prom_p26 >= 0.51):
+        if (
+            not tiene_2t_05
+            and not sin_mitades_goles
+            and not desactivar_prioridad_2t_copa
+            and prom_p26 is not None
+            and prom_p26 >= 0.51
+        ):
             lam_2t_c = ((t2_l or 0.65) + (t2_v or 0.55)) if (t2_l is not None) else max(0.85, 0.56 * (lam_l + lam_v))
             p_2t_05 = round(min(0.88, max(0.72, 1.0 - math.exp(-lam_2t_c))), 4)
             candidatas.append({
@@ -3978,16 +4167,18 @@ def seleccionar_top_5_jugadas_recomendadas(
                 "estado": "mantiene",
             })
 
-    # Punto 23c: Alerta de Posesión Estéril vs. Portero Figura (Caso Celta 0-0 Levante)
-    p01_l_t = float(pat_l_top.get("P01_xG_por_Remate", 0.12) or 0.12)
-    p01_v_t = float(pat_v_top.get("P01_xG_por_Remate", 0.12) or 0.12)
+    # Punto 23c y Sección 5.3: Alerta de Posesión Estéril vs. Portero Figura (preservando P01=None como no_evaluable)
+    p01_l_raw = pat_l_top.get("P01_xG_por_Remate")
+    p01_v_raw = pat_v_top.get("P01_xG_por_Remate")
+    p01_l_t = float(p01_l_raw) if p01_l_raw is not None else None
+    p01_v_t = float(p01_v_raw) if p01_v_raw is not None else None
     p06_l_t = float(pat_l_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
     p06_v_t = float(pat_v_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
     p14_l_t = float(pat_l_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
     p14_v_t = float(pat_v_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
     posesion_esteril_vs_portero = (
-        ((p01_l_t < 0.11 or p06_l_t >= 0.55) and p14_v_t >= 0.70)
-        or ((p01_v_t < 0.11 or p06_v_t >= 0.55) and p14_l_t >= 0.70)
+        (((p01_l_t is not None and p01_l_t < 0.11) or p06_l_t >= 0.55) and p14_v_t >= 0.70)
+        or (((p01_v_t is not None and p01_v_t < 0.11) or p06_v_t >= 0.55) and p14_l_t >= 0.70)
     )
     if posesion_esteril_vs_portero:
         def _es_over_ft_15_25(s: Any) -> bool:
@@ -4241,9 +4432,9 @@ def seleccionar_top_5_jugadas_recomendadas(
             if sl == 1 and (ev in ("1x", "x2", "dc_1x", "dc_x2") or ev.endswith("_1x") or ev.endswith("_x2")):
                 est_bonus += 0.55
 
-        # Punto 23b: Si está prohibido 1T +0.5, impulsar Goles 2T: +0.5 Goles o [Equipo] -1.5/-2.5 Goles (FT) en Slot 3
+        # Punto 23b y 8.4: Si está prohibido 1T +0.5 y no está desactivada la prioridad en copa baja, impulsar Goles 2T: +0.5 Goles o [Equipo] -1.5/-2.5 Goles (FT) en Slot 3
         if prohibir_1t_over_05 and sl == 3:
-            if per == "2T" and (ev == "gol_2t" or (lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower()))):
+            if per == "2T" and not desactivar_prioridad_2t_copa and (prom_p26 is not None and prom_p26 >= 0.51) and (ev == "gol_2t" or (lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower()))):
                 est_bonus += 1.25
             elif per == "FT" and _v(s, "equipo") and lin is not None and float(lin) in (1.5, 2.5) and ("under" in ev or "menos" in str(_v(s, "etiqueta", "")).lower()):
                 est_bonus += 0.90
@@ -4264,7 +4455,7 @@ def seleccionar_top_5_jugadas_recomendadas(
             elif sl == 2 and lin is not None and float(lin) == 2.5 and "over" in ev:
                 if (((_cnt_cb(cb_l_top, "mas_2_5_goles", 8) / n_tot_l) + (_cnt_cb(cb_v_top, "mas_2_5_goles", 8) / n_tot_v)) / 2.0) >= 0.60:
                     est_bonus += 5.0
-            elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and prom_p26 >= 0.52:
+            elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and (prom_p26 is not None and prom_p26 >= 0.52):
                 est_bonus += 5.0
 
         # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad

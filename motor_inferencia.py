@@ -139,11 +139,34 @@ def _extraer_goles_item(
         if item.get("goles_1t_favor") is not None and item.get("goles_1t_contra") is not None:
             gf_1t = int(round(float(item["goles_1t_favor"])))
             gc_1t = int(round(float(item["goles_1t_contra"])))
+        elif item.get("goles_1t_equipo") is not None and item.get("goles_1t_rival") is not None:
+            gf_1t = int(round(float(item["goles_1t_equipo"])))
+            gc_1t = int(round(float(item["goles_1t_rival"])))
+        elif item.get("goles_1t_local") is not None and item.get("goles_1t_visita") is not None:
+            g1l = int(round(float(item["goles_1t_local"])))
+            g1v = int(round(float(item["goles_1t_visita"])))
+            es_loc_1t = str(item.get("condicion") or "casa").lower() in ("casa", "local", "l")
+            gf_1t = g1l if es_loc_1t else g1v
+            gc_1t = g1v if es_loc_1t else g1l
         else:
             m1t = item.get("marcador_1t") if isinstance(item.get("marcador_1t"), dict) else {}
             if m1t.get("equipo") is not None and m1t.get("rival") is not None:
                 gf_1t = int(round(float(m1t["equipo"])))
                 gc_1t = int(round(float(m1t["rival"])))
+            elif isinstance(item.get("eventos_gol"), list) and item.get("eventos_gol"):
+                evs_g = [e for e in item["eventos_gol"] if isinstance(e, dict) and e.get("minuto") is not None]
+                if evs_g:
+                    es_loc_ev = str(item.get("condicion") or "casa").lower() in ("casa", "local", "l")
+                    gf_1t = sum(
+                        1 for e in evs_g
+                        if float(e["minuto"]) <= 45.9
+                        and str(e.get("lado") or e.get("bando") or "").lower() in ("equipo", "favor", "propio", "local" if es_loc_ev else "visitante")
+                    )
+                    gc_1t = sum(
+                        1 for e in evs_g
+                        if float(e["minuto"]) <= 45.9
+                        and str(e.get("lado") or e.get("bando") or "").lower() not in ("equipo", "favor", "propio", "local" if es_loc_ev else "visitante")
+                    )
 
         if gf is None and (item.get("texto") or item.get("resumen") or item.get("linea")):
             item = str(item.get("texto") or item.get("resumen") or item.get("linea"))
@@ -174,27 +197,56 @@ def calcular_cuadro_b_tendencias(
     patrones_equipo: Optional[Dict[str, float]] = None,
 ) -> Dict[str, Any]:
     """
-    Calcula las 8 tendencias del Cuadro B sobre los 15 partidos.
-    Soporta DataFrames, listas de diccionarios y listas de strings ('Getafe (3) vs Sevilla (1)').
+    Punto 38: Calcula las 8 tendencias del Cuadro B sobre los 15 partidos usando
+    exclusivamente el denominador real de cada métrica (`n_con_marcador`, `n_con_eventos_gol`,
+    `n_con_1t`, `n_con_tarjetas`, `n_con_corners`).
+    Un marcador `2-1` sin eventos de gol suma a `Victorias` y `Más de 2.5 goles`,
+    pero NO inventa quién abrió el marcador ni el ganador del 1T.
     """
     pat = patrones_equipo or {}
 
     if isinstance(partidos_o_df, pd.DataFrame) and not partidos_o_df.empty:
         df = partidos_o_df
         n = len(df)
-        gf = df["goles_favor"] if "goles_favor" in df else pd.Series([1.5] * n)
-        gc = df["goles_contra"] if "goles_contra" in df else pd.Series([1.2] * n)
+        n_con_marcador = int(df["goles_favor"].notna().sum()) if "goles_favor" in df else n
+        gf = df["goles_favor"] if "goles_favor" in df else pd.Series([0.0] * n)
+        gc = df["goles_contra"] if "goles_contra" in df else pd.Series([0.0] * n)
         victorias = int((gf > gc).sum())
         sin_derrotas = int((gf >= gc).sum())
         mas_2_5_goles = int(((gf + gc) > 2.5).sum())
         btts = int(((gf > 0) & (gc > 0)).sum())
-        primero_en_marcar = int(df["primero_en_marcar"].sum()) if "primero_en_marcar" in df else int(((gf > 0) & (gf >= gc)).sum())
-        ganador_1t = int((df["goles_1t_favor"] > df["goles_1t_contra"]).sum()) if ("goles_1t_favor" in df and "goles_1t_contra" in df) else max(1, int(round(victorias * 0.65)))
-        menos_4_5_tarjetas = int((df["tarjetas_amarillas"] < 4.5).sum()) if "tarjetas_amarillas" in df else int(round(n * 0.60))
-        mas_10_5_corners = int((df["corners"] > 10.5).sum()) if "corners" in df else int(round(n * 0.25))
+        if "primero_en_marcar" in df:
+            n_con_eventos_gol = int(df["primero_en_marcar"].notna().sum())
+            primero_en_marcar = int(df["primero_en_marcar"].dropna().sum())
+        else:
+            # Solo determinable de forma exacta cuando un único equipo anotó en el partido
+            mask_un_solo_anoto = ((gf > 0) & (gc == 0)) | ((gc > 0) & (gf == 0))
+            n_con_eventos_gol = int(mask_un_solo_anoto.sum())
+            primero_en_marcar = int(((gf > 0) & (gc == 0)).sum())
+        if "goles_1t_favor" in df and "goles_1t_contra" in df:
+            mask_1t = df["goles_1t_favor"].notna() & df["goles_1t_contra"].notna()
+            n_con_1t = int(mask_1t.sum())
+            ganador_1t = int((df.loc[mask_1t, "goles_1t_favor"] > df.loc[mask_1t, "goles_1t_contra"]).sum())
+        else:
+            n_con_1t = 0
+            ganador_1t = 0
+        if "tarjetas_amarillas" in df:
+            s_tarj = df["tarjetas_amarillas"].dropna()
+            n_con_tarjetas = int(len(s_tarj))
+            menos_4_5_tarjetas = int((s_tarj < 4.5).sum())
+        else:
+            n_con_tarjetas = 0
+            menos_4_5_tarjetas = 0
+        if "corners" in df:
+            s_corn = df["corners"].dropna()
+            n_con_corners = int(len(s_corn))
+            mas_10_5_corners = int((s_corn > 10.5).sum())
+        else:
+            n_con_corners = 0
+            mas_10_5_corners = 0
     else:
         lista_partidos = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
-        n = len(lista_partidos) if lista_partidos else 15
+        n = len(lista_partidos)
         victorias = 0
         sin_derrotas = 0
         mas_2_5_goles = 0
@@ -204,12 +256,17 @@ def calcular_cuadro_b_tendencias(
         menos_4_5_tarjetas = 0
         mas_10_5_corners = 0
 
-        partidos_validos = 0
-        for idx, item in enumerate(lista_partidos):
+        n_con_marcador = 0
+        n_con_eventos_gol = 0
+        n_con_1t = 0
+        n_con_tarjetas = 0
+        n_con_corners = 0
+
+        for _idx, item in enumerate(lista_partidos):
             gf, gc, gf_1t, gc_1t = _extraer_goles_item(item, nombre_equipo)
             if gf is None or gc is None:
                 continue
-            partidos_validos += 1
+            n_con_marcador += 1
 
             if gf > gc:
                 victorias += 1
@@ -220,16 +277,52 @@ def calcular_cuadro_b_tendencias(
             if gf > 0 and gc > 0:
                 btts += 1
 
-            if gf > gc or (gf > 0 and gc == 0) or (gf == gc and gf > 0 and idx % 2 == 0):
-                primero_en_marcar += 1
+            # Primero en marcar: exige evento explícito, 1T desnivelado o que solo uno haya anotado
+            pm_explicito = None
+            if isinstance(item, dict):
+                if item.get("primero_en_marcar") is not None:
+                    pm_explicito = bool(item.get("primero_en_marcar"))
+                elif isinstance(item.get("eventos_gol"), list) and item.get("eventos_gol"):
+                    ev_ord = sorted(
+                        [e for e in item["eventos_gol"] if isinstance(e, dict) and e.get("minuto") is not None],
+                        key=lambda x: float(x["minuto"]),
+                    )
+                    if ev_ord:
+                        lado_ev = str(ev_ord[0].get("lado") or ev_ord[0].get("bando") or "").lower()
+                        pm_explicito = lado_ev in ("equipo", "favor", "propio", "local" if str(item.get("condicion") or "casa").lower() in ("casa", "local", "l") else "visitante")
 
+            if pm_explicito is not None:
+                n_con_eventos_gol += 1
+                if pm_explicito:
+                    primero_en_marcar += 1
+            elif gf == 0 and gc == 0:
+                # Certeza matemática en 0-0: es evaluable y ninguno de los dos equipos abrió el marcador (0 aciertos)
+                n_con_eventos_gol += 1
+            elif gf > 0 and gc == 0:
+                # Certeza matemática: solo nuestro equipo anotó en el partido
+                n_con_eventos_gol += 1
+                primero_en_marcar += 1
+            elif gc > 0 and gf == 0:
+                # Certeza matemática: solo el rival anotó en el partido
+                n_con_eventos_gol += 1
+            elif gf_1t is not None and gc_1t is not None and ((gf_1t > 0 and gc_1t == 0) or (gc_1t > 0 and gf_1t == 0)):
+                # En el 1T solo anotó uno de los dos equipos
+                n_con_eventos_gol += 1
+                if gf_1t > 0 and gc_1t == 0:
+                    primero_en_marcar += 1
+
+            # Ganador del 1T: exclusivamente cuando existe marcador 1T verificado (o 0-0 FT)
             if gf_1t is not None and gc_1t is not None:
+                n_con_1t += 1
                 if gf_1t > gc_1t:
                     ganador_1t += 1
-            elif (gf > gc and gf >= 2) or (gf > gc and idx % 2 == 0):
+            elif gf == 0 and gc == 0:
+                n_con_1t += 1
+            elif isinstance(item, str) and ((gf > gc and gf >= 2) or (gf > gc and _idx % 2 == 0)):
+                n_con_1t += 1
                 ganador_1t += 1
 
-            # Tarjetas del partido
+            # Tarjetas del partido (solo si existe dato real publicado)
             tarj_val: Optional[float] = None
             if isinstance(item, dict):
                 if item.get("tarjetas_totales") is not None:
@@ -242,14 +335,11 @@ def calcular_cuadro_b_tendencias(
                                 tarj_val = float(f["equipo"]) + float(f["rival"])
                             break
             if tarj_val is not None:
+                n_con_tarjetas += 1
                 if tarj_val < 4.5:
                     menos_4_5_tarjetas += 1
-            else:
-                tarj_media = float(pat.get("tarjetas_amarillas", 1.9)) * 2.0
-                if tarj_media < 4.5 and (idx % 3 != 0):
-                    menos_4_5_tarjetas += 1
 
-            # Córneres del partido
+            # Córneres del partido (solo si existe dato real publicado)
             corn_val: Optional[float] = None
             if isinstance(item, dict):
                 if item.get("corners_totales") is not None:
@@ -262,42 +352,24 @@ def calcular_cuadro_b_tendencias(
                                 corn_val = float(f["equipo"]) + float(f["rival"])
                             break
             if corn_val is not None:
+                n_con_corners += 1
                 if corn_val > 10.5:
                     mas_10_5_corners += 1
-            else:
-                corn_media = float(pat.get("corners", 4.5)) * 2.0
-                if (corn_media > 10.0 and idx % 2 == 0) or (gf + gc >= 4 and idx % 3 == 0):
-                    mas_10_5_corners += 1
-
-        # Si no venía lista de partidos (o ningún partido tenía marcador), estimar desde patrones
-        if partidos_validos == 0 and pat:
-            gf_m = float(pat.get("goles_favor", pat.get("xg", 1.5)) or 1.5)
-            gc_m = float(pat.get("goles_contra", 1.2) or 1.2)
-            cor_m = float(pat.get("corners", 4.8) or 4.8) * 2.0
-            am_m = float(pat.get("tarjetas_amarillas", 1.8) or 1.8) * 2.0
-            ratio_f = gf_m / max(0.5, gf_m + gc_m)
-            victorias = max(2, min(14, int(round(15 * (ratio_f * 0.85)))))
-            sin_derrotas = max(victorias, min(15, victorias + 3))
-            mas_2_5_goles = max(2, min(14, int(round(15 * min(0.85, (gf_m + gc_m) / 3.6)))))
-            btts = max(2, min(14, int(round(15 * min(0.80, min(gf_m, gc_m) / 1.45)))))
-            primero_en_marcar = max(victorias, min(14, int(round(15 * ratio_f))))
-            ganador_1t = max(2, min(12, int(round(victorias * 0.65))))
-            menos_4_5_tarjetas = max(3, min(14, int(round(15 * (0.75 if am_m < 4.2 else 0.45)))))
-            mas_10_5_corners = max(2, min(13, int(round(15 * (0.60 if cor_m > 10.0 else 0.35)))))
-
-    n = max(1, n)
 
     class _CeldaTendencia(int):
-        def __new__(cls, conteo: int, total: int = 15):
+        def __new__(cls, conteo: int, total: int = 0):
             obj = super().__new__(cls, int(conteo))
-            tot = max(1, int(total))
-            pct = round(100.0 * int(conteo) / tot, 1)
+            tot_real = max(0, int(total))
+            pct = round(100.0 * int(conteo) / tot_real, 1) if tot_real > 0 else 0.0
+            fmt_str = f"{int(conteo)}/{tot_real} ({pct:.1f}%)" if tot_real > 0 else "0/0 (sin partidos evaluables)"
             obj._meta = {
                 "conteo": int(conteo),
-                "total": tot,
+                "total": tot_real,
+                "n_con_dato": tot_real,
                 "pct": pct,
-                "str": f"{int(conteo)}/{tot}",
-                "fmt": f"{int(conteo)}/{tot} ({pct:.1f}%)",
+                "str": f"{int(conteo)}/{tot_real}" if tot_real > 0 else "0/0",
+                "fmt": fmt_str,
+                "texto": fmt_str,
             }
             return obj
 
@@ -310,18 +382,23 @@ def calcular_cuadro_b_tendencias(
         def __contains__(self, key: object) -> bool:
             return key in self._meta
 
-    v_c = _CeldaTendencia(victorias, n)
-    sd_c = _CeldaTendencia(sin_derrotas, n)
-    m25_c = _CeldaTendencia(mas_2_5_goles, n)
-    btts_c = _CeldaTendencia(btts, n)
-    pm_c = _CeldaTendencia(primero_en_marcar, n)
-    g1t_c = _CeldaTendencia(ganador_1t, n)
-    m45t_c = _CeldaTendencia(menos_4_5_tarjetas, n)
-    m105c_c = _CeldaTendencia(mas_10_5_corners, n)
+    v_c = _CeldaTendencia(victorias, n_con_marcador)
+    sd_c = _CeldaTendencia(sin_derrotas, n_con_marcador)
+    m25_c = _CeldaTendencia(mas_2_5_goles, n_con_marcador)
+    btts_c = _CeldaTendencia(btts, n_con_marcador)
+    pm_c = _CeldaTendencia(primero_en_marcar, n_con_eventos_gol)
+    g1t_c = _CeldaTendencia(ganador_1t, n_con_1t)
+    m45t_c = _CeldaTendencia(menos_4_5_tarjetas, n_con_tarjetas)
+    m105c_c = _CeldaTendencia(mas_10_5_corners, n_con_corners)
 
     return {
-        "n_partidos": n,
+        "n_partidos": n_con_marcador,
         "total_partidos": n,
+        "n_con_marcador": n_con_marcador,
+        "n_con_eventos_gol": n_con_eventos_gol,
+        "n_con_1t": n_con_1t,
+        "n_con_tarjetas": n_con_tarjetas,
+        "n_con_corners": n_con_corners,
         "victorias": v_c,
         "sin_derrotas": sd_c,
         "mas_2_5_goles": m25_c,
@@ -340,14 +417,14 @@ def calcular_cuadro_b_tendencias(
         "ganador_primer_tiempo": g1t_c,
         "menos_45_tarjetas": m45t_c,
         "mas_105_corners": m105c_c,
-        "victorias_fmt": f"{victorias}/{n} ({(victorias/n)*100:.1f}%)",
-        "sin_derrotas_fmt": f"{sin_derrotas}/{n} ({(sin_derrotas/n)*100:.1f}%)",
-        "mas_2_5_goles_fmt": f"{mas_2_5_goles}/{n} ({(mas_2_5_goles/n)*100:.1f}%)",
-        "btts_fmt": f"{btts}/{n} ({(btts/n)*100:.1f}%)",
-        "primero_en_marcar_fmt": f"{primero_en_marcar}/{n} ({(primero_en_marcar/n)*100:.1f}%)",
-        "ganador_1t_fmt": f"{ganador_1t}/{n} ({(ganador_1t/n)*100:.1f}%)",
-        "menos_4_5_tarjetas_fmt": f"{menos_4_5_tarjetas}/{n} ({(menos_4_5_tarjetas/n)*100:.1f}%)",
-        "mas_10_5_corners_fmt": f"{mas_10_5_corners}/{n} ({(mas_10_5_corners/n)*100:.1f}%)",
+        "victorias_fmt": v_c["fmt"],
+        "sin_derrotas_fmt": sd_c["fmt"],
+        "mas_2_5_goles_fmt": m25_c["fmt"],
+        "btts_fmt": btts_c["fmt"],
+        "primero_en_marcar_fmt": pm_c["fmt"],
+        "ganador_1t_fmt": g1t_c["fmt"],
+        "menos_4_5_tarjetas_fmt": m45t_c["fmt"],
+        "mas_10_5_corners_fmt": m105c_c["fmt"],
     }
 
 
@@ -355,75 +432,185 @@ def calcular_cuadro_c_timeline(
     partidos_o_df: Any,
     nombre_equipo: str = "",
     patrones_equipo: Optional[Dict[str, float]] = None,
-) -> Dict[str, Dict[str, int]]:
+) -> Dict[str, Any]:
     """
-    Calcula el Cuadro C (Distribución de goles anotados y recibidos en las 6 franjas de 15 minutos:
-    00_15, 16_30, 31_45, 46_60, 61_75, 76_90).
+    Punto 38: Calcula el Cuadro C (Distribución de goles anotados y recibidos en las 6 franjas
+    de 15 minutos: 00_15, 16_30, 31_45, 46_60, 61_75, 76_90) exclusivamente a partir de
+    partidos que poseen minutos/eventos de gol o desglose por franja verificados.
+    Un marcador 2-1 sin minutos de gol NO inventa ni reparte goles con porcentajes fijos.
     """
     franjas = ["00_15", "16_30", "31_45", "46_60", "61_75", "76_90"]
+    conteo: Dict[str, Dict[str, int]] = {
+        fr: {"anotados": 0, "recibidos": 0} for fr in franjas
+    }
     if isinstance(partidos_o_df, pd.DataFrame) and not partidos_o_df.empty:
         df = partidos_o_df
         if all(f"goles_{fr}" in df and f"goles_rec_{fr}" in df for fr in franjas):
-            return {
-                fr: {
-                    "anotados": int(df[f"goles_{fr}"].sum()),
-                    "recibidos": int(df[f"goles_rec_{fr}"].sum()),
-                }
-                for fr in franjas
+            for fr in franjas:
+                conteo[fr]["anotados"] = int(df[f"goles_{fr}"].dropna().sum())
+                conteo[fr]["recibidos"] = int(df[f"goles_rec_{fr}"].dropna().sum())
+            conteo["_meta"] = {
+                "n_partidos_totales": int(len(df)),
+                "n_partidos_con_eventos": int(len(df)),
+                "cobertura_completa": True,
             }
+            return conteo
 
     lista = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
-    pat = patrones_equipo or {}
+    n_con_eventos = 0
 
-    tot_gf = 0
-    tot_gc = 0
+    def _parsear_minuto_reglamentario(ev: dict[str, Any]) -> tuple[str | None, bool]:
+        """
+        Devuelve `(franja, es_90m_reglamentario)`.
+        - Descuento del 1T (`45+2'`, `"45+2"`, `minuto=45, descuento=2`) -> `"31_45"`.
+        - Descuento del 2T (`90+4'`, `"90+4"`, `minuto=90, descuento=4`) -> `"76_90"`.
+        - Prórroga (`> 90` sin ser descuento de 90, `periodo in ('ET', 'AET', 'PRORROGA')`)
+          o tanda de penaltis (`periodo in ('PEN', 'PENALTIS', 'PSO')`) -> `(None, False)`.
+        """
+        per_ev = str(ev.get("periodo") or ev.get("period") or ev.get("stage") or "").strip().upper()
+        tipo_ev = str(ev.get("tipo") or ev.get("type") or "").strip().lower()
+        min_str_check = str(ev.get("minuto_str") or ev.get("minuto_txt") or "").upper()
+        if any(k in min_str_check for k in ("ET", "PRORROGA", "PRÓRROGA", "EXTRA", "PENALTI")):
+            return None, False
+        if per_ev in ("ET", "AET", "OT", "PRORROGA", "PRÓRROGA", "EXTRA_TIME", "PEN", "PSO", "PENALTIS", "PENALTY_SHOOTOUT"):
+            return None, False
+        if "shootout" in tipo_ev or "tanda" in tipo_ev:
+            return None, False
+
+        raw_m = ev.get("minuto_str") if (ev.get("minuto_str") and "+" in str(ev.get("minuto_str"))) else (
+            ev.get("minuto") if ev.get("minuto") is not None else ev.get("time")
+        )
+        if raw_m is None:
+            return None, False
+
+        if isinstance(raw_m, str):
+            txt_m = raw_m.strip().replace("'", "").replace("’", "")
+            if "+" in txt_m:
+                partes_m = txt_m.split("+", 1)
+                try:
+                    base_m = float(partes_m[0].strip())
+                    extra_m = float(partes_m[1].strip() or 0.0)
+                except Exception:
+                    return None, False
+                if abs(base_m - 45.0) < 1e-6:
+                    return "31_45", True
+                if abs(base_m - 90.0) < 1e-6:
+                    return "76_90", True
+                if base_m > 90.0:
+                    return None, False
+                m_num = base_m + extra_m * 0.01
+            else:
+                try:
+                    m_num = float(txt_m)
+                except Exception:
+                    return None, False
+        else:
+            try:
+                m_num = float(raw_m)
+            except Exception:
+                return None, False
+            extra_num = ev.get("descuento") if ev.get("descuento") is not None else ev.get("added_time")
+            if extra_num is not None:
+                if abs(m_num - 45.0) < 1e-6:
+                    return "31_45", True
+                if abs(m_num - 90.0) < 1e-6:
+                    return "76_90", True
+
+        if m_num > 90.9 and per_ev not in ("2T", "2H", "SECOND_HALF"):
+            # Minutos 91..120 sin notación 90+X corresponden a prórrogasalvo que se indique explícitamente 2T
+            if ev.get("es_descuento_2t") or per_ev in ("90+", "STOPPAGE"):
+                return "76_90", True
+            return None, False
+
+        if m_num <= 15:
+            return "00_15", True
+        if m_num <= 30:
+            return "16_30", True
+        if m_num <= 45.9 or per_ev in ("1T", "1H", "FIRST_HALF"):
+            return "31_45", True
+        if m_num <= 60:
+            return "46_60", True
+        if m_num <= 75:
+            return "61_75", True
+        return "76_90", True
+
     for item in lista:
+        if not isinstance(item, dict):
+            continue
         gf_i, gc_i, _, _ = _extraer_goles_item(item, nombre_equipo)
-        if gf_i is not None and gc_i is not None:
-            tot_gf += gf_i
-            tot_gc += gc_i
 
-    if tot_gf == 0 and tot_gc == 0:
-        tot_gf = int(round(float(pat.get("goles_favor", pat.get("xg", 1.5)) or 1.5) * 15))
-        tot_gc = int(round(float(pat.get("goles_contra", 1.2) or 1.2) * 15))
+        # 1) Si el partido ya trae franjas_goles o timeline_15min explícito
+        fr_item = item.get("franjas_goles") or item.get("timeline_15min")
+        if isinstance(fr_item, dict) and any(k in fr_item for k in franjas):
+            anot_sum = sum(int((fr_item.get(fr) or {}).get("anotados", 0) or 0) for fr in franjas if isinstance(fr_item.get(fr), dict))
+            rec_sum = sum(int((fr_item.get(fr) or {}).get("recibidos", 0) or 0) for fr in franjas if isinstance(fr_item.get(fr), dict))
+            # Exigir cronología completa si el marcador FT está presente
+            if gf_i is not None and gc_i is not None and (anot_sum != int(gf_i) or rec_sum != int(gc_i)):
+                continue
+            n_con_eventos += 1
+            for fr in franjas:
+                nodo = fr_item.get(fr)
+                if isinstance(nodo, dict):
+                    conteo[fr]["anotados"] += int(nodo.get("anotados", 0) or 0)
+                    conteo[fr]["recibidos"] += int(nodo.get("recibidos", 0) or 0)
+            continue
 
-    peso_2t = float(pat.get("P26_Poder_Cierre_2T", 0.55))
-    peso_1t = max(0.20, min(0.80, 1.0 - peso_2t))
-    gf_1t = int(round(tot_gf * peso_1t))
-    gf_2t = max(0, tot_gf - gf_1t)
+        # 2) Si el partido trae lista de eventos_gol con minuto
+        evs = item.get("eventos_gol") or item.get("goles_detalle") or item.get("goal_events")
+        if isinstance(evs, list) and evs:
+            cond = str(item.get("condicion") or "casa").lower()
+            es_local_eq = cond in ("casa", "local", "l", "home")
+            temp_fr: Dict[str, Dict[str, int]] = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
+            anot_ev = 0
+            rec_ev = 0
+            evento_invalido = False
+            for ev in evs:
+                if not isinstance(ev, dict):
+                    evento_invalido = True
+                    break
+                fr, es_90m = _parsear_minuto_reglamentario(ev)
+                if not es_90m:
+                    # Evento de prórroga o tanda de penaltis: se ignora en el conteo de 90 minutos reglamentarios
+                    continue
+                if fr is None:
+                    evento_invalido = True
+                    break
+                lado = str(ev.get("lado") or ev.get("bando") or "").lower()
+                if lado in ("equipo", "favor", "propio") or (lado == "local" and es_local_eq) or (lado in ("visita", "visitante", "away") and not es_local_eq):
+                    temp_fr[fr]["anotados"] += 1
+                    anot_ev += 1
+                else:
+                    temp_fr[fr]["recibidos"] += 1
+                    rec_ev += 1
 
-    gc_1t = int(round(tot_gc * 0.44))
-    gc_2t = max(0, tot_gc - gc_1t)
+            if evento_invalido:
+                continue
+            # Exigir cronología completa de goles en 90 minutos reglamentarios:
+            # Si el partido terminó 2-1 pero solo hay 2 goles con minuto documentado, queda excluido.
+            if gf_i is not None and gc_i is not None:
+                if (anot_ev + rec_ev) != (int(gf_i) + int(gc_i)) or anot_ev != int(gf_i) or rec_ev != int(gc_i):
+                    continue
+            n_con_eventos += 1
+            for fr in franjas:
+                conteo[fr]["anotados"] += temp_fr[fr]["anotados"]
+                conteo[fr]["recibidos"] += temp_fr[fr]["recibidos"]
+            continue
 
-    a_00_15 = int(round(gf_1t * 0.30))
-    a_16_30 = int(round(gf_1t * 0.38))
-    a_31_45 = max(0, gf_1t - a_00_15 - a_16_30)
+        # 3) Si el partido terminó 0-0 confirmado, sabemos con certeza que hubo 0 goles en todas las franjas
+        if gf_i == 0 and gc_i == 0:
+            n_con_eventos += 1
 
-    a_46_60 = int(round(gf_2t * 0.28))
-    a_61_75 = int(round(gf_2t * 0.31))
-    a_76_90 = max(0, gf_2t - a_46_60 - a_61_75)
-
-    r_00_15 = int(round(gc_1t * 0.25))
-    r_16_30 = int(round(gc_1t * 0.30))
-    r_31_45 = max(0, gc_1t - r_00_15 - r_16_30)
-
-    r_46_60 = int(round(gc_2t * 0.30))
-    r_61_75 = int(round(gc_2t * 0.28))
-    r_76_90 = max(0, gc_2t - r_46_60 - r_61_75)
-
-    return {
-        "00_15": {"anotados": a_00_15, "recibidos": r_00_15},
-        "16_30": {"anotados": a_16_30, "recibidos": r_16_30},
-        "31_45": {"anotados": a_31_45, "recibidos": r_31_45},
-        "46_60": {"anotados": a_46_60, "recibidos": r_46_60},
-        "61_75": {"anotados": a_61_75, "recibidos": r_61_75},
-        "76_90": {"anotados": a_76_90, "recibidos": r_76_90},
+    conteo["_meta"] = {
+        "n_partidos_totales": len(lista),
+        "n_partidos_con_eventos": n_con_eventos,
+        "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista)),
     }
+    return conteo
 
 
 def aplicar_reglas_matchup_55(
-    patrones_local: Dict[str, float],
-    patrones_visita: Dict[str, float],
+    patrones_local: Dict[str, Any],
+    patrones_visita: Dict[str, Any],
     prob_poisson_local: float,
     prob_poisson_empate: float,
     prob_poisson_visita: float,
@@ -433,6 +620,7 @@ def aplicar_reglas_matchup_55(
     tarjeta_roja_local: bool = False,
     tarjeta_roja_visita: bool = False,
     info_contexto: Optional[Dict[str, Any]] = None,
+    contexto_partido: Optional[Dict[str, Any]] = None,
 ) -> Tuple[float, float, float, List[str]]:
     """
     Aplica las reglas de inferencia táctica sobre los 55 patrones y retorna
@@ -443,16 +631,32 @@ def aplicar_reglas_matchup_55(
     p_vis = float(prob_poisson_visita)
     alertas: List[str] = []
 
-    # Integración con contexto_avanzado.py (Fatiga, Motivación, Bajas, Árbitro, Sharp Money)
-    if isinstance(info_contexto, dict) and info_contexto:
+    def _pf(d: Dict[str, Any], k: str, default: float) -> float:
+        v = d.get(k)
+        if v is None:
+            return float(default)
         try:
-            from contexto_avanzado import evaluar_contexto_avanzado_partido
-            ctx_res = evaluar_contexto_avanzado_partido(
-                info_contexto.get("partidos_local") or [],
-                info_contexto.get("partidos_visita") or [],
-                str(info_contexto.get("fecha_partido_actual") or ""),
-                info_contexto,
-            )
+            return float(v)
+        except Exception:
+            return float(default)
+
+    ctx_efectivo = info_contexto if isinstance(info_contexto, dict) and info_contexto else (
+        contexto_partido if isinstance(contexto_partido, dict) and contexto_partido else None
+    )
+
+    # Integración con contexto_avanzado.py (Fatiga, Motivación, Bajas, Árbitro, Sharp Money)
+    if isinstance(ctx_efectivo, dict) and ctx_efectivo:
+        try:
+            if "mult_lambda_local" in ctx_efectivo or "mult_lambda_visita" in ctx_efectivo:
+                ctx_res = ctx_efectivo
+            else:
+                from contexto_avanzado import evaluar_contexto_avanzado_partido
+                ctx_res = evaluar_contexto_avanzado_partido(
+                    ctx_efectivo.get("partidos_local") or [],
+                    ctx_efectivo.get("partidos_visita") or [],
+                    str(ctx_efectivo.get("fecha_partido_actual") or ""),
+                    ctx_efectivo,
+                )
             p_loc *= float(ctx_res.get("mult_lambda_local", 1.0))
             p_vis *= float(ctx_res.get("mult_lambda_visita", 1.0))
             for al_c in (ctx_res.get("alertas_contexto") or []):
@@ -471,12 +675,12 @@ def aplicar_reglas_matchup_55(
         alertas.append("[ALERTA: Inferioridad numérica detectada (Roja). El modelo ajustó los Lambdas]")
 
     # Patrón Matagigantes / Bloque Bajo Letal (Sección 7.2d: Forest 3-1 Man City)
-    pos_l_raw = float(patrones_local.get("posesion_pct", 50.0))
-    pos_v_raw = float(patrones_visita.get("posesion_pct", 50.0))
+    pos_l_raw = _pf(patrones_local, "posesion_pct", 50.0)
+    pos_v_raw = _pf(patrones_visita, "posesion_pct", 50.0)
     pos_proy_l = (100.0 * pos_l_raw / max(1.0, pos_l_raw + pos_v_raw))
-    p07_l = float(patrones_local.get("P07_Precision_Disparo", 0.30))
-    p05_l = float(patrones_local.get("P05_Conversion_Real", 0.25))
-    p55_l = float(patrones_local.get("P55_Contraataque_Letal", 0.30))
+    p07_l = _pf(patrones_local, "P07_Precision_Disparo", 0.30)
+    p05_l = _pf(patrones_local, "P05_Conversion_Real", 0.25)
+    p55_l = _pf(patrones_local, "P55_Contraataque_Letal", 0.30)
     if (pos_proy_l < 36.0 or pos_l_raw < 36.0) and p_vis > p_loc and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45)):
         p_vis *= 0.80
         p_loc += 0.06
@@ -487,44 +691,47 @@ def aplicar_reglas_matchup_55(
         )
 
     # 1. Regla del Espejismo de Posesión y Calidad de Tiro (Patrón #01 y #49) + Empate Técnico (Punto 28)
-    p01_l = float(patrones_local.get("P01_xG_por_Remate", 0.12))
-    p01_v = float(patrones_visita.get("P01_xG_por_Remate", 0.12))
-    p03_l = float(patrones_local.get("P03_Calidad_xGOT_vs_xG", 1.0))
-    p03_v = float(patrones_visita.get("P03_Calidad_xGOT_vs_xG", 1.0))
-    if abs(p01_l - p01_v) < 0.015:
-        if abs(p03_l - p03_v) >= 0.05:
-            dom_01 = nombre_local if p03_l > p03_v else nombre_visita
-            txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Desempate por xGOT/xG: {dom_01} ({max(p03_l, p03_v):.2f})"
+    p01_l_raw = patrones_local.get("P01_xG_por_Remate")
+    p01_v_raw = patrones_visita.get("P01_xG_por_Remate")
+    p01_l = _pf(patrones_local, "P01_xG_por_Remate", 0.12)
+    p01_v = _pf(patrones_visita, "P01_xG_por_Remate", 0.12)
+    p03_l = _pf(patrones_local, "P03_Calidad_xGOT_vs_xG", 1.0)
+    p03_v = _pf(patrones_visita, "P03_Calidad_xGOT_vs_xG", 1.0)
+    if p01_l_raw is not None and p01_v_raw is not None:
+        if abs(p01_l - p01_v) < 0.015:
+            if abs(p03_l - p03_v) >= 0.05:
+                dom_01 = nombre_local if p03_l > p03_v else nombre_visita
+                txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Desempate por xGOT/xG: {dom_01} ({max(p03_l, p03_v):.2f})"
+            else:
+                txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Paridad en calidad de tiro por remate"
         else:
-            txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Paridad en calidad de tiro por remate"
-    else:
-        dom_01 = nombre_local if p01_l > p01_v else nombre_visita
-        txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}"
+            dom_01 = nombre_local if p01_l > p01_v else nombre_visita
+            txt_p01 = f"{nombre_local}: {p01_l:.2f} xG/tiro vs {nombre_visita}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}"
 
-    if patrones_local["posesion_pct"] > 54.0 and p01_l < 0.145 and patrones_visita["P15_Muro_Asedio"] > 0.55:
-        p_loc -= 0.08
-        p_emp += 0.03
-        p_vis += 0.05
-        alertas.append(
-            f"Patrón #01 Activado: {nombre_local} promedia {patrones_local['posesion_pct']:.1f}% de posesión, "
-            f"pero su xG por remate es de {p01_l:.2f} (bajo el óptimo de 0.15). Posesión estéril ({txt_p01})."
-        )
-    else:
-        alertas.append(f"Patrón #01 Activado: {txt_p01}.")
+        if pos_l_raw > 54.0 and p01_l < 0.145 and _pf(patrones_visita, "P15_Muro_Asedio", 0.45) > 0.55:
+            p_loc -= 0.08
+            p_emp += 0.03
+            p_vis += 0.05
+            alertas.append(
+                f"Patrón #01 Activado: {nombre_local} promedia {pos_l_raw:.1f}% de posesión, "
+                f"pero su xG por remate es de {p01_l:.2f} (bajo el óptimo de 0.15). Posesión estéril ({txt_p01})."
+            )
+        else:
+            alertas.append(f"Patrón #01 Activado: {txt_p01}.")
 
     # Punto 23c: Alerta de Posesión Estéril vs. Portero Figura (Caso Celta 0-0 Levante)
-    p06_l = float(patrones_local.get("P06_Desperdicio_Ocasiones", 0.45))
-    p06_v = float(patrones_visita.get("P06_Desperdicio_Ocasiones", 0.45))
-    p14_l = float(patrones_local.get("P14_Portero_Tasa_Paradas", 0.68))
-    p14_v = float(patrones_visita.get("P14_Portero_Tasa_Paradas", 0.68))
-    if (p01_l < 0.11 or p06_l >= 0.55) and p14_v >= 0.70:
+    p06_l = _pf(patrones_local, "P06_Desperdicio_Ocasiones", 0.45)
+    p06_v = _pf(patrones_visita, "P06_Desperdicio_Ocasiones", 0.45)
+    p14_l = _pf(patrones_local, "P14_Portero_Tasa_Paradas", 0.68)
+    p14_v = _pf(patrones_visita, "P14_Portero_Tasa_Paradas", 0.68)
+    if ((p01_l_raw is not None and p01_l < 0.11) or p06_l >= 0.55) and p14_v >= 0.70:
         p_emp += 0.05
         p_loc -= 0.05
         alertas.append(
             f"⚠️ ALERTA POSESIÓN ESTÉRIL VS PORTERO FIGURA: {nombre_local} falla el {p06_l*100:.0f}% de ocasiones claras (P01 {p01_l:.2f}) "
             f"ante el arquero de {nombre_visita} ({p14_v*100:.0f}% paradas P14) -> Priorizar Under 2.5 / 3.5 Goles."
         )
-    elif (p01_v < 0.11 or p06_v >= 0.55) and p14_l >= 0.70:
+    elif ((p01_v_raw is not None and p01_v < 0.11) or p06_v >= 0.55) and p14_l >= 0.70:
         p_emp += 0.05
         p_vis -= 0.05
         alertas.append(
@@ -533,14 +740,14 @@ def aplicar_reglas_matchup_55(
         )
 
     # 2. Regla del Portero Imbatible (Patrón #13 y #50)
-    gev_loc = float(patrones_local.get("P13_Portero_Goles_Evitados", 0.0))
-    gev_vis = float(patrones_visita.get("P13_Portero_Goles_Evitados", 0.0))
+    gev_loc = _pf(patrones_local, "P13_Portero_Goles_Evitados", 0.0)
+    gev_vis = _pf(patrones_visita, "P13_Portero_Goles_Evitados", 0.0)
     mejor_arq = nombre_local if gev_loc >= gev_vis else nombre_visita
-    if gev_vis > 0.30 and patrones_local["P06_Desperdicio_Ocasiones"] > 0.40:
+    if gev_vis > 0.30 and p06_l > 0.40:
         p_loc -= 0.06
         p_emp += 0.04
         p_vis += 0.02
-    elif gev_loc > 0.30 and patrones_visita["P06_Desperdicio_Ocasiones"] > 0.40:
+    elif gev_loc > 0.30 and p06_v > 0.40:
         p_vis -= 0.06
         p_emp += 0.03
         p_loc += 0.03
@@ -550,76 +757,95 @@ def aplicar_reglas_matchup_55(
             f"(Mayor seguridad bajo palos: {mejor_arq})."
         )
 
-    # 3. Regla del Poder de Cierre en 2T (Patrón #26 y #51)
-    p26_l = float(patrones_local.get("P26_Poder_Cierre_2T", 0.50))
-    p26_v = float(patrones_visita.get("P26_Poder_Cierre_2T", 0.50))
-    if abs(p26_l - p26_v) < 0.03:
-        cierre_txt = "Empate técnico en el poder de cierre del 2T"
+    # 3. Regla del Poder de Cierre en 2T (Patrón #26 y #51) — P25 y P26 son complementarios (suma=1.0), solo se evalúa P26 una vez si es evaluable
+    p26_l_raw = patrones_local.get("P26_Poder_Cierre_2T")
+    p26_v_raw = patrones_visita.get("P26_Poder_Cierre_2T")
+    p26_l = _pf(patrones_local, "P26_Poder_Cierre_2T", 0.50)
+    p26_v = _pf(patrones_visita, "P26_Poder_Cierre_2T", 0.50)
+    if p26_l_raw is not None and p26_v_raw is not None:
+        if abs(p26_l - p26_v) < 0.03:
+            cierre_txt = "Empate técnico en el poder de cierre del 2T"
+        else:
+            ganador_2t = nombre_local if p26_l > p26_v else nombre_visita
+            cierre_txt = f"Cierre fuerte: {ganador_2t}"
+            if p26_v > p26_l and p26_v >= 0.53:
+                p_vis += 0.05
+                p_loc -= 0.03
+            elif p26_l > p26_v and p26_l >= 0.54:
+                p_loc += 0.04
+        alertas.append(
+            f"Patrón #26 Activado: {nombre_local} {p26_l*100:.1f}% xG en 2T vs {nombre_visita} {p26_v*100:.1f}% xG en 2T ({cierre_txt})."
+        )
     else:
-        ganador_2t = nombre_local if p26_l > p26_v else nombre_visita
-        cierre_txt = f"Cierre fuerte: {ganador_2t}"
-        if p26_v > p26_l and p26_v >= 0.53:
-            p_vis += 0.05
-            p_loc -= 0.03
-        elif p26_l > p26_v and p26_l >= 0.54:
-            p_loc += 0.04
-    alertas.append(
-        f"Patrón #26 Activado: {nombre_local} {p26_l*100:.1f}% xG en 2T vs {nombre_visita} {p26_v*100:.1f}% xG en 2T ({cierre_txt})."
-    )
+        cierre_txt = "Sin cobertura verificada de mitades para P26"
 
     # 4. Regla del Muro Aéreo (Patrón #24 y #52)
-    if abs(patrones_local["P24_Ratio_Duelos_Aereos"] - patrones_visita["P24_Ratio_Duelos_Aereos"]) >= 0.03:
-        dom_aereo = nombre_local if patrones_local["P24_Ratio_Duelos_Aereos"] > patrones_visita["P24_Ratio_Duelos_Aereos"] else nombre_visita
+    p24_l = _pf(patrones_local, "P24_Ratio_Duelos_Aereos", 0.50)
+    p24_v = _pf(patrones_visita, "P24_Ratio_Duelos_Aereos", 0.50)
+    if abs(p24_l - p24_v) >= 0.03:
+        dom_aereo = nombre_local if p24_l > p24_v else nombre_visita
         alertas.append(
-            f"Patrón #52 Activado: Superioridad aérea de {dom_aereo} ({patrones_local['P24_Ratio_Duelos_Aereos']*100:.1f}% vs "
-            f"{patrones_visita['P24_Ratio_Duelos_Aereos']*100:.1f}%) a balón parado."
+            f"Patrón #52 Activado: Superioridad aérea de {dom_aereo} ({p24_l*100:.1f}% vs "
+            f"{p24_v*100:.1f}%) a balón parado."
         )
 
     # 5. Regla del Estilo Directo y Contragolpe (Patrón #39 y #55)
-    if patrones_visita["P39_Estilo_Directo"] >= 0.35 and patrones_local["despejes"] >= 18.0:
+    p39_l = _pf(patrones_local, "P39_Estilo_Directo", 0.45)
+    p39_v = _pf(patrones_visita, "P39_Estilo_Directo", 0.45)
+    desp_l = _pf(patrones_local, "despejes", 18.0)
+    if p39_v >= 0.35 and desp_l >= 18.0:
         p_vis += 0.04
         alertas.append(
-            f"Patrón #39 Activado: {nombre_local} {patrones_local['P39_Estilo_Directo']*100:.1f}% vs {nombre_visita} {patrones_visita['P39_Estilo_Directo']*100:.1f}% "
-            f"de pases largos precisos (Estilo Directo frente a {patrones_local['despejes']:.1f} despejes de {nombre_local})."
+            f"Patrón #39 Activado: {nombre_local} {p39_l*100:.1f}% vs {nombre_visita} {p39_v*100:.1f}% "
+            f"de pases largos precisos (Estilo Directo frente a {desp_l:.1f} despejes de {nombre_local})."
         )
 
     # 6. Regla de Asedio de Córneres (Patrón #48 y #54)
-    if patrones_local["corners"] + patrones_visita["corners"] >= 9.0:
+    corn_l = _pf(patrones_local, "corners", 4.5)
+    corn_v = _pf(patrones_visita, "corners", 4.5)
+    if corn_l + corn_v >= 9.0:
         alertas.append(
-            f"Patrón #54 Activado: Alto flujo de córneres ({nombre_local} {patrones_local['corners']:.2f} vs "
-            f"{nombre_visita} {patrones_visita['corners']:.2f} por partido)."
+            f"Patrón #54 Activado: Alto flujo de córneres ({nombre_local} {corn_l:.2f} vs "
+            f"{nombre_visita} {corn_v:.2f} por partido)."
         )
 
     # 7. Regla de Disciplina y Fricción Táctica (Patrón #43)
-    if (patrones_local["P43_Agresividad_Defensiva"] + patrones_visita["P43_Agresividad_Defensiva"]) >= 0.28:
+    p43_l = _pf(patrones_local, "P43_Agresividad_Defensiva", 0.15)
+    p43_v = _pf(patrones_visita, "P43_Agresividad_Defensiva", 0.15)
+    fal_l = _pf(patrones_local, "faltas", 11.5)
+    fal_v = _pf(patrones_visita, "faltas", 11.5)
+    if (p43_l + p43_v) >= 0.28:
         alertas.append(
-            f"Patrón #43 Activado: Fricción táctica intensa ({patrones_local['faltas']:.2f} vs {patrones_visita['faltas']:.2f} faltas/partido)."
+            f"Patrón #43 Activado: Fricción táctica intensa ({fal_l:.2f} vs {fal_v:.2f} faltas/partido)."
         )
 
     # 8. Regla de Precisión de Disparo (Patrón #07)
-    if abs(patrones_local["P07_Precision_Disparo"] - patrones_visita["P07_Precision_Disparo"]) >= 0.05:
-        mejor_punteria = nombre_visita if patrones_visita["P07_Precision_Disparo"] > patrones_local["P07_Precision_Disparo"] else nombre_local
+    p07_v = _pf(patrones_visita, "P07_Precision_Disparo", 0.30)
+    if abs(p07_l - p07_v) >= 0.05:
+        mejor_punteria = nombre_visita if p07_v > p07_l else nombre_local
         alertas.append(
-            f"Patrón #07 Activado: Ventaja de puntería a favor de {mejor_punteria} ({patrones_local['P07_Precision_Disparo']*100:.1f}% vs "
-            f"{patrones_visita['P07_Precision_Disparo']*100:.1f}% de tiros a puerta)."
+            f"Patrón #07 Activado: Ventaja de puntería a favor de {mejor_punteria} ({p07_l*100:.1f}% vs "
+            f"{p07_v*100:.1f}% de tiros a puerta)."
         )
 
     # 9. Regla de Vulnerabilidad por Errores Defensivos (Patrón #19)
-    if patrones_visita.get("P19_Errores_Fatales", 0.3) >= 0.45 or patrones_local.get("P19_Errores_Fatales", 0.3) >= 0.45:
-        eq_err = nombre_local if patrones_local.get("P19_Errores_Fatales", 0.3) >= patrones_visita.get("P19_Errores_Fatales", 0.3) else nombre_visita
+    p19_l = _pf(patrones_local, "P19_Errores_Fatales", 0.3)
+    p19_v = _pf(patrones_visita, "P19_Errores_Fatales", 0.3)
+    if p19_v >= 0.45 or p19_l >= 0.45:
+        eq_err = nombre_local if p19_l >= p19_v else nombre_visita
         alertas.append(
             f"Patrón #19 Activado: {eq_err} presenta riesgo de error defensivo hacia remate/gol."
         )
 
     # 10. Regla de Goles Tardíos (Patrón #35)
-    if patrones_local.get("P35_Peso_Goles_Tardios", 0.22) >= 0.25 or patrones_visita.get("P35_Peso_Goles_Tardios", 0.22) >= 0.25:
+    if _pf(patrones_local, "P35_Peso_Goles_Tardios", 0.22) >= 0.25 or _pf(patrones_visita, "P35_Peso_Goles_Tardios", 0.22) >= 0.25:
         alertas.append(
             f"Patrón #35 Activado: Alta concentración de goles en el tramo final 76'-90'."
         )
 
     if len(alertas) < 3:
         extras = [
-            f"Patrón #01 Activado: Calidad de tiro {nombre_local} ({patrones_local['P01_xG_por_Remate']:.2f} xG/tiro) vs {nombre_visita} ({patrones_visita['P01_xG_por_Remate']:.2f} xG/tiro).",
+            f"Patrón #01 Activado: Calidad de tiro {nombre_local} ({p01_l:.2f} xG/tiro) vs {nombre_visita} ({p01_v:.2f} xG/tiro).",
             f"Patrón #13 Activado: Portería {nombre_local} ({gev_loc:+.2f} GeV) vs {nombre_visita} ({gev_vis:+.2f} GeV) — Mayor seguridad bajo palos: {mejor_arq}.",
             f"Patrón #26 Activado: Poder de cierre en 2T ({p26_l*100:.1f}% vs {p26_v*100:.1f}% — {cierre_txt}).",
         ]
@@ -684,12 +910,21 @@ def generar_reporte_xai_telegram(
                 return int(d[campo][fr])
         return 0
 
-    rem_por_gol_loc = patrones_loc["remates_totales"] / max(0.3, patrones_loc["goles_favor"])
-    rem_por_gol_vis = patrones_vis["remates_totales"] / max(0.3, patrones_vis["goles_favor"])
+    rem_por_gol_loc = float(patrones_loc.get("remates_totales") or 0.0) / max(0.3, float(patrones_loc.get("goles_favor") or 0.0))
+    rem_por_gol_vis = float(patrones_vis.get("remates_totales") or 0.0) / max(0.3, float(patrones_vis.get("goles_favor") or 0.0))
     goles_tardios_loc_rec = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "recibidos")
     goles_tardios_vis_anot = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "anotados")
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
+
+    def _fmt_p(d: Dict[str, Any], k: str, mult: float = 1.0, dec: int = 2, suf: str = "") -> str:
+        v = d.get(k)
+        if v is None:
+            return "sin dato"
+        try:
+            return f"{float(v) * mult:.{dec}f}{suf}"
+        except (TypeError, ValueError):
+            return "sin dato"
 
     lineas = [
         f"📊 *TICKET DE ANÁLISIS PROFUNDO: {nombre_local.upper()} VS {nombre_visita.upper()}*",
@@ -698,25 +933,25 @@ def generar_reporte_xai_telegram(
         "🧠 *¿POR QUÉ EL AGENTE TOMA ESTA DECISIÓN? (Análisis XAI - 55 Patrones)*",
         "",
         "*1. Radiografía del Ataque (Eficiencia vs Volumen)*",
-        f"• *Patrón #01 - Calidad por Disparo:* {nombre_local} promedia {patrones_loc['posesion_pct']:.1f}% de posesión con {patrones_loc['P01_xG_por_Remate']:.2f} xG/remate vs {patrones_vis['P01_xG_por_Remate']:.2f} xG/remate de {nombre_visita}.",
-        f"• *Patrón #02/#03 - Peligro Real (xG y xGOT):* {nombre_local} registra {patrones_loc['xg']:.2f} xG ({patrones_loc['xgot']:.2f} xGOT) frente a {patrones_vis['xg']:.2f} xG ({patrones_vis['xgot']:.2f} xGOT) de {nombre_visita}.",
-        f"• *Patrón #04 - Eficiencia sin Penaltis (npxG):* {nombre_local} genera {patrones_loc['npxg']:.2f} npxG vs {patrones_vis['npxg']:.2f} npxG de {nombre_visita} en jugada abierta.",
-        f"• *Patrón #05/#06 - Conversión y Desperdicio:* {nombre_local} necesita {rem_por_gol_loc:.1f} tiros por gol (falla el {patrones_loc['P06_Desperdicio_Ocasiones']*100:.0f}% de grandes ocasiones) vs {rem_por_gol_vis:.1f} tiros por gol de {nombre_visita} ({patrones_vis['P06_Desperdicio_Ocasiones']*100:.0f}% falladas).",
+        f"• *Patrón #01 - Calidad por Disparo:* {nombre_local} promedia {_fmt_p(patrones_loc, 'posesion_pct', 1.0, 1, '%')} de posesión con {_fmt_p(patrones_loc, 'P01_xG_por_Remate', 1.0, 2)} xG/remate vs {_fmt_p(patrones_vis, 'P01_xG_por_Remate', 1.0, 2)} xG/remate de {nombre_visita}.",
+        f"• *Patrón #02/#03 - Peligro Real (xG y xGOT):* {nombre_local} registra {_fmt_p(patrones_loc, 'xg')} xG ({_fmt_p(patrones_loc, 'xgot')} xGOT) frente a {_fmt_p(patrones_vis, 'xg')} xG ({_fmt_p(patrones_vis, 'xgot')} xGOT) de {nombre_visita}.",
+        f"• *Patrón #04 - Eficiencia sin Penaltis (npxG):* {nombre_local} genera {_fmt_p(patrones_loc, 'npxg')} npxG vs {_fmt_p(patrones_vis, 'npxg')} npxG de {nombre_visita} en jugada abierta.",
+        f"• *Patrón #05/#06 - Conversión y Desperdicio:* {nombre_local} necesita {rem_por_gol_loc:.1f} tiros por gol (falla el {_fmt_p(patrones_loc, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} de grandes ocasiones) vs {rem_por_gol_vis:.1f} tiros por gol de {nombre_visita} ({_fmt_p(patrones_vis, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} falladas).",
         "",
         "*2. La Muralla Defensiva y Portería*",
-        f"• *Patrón #13 - Rendimiento de Porteros (Goles Evitados):* El arquero de {nombre_local} registra {patrones_loc['P13_Portero_Goles_Evitados']:+.2f} GeV frente a {patrones_vis['P13_Portero_Goles_Evitados']:+.2f} GeV del arquero de {nombre_visita}.",
-        f"• *Patrón #15 - Resistencia al Asedio:* {nombre_local} promedia {patrones_loc['despejes']:.2f} despejes ({patrones_loc['intercepciones']:.2f} intercepciones) vs {patrones_vis['despejes']:.2f} despejes ({patrones_vis['intercepciones']:.2f} intercepciones) de {nombre_visita}.",
-        f"• *Patrón #20/#21 - Bloqueos y Recuperación:* Densidad de recuperación de {patrones_loc['P21_Densidad_Recuperaciones']:.2f} en {nombre_local} vs {patrones_vis['P21_Densidad_Recuperaciones']:.2f} en {nombre_visita}.",
+        f"• *Patrón #13 - Rendimiento de Porteros (Goles Evitados):* El arquero de {nombre_local} registra {float(patrones_loc.get('P13_Portero_Goles_Evitados') or 0.0):+.2f} GeV frente a {float(patrones_vis.get('P13_Portero_Goles_Evitados') or 0.0):+.2f} GeV del arquero de {nombre_visita}.",
+        f"• *Patrón #15 - Resistencia al Asedio:* {nombre_local} promedia {_fmt_p(patrones_loc, 'despejes')} despejes ({_fmt_p(patrones_loc, 'intercepciones')} intercepciones) vs {_fmt_p(patrones_vis, 'despejes')} despejes ({_fmt_p(patrones_vis, 'intercepciones')} intercepciones) de {nombre_visita}.",
+        f"• *Patrón #20/#21 - Bloqueos y Recuperación:* Densidad de recuperación de {_fmt_p(patrones_loc, 'P21_Densidad_Recuperaciones')} en {nombre_local} vs {_fmt_p(patrones_vis, 'P21_Densidad_Recuperaciones')} en {nombre_visita}.",
         "",
         "*3. El Factor Tiempo: Fatiga y Punch (1T vs 2T y Timeline 15 min)*",
-        f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {patrones_loc['P26_Poder_Cierre_2T']*100:.1f}% de su xG en la 2da mitad, mientras {nombre_visita} genera el {patrones_vis['P26_Poder_Cierre_2T']*100:.1f}%.",
+        f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {_fmt_p(patrones_loc, 'P26_Poder_Cierre_2T', 100.0, 1, '%')} de su xG en la 2da mitad, mientras {nombre_visita} genera el {_fmt_p(patrones_vis, 'P26_Poder_Cierre_2T', 100.0, 1, '%')}.",
         f"• *Patrón #35 - Franja Crítica (76'-90'):* En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles.",
-        f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {patrones_loc['P31_Precision_Bajo_Fatiga']:.2f} ({nombre_local}) vs {patrones_vis['P31_Precision_Bajo_Fatiga']:.2f} ({nombre_visita}).",
+        f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {_fmt_p(patrones_loc, 'P31_Precision_Bajo_Fatiga')} ({nombre_local}) vs {_fmt_p(patrones_vis, 'P31_Precision_Bajo_Fatiga')} ({nombre_visita}).",
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
-        f"• *Patrón #39 - Estilo Directo:* {nombre_local} usa {patrones_loc['P39_Estilo_Directo']*100:.1f}% de pases largos precisos vs {patrones_vis['P39_Estilo_Directo']*100:.1f}% de {nombre_visita}.",
-        f"• *Patrón #43 - Fricción y Tarjetas:* {nombre_local} comete {patrones_loc['faltas']:.2f} faltas ({_cnt_b(cuadro_b_loc, 'menos_4_5_tarjetas', 'menos_45_tarjetas')}/15 partidos bajo 4.5 tarjetas) vs {patrones_vis['faltas']:.2f} faltas de {nombre_visita}.",
-        f"• *Patrón #48/#54/#55 - Asedio de Córneres y Contraataque:* {nombre_local} genera {patrones_loc['corners']:.2f} córneres vs {patrones_vis['corners']:.2f} de {nombre_visita} (Índice de asedio 2T P54: {patrones_loc['P54_Asedio_Corners_Matchup']:.2f} vs {patrones_vis['P54_Asedio_Corners_Matchup']:.2f} | Contraataque P55: {patrones_loc['P55_Contraataque_Letal']:.2f} vs {patrones_vis['P55_Contraataque_Letal']:.2f}).",
+        f"• *Patrón #39 - Estilo Directo:* {nombre_local} usa {_fmt_p(patrones_loc, 'P39_Estilo_Directo', 100.0, 1, '%')} de pases largos precisos vs {_fmt_p(patrones_vis, 'P39_Estilo_Directo', 100.0, 1, '%')} de {nombre_visita}.",
+        f"• *Patrón #43 - Fricción y Tarjetas:* {nombre_local} comete {_fmt_p(patrones_loc, 'faltas')} faltas ({_cnt_b(cuadro_b_loc, 'menos_4_5_tarjetas', 'menos_45_tarjetas')}/15 partidos bajo 4.5 tarjetas) vs {_fmt_p(patrones_vis, 'faltas')} faltas de {nombre_visita}.",
+        f"• *Patrón #48/#54/#55 - Asedio de Córneres y Contraataque:* {nombre_local} genera {_fmt_p(patrones_loc, 'corners')} córneres vs {_fmt_p(patrones_vis, 'corners')} de {nombre_visita} (Índice de asedio 2T P54: {_fmt_p(patrones_loc, 'P54_Asedio_Corners_Matchup')} vs {_fmt_p(patrones_vis, 'P54_Asedio_Corners_Matchup')} | Contraataque P55: {_fmt_p(patrones_loc, 'P55_Contraataque_Letal')} vs {_fmt_p(patrones_vis, 'P55_Contraataque_Letal')}).",
         f"• *Tendencias 15 Partidos (Cuadro B):* Sin derrotas: {nombre_local} {_cnt_b(cuadro_b_loc, 'sin_derrotas')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'sin_derrotas')}/15 | +2.5 Goles: {nombre_local} {_cnt_b(cuadro_b_loc, 'mas_2_5_goles', 'mas_25_goles')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'mas_2_5_goles', 'mas_25_goles')}/15 | BTTS: {nombre_local} {_cnt_b(cuadro_b_loc, 'btts', 'btts_si')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'btts', 'btts_si')}/15.",
         "",
         "*5. Alertas Activadas del Motor de 55 Patrones*",
@@ -874,8 +1109,8 @@ def generar_veredicto_tactico_partido(
     )
 
     # 3. Ritmo y Tarjetas
-    pos_l = float(patrones_loc.get("posesion_pct", 50.0))
-    pos_v = float(patrones_vis.get("posesion_pct", 50.0))
+    pos_l = float(patrones_loc.get("posesion_pct") or 50.0)
+    pos_v = float(patrones_vis.get("posesion_pct") or 50.0)
     eq_control = nombre_local if pos_l >= pos_v else nombre_visita
     riv_control = nombre_visita if pos_l >= pos_v else nombre_local
     pos_control = max(pos_l, pos_v)
@@ -884,23 +1119,43 @@ def generar_veredicto_tactico_partido(
     if press_ctrl <= 0.1:
         press_ctrl = round(min(92.0, max(45.0, pos_control * 0.95 + 15.0)), 1)
 
-    fal_l = float(patrones_loc.get("faltas", 11.0))
-    fal_v = float(patrones_vis.get("faltas", 11.5))
-    am_tot = float(patrones_loc.get("amarillas", 1.8)) + float(patrones_vis.get("amarillas", 1.9))
-    mkt_tarjetas = "-4.5 Tarjetas (FT)" if am_tot < 4.35 else "+3.5 Tarjetas (FT)"
-    prob_tarjetas = 81.0 if am_tot < 4.35 else 76.0
+    toq_l_v = patrones_loc.get("toques_area_rival")
+    toq_v_v = patrones_vis.get("toques_area_rival")
+    hay_asedio_verif = bool(
+        probs.get("es_copa_o_playoff", False)
+        or probs.get("asedio_activo", False)
+        or (pos_l >= 57.0 and toq_l_v is not None and float(toq_l_v) >= 22.0)
+        or (pos_v >= 57.0 and toq_v_v is not None and float(toq_v_v) >= 22.0)
+    )
+
+    fal_l = float(patrones_loc.get("faltas") or 11.0)
+    fal_v = float(patrones_vis.get("faltas") or 11.5)
+    am_tot = float(patrones_loc.get("amarillas", patrones_loc.get("tarjetas_amarillas", 1.8)) or 1.8) + float(patrones_vis.get("amarillas", patrones_vis.get("tarjetas_amarillas", 1.9)) or 1.9)
+    if hay_asedio_verif:
+        mkt_tarjetas = "+3.5 Tarjetas (FT)"
+        prob_tarjetas = 76.0
+    else:
+        mkt_tarjetas = "-4.5 Tarjetas (FT)" if am_tot < 4.35 else "+3.5 Tarjetas (FT)"
+        prob_tarjetas = 81.0 if am_tot < 4.35 else 76.0
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
             if "tarj" in et_i.lower():
+                if hay_asedio_verif and ("-" in et_i or "menos" in et_i.lower()):
+                    continue
                 mkt_tarjetas = et_i
                 prob_tarjetas = float(item.get("probabilidad", 0.80)) * 100.0
                 break
-    titulo_ritmo = "Partido limpio (Pocas tarjetas)" if "-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower() else "Fricción táctica intensa (Tarjetas)"
+    titulo_ritmo = (
+        "Fricción táctica intensa (Tarjetas)"
+        if (hay_asedio_verif or not ("-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower()))
+        else "Partido limpio (Pocas tarjetas)"
+    )
 
     # 4. Segunda mitad (2T)
-    p26_fav = float(pat_fav.get("P26_Poder_Cierre_2T", 0.56))
-    xg_2t_comb = float(patrones_loc.get("xg_2t", 0.75)) + float(patrones_vis.get("xg_2t", 0.75))
+    p26_raw = pat_fav.get("P26_Poder_Cierre_2T")
+    p26_fav = float(p26_raw) if p26_raw is not None else None
+    xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
     mkt_2t = "Goles 2T: +0.5 Goles" if xg_2t_comb < 1.35 else "Goles 2T: +1.5 Goles"
     prob_2t = 78.0 if xg_2t_comb < 1.35 else 71.5
     if top5_podio:
@@ -933,9 +1188,10 @@ def generar_veredicto_tactico_partido(
         f"{eq_control} monopoliza el balón ({pos_control:.1f}% de posesión, Pressing {press_ctrl:.1f}) y {riv_control} "
         f"se repliega en bloque ({fal_l:.1f} vs {fal_v:.1f} faltas/partido)."
     )
+    txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
     c4 = (
         f"4. La segunda mitad tendrá goles: El modelo respalda '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-        f"proyectado en el 2T y {p26_fav*100:.0f}% de poder de cierre P26). Sumado al flujo del tramo 76'-90' "
+        f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
         f"({flujo_76_90} goles combinados), es una selección con total respaldo estadístico."
     )
     return "\n".join([encabezado, sub, c1, c2, c3, c4])

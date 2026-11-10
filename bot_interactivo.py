@@ -943,45 +943,42 @@ def _hilo_ejecutar_auditoria_cruce(chat_id: int | str, eq_local: str, eq_visita:
         nom_l = (doc_local.get("equipo") or {}).get("nombre", eq_local)
         nom_v = (doc_visita.get("equipo") or {}).get("nombre", eq_visita)
 
+        n_loc_real = int(res_loc.get("partidos_con_datos", len(doc_local.get("partidos") or [])) or 0)
+        n_vis_real = int(res_vis.get("partidos_con_datos", len(doc_visita.get("partidos") or [])) or 0)
+        n_tot_real = n_loc_real + n_vis_real
+        partes_md_a = ah.obtener_partes_informe_md(ruta_md)
+        n_archivos_a = len(partes_md_a)
+
         partes = [
-            f"✅ *AUDITORÍA DE 30 MATRICES COMPLETADA (MODALIDAD A)*",
+            f"✅ *AUDITORÍA DE {n_tot_real} MATRICES COMPLETADA (MODALIDAD A)*",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             f"• Partido: *{nom_l}* (Local) vs *{nom_v}* (Visitante)",
-            f"• Total de matrices generadas: *30 matrices individuales completas*",
-            f"  – *{nom_l}*: {res_loc.get('partidos_con_datos', 15)} partidos 100% oficiales (0 amistosos)",
-            f"  – *{nom_v}*: {res_vis.get('partidos_con_datos', 15)} partidos 100% oficiales (0 amistosos)",
+            f"• Total de matrices generadas: *{n_tot_real} matrices individuales ({n_archivos_a} parte(s) < 30 KB)*",
+            f"  – *{nom_l}*: {n_loc_real} partido(s) 100% oficiales (0 amistosos)",
+            f"  – *{nom_v}*: {n_vis_real} partido(s) 100% oficiales (0 amistosos)",
             f"• Desglose multitiempo: `FT · 1T · 2T` en cada partido",
-            f"• Catálogo oficial: 45 métricas (01 a 45) con 0 valores nulos",
+            f"• Catálogo oficial: 45 métricas (01 a 45) con distinción entre 0 observado y sin_dato",
             f"• Fusión de fuentes: FotMob (primaria) + Flashscore (secundaria)",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-            "📎 _Adjunto el informe Markdown completo con las 30 matrices para auditar cada dato._",
+            f"📎 _Adjunto el informe Markdown en {n_archivos_a} parte(s) (< 30 KB por archivo) para auditar cada dato._",
         ]
         enviar_seguro(bot, chat_id, "\n".join(partes))
 
         try:
-            ruta_t1 = ruta_md.replace(".md", "_tomo1.md")
-            ruta_t2 = ruta_md.replace(".md", "_tomo2.md")
-            if os.path.exists(ruta_t1) and os.path.exists(ruta_t2):
-                with open(ruta_t1, "rb") as ft1:
-                    bytes_t1 = ft1.read()
-                with open(ruta_t2, "rb") as ft2:
-                    bytes_t2 = ft2.read()
+            for info_p in partes_md_a:
+                k_p = info_p["parte"]
+                tot_p = info_p["total_partes"]
+                ruta_p = info_p["ruta"]
+                with open(ruta_p, "rb") as fp:
+                    bytes_p = fp.read()
                 enviar_documento_seguro(
-                    chat_id, bytes_t1, os.path.basename(ruta_t1),
-                    caption=f"📄 Tomo 1/2: 15 matrices oficiales {nom_l} (Apertura nativa Telegram)"
+                    chat_id, bytes_p, os.path.basename(ruta_p),
+                    caption=f"📄 Parte {k_p}/{tot_p}: Auditoría {nom_l} vs {nom_v} ({len(bytes_p)} bytes)"
                 )
-                enviar_documento_seguro(
-                    chat_id, bytes_t2, os.path.basename(ruta_t2),
-                    caption=f"📄 Tomo 2/2: 15 matrices oficiales {nom_v} (Apertura nativa Telegram)"
-                )
-            else:
-                enviar_documento_seguro(chat_id, contenido_md.encode("utf-8"),
-                                        os.path.basename(ruta_md),
-                                        caption=f"📄 Auditoría 30 matrices ({nom_l} vs {nom_v})")
         except Exception as e_doc:
-            print(f"[BOT TELEGRAM] ⚠️ No se pudo enviar documento de 30 matrices: {e_doc}")
+            print(f"[BOT TELEGRAM] ⚠️ No se pudo enviar documento de matrices Modalidad A: {e_doc}")
 
-        print(f"[BOT TELEGRAM] ✅ Auditoría 30 matrices ({nom_l} vs {nom_v}) despachada: {ruta_md}")
+        print(f"[BOT TELEGRAM] ✅ Auditoría {n_tot_real} matrices ({nom_l} vs {nom_v}) despachada en {n_archivos_a} parte(s): {ruta_md}")
 
     except Exception as e:
         print(f"[BOT TELEGRAM] ❌ Error en auditoría de 30 matrices: {e}")
@@ -1069,9 +1066,17 @@ def _hilo_ejecutar_auditoria_h2h(chat_id: int | str, eq_a: str, eq_b: str,
         enviar_seguro(bot, chat_id, "\n".join(partes))
 
         try:
-            enviar_documento_seguro(chat_id, contenido_md.encode("utf-8"),
-                                    os.path.basename(ruta_md),
-                                    caption=f"📄 Auditoría H2H ({nom_a} vs {nom_b}) - {n_duelos} matrices")
+            partes_md_b = ah.obtener_partes_informe_md(ruta_md)
+            for info_p in partes_md_b:
+                k_p = info_p["parte"]
+                tot_p = info_p["total_partes"]
+                ruta_p = info_p["ruta"]
+                with open(ruta_p, "rb") as fp:
+                    bytes_p = fp.read()
+                enviar_documento_seguro(
+                    chat_id, bytes_p, os.path.basename(ruta_p),
+                    caption=f"📄 Parte {k_p}/{tot_p}: Auditoría H2H ({nom_a} vs {nom_b}) - {n_duelos} matrices ({len(bytes_p)} bytes)"
+                )
         except Exception as e_doc:
             print(f"[BOT TELEGRAM] ⚠️ No se pudo enviar documento H2H: {e_doc}")
 
@@ -1112,9 +1117,10 @@ def _hilo_ejecutar_auditoria(chat_id: int | str, equipo: str, limite: int,
         resumen = auditoria.get("resumen", {})
         escaneo = auditoria.get("escaneo", {})
 
-        # Generar también el informe de matrices individuales
+        # Generar también el informe de matrices individuales (< 30 KB por parte)
+        ruta_mat_ind = rutas.get("markdown_matrices") or rutas.get("markdown")
         try:
-            ah.generar_informe_matrices_equipo(auditoria, rutas.get("markdown_matrices"))
+            _, ruta_mat_ind = ah.generar_informe_matrices_equipo(auditoria, ruta_mat_ind)
         except Exception as e_mat:
             print(f"[BOT TELEGRAM] ⚠️ No se pudo generar informe de matrices individuales: {e_mat}")
 
@@ -1145,16 +1151,29 @@ def _hilo_ejecutar_auditoria(chat_id: int | str, equipo: str, limite: int,
             for a in ausentes:
                 partes.append(f"   – {a}")
         partes.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        partes.append("📎 _Adjunto el informe en Markdown con las matrices y el CSV crudo._")
+        partes.append("📎 _Adjunto el informe en Markdown (< 30 KB por parte) con las matrices y el CSV crudo._")
         enviar_seguro(bot, chat_id, "\n".join(partes))
 
-        # 2) Informe Markdown
+        # 2) Informe Markdown (partes < 30 KB)
         try:
-            with open(rutas["markdown"], "r", encoding="utf-8") as f:
-                contenido_md = f.read()
-            enviar_documento_seguro(chat_id, contenido_md.encode("utf-8"),
-                                    os.path.basename(rutas["markdown"]),
-                                    caption="📄 Informe de auditoría (matrices FT / 1T / 2T)")
+            partes_md_eq = ah.obtener_partes_informe_md(ruta_mat_ind) if ruta_mat_ind else []
+            if partes_md_eq:
+                for info_p in partes_md_eq:
+                    k_p = info_p["parte"]
+                    tot_p = info_p["total_partes"]
+                    ruta_p = info_p["ruta"]
+                    with open(ruta_p, "rb") as fp:
+                        bytes_p = fp.read()
+                    enviar_documento_seguro(
+                        chat_id, bytes_p, os.path.basename(ruta_p),
+                        caption=f"📄 Parte {k_p}/{tot_p}: Informe de auditoría (matrices FT / 1T / 2T)"
+                    )
+            else:
+                with open(rutas["markdown"], "r", encoding="utf-8") as f:
+                    contenido_md = f.read()
+                enviar_documento_seguro(chat_id, contenido_md.encode("utf-8"),
+                                        os.path.basename(rutas["markdown"]),
+                                        caption="📄 Informe de auditoría (matrices FT / 1T / 2T)")
         except Exception as e:
             print(f"[BOT TELEGRAM] ⚠️ No se pudo enviar el informe Markdown: {e}")
 

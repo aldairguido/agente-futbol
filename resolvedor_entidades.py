@@ -118,6 +118,7 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "torneo federal": "ARG", "copa argentina": "ARG",
     "brasil": "BRA", "brasileirao": "BRA", "brasileirao betano": "BRA",
     "brasileirao serie a": "BRA", "brasileirao serie b": "BRA", "brasileirao serie c": "BRA",
+    "serie a de brasil": "BRA", "serie b de brasil": "BRA", "serie c de brasil": "BRA",
     "serie a brasil": "BRA", "serie b brasil": "BRA", "copa do brasil": "BRA",
     "carioca": "BRA", "catarinense": "BRA", "gaucho": "BRA", "goiano": "BRA", "mineiro": "BRA", "pernambucano": "BRA",
     "paulista": "BRA", "baiano": "BRA", "cearense": "BRA", "paranaense": "BRA",
@@ -127,13 +128,13 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "colombia": "COL", "primera a": "COL", "liga betplay": "COL", "liga betplay dimayor": "COL",
     "torneo betplay": "COL", "primera b": "COL", "copa betplay": "COL",
     "ecuador": "ECU", "liga pro": "ECU", "ligapro": "ECU", "liga pro serie b": "ECU",
-    "peru": "PER", "liga 1": "PER", "liga 1 te apuesto": "PER", "liga 1 peru": "PER",
-    "liga 2 peru": "PER", "copa peru": "PER", "liga femenina": "PER",
+    "peru": "PER", "liga 1": "PER", "liga 1 te apuesto": "PER", "liga 1 peru": "PER", "liga 1 de peru": "PER",
+    "liga 2 peru": "PER", "liga 2 de peru": "PER", "copa peru": "PER", "liga femenina": "PER",
     "bolivia": "BOL", "division profesional": "BOL", "copa pacena": "BOL", "copa simon bolivar": "BOL",
     "panama": "PAN", "lpf": "PAN", "lpf apertura": "PAN", "lpf clausura": "PAN", "liga panamena": "PAN",
     "paraguay": "PRY", "copa de primera": "PRY", "primera division paraguay": "PRY", "division intermedia": "PRY",
     "venezuela": "VEN", "liga futve": "VEN", "liga futve 2": "VEN",
-    "uruguay": "URY", "primera division uruguay": "URY", "liga auf uruguaya": "URY", "liga auf": "URY",
+    "uruguay": "URY", "primera division uruguay": "URY", "primera division": "URY", "liga auf uruguaya": "URY", "liga auf": "URY",
     "costa rica": "CRI", "primera division costa rica": "CRI", "liga promerica": "CRI", "liga de ascenso": "CRI",
     "guatemala": "GTM", "liga nacional guatemala": "GTM",
     "honduras": "HND", "liga nacional honduras": "HND",
@@ -320,9 +321,9 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "real zaragoza": ("Real Zaragoza", "ESP"),
     "zaragoza": ("Real Zaragoza", "ESP"),
     "racing santander": ("Racing Santander", "ESP"),
-    "deportivo la coruna": ("Deportivo La Coruña", "ESP"),
-    "deportivo a coruna": ("Deportivo La Coruña", "ESP"),
-    "deportivo de la coruna": ("Deportivo La Coruña", "ESP"),
+    "deportivo la coruna": ("Deportivo de La Coruña", "ESP"),
+    "deportivo a coruna": ("Deportivo de La Coruña", "ESP"),
+    "deportivo de la coruna": ("Deportivo de La Coruña", "ESP"),
     "deportivo": ("Deportivo La Coruña", "ESP"),
     "lugo": ("CD Lugo", "ESP"),
     "cd lugo": ("CD Lugo", "ESP"),
@@ -553,6 +554,23 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "san jose": ("GV San José", "BOL"),
     "san antonio bulo bulo": ("San Antonio Bulo Bulo", "BOL"),
     "bulo bulo": ("San Antonio Bulo Bulo", "BOL"),
+    # URUGUAY (Primera División / Liga AUF Uruguaya)
+    "deportivo maldonado": ("Deportivo Maldonado", "URY"),
+    "maldonado": ("Deportivo Maldonado", "URY"),
+    "nacional": ("Nacional", "URY"),
+    "club nacional": ("Nacional", "URY"),
+    "nacional de montevideo": ("Nacional", "URY"),
+    "penarol": ("Peñarol", "URY"),
+    "ca penarol": ("Peñarol", "URY"),
+    "defensor sporting": ("Defensor Sporting", "URY"),
+    "danubio": ("Danubio", "URY"),
+    "boston river": ("Boston River", "URY"),
+    "cerro largo": ("Cerro Largo", "URY"),
+    "liverpool montevideo": ("Liverpool FC", "URY"),
+    "montevideo wanderers": ("Montevideo Wanderers", "URY"),
+    "miramar misiones": ("Miramar Misiones", "URY"),
+    "rampla juniors": ("Rampla Juniors", "URY"),
+    "progreso": ("Progreso", "URY"),
     # UZBEKISTÁN (Super League y Pro Liga)
     "gazalkent": ("FK Gazalkent", "UZB"),
     "fk gazalkent": ("FK Gazalkent", "UZB"),
@@ -915,7 +933,7 @@ def normalizar_pais_iso(pais_o_liga: Optional[str]) -> str:
     if norm in CATALOGO_LIGAS_FLASHSCORE:
         return CATALOGO_LIGAS_FLASHSCORE[norm]
     for clave_liga, iso in _CLAVES_LIGAS_ORDENADAS:
-        if clave_liga == norm or (len(clave_liga) >= 5 and clave_liga in norm):
+        if clave_liga == norm or (len(clave_liga) >= 5 and re.search(rf"\b{re.escape(clave_liga)}\b", norm)):
             # Evitar falsos positivos de "serie a" en "serie a brazil" o "serie a ecuador"
             if clave_liga in ("serie a", "serie b"):
                 if "bra" in norm:

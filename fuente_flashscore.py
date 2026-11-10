@@ -181,11 +181,13 @@ class MetricasFlashscore:
     notas: list[str] = field(default_factory=list)
 
     def metricas_de(self, periodo: str, bando: str) -> dict[str, float]:
-        """Métricas de un periodo y bando; cae al total si el periodo no existe."""
+        """Métricas de un periodo y bando; para FT cae al total, para 1T/2T exige datos reales del periodo."""
         datos = (self.por_periodo.get(periodo) or {}).get(bando)
         if datos:
-            return datos
-        return self.local if bando == "local" else self.visitante
+            return dict(datos)
+        if periodo == "FT":
+            return dict(self.local if bando == "local" else self.visitante)
+        return {}
 
     @property
     def periodos_disponibles(self) -> list[str]:

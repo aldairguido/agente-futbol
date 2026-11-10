@@ -393,40 +393,102 @@ def _es_valor_vacio_o_invalido(v: Any) -> bool:
 
 def validar_cobertura_matriz(auditoria: dict[str, Any]) -> dict[str, Any]:
     """
-    REGLA OBLIGATORIA DE COBERTURA Y TOLERANCIA CERO A NULOS.
+    Puntos 37 y 39: Control estricto de cobertura y procedencia de las
+    45 métricas × 3 periodos (`FT`, `1T`, `2T`) × 2 lados (`equipo`, `rival`) = 270 celdas
+    por partido (135 por equipo).
 
-    Comprueba, partido a partido y periodo a periodo (`FT`, `1T`, `2T`), que TODA la
-    matriz quede cubierta sin valores `None`, `null`, `NaN` ni `"sin_dato"`.
+    Distingue:
+      - `fotmob`: dato publicado originalmente por FotMob.
+      - `flashscore`: dato publicado por Flashscore (`df_st_1` / GraphQL).
+      - `derivado`: dato deducido por identidad aritmética exacta (`1T + 2T == FT`,
+        `posesion_eq + posesion_riv == 100%`, `totales - a_puerta - fuera`).
+      - `sin_dato`: celda ausente (`None`) que NO se inventa con reparto 50/50.
+        Si `1T` o `2T` quedan en `"sin_dato"`, la métrica se añade a
+        `mercados_mitad_bloqueados`.
     """
     huecos_rellenables: list[dict[str, Any]] = []
     huecos_declarados: list[dict[str, Any]] = []
     total_valores = 0
     total_presentes = 0
+    total_observados = 0
+    total_estimados_modelo = 0
     por_periodo: dict[str, dict[str, int]] = {
-        "FT": {"presentes": 0, "total": 0},
-        "1T": {"presentes": 0, "total": 0},
-        "2T": {"presentes": 0, "total": 0},
+        "FT": {"presentes": 0, "observados": 0, "total": 0},
+        "1T": {"presentes": 0, "observados": 0, "total": 0},
+        "2T": {"presentes": 0, "observados": 0, "total": 0},
     }
+    procedencia_conteo: dict[str, int] = {
+        "fotmob": 0,
+        "flashscore": 0,
+        "derivado": 0,
+        "estimacion_modelo": 0,
+        "sin_dato": 0,
+    }
+    procedencia_4_niveles: dict[str, int] = {
+        "dato_publicado": 0,
+        "derivacion_aritmetica": 0,
+        "estimacion_modelo": 0,
+        "dato_ausente": 0,
+    }
+    mercados_mitad_bloqueados_set: set[str] = set()
+    partidos_lista = auditoria.get("partidos", []) or []
+    n_partidos = len(partidos_lista)
+    claves_45_canonicas = {cl for _, cl, _, _ in LAS_45_METRICAS_OFICIALES}
 
-    for p in auditoria.get("partidos", []) or []:
+    for p in partidos_lista:
         fs = p.get("fuente_secundaria") or {}
         emparejado = bool(fs.get("pareado"))
         rellenadas = set()
         for lado in ("equipo", "rival"):
             rellenadas |= set((fs.get("rellenadas") or {}).get(lado) or [])
         periodos = p.get("periodos") or {}
+        proc_partido = p.get("procedencia") if isinstance(p.get("procedencia"), dict) else {}
         for periodo in ("FT", "1T", "2T"):
-            filas = (periodos.get(periodo) or {}).get("filas") or []
+            filas_raw = (periodos.get(periodo) or {}).get("filas") or []
+            # Filtrar a las 45 métricas oficiales si el catálogo extendido está presente
+            filas_45 = [f for f in filas_raw if str(f.get("clave") or "") in claves_45_canonicas]
+            filas = filas_45 if len(filas_45) == 45 else filas_raw
+            proc_per = proc_partido.get(periodo) if isinstance(proc_partido.get(periodo), dict) else {}
             for fila in filas:
                 clave = str(fila.get("clave") or "")
                 for lado in ("equipo", "rival"):
                     total_valores += 1
                     por_periodo[periodo]["total"] += 1
-                    if not _es_valor_vacio_o_invalido(fila.get(lado)):
+                    val_celda = fila.get(lado)
+                    proc_lado = proc_per.get(lado) if isinstance(proc_per.get(lado), dict) else (
+                        proc_partido.get(lado) if isinstance(proc_partido.get(lado), dict) else {}
+                    )
+                    etiqueta_proc = str((proc_lado or {}).get(clave) or "").lower().strip()
+
+                    if not _es_valor_vacio_o_invalido(val_celda):
+                        if etiqueta_proc == "estimacion_modelo":
+                            total_estimados_modelo += 1
+                            procedencia_conteo["estimacion_modelo"] += 1
+                            procedencia_4_niveles["estimacion_modelo"] += 1
+                            if periodo in ("1T", "2T") and clave:
+                                mercados_mitad_bloqueados_set.add(clave)
+                            continue
                         total_presentes += 1
+                        total_observados += 1
                         por_periodo[periodo]["presentes"] += 1
+                        por_periodo[periodo]["observados"] += 1
+                        if etiqueta_proc == "derivado":
+                            procedencia_conteo["derivado"] += 1
+                            procedencia_4_niveles["derivacion_aritmetica"] += 1
+                        elif etiqueta_proc == "flashscore" or clave in rellenadas:
+                            procedencia_conteo["flashscore"] += 1
+                            procedencia_4_niveles["dato_publicado"] += 1
+                        else:
+                            procedencia_conteo["fotmob"] += 1
+                            procedencia_4_niveles["dato_publicado"] += 1
                         continue
-                    # Hueco: ¿era rellenable?
+
+                    procedencia_conteo["sin_dato"] += 1
+                    procedencia_4_niveles["dato_ausente"] += 1
+                    if periodo in ("1T", "2T") and clave:
+                        mercados_mitad_bloqueados_set.add(clave)
+
+                    # Hueco: ¿era rellenable en FT teniendo Flashscore pareado?
                     rellenable = (periodo == "FT" and emparejado
                                   and clave not in rellenadas)
                     entrada = {
@@ -453,15 +515,26 @@ def validar_cobertura_matriz(auditoria: dict[str, Any]) -> dict[str, Any]:
 
     nulos_totales = len(huecos_rellenables) + len(huecos_declarados)
     return {
+        "version_cobertura": "v43.0",
+        "celdas_por_equipo": 135,
+        "celdas_por_partido": 270,
+        "celdas_esperadas_totales": 270 * max(1, n_partidos) if n_partidos else 270,
         "total_valores": total_valores,
         "valores_presentes": total_presentes,
+        "valores_observados": total_observados,
+        "valores_estimados_modelo": total_estimados_modelo,
         "cobertura_pct": (round(100.0 * total_presentes / total_valores, 2)
                           if total_valores else None),
+        "cobertura_observada_pct": (round(100.0 * total_observados / total_valores, 2)
+                                    if total_valores else None),
         "por_periodo": {
-            k: {"presentes": v["presentes"], "total": v["total"],
+            k: {"presentes": v["presentes"], "observados": v["observados"], "total": v["total"],
                 "cobertura_pct": (round(100.0 * v["presentes"] / v["total"], 2)
                                   if v["total"] else None)}
             for k, v in por_periodo.items()},
+        "procedencia_conteo": procedencia_conteo,
+        "procedencia_4_niveles": procedencia_4_niveles,
+        "mercados_mitad_bloqueados": sorted(mercados_mitad_bloqueados_set),
         "huecos_rellenables": resumen_rellenables,
         "huecos_rellenables_total": len(huecos_rellenables),
         "huecos_declarados": resumen_declarados,
@@ -1792,16 +1865,154 @@ def formatear_matriz_45_partido(
     return "\n".join(lineas)
 
 
+MAX_BYTES_MARKDOWN_TELEGRAM = 30000
+_REGISTRO_PARTES_MD: dict[str, list[dict[str, Any]]] = {}
+
+
+def _dividir_bloque_gigante_por_categorias(bloque_matriz: str, max_bytes: int = 26000) -> list[str]:
+    """Si una matriz individual supera el presupuesto, la divide entre categorías 1..3 y 4..6."""
+    if len(bloque_matriz.encode("utf-8")) <= max_bytes:
+        return [bloque_matriz]
+    marcador_cat4 = "### 4. Pases (26–30)"
+    if marcador_cat4 in bloque_matriz:
+        idx = bloque_matriz.index(marcador_cat4)
+        lineas_enc = bloque_matriz[:idx].splitlines()[:5]
+        enc_rep = "\n".join(lineas_enc) + "\n\n"
+        p1 = bloque_matriz[:idx].rstrip()
+        p2 = enc_rep + bloque_matriz[idx:]
+        return [p1, p2]
+    lineas = bloque_matriz.splitlines()
+    mitad = max(1, len(lineas) // 2)
+    return ["\n".join(lineas[:mitad]), "\n".join(lineas[mitad:])]
+
+
+def particionar_bloques_markdown_30kb(
+    titulo_base: str,
+    metadatos_lineas: list[str],
+    tabla_resumen_lineas: list[str],
+    secciones_bloques: list[tuple[str, list[str]]],
+    ruta_md_base: str,
+    max_bytes: int = MAX_BYTES_MARKDOWN_TELEGRAM,
+) -> list[dict[str, Any]]:
+    """
+    Sección 10: Particiona dinámicamente cualquier informe Markdown en archivos de disco
+    cuyo tamaño real en bytes UTF-8 sea estrictamente `< 30,000 bytes` (`os.path.getsize(r) < 30000`),
+    sin cortar ninguna tabla a mitad de bloque.
+    """
+    items_planos: list[tuple[str, str]] = []
+    for subtitulo_sec, lista_matrices in secciones_bloques:
+        for idx_m, mat_str in enumerate(lista_matrices):
+            pref = f"{subtitulo_sec}\n\n" if idx_m == 0 and subtitulo_sec else ""
+            for sub_bloque in _dividir_bloque_gigante_por_categorias(pref + mat_str, max_bytes=max_bytes - 4500):
+                items_planos.append((subtitulo_sec, sub_bloque))
+
+    if not items_planos:
+        items_planos = [("", "_Sin partidos registrados en este bloque._")]
+
+    resumen_str = "\n".join(tabla_resumen_lineas) + "\n---\n\n" if tabla_resumen_lineas else ""
+    meta_str = "\n".join(metadatos_lineas) + "\n\n---\n\n"
+
+    # Empaquetar secuencialmente garantizando margen para el encabezado de Parte k de M
+    presupuesto_cuerpo = max_bytes - 1200
+    grupos_cuerpo: list[str] = []
+    actual_lineas: list[str] = []
+
+    for idx_it, (_sec, bloque_txt) in enumerate(items_planos):
+        incluir_resumen = (len(grupos_cuerpo) == 0 and not actual_lineas)
+        pref_candidato = (meta_str + (resumen_str if incluir_resumen else "")) if not actual_lineas else ""
+        if incluir_resumen and len((pref_candidato + bloque_txt).encode("utf-8")) > presupuesto_cuerpo:
+            # Si la tabla resumen + primera matriz supera el límite, poner la tabla resumen en la Parte 1 sola o reducir prefijo
+            if len((meta_str + resumen_str).encode("utf-8")) <= presupuesto_cuerpo:
+                grupos_cuerpo.append(meta_str + resumen_str.rstrip())
+                pref_candidato = meta_str
+            else:
+                pref_candidato = meta_str
+
+        candidato_str = ("\n\n".join(actual_lineas) + "\n\n" + bloque_txt) if actual_lineas else (pref_candidato + bloque_txt)
+        if len(candidato_str.encode("utf-8")) <= presupuesto_cuerpo or not actual_lineas:
+            if not actual_lineas:
+                actual_lineas.append(pref_candidato + bloque_txt)
+            else:
+                actual_lineas.append(bloque_txt)
+        else:
+            grupos_cuerpo.append("\n\n".join(actual_lineas))
+            actual_lineas = [meta_str + bloque_txt]
+
+    if actual_lineas:
+        grupos_cuerpo.append("\n\n".join(actual_lineas))
+
+    total_partes = len(grupos_cuerpo)
+    os.makedirs(os.path.dirname(os.path.abspath(ruta_md_base)), exist_ok=True)
+    partes_info: list[dict[str, Any]] = []
+    raiz, ext = os.path.splitext(ruta_md_base)
+    if not ext:
+        ext = ".md"
+
+    for k, cuerpo in enumerate(grupos_cuerpo, start=1):
+        sufijo_titulo = f" (Parte {k} de {total_partes})" if total_partes > 1 else ""
+        encabezado = f"# {titulo_base}{sufijo_titulo}\n\n"
+        texto_final = encabezado + cuerpo.strip() + "\n"
+        # Salvaguarda final estricta < max_bytes
+        raw_bytes = texto_final.encode("utf-8")
+        if len(raw_bytes) >= max_bytes:
+            raw_bytes = raw_bytes[: max_bytes - 64]
+            texto_final = raw_bytes.decode("utf-8", errors="ignore").rsplit("\n", 1)[0] + "\n"
+
+        ruta_k = ruta_md_base if k == 1 else f"{raiz}_parte{k}de{total_partes}{ext}"
+        with open(ruta_k, "w", encoding="utf-8", newline="\n") as f:
+            f.write(texto_final)
+        # Si k == 1 y hay más de 1 parte, guardar también copia con nombre explícito _parte1deM
+        if total_partes > 1 and k == 1:
+            ruta_p1_expl = f"{raiz}_parte1de{total_partes}{ext}"
+            with open(ruta_p1_expl, "w", encoding="utf-8", newline="\n") as f1:
+                f1.write(texto_final)
+
+        tam_disco = os.path.getsize(ruta_k)
+        partes_info.append({
+            "parte": k,
+            "total_partes": total_partes,
+            "ruta": ruta_k,
+            "bytes_utf8": len(texto_final.encode("utf-8")),
+            "bytes_disco": tam_disco,
+            "contenido": texto_final,
+        })
+
+    _REGISTRO_PARTES_MD[os.path.abspath(ruta_md_base)] = partes_info
+    _REGISTRO_PARTES_MD[ruta_md_base] = partes_info
+    return partes_info
+
+
+def obtener_partes_informe_md(ruta_md: str) -> list[dict[str, Any]]:
+    """Devuelve la lista ordenada de partes `< 30,000 bytes` asociadas a `ruta_md`."""
+    if not ruta_md:
+        return []
+    partes = _REGISTRO_PARTES_MD.get(os.path.abspath(ruta_md)) or _REGISTRO_PARTES_MD.get(ruta_md)
+    if partes:
+        return partes
+    if os.path.exists(ruta_md):
+        with open(ruta_md, "r", encoding="utf-8") as f:
+            cont = f.read()
+        return [{
+            "parte": 1,
+            "total_partes": 1,
+            "ruta": ruta_md,
+            "bytes_utf8": len(cont.encode("utf-8")),
+            "bytes_disco": os.path.getsize(ruta_md),
+            "contenido": cont,
+        }]
+    return []
+
+
 def generar_informe_matrices_30(
     doc_local: dict[str, Any],
     doc_visita: dict[str, Any],
     ruta_md: str | None = None,
 ) -> tuple[str, str]:
     """
-    Genera el informe Markdown completo de 30 matrices para Modalidad A (/auditar Local vs Visita):
-    15 partidos oficiales de Local + 15 partidos oficiales de Visita (30 en total).
-    Guarda el archivo en disco y genera además 2 tomos ligeros (< 30 KB) para apertura nativa en Telegram.
-    Devuelve (contenido_markdown, ruta_archivo).
+    Genera el informe Markdown completo para Modalidad A (/auditar Local vs Visita):
+    N_L partidos oficiales de Local + N_V partidos oficiales de Visita.
+    Todos los archivos escritos en disco cumplen estrictamente `< 30,000 bytes` UTF-8.
+    Devuelve `(contenido_primera_parte, ruta_archivo_base)`.
     """
     nom_local = (doc_local.get("equipo") or {}).get("nombre") or doc_local.get("equipo_solicitado") or "Local"
     nom_visita = (doc_visita.get("equipo") or {}).get("nombre") or doc_visita.get("equipo_solicitado") or "Visitante"
@@ -1810,47 +2021,9 @@ def generar_informe_matrices_30(
 
     partidos_local = [p for p in (doc_local.get("partidos") or []) if not p.get("es_amistoso")][:15]
     partidos_visita = [p for p in (doc_visita.get("partidos") or []) if not p.get("es_amistoso")][:15]
-
-    total_entregados = len(partidos_local) + len(partidos_visita)
-
-    bloques: list[str] = [
-        f"# AUDITORÍA DE {total_entregados} MATRICES OFICIALES (MODALIDAD A) — {nom_local} vs {nom_visita}",
-        "",
-        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
-        f"- **Equipo Local**: {nom_local} ({len(partidos_local)} partidos 100% oficiales auditados)",
-        f"- **Equipo Visitante**: {nom_visita} ({len(partidos_visita)} partidos 100% oficiales auditados)",
-        f"- **Filtro Anti-Amistosos**: Estricto (cero amistosos en el cómputo; descarte y backfill hacia atrás)",
-        f"- **Total de Matrices**: {total_entregados} matrices individuales completas (6 sub-tablas por matriz)",
-        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
-        f"- **Catálogo Oficial**: 45 métricas del 01 al 45 sin ningún valor nulo ni inventado",
-        f"- **Fusión de Fuentes**: FotMob (primaria) + Flashscore (secundaria) con identidades exactas",
-        "",
-        "---",
-        "",
-    ]
-
-    # Tabla Resumen Inicial con todos los partidos auditados
-    bloques.extend(_construir_tabla_resumen_inicial(partidos_local + partidos_visita))
-    bloques.append("---")
-    bloques.append("")
-
-    bloques.append(f"## BLOQUE 1: {len(partidos_local)} PARTIDOS OFICIALES DE {nom_local.upper()} (LOCAL)")
-    bloques.append("")
-
-    for idx, p in enumerate(partidos_local, start=1):
-        bloques.append(formatear_matriz_45_partido(p, k=idx, total_partidos=total_entregados))
-        bloques.append("")
-
-    bloques.append("---")
-    bloques.append("")
-    bloques.append(f"## BLOQUE 2: {len(partidos_visita)} PARTIDOS OFICIALES DE {nom_visita.upper()} (VISITANTE)")
-    bloques.append("")
-
-    for idx, p in enumerate(partidos_visita, start=len(partidos_local) + 1):
-        bloques.append(formatear_matriz_45_partido(p, k=idx, total_partidos=total_entregados))
-        bloques.append("")
-
-    contenido = "\n".join(bloques)
+    n_loc = len(partidos_local)
+    n_vis = len(partidos_visita)
+    total_entregados = n_loc + n_vis
 
     if not ruta_md:
         base_dir = os.path.join(AUDITORIA_DIR, fecha_hoy)
@@ -1860,59 +2033,38 @@ def generar_informe_matrices_30(
             f"auditoria_matrices_{_slug(nom_local)}_vs_{_slug(nom_visita)}_{fecha_hoy}.md",
         )
 
-    with open(ruta_md, "w", encoding="utf-8") as f:
-        f.write(contenido)
-
-    # ── GENERACIÓN DE 2 TOMOS LIGEROS (< 30 KB) PARA APERTURA NATIVA EN TELEGRAM ──
-    try:
-        bloques_t1 = [
-            f"# AUDITORÍA DE MATRICES OFICIALES — TOMO 1: {nom_local.upper()} (LOCAL)",
-            "",
-            f"- **Fecha**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
-            f"- **Equipo**: {nom_local} ({len(partidos_local)} partidos 100% oficiales auditados)",
-            f"- **Rival del Cruce**: {nom_visita}",
-            f"- **Catálogo Oficial**: 45 métricas completas en FT, 1T y 2T sin valores nulos",
-            "",
-            "---",
-            "",
-        ]
-        bloques_t1.extend(_construir_tabla_resumen_inicial(partidos_local))
-        bloques_t1.append("---")
-        bloques_t1.append("")
-        for idx, p in enumerate(partidos_local, start=1):
-            bloques_t1.append(formatear_matriz_45_partido(p, k=idx, total_partidos=len(partidos_local)))
-            bloques_t1.append("")
-        contenido_t1 = "\n".join(bloques_t1)
-
-        bloques_t2 = [
-            f"# AUDITORÍA DE MATRICES OFICIALES — TOMO 2: {nom_visita.upper()} (VISITANTE)",
-            "",
-            f"- **Fecha**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
-            f"- **Equipo**: {nom_visita} ({len(partidos_visita)} partidos 100% oficiales auditados)",
-            f"- **Rival del Cruce**: {nom_local}",
-            f"- **Catálogo Oficial**: 45 métricas completas en FT, 1T y 2T sin valores nulos",
-            "",
-            "---",
-            "",
-        ]
-        bloques_t2.extend(_construir_tabla_resumen_inicial(partidos_visita))
-        bloques_t2.append("---")
-        bloques_t2.append("")
-        for idx, p in enumerate(partidos_visita, start=1):
-            bloques_t2.append(formatear_matriz_45_partido(p, k=idx, total_partidos=len(partidos_visita)))
-            bloques_t2.append("")
-        contenido_t2 = "\n".join(bloques_t2)
-
-        ruta_tomo1 = ruta_md.replace(".md", "_tomo1.md")
-        ruta_tomo2 = ruta_md.replace(".md", "_tomo2.md")
-        with open(ruta_tomo1, "w", encoding="utf-8") as f:
-            f.write(contenido_t1)
-        with open(ruta_tomo2, "w", encoding="utf-8") as f:
-            f.write(contenido_t2)
-    except Exception as e_tomos:
-        pass
-
-    return contenido, ruta_md
+    titulo = f"AUDITORÍA DE {total_entregados} MATRICES OFICIALES (MODALIDAD A) — {nom_local} vs {nom_visita}"
+    meta_lineas = [
+        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
+        f"- **Equipo Local**: {nom_local} ({n_loc} partido(s) 100% oficiales auditados)",
+        f"- **Equipo Visitante**: {nom_visita} ({n_vis} partido(s) 100% oficiales auditados)",
+        f"- **Filtro Anti-Amistosos**: Estricto (cero amistosos en el cómputo; descarte y backfill hacia atrás)",
+        f"- **Total de Matrices**: {total_entregados} matrices individuales ({n_loc} de {nom_local} + {n_vis} de {nom_visita})",
+        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
+        f"- **Catálogo Oficial**: 45 métricas del 01 al 45 con distinción entre 0 observado y sin_dato",
+    ]
+    resumen_lineas = _construir_tabla_resumen_inicial(partidos_local + partidos_visita)
+    mats_local = [
+        formatear_matriz_45_partido(p, k=idx, total_partidos=total_entregados)
+        for idx, p in enumerate(partidos_local, start=1)
+    ]
+    mats_visita = [
+        formatear_matriz_45_partido(p, k=idx, total_partidos=total_entregados)
+        for idx, p in enumerate(partidos_visita, start=n_loc + 1)
+    ]
+    secciones = [
+        (f"## BLOQUE 1: {n_loc} PARTIDO(S) OFICIALES DE {nom_local.upper()} (LOCAL)", mats_local),
+        (f"## BLOQUE 2: {n_vis} PARTIDO(S) OFICIALES DE {nom_visita.upper()} (VISITANTE)", mats_visita),
+    ]
+    partes = particionar_bloques_markdown_30kb(
+        titulo_base=titulo,
+        metadatos_lineas=meta_lineas,
+        tabla_resumen_lineas=resumen_lineas,
+        secciones_bloques=secciones,
+        ruta_md_base=ruta_md,
+        max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
+    )
+    return partes[0]["contenido"], ruta_md
 
 
 def generar_informe_matrices_h2h(
@@ -1923,8 +2075,7 @@ def generar_informe_matrices_h2h(
 ) -> tuple[str, str]:
     """
     Genera el informe Markdown de N matrices para Modalidad B (/auditar Local h2h Visita).
-    N matrices para los N enfrentamientos reales 2024-2026 (cero inventados).
-    Guarda el archivo en disco y devuelve (contenido_markdown, ruta_archivo).
+    Todos los archivos escritos en disco cumplen estrictamente `< 30,000 bytes` UTF-8.
     """
     nom_a = (doc_h2h_a.get("equipo") or {}).get("nombre") or doc_h2h_a.get("equipo_solicitado") or "Equipo A"
     nom_b = (doc_h2h_b.get("equipo") or {}).get("nombre") or doc_h2h_b.get("equipo_solicitado") or "Equipo B"
@@ -1932,34 +2083,6 @@ def generar_informe_matrices_h2h(
     fecha_hoy = ahora.strftime("%Y-%m-%d")
 
     n = len(lista_partidos)
-
-    bloques: list[str] = [
-        f"# AUDITORÍA DE ENFRENTAMIENTOS DIRECTOS H2H (MODALIDAD B) — {nom_a} h2h {nom_b}",
-        "",
-        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
-        f"- **Ventana Temporal Estricta**: 2024-01-01 a 2026-12-31",
-        f"- **Duelos Directos Reales Encontrados**: {n} partido(s)",
-        f"- **Prohibición de Invención**: Cero partidos fabricados, sintéticos o sustituidos con otros rivales",
-        f"- **Total de Matrices**: {n} matrices individuales completas (6 sub-tablas por matriz)",
-        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
-        f"- **Catálogo Oficial**: 45 métricas del 01 al 45 sin valores nulos",
-        f"- **Fusión de Fuentes**: FotMob + Flashscore",
-        "",
-        "---",
-        "",
-    ]
-
-    # Tabla Resumen Inicial con los partidos H2H reales
-    bloques.extend(_construir_tabla_resumen_inicial(lista_partidos))
-    bloques.append("---")
-    bloques.append("")
-
-    for idx, p in enumerate(lista_partidos, start=1):
-        bloques.append(formatear_matriz_45_partido(p, k=idx, total_partidos=n))
-        bloques.append("")
-
-    contenido = "\n".join(bloques)
-
     if not ruta_md:
         base_dir = os.path.join(config.INFORME_DIR, "h2h")
         os.makedirs(base_dir, exist_ok=True)
@@ -1968,10 +2091,29 @@ def generar_informe_matrices_h2h(
             f"auditoria_h2h_matrices_{_slug(nom_a)}_{_slug(nom_b)}_{fecha_hoy}.md",
         )
 
-    with open(ruta_md, "w", encoding="utf-8") as f:
-        f.write(contenido)
-
-    return contenido, ruta_md
+    titulo = f"AUDITORÍA DE ENFRENTAMIENTOS DIRECTOS H2H (MODALIDAD B) — {nom_a} h2h {nom_b}"
+    meta_lineas = [
+        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
+        f"- **Ventana Temporal Estricta**: 2024-01-01 a 2026-12-31",
+        f"- **Duelos Directos Reales Encontrados**: {n} partido(s)",
+        f"- **Prohibición de Invención**: Cero partidos fabricados, sintéticos o sustituidos con otros rivales",
+        f"- **Total de Matrices**: {n} matrices individuales completas (6 sub-tablas por matriz)",
+        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
+    ]
+    resumen_lineas = _construir_tabla_resumen_inicial(lista_partidos)
+    mats = [
+        formatear_matriz_45_partido(p, k=idx, total_partidos=n)
+        for idx, p in enumerate(lista_partidos, start=1)
+    ]
+    partes = particionar_bloques_markdown_30kb(
+        titulo_base=titulo,
+        metadatos_lineas=meta_lineas,
+        tabla_resumen_lineas=resumen_lineas,
+        secciones_bloques=[("", mats)],
+        ruta_md_base=ruta_md,
+        max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
+    )
+    return partes[0]["contenido"], ruta_md
 
 
 def generar_informe_matrices_equipo(
@@ -1979,7 +2121,8 @@ def generar_informe_matrices_equipo(
     ruta_md: str | None = None,
 ) -> tuple[str, str]:
     """
-    Genera el informe Markdown de 15 matrices para una auditoría individual de equipo.
+    Genera el informe Markdown de N matrices para una auditoría individual de equipo,
+    particionando automáticamente en archivos `< 30,000 bytes` en disco.
     """
     nom_eq = (doc_equipo.get("equipo") or {}).get("nombre") or doc_equipo.get("equipo_solicitado") or "Equipo"
     ahora = _ahora_lima()
@@ -1988,44 +2131,36 @@ def generar_informe_matrices_equipo(
     partidos = [p for p in (doc_equipo.get("partidos") or []) if not p.get("es_amistoso")][:15]
     n = len(partidos)
 
-    bloques: list[str] = [
-        f"# AUDITORÍA DE {n} MATRICES OFICIALES — {nom_eq}",
-        "",
-        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
-        f"- **Equipo Auditado**: {nom_eq}",
-        f"- **Partidos 100% Oficiales**: {n} partidos con datos (amistosos descartados por completo)",
-        f"- **Total de Matrices**: {n} matrices completas individuales (6 sub-tablas por matriz)",
-        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
-        f"- **Catálogo Oficial**: 45 métricas del 01 al 45 sin valores nulos",
-        f"- **Fusión de Fuentes**: FotMob + Flashscore",
-        "",
-        "---",
-        "",
-    ]
-
-    # Tabla Resumen Inicial
-    bloques.extend(_construir_tabla_resumen_inicial(partidos))
-    bloques.append("---")
-    bloques.append("")
-
-    for idx, p in enumerate(partidos, start=1):
-        bloques.append(formatear_matriz_45_partido(p, k=idx, total_partidos=n))
-        bloques.append("")
-
-    contenido = "\n".join(bloques)
-
     if not ruta_md:
         base_dir = os.path.join(AUDITORIA_DIR, fecha_hoy)
         os.makedirs(base_dir, exist_ok=True)
         ruta_md = os.path.join(
             base_dir,
-            f"auditoria_matrices_15_{_slug(nom_eq)}_{fecha_hoy}.md",
+            f"auditoria_matrices_{n}_{_slug(nom_eq)}_{fecha_hoy}.md",
         )
 
-    with open(ruta_md, "w", encoding="utf-8") as f:
-        f.write(contenido)
-
-    return contenido, ruta_md
+    titulo = f"AUDITORÍA DE {n} MATRICES OFICIALES — {nom_eq}"
+    meta_lineas = [
+        f"- **Fecha de Generación**: {ahora.strftime('%Y-%m-%d %H:%M:%S')} (America/Lima)",
+        f"- **Equipo Auditado**: {nom_eq}",
+        f"- **Partidos 100% Oficiales**: {n} partido(s) con datos (amistosos descartados por completo)",
+        f"- **Total de Matrices**: {n} matrices completas individuales (6 sub-tablas por matriz)",
+        f"- **Desglose Multitiempo**: General (FT), Primer Tiempo (1T) y Segundo Tiempo (2T)",
+    ]
+    resumen_lineas = _construir_tabla_resumen_inicial(partidos)
+    mats = [
+        formatear_matriz_45_partido(p, k=idx, total_partidos=n)
+        for idx, p in enumerate(partidos, start=1)
+    ]
+    partes = particionar_bloques_markdown_30kb(
+        titulo_base=titulo,
+        metadatos_lineas=meta_lineas,
+        tabla_resumen_lineas=resumen_lineas,
+        secciones_bloques=[("", mats)],
+        ruta_md_base=ruta_md,
+        max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
+    )
+    return partes[0]["contenido"], ruta_md
 
 
 

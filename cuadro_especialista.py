@@ -324,12 +324,117 @@ def _media_de_muestra(muestra: Any, clave_cuadro: str,
     return float(media), int(metrica.n)
 
 
+def _extraer_mitades_reales_desde_doc(
+    doc: dict[str, Any] | None,
+    condicion: str | None = None,
+    k_shrinkage: float = 3.5,
+) -> dict[str, Any]:
+    """
+    Extrae las medias reales de 1T y 2T desde la auditoría histórica (`doc`)
+    separando el ADN por condición (`condicion`) frente al general, contando
+    `n_con_dato` por lado/mitad/condición y aplicando contracción bayesiana
+    cuando hay pocos partidos en esa condición, sin inventar mitades con 50/50.
+    """
+    if not isinstance(doc, dict):
+        return {"1T": {}, "2T": {}, "n_con_dato": {}, "shrinkage": {}}
+    partidos = [p for p in (doc.get("partidos") or []) if isinstance(p, dict) and not p.get("es_amistoso")]
+    cond_norm = str(condicion or "").strip().lower()
+    es_filtro_cond = cond_norm in ("casa", "fuera", "local", "visita", "visitante")
+    if cond_norm in ("local",):
+        cond_norm = "casa"
+    elif cond_norm in ("visita", "visitante"):
+        cond_norm = "fuera"
+
+    partidos_cond = [p for p in partidos if str(p.get("condicion") or "").strip().lower() == cond_norm] if es_filtro_cond else partidos
+
+    claves_mitad = (
+        "goles_favor", "goles_encajados", "xg", "xgot", "remates_totales",
+        "remates_a_puerta", "remates_dentro_area", "remates_fuera_area",
+        "posesion_pct", "pases_pct", "corners", "faltas", "tarjetas_amarillas",
+    )
+
+    def _promediar_lista(lista_p: list[dict[str, Any]], per: str) -> tuple[dict[str, float], dict[str, int]]:
+        vals: dict[str, list[float]] = {k: [] for k in claves_mitad}
+        vals["goles"] = []
+        vals["remates_puerta"] = []
+        for p in lista_p:
+            pers = p.get("periodos") or {}
+            bloque = pers.get(per) or {}
+            filas = bloque.get("filas") or []
+            mapa_f = {str(f.get("clave")): f for f in filas if isinstance(f, dict) and f.get("clave")}
+            # goles a favor en la mitad = goles_encajados del rival en la mitad (si está verificado)
+            f_ge = mapa_f.get("goles_encajados")
+            if f_ge and isinstance(f_ge.get("rival"), (int, float)) and not isinstance(f_ge.get("rival"), bool):
+                gf_m = float(f_ge["rival"])
+                vals["goles_favor"].append(gf_m)
+                vals["goles"].append(gf_m)
+            for cl in claves_mitad:
+                if cl == "goles_favor":
+                    continue
+                f_cl = mapa_f.get(cl)
+                if f_cl and isinstance(f_cl.get("equipo"), (int, float)) and not isinstance(f_cl.get("equipo"), bool):
+                    v_f = float(f_cl["equipo"])
+                    vals[cl].append(v_f)
+                    if cl == "remates_a_puerta":
+                        vals["remates_puerta"].append(v_f)
+        medias = {k: round(sum(v) / len(v), 4) for k, v in vals.items() if len(v) > 0}
+        conteos = {k: len(v) for k, v in vals.items()}
+        return medias, conteos
+
+    m1_gen, n1_gen = _promediar_lista(partidos, "1T")
+    m2_gen, n2_gen = _promediar_lista(partidos, "2T")
+    if es_filtro_cond:
+        m1_c, n1_c = _promediar_lista(partidos_cond, "1T")
+        m2_c, n2_c = _promediar_lista(partidos_cond, "2T")
+    else:
+        m1_c, n1_c = dict(m1_gen), dict(n1_gen)
+        m2_c, n2_c = dict(m2_gen), dict(n2_gen)
+
+    def _contraer(m_c: dict[str, float], n_c: dict[str, int], m_g: dict[str, float], n_g: dict[str, int]) -> tuple[dict[str, float], dict[str, float]]:
+        out: dict[str, float] = {}
+        pesos: dict[str, float] = {}
+        todas = set(m_c.keys()) | set(m_g.keys())
+        for k in todas:
+            nc = n_c.get(k, 0)
+            ng = n_g.get(k, 0)
+            if nc > 0 and k in m_c and k in m_g:
+                w = round(nc / (nc + k_shrinkage), 4)
+                out[k] = round(w * m_c[k] + (1.0 - w) * m_g[k], 4)
+                pesos[k] = w
+            elif k in m_g and ng > 0:
+                out[k] = round(m_g[k], 4)
+                pesos[k] = 0.0
+        return out, pesos
+
+    m1_fin, w1 = _contraer(m1_c, n1_c, m1_gen, n1_gen)
+    m2_fin, w2 = _contraer(m2_c, n2_c, m2_gen, n2_gen)
+    return {
+        "1T": m1_fin,
+        "2T": m2_fin,
+        "general": {"1T": m1_gen, "2T": m2_gen},
+        "condicion": {"1T": m1_c, "2T": m2_c},
+        "n_con_dato": {
+            "1T_condicion": n1_c,
+            "2T_condicion": n2_c,
+            "1T_general": n1_gen,
+            "2T_general": n2_gen,
+        },
+        "shrinkage": {
+            "k": k_shrinkage,
+            "pesos_1T": w1,
+            "pesos_2T": w2,
+        },
+    }
+
+
 def bloque_desde_muestra(muestra: Any, equipo: str, contexto: str,
                          n_partidos: int | None = None,
-                         ponderada: bool = False) -> dict[str, Any]:
+                         ponderada: bool = False,
+                         doc: dict[str, Any] | None = None,
+                         condicion: str | None = None) -> dict[str, Any]:
     """
     Construye el bloque que consume `construir_perfil_especialista_equipo`:
-    {"equipo", "contexto", "n_partidos", "metricas", "metricas_sin_dato"}.
+    {"equipo", "contexto", "n_partidos", "metricas", "metricas_sin_dato", "mitades"}.
     """
     metricas: dict[str, dict[str, Any]] = {}
     sin_dato: list[str] = []
@@ -340,12 +445,16 @@ def bloque_desde_muestra(muestra: Any, equipo: str, contexto: str,
             valor = NEUTROS.get(clave, 0.0)
         metricas[clave] = {"promedio": valor, "n": n,
                            "sin_dato": clave in sin_dato}
+    cond_efectiva = condicion if condicion is not None else (contexto if str(contexto).lower() in ("casa", "fuera") else None)
+    mitades = _extraer_mitades_reales_desde_doc(doc, condicion=cond_efectiva) if isinstance(doc, dict) else {"1T": {}, "2T": {}, "n_con_dato": {}, "shrinkage": {}}
     return {
         "equipo": equipo,
         "contexto": contexto,
+        "condicion": cond_efectiva,
         "n_partidos": n_partidos or getattr(muestra, "partidos_general", 0) or 0,
         "metricas": metricas,
         "metricas_sin_dato": sin_dato,
+        "mitades": mitades,
     }
 
 
@@ -615,6 +724,7 @@ def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any], ratio_ti
             "ratio_proactivo_vs_hundido": round(ratio_proactivo_vs_hundido, 2),
         },
         "hallazgos_especialista": hallazgos,
+        "mitades": bloque_equipo.get("mitades") or {"1T": {}, "2T": {}, "n_con_dato": {}, "shrinkage": {}},
     }
 
 
@@ -2390,9 +2500,13 @@ def generar_cuadro_desde_analisis(
             except Exception:
                 top5_podio = []
 
+        fecha_compartida = str(fecha or "").strip()
+        if not fecha_compartida.lower().startswith("análisis del"):
+            fecha_compartida = fecha_compartida[:10]
+
         ruta = generar_cuadro_visual_partido(
             perfil_l, perfil_v, lam_l, lam_v, motor.matriz_ft, destino,
-            competicion=competicion, fecha_str=str(fecha)[:10],
+            competicion=competicion, fecha_str=fecha_compartida,
             mitades_local=mit_l, mitades_vis=mit_v, lecturas_cruce=lecturas,
             max_goles=6, etiqueta_modelo=etiqueta_modelo,
             partidos_15_local=partidos_15_l,
@@ -2447,7 +2561,8 @@ def generar_cuadro_auditoria_15_partidos_png(
     eq_L = str(meta.get("equipo_local") or (doc_local.get("equipo") or {}).get("nombre") if doc_local else "Local")
     eq_V = str(meta.get("equipo_visitante") or (doc_visita.get("equipo") or {}).get("nombre") if doc_visita else "Visitante")
     competicion = str(meta.get("competicion") or "Competición oficial")
-    fecha = str(meta.get("fecha_partido") or meta.get("generado_en") or "")[:10]
+    fecha_raw_2 = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or meta.get("generado_en") or "").strip()
+    fecha = fecha_raw_2 if fecha_raw_2.lower().startswith("análisis del") else fecha_raw_2[:10]
 
     def _ordenar_recientes(pts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         if not pts:
@@ -2525,10 +2640,13 @@ def generar_cuadro_auditoria_15_partidos_png(
         n_tot = max(1, int(cb.get("total_partidos") or total_def or 15))
         for k in claves:
             val = cb.get(k)
-            if isinstance(val, dict) and ("str" in val or "pct" in val or "conteo" in val):
+            if (isinstance(val, dict) or hasattr(val, "get")) and ("str" in val or "pct" in val or "conteo" in val):
                 c = int(val.get("conteo", 0))
-                s = str(val.get("str") or f"{c}/{n_tot}")
-                p = float(val.get("pct", round(100.0 * c / n_tot, 1)))
+                tot_fila = int(val.get("total", val.get("n_con_dato", n_tot)) or 0)
+                if tot_fila <= 0:
+                    return "0/0 (sin partidos evaluables)", 0.0
+                s = str(val.get("str") or f"{c}/{tot_fila}")
+                p = float(val.get("pct", round(100.0 * c / tot_fila, 1)))
                 return f"{s}  ({p:.1f}%)", p
             if isinstance(val, (int, float)):
                 c = int(val)
