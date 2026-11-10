@@ -688,7 +688,7 @@ def _sanear_para_canvas(texto: str) -> str:
     """Elimina emojis Unicode no soportados por las fuentes del canvas para erradicar rectángulos rotos."""
     if not texto:
         return ""
-    return (
+    t = (
         texto.replace("🎯 JUGADA ÓPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
              .replace("🎯 JUGADA OPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
              .replace("🎯", ">>")
@@ -696,10 +696,18 @@ def _sanear_para_canvas(texto: str) -> str:
              .replace("⚖ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
              .replace("⚖️", "[ALERTA]")
              .replace("⚖", "[ALERTA]")
+             .replace("🔥", "[RACHA]")
+             .replace("⚡", "[VELOCIDAD]")
+             .replace("⚠️", "[!]")
+             .replace("🛡️", "[DEF]")
+             .replace("🛡", "[DEF]")
              .replace("⊗", "x")
              .replace("★", "*")
-             .strip()
+             .replace("☆", "*")
     )
+    # Filtrar cualquier caracter de bloque de emojis o símbolos gráficos no admitidos
+    t = "".join(c for c in t if ord(c) < 0x2600 or c in "•·→←—–")
+    return t.strip()
 
 
 def obtener_top5_y_seccion1_filtrados(

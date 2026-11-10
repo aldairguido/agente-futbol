@@ -4008,12 +4008,17 @@ def seleccionar_top_5_jugadas_recomendadas(
         attack_local=atk_l_top,
         attack_visita=atk_v_top,
     )
-    es_gigante_visitante = bool(info_gv.get("activo", False))
+    es_gigante_visitante = bool(
+        info_gv.get("activo", False)
+        or rec.get("gigante_visitante_activo")
+        or rec.get("es_gigante_visitante")
+        or getattr(motor, "es_gigante_visitante", False)
+    )
     vetar_1x_por_gigante_visita = bool(
         es_gigante_visitante
         or (p_1x2 is not None and float(p_1x2[0] + p_1x2[1]) < 0.70)
     )
-    if es_gigante_visitante:
+    if es_gigante_visitante or vetar_1x_por_gigante_visita:
         # Vetar 1X, 1 directo local y cualquier hándicap/DNB a favor del local
         def _es_favor_local_slot1(s: Any) -> bool:
             ev_s_l = str(_v(s, "evento") or "").lower().strip()

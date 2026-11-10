@@ -527,6 +527,75 @@ def _calcular_ece_binario(probs: list[float], reales: list[int], n_bins: int = 5
     return round(float(ece), 4)
 
 
+ETIQUETAS_PROCEDENCIA_VERIFICADA = {
+    "dato_publicado",
+    "derivacion_aritmetica",
+    "fotmob",
+    "flashscore",
+    "derivado",
+    "optasports",
+    "statsperform",
+}
+
+ETIQUETAS_PROCEDENCIA_INVALIDA = {
+    "estimado",
+    "estimacion_modelo",
+    "interpolado",
+    "sintetico",
+    "sin_dato",
+    "ausente",
+    "none",
+    "imputado",
+}
+
+
+def _extraer_procedencia_celda(
+    partido: dict[str, Any],
+    periodo: str,
+    clave: str,
+    lado: str,
+    fila: dict[str, Any] | None = None,
+) -> str:
+    """Extrae la etiqueta de procedencia para una celda específica."""
+    if fila and (fila.get("estimado") or fila.get("es_estimado")):
+        return "estimacion_modelo"
+    # 1. Procedencia en partido: partido["procedencia"][periodo][lado][clave]
+    proc_root = partido.get("procedencia")
+    if isinstance(proc_root, dict):
+        proc_per = proc_root.get(periodo)
+        if isinstance(proc_per, dict):
+            proc_lado = proc_per.get(lado)
+            if isinstance(proc_lado, dict) and clave in proc_lado:
+                return str(proc_lado[clave]).lower().strip()
+        proc_lado_alt = proc_root.get(lado)
+        if isinstance(proc_lado_alt, dict) and clave in proc_lado_alt:
+            return str(proc_lado_alt[clave]).lower().strip()
+    # 2. Procedencia en fila
+    if fila:
+        proc_f = fila.get("procedencia") or fila.get(f"procedencia_{lado}") or fila.get("origen") or fila.get("fuente")
+        if isinstance(proc_f, dict):
+            p_val = proc_f.get(lado) or proc_f.get(clave)
+            if p_val:
+                return str(p_val).lower().strip()
+        elif isinstance(proc_f, str) and proc_f.strip():
+            return proc_f.lower().strip()
+    return ""
+
+
+def _extraer_metrica_2t_verificada(partido: dict[str, Any], clave_m: str, lado_m: str) -> float | None:
+    """Extrae el valor numérico en 2T solo si tiene procedencia verificada."""
+    periodos_p = partido.get("periodos") or {}
+    filas_2t = ((periodos_p.get("2T") or {}).get("filas")) or []
+    for fl in filas_2t:
+        if isinstance(fl, dict) and fl.get("clave") == clave_m and not fl.get("estimado"):
+            val = fl.get(lado_m)
+            if val is not None and not isinstance(val, bool) and isinstance(val, (int, float)):
+                ep = _extraer_procedencia_celda(partido, "2T", clave_m, lado_m, fl)
+                if ep in ETIQUETAS_PROCEDENCIA_VERIFICADA:
+                    return float(val)
+    return None
+
+
 def ejecutar_estudio_punto_43_auditorias(
     directorio: str = "informes/auditorias",
     min_previos: int = 3,
@@ -560,9 +629,21 @@ def ejecutar_estudio_punto_43_auditorias(
     duplicados = 0
 
     # Contadores de cobertura real por métrica y periodo (FT, 1T, 2T)
+    # Distingue estrictamente:
+    #   - celdas_con_procedencia_verificada: etiquetas dato_publicado / derivacion_aritmetica / fotmob / flashscore / derivado
+    #   - celdas_numericas_sin_procedencia_legado: números en archivos legado sin procedencia por celda (NO suman a observados)
+    total_celdas_con_procedencia_verificada = 0
+    total_celdas_numericas_sin_procedencia_legado = 0
+
     cobertura_por_metrica: dict[str, dict[str, dict[str, int]]] = {
         cl: {
-            per: {"observados": 0, "ceros_observados": 0, "ausentes": 0}
+            per: {
+                "observados": 0,
+                "celdas_con_procedencia_verificada": 0,
+                "celdas_numericas_sin_procedencia_legado": 0,
+                "ceros_observados": 0,
+                "ausentes": 0,
+            }
             for per in ("FT", "1T", "2T")
         }
         for cl in claves_45
@@ -640,13 +721,17 @@ def ejecutar_estudio_punto_43_auditorias(
                     "id_partido": cid,
                     "fecha": fecha_p,
                     "equipo": nom_eq_doc,
-                    "rival": str(p.get("rival") or ""),
+                    "rival": str(p.get("rival") or "").strip(),
+                    "condicion": str(p.get("condicion") or ("casa" if p.get("es_local") else "fuera")),
                     "ge_ft": float(ge_ft),
                     "gr_ft": float(gr_ft),
                     "ge_1t": ge_1t,
                     "gr_1t": gr_1t,
                     "ge_2t": ge_2t,
                     "gr_2t": gr_2t,
+                    "xg_2t": _extraer_metrica_2t_verificada(p, "xg", "equipo"),
+                    "remates_2t": _extraer_metrica_2t_verificada(p, "remates_totales", "equipo"),
+                    "remates_da_concedidos_2t": _extraer_metrica_2t_verificada(p, "remates_dentro_area", "rival"),
                     "raw_eq": raw_eq_ft,
                     "raw_rv": raw_rv_ft,
                 }
@@ -658,7 +743,7 @@ def ejecutar_estudio_punto_43_auditorias(
                     continue
                 partidos_unicos[cid] = p
 
-                # Registrar cobertura real sobre partidos únicos
+                # Registrar cobertura real sobre partidos únicos con trazabilidad estricta por celda
                 periodos_p = p.get("periodos") or {}
                 for per in ("FT", "1T", "2T"):
                     filas_per = ((periodos_p.get(per) or {}).get("filas")) or []
@@ -673,9 +758,20 @@ def ejecutar_estudio_punto_43_auditorias(
                             if val is None or isinstance(val, bool) or not isinstance(val, (int, float)):
                                 cobertura_por_metrica[cl][per]["ausentes"] += 1
                             else:
-                                cobertura_por_metrica[cl][per]["observados"] += 1
-                                if float(val) == 0.0:
-                                    cobertura_por_metrica[cl][per]["ceros_observados"] += 1
+                                etiqueta_proc = _extraer_procedencia_celda(p, per, cl, lado, fl)
+                                if etiqueta_proc in ETIQUETAS_PROCEDENCIA_VERIFICADA:
+                                    cobertura_por_metrica[cl][per]["observados"] += 1
+                                    cobertura_por_metrica[cl][per]["celdas_con_procedencia_verificada"] += 1
+                                    total_celdas_con_procedencia_verificada += 1
+                                    if float(val) == 0.0:
+                                        cobertura_por_metrica[cl][per]["ceros_observados"] += 1
+                                elif etiqueta_proc in ETIQUETAS_PROCEDENCIA_INVALIDA:
+                                    cobertura_por_metrica[cl][per]["ausentes"] += 1
+                                else:
+                                    # Registro numérico sin procedencia verificable por celda (archivo legado)
+                                    cobertura_por_metrica[cl][per]["celdas_numericas_sin_procedencia_legado"] += 1
+                                    cobertura_por_metrica[cl][per]["ausentes"] += 1
+                                    total_celdas_numericas_sin_procedencia_legado += 1
         except Exception:
             continue
 
@@ -690,14 +786,14 @@ def ejecutar_estudio_punto_43_auditorias(
             ord_eq.append(it)
         series_equipo[eq_k] = ord_eq
 
-    # Resumen de cobertura porcentual por periodo
+    # Resumen de cobertura porcentual por periodo calculado EXCLUSIVAMENTE sobre celdas con procedencia verificada
     n_unicos = len(partidos_unicos)
     denom_celdas = max(1, n_unicos * 2)
     resumen_cobertura_pct: dict[str, dict[str, float]] = {}
     metricas_aptas_nivel_a: list[str] = []
     for cl in claves_45:
         resumen_cobertura_pct[cl] = {
-            per: round((cobertura_por_metrica[cl][per]["observados"] / denom_celdas) * 100.0, 2)
+            per: round((cobertura_por_metrica[cl][per]["celdas_con_procedencia_verificada"] / denom_celdas) * 100.0, 2)
             for per in ("FT", "1T", "2T")
         }
         if resumen_cobertura_pct[cl]["FT"] >= 60.0 and n_unicos >= 30:
@@ -716,53 +812,102 @@ def ejecutar_estudio_punto_43_auditorias(
     }
 
     # Regla 4: Evaluar el evento «El equipo marca al menos un gol en el 2T reglamentario»
-    # construyendo muestras estrictamente con historial anterior a t
+    # construyendo muestras estrictamente con historial anterior a t y sin auto-sustitución del rival.
+    n_ids_totales = 0
+    n_con_historial_ambos_clubes = 0
+    n_con_cobertura_conjunta_A_B_2T = 0
+    n_con_etiqueta_2T_verificable = 0
+    descartes_sin_historial_rival = 0
+    descartes_sin_cobertura_2t = 0
+    descartes_sin_etiqueta_2t = 0
+
     muestras_2t: list[dict[str, Any]] = []
     for eq_k, l_eq in series_equipo.items():
         for idx, actual in enumerate(l_eq):
-            if actual["ge_2t"] is None:
+            n_ids_totales += 1
+            previos_eq = [x for x in l_eq[:idx] if x["fecha"] < actual["fecha"]]
+            if len(previos_eq) < min_previos:
                 continue
-            previos = [x for x in l_eq[:idx] if x["fecha"] < actual["fecha"] and x["ge_2t"] is not None]
-            if len(previos) < min_previos:
+
+            # Historial prepartido del rival (PROHIBIDO AUTO-SUSTITUIR AL RIVAL CON EL PROPIO EQUIPO)
+            riv_key = actual["rival"].strip().lower()
+            previos_riv = [
+                x for x in series_equipo.get(riv_key, [])
+                if x["fecha"] < actual["fecha"]
+            ]
+            if not riv_key or len(previos_riv) < min_previos:
+                descartes_sin_historial_rival += 1
                 continue
-            ult = previos[-15:]
-            # Tasa base prepartido de goles 2T del equipo (con contracción bayesiana hacia 0.60 goles en 2T)
-            n_p = len(ult)
-            media_g2t_prev = float(np.mean([x["ge_2t"] for x in ult]))
-            media_gft_prev = float(np.mean([x["ge_ft"] for x in ult]))
-            w_shr = n_p / (n_p + 3.5)
-            lam_2t_base = max(0.15, w_shr * media_g2t_prev + (1.0 - w_shr) * max(0.45, 0.55 * media_gft_prev))
+
+            n_con_historial_ambos_clubes += 1
+
+            # Condición prepartido (casa vs fuera)
+            cond_eq = actual.get("condicion") or "casa"
+            cond_riv = "fuera" if cond_eq == "casa" else "casa"
+
+            prev_eq_cond = [x for x in previos_eq if x.get("condicion") == cond_eq]
+            muestra_eq_A = prev_eq_cond if len(prev_eq_cond) >= 3 else previos_eq
+
+            # A = xG_2T / remates_totales_2T en partidos observados con remates > 0
+            pares_a = [
+                (x["xg_2t"], x["remates_2t"])
+                for x in muestra_eq_A
+                if x.get("xg_2t") is not None and x.get("remates_2t") is not None and float(x["remates_2t"]) > 0.0
+            ]
+            if not pares_a:
+                descartes_sin_cobertura_2t += 1
+                continue
+
+            tot_xg = sum(float(p[0]) for p in pares_a)
+            tot_rem = sum(float(p[1]) for p in pares_a)
+            if tot_rem <= 0.0:
+                descartes_sin_cobertura_2t += 1
+                continue
+            senal_a = float(tot_xg / tot_rem)
+
+            # B = remates_dentro_area concedidos en 2T por el rival con procedencia verificada
+            prev_riv_cond = [x for x in previos_riv if x.get("condicion") == cond_riv]
+            muestra_riv_B = prev_riv_cond if len(prev_riv_cond) >= 3 else previos_riv
+
+            vals_b = [
+                float(x["remates_da_concedidos_2t"])
+                for x in muestra_riv_B
+                if x.get("remates_da_concedidos_2t") is not None
+            ]
+            if not vals_b:
+                descartes_sin_cobertura_2t += 1
+                continue
+            senal_b = float(np.mean(vals_b))
+
+            n_con_cobertura_conjunta_A_B_2T += 1
+
+            # Etiqueta verificable del resultado en 2T
+            if actual.get("ge_2t") is None:
+                descartes_sin_etiqueta_2t += 1
+                continue
+
+            n_con_etiqueta_2T_verificable += 1
+
+            # Variante 1: Motor actual (Poisson 2T sobre historial prepartido de ambos equipos)
+            ult_eq = [x for x in previos_eq if x.get("ge_2t") is not None][-15:]
+            ult_riv = [x for x in previos_riv if x.get("gr_2t") is not None][-15:]
+            if not ult_eq or not ult_riv:
+                continue
+
+            lam_ataque_eq_2t = float(np.mean([float(x["ge_2t"]) for x in ult_eq]))
+            lam_defensa_riv_2t = float(np.mean([float(x["gr_2t"]) for x in ult_riv]))
+            lam_2t_base = max(0.10, (lam_ataque_eq_2t + lam_defensa_riv_2t) / 2.0)
             p_var1 = 1.0 - math.exp(-lam_2t_base)
 
-            # Señal A: proporción de goles anotados en 2T sobre goles totales FT del equipo (prepartido)
-            sum_g2t_eq = sum(float(x["ge_2t"]) for x in ult)
-            sum_gft_eq = sum(float(x["ge_ft"]) for x in ult)
-            senal_a = (sum_g2t_eq / sum_gft_eq) if sum_gft_eq > 0 else 0.50
-
-            # Señal B: proporción de goles encajados en 2T sobre goles encajados FT del rival (prepartido)
-            riv_key = actual["rival"].strip().lower()
-            prev_riv = [
-                x for x in series_equipo.get(riv_key, [])
-                if x["fecha"] < actual["fecha"] and x["gr_2t"] is not None
-            ]
-            if len(prev_riv) >= min_previos:
-                ult_r = prev_riv[-15:]
-                sum_gr2t = sum(float(x["gr_2t"]) for x in ult_r)
-                sum_grft = sum(float(x["gr_ft"]) for x in ult_r)
-            else:
-                sum_gr2t = sum(float(x["gr_2t"]) for x in ult if x["gr_2t"] is not None)
-                sum_grft = sum(float(x["gr_ft"]) for x in ult)
-            senal_b = (sum_gr2t / sum_grft) if sum_grft > 0 else 0.50
-
-            # Variante 2: Motor actual + Señal A + Señal B (aditivo acotado sobre tasa 2T)
-            delta_ab = 0.25 * (senal_a - 0.52) + 0.25 * (senal_b - 0.52)
-            lam_2t_v2 = max(0.12, lam_2t_base * math.exp(max(-0.35, min(0.35, delta_ab))))
+            # Variante 2: Motor actual + Señal A + Señal B
+            delta_ab = 0.25 * ((senal_a - 0.10) / 0.05) + 0.25 * ((senal_b - 3.0) / 1.5)
+            lam_2t_v2 = max(0.10, lam_2t_base * math.exp(max(-0.40, min(0.40, delta_ab))))
             p_var2 = 1.0 - math.exp(-lam_2t_v2)
 
             # Variante 3: Motor actual + Señal A + Señal B + interacción A × B
-            inter_ab = (senal_a * senal_b) - (0.52 * 0.52)
-            delta_abx = delta_ab + 0.30 * inter_ab
-            lam_2t_v3 = max(0.12, lam_2t_base * math.exp(max(-0.40, min(0.40, delta_abx))))
+            inter_ab = ((senal_a - 0.10) / 0.05) * ((senal_b - 3.0) / 1.5)
+            delta_abx = delta_ab + 0.20 * max(-1.5, min(1.5, inter_ab))
+            lam_2t_v3 = max(0.10, lam_2t_base * math.exp(max(-0.45, min(0.45, delta_abx))))
             p_var3 = 1.0 - math.exp(-lam_2t_v3)
 
             y_gol_2t = 1 if float(actual["ge_2t"]) >= 1.0 else 0
@@ -776,23 +921,44 @@ def ejecutar_estudio_punto_43_auditorias(
             })
 
     muestras_2t.sort(key=lambda x: x["fecha"])
-    n_m2t = len(muestras_2t)
-    if n_m2t < 6:
+    n_comparables = len(muestras_2t)
+
+    embudo_muestreo_2t = {
+        "n_ids_totales": n_ids_totales,
+        "n_con_historial_ambos_clubes": n_con_historial_ambos_clubes,
+        "n_con_cobertura_conjunta_A_B_2T": n_con_cobertura_conjunta_A_B_2T,
+        "n_con_etiqueta_2T_verificable": n_con_etiqueta_2T_verificable,
+        "n_comparables": n_comparables,
+        "descartes_sin_historial_rival": descartes_sin_historial_rival,
+        "descartes_sin_cobertura_2t": descartes_sin_cobertura_2t,
+        "descartes_sin_etiqueta_2t": descartes_sin_etiqueta_2t,
+    }
+
+    if n_comparables < 10:
         return {
             "estado": "datos_insuficientes",
             "archivos_escaneados": len(archivos),
             "partidos_unicos": n_unicos,
             "duplicados_omitidos": duplicados,
-            "n_muestras_2t_prepartido": n_m2t,
+            "n_ids_totales": n_ids_totales,
+            "n_con_historial_ambos_clubes": n_con_historial_ambos_clubes,
+            "n_con_cobertura_conjunta_A_B_2T": n_con_cobertura_conjunta_A_B_2T,
+            "n_con_etiqueta_2T_verificable": n_con_etiqueta_2T_verificable,
+            "n_comparables": n_comparables,
+            "n_muestras_2t_prepartido": n_comparables,
+            "cobertura_por_metrica": cobertura_por_metrica,
             "cobertura_pct_por_metrica": resumen_cobertura_pct,
+            "total_celdas_con_procedencia_verificada": total_celdas_con_procedencia_verificada,
+            "total_celdas_numericas_sin_procedencia_legado": total_celdas_numericas_sin_procedencia_legado,
             "metricas_aptas_nivel_a": metricas_aptas_nivel_a,
             "verificacion_algebraica": verificacion_algebraica,
+            "embudo_muestreo_2t": embudo_muestreo_2t,
             "decision_produccion": "rechazado_por_muestra_insuficiente",
             "en_produccion": False,
         }
 
-    corte = max(3, int(n_m2t * 0.80))
-    val_2t = muestras_2t[corte:] if corte < n_m2t else muestras_2t[-max(2, n_m2t // 5):]
+    corte = max(3, int(n_comparables * 0.80))
+    val_2t = muestras_2t[corte:] if corte < n_comparables else muestras_2t[-max(2, n_comparables // 5):]
 
     def _evaluar_variante(clave_p: str) -> dict[str, float]:
         ps = [float(x[clave_p]) for x in val_2t]
@@ -817,10 +983,10 @@ def ejecutar_estudio_punto_43_auditorias(
 
     if v3_supera_v1 and (m_v3["brier"] <= m_v2["brier"]):
         mejor_variante = "Variante 3 (A + B + A×B)"
-        estado_patron = "candidato_validado_fuera_de_muestra" if n_m2t >= 30 else "candidato_en_sombra"
+        estado_patron = "candidato_validado_fuera_de_muestra" if n_comparables >= 30 else "candidato_en_sombra"
     elif v2_supera_v1:
         mejor_variante = "Variante 2 (A + B)"
-        estado_patron = "candidato_validado_fuera_de_muestra" if n_m2t >= 30 else "candidato_en_sombra"
+        estado_patron = "candidato_validado_fuera_de_muestra" if n_comparables >= 30 else "candidato_en_sombra"
     else:
         mejor_variante = "Variante 1 (Motor actual corregido)"
         estado_patron = "rechazado"
@@ -830,12 +996,20 @@ def ejecutar_estudio_punto_43_auditorias(
         "archivos_escaneados": len(archivos),
         "partidos_unicos": n_unicos,
         "duplicados_omitidos": duplicados,
-        "n_muestras_2t_prepartido": n_m2t,
+        "n_ids_totales": n_ids_totales,
+        "n_con_historial_ambos_clubes": n_con_historial_ambos_clubes,
+        "n_con_cobertura_conjunta_A_B_2T": n_con_cobertura_conjunta_A_B_2T,
+        "n_con_etiqueta_2T_verificable": n_con_etiqueta_2T_verificable,
+        "n_comparables": n_comparables,
+        "n_muestras_2t_prepartido": n_comparables,
         "n_validacion_20": len(val_2t),
         "cobertura_por_metrica": cobertura_por_metrica,
         "cobertura_pct_por_metrica": resumen_cobertura_pct,
+        "total_celdas_con_procedencia_verificada": total_celdas_con_procedencia_verificada,
+        "total_celdas_numericas_sin_procedencia_legado": total_celdas_numericas_sin_procedencia_legado,
         "metricas_aptas_nivel_a": metricas_aptas_nivel_a,
         "verificacion_algebraica": verificacion_algebraica,
+        "embudo_muestreo_2t": embudo_muestreo_2t,
         "variantes_2t": {
             "variante_1_motor_actual": m_v1,
             "variante_2_mas_A_mas_B": m_v2,

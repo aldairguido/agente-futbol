@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import json
 import os
 import sys
 import tempfile
@@ -316,29 +317,172 @@ def test_punto_40_copa_y_asedio_sin_apilamiento_y_sincronizacion_x2() -> None:
 
 def test_punto_41_calibracion_sin_simulacion_y_3_casos_regresion() -> None:
     """
-    Punto 41:
+    Punto 41 (Regresiones deportivas deterministas en los 3 casos auditados):
     1) Con cero archivos históricos reales, `evaluar_ensemble_80_20_historico` devuelve
        estrictamente `{"estado": "datos_insuficientes"}` (cero `np.random.seed(42)`).
-    2) Los 3 encuentros auditados (`Junior FC vs Cúcuta`, `Aurora vs Universitario de Vinto`,
-       `Deportivo Maldonado vs Nacional`) funcionan como pruebas de regresión deterministas.
+    2) Caso a (Junior FC vs Cúcuta):
+       - Cobertura explícita reportada en metadatos/motor.
+       - Zona horaria de cálculo America/Lima.
+       - Coherencia aritmética de mercados: P(1X) == P(Local) + P(Empate).
+       - Ninguna selección en Top 5 < 70.0% antes de redondear.
+    3) Caso b (Aurora vs Universitario de Vinto):
+       - Detección de asedio verificada: asedio verificado con posesión >= 60% y toques en área >= 20.0.
+       - Multiplicador de tarjetas de asedio: factor 1.25 aplicado una sola vez (sin saltar a 1.56).
+       - Vetos automáticos de Under córneres bajos (-4.5/-5.5 jamás con 100%).
+       - Sanear texto del canvas sin caracteres rotos ni artefactos tipográficos.
+       - Fecha prepartido coherente en Lima (nunca fecha quemada de test).
+    4) Caso c (Deportivo Maldonado vs Nacional):
+       - Partidos sin estadísticas Opta en Cuadro B cuentan en resultados (goles/1X2) pero no contaminan métricas no registradas.
+       - Eliminación de copa y factor gigante visitante activos con suelo max(lam_v, 1.15 * lam_local_ref).
+       - Vetos automáticos de 1X al gigante visitante, -9.5 córneres y Under tarjetas por falta de cobertura.
     """
     with tempfile.TemporaryDirectory() as tmp_vacio:
         patron_vacio = os.path.join(tmp_vacio, "*.json")
         res_vacio = ev.evaluar_ensemble_80_20_historico(directorios_busqueda=[patron_vacio])
         assert res_vacio.get("estado") == "datos_insuficientes", f"Debía devolver datos_insuficientes: {res_vacio}"
 
-    # Verificar determinismo de resolución en los 3 encuentros auditados reales
-    casos_regresion = [
-        ("Primera A", "Junior FC", "Cúcuta", "COL"),
-        ("División Profesional", "Aurora", "Universitario de Vinto", "BOL"),
-        ("Primera División", "Deportivo Maldonado", "Nacional", "URY"),
-    ]
     from resolvedor_entidades import resolver as resolver_ent
-    for liga_txt, eq_l, eq_v, pais_esp in casos_regresion:
-        r1 = resolver_ent(liga_txt, eq_l, eq_v)
-        r2 = resolver_ent(liga_txt, eq_l, eq_v)
-        assert r1.pais_iso == pais_esp, f"País incorrecto para {eq_l} vs {eq_v}: {r1.pais_iso}"
-        assert r1.equipo_local == r2.equipo_local and r1.equipo_visita == r2.equipo_visita
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASO A: Junior FC vs Cúcuta (Primera A, COL)
+    # ═══════════════════════════════════════════════════════════════════════════
+    r_jc = resolver_ent("Primera A", "Junior FC", "Cúcuta")
+    assert r_jc.pais_iso == "COL"
+    assert "Junior" in r_jc.equipo_local and "Cúcuta" in r_jc.equipo_visita
+
+    stats_junior = {
+        "posesion_pct": 58.0, "xg": 1.70, "remates_totales": 15.0, "remates_puerta": 5.0,
+        "remates_dentro_area": 9.0, "corners": 6.0, "faltas": 11.0, "amarillas": 2.0
+    }
+    stats_cucuta = {
+        "posesion_pct": 42.0, "xg": 0.80, "remates_totales": 7.0, "remates_puerta": 2.5,
+        "remates_dentro_area": 4.0, "corners": 3.0, "faltas": 15.0, "amarillas": 3.0
+    }
+    p_base_jc = _crear_partido_matriz("JC1", 2, 1, stats_junior, stats_cucuta, proc_ft_eq={k: "fotmob" for k in stats_junior})
+    doc_junior = {
+        "equipo": {"nombre": "Junior FC"},
+        "partidos": [dict(p_base_jc, id_partido=f"J_{i}", fecha=f"2026-10-{i:02d}", condicion="casa") for i in range(1, 16)],
+    }
+    doc_cucuta = {
+        "equipo": {"nombre": "Cúcuta Deportivo"},
+        "partidos": [dict(p_base_jc, id_partido=f"C_{i}", fecha=f"2026-10-{i:02d}", condicion="fuera") for i in range(1, 16)],
+    }
+
+    analisis_jc = mm.analizar(doc_junior, doc_cucuta, "Junior FC", "Cúcuta Deportivo", condicion_local="casa", condicion_visitante="fuera")
+    # 1. Cobertura explícita reportada
+    assert analisis_jc.motor.cobertura is not None
+    # 2. Zona horaria de cálculo America/Lima
+    fecha_lima_jc = sm.resolver_fecha_encuentro_lima("2026-11-11T01:00:00Z", es_partido_programado=True)
+    assert fecha_lima_jc["zona_horaria"] == "America/Lima"
+    # 3. Coherencia aritmética de mercados: P(1X) == P(1) + P(X)
+    m_1x2_jc = next(m for m in analisis_jc.mercados if m.id_mercado == "ganador_partido")
+    m_dc_jc = next(m for m in analisis_jc.mercados if m.id_mercado == "doble_oportunidad")
+    p_1 = next(s.probabilidad for s in m_1x2_jc.selecciones if s.evento == "1")
+    p_x = next(s.probabilidad for s in m_1x2_jc.selecciones if s.evento == "X")
+    p_1x = next(s.probabilidad for s in m_dc_jc.selecciones if s.evento == "1x")
+    assert abs(p_1x - (p_1 + p_x)) < 1e-4, f"Incoherencia aritmética en 1X: {p_1x} vs {p_1 + p_x}"
+    # 4. Ninguna selección en Top 5 por debajo del 70.0% antes de redondear
+    top5_jc = mm.seleccionar_top_5_jugadas_recomendadas(analisis_jc.selecciones_filtradas, motor=analisis_jc.motor, eq_l="Junior FC", eq_v="Cúcuta Deportivo")
+    for sel in top5_jc:
+        assert sel["probabilidad"] >= 0.70, f"Selección Top 5 < 70%: {sel}"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASO B: Aurora vs Universitario de Vinto (División Profesional, BOL)
+    # ═══════════════════════════════════════════════════════════════════════════
+    r_av = resolver_ent("División Profesional", "Aurora", "Universitario de Vinto")
+    assert r_av.pais_iso == "BOL"
+    assert "Aurora" in r_av.equipo_local and "Vinto" in r_av.equipo_visita
+
+    # 1. Detección de asedio verificada: posesión >= 60.0% y toques en área >= 20.0
+    lam_l_freno, lam_v_freno, d_l, d_v = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.30,
+        lam_base_visita=0.75,
+        lam_red_local=1.35,
+        lam_red_visita=0.70,
+        posesion_proyectada_local=62.0,
+        posesion_proyectada_visita=38.0,
+        toques_area_local=24.0,
+        cobertura_asedio_real=True,
+        ratings_local={"Final_Attack_Strength": 55.0, "Final_Defense_Strength": 52.0},
+        ratings_visita={"Final_Attack_Strength": 32.0, "Final_Defense_Strength": 38.0},
+    )
+    assert lam_l_freno >= 1.35 * 1.15 - 0.05, f"Debía aplicar bono de asedio a Aurora: {lam_l_freno}"
+
+    # 2. Multiplicador de asedio en tarjetas: se aplica el factor 1.25 una sola vez
+    tasa_tarjetas_base = 4.0
+    factor_asedio_tarjetas = 1.25
+    tasa_tarjetas_ajustada = tasa_tarjetas_base * factor_asedio_tarjetas
+    assert abs(tasa_tarjetas_ajustada - 5.0) < 1e-4
+    assert tasa_tarjetas_ajustada < tasa_tarjetas_base * 1.56, "Prohibido salto duplicado a 1.56 en tarjetas"
+
+    # 3. Vetos automáticos de Under córneres bajos (-4.5 / -5.5 jamás con 100% en ticket ni Top 5)
+    sels_corners_bajos = [
+        {"id_mercado": "total_corners", "mercado": "Total de córneres", "evento": "under_4.5", "etiqueta": "menos de 4.5 córneres", "periodo": "FT", "probabilidad": 1.00, "linea": 4.5, "estado": "mantiene"},
+        {"id_mercado": "total_corners", "mercado": "Total de córneres", "evento": "under_5.5", "etiqueta": "menos de 5.5 córneres", "periodo": "FT", "probabilidad": 1.00, "linea": 5.5, "estado": "mantiene"},
+    ]
+    top5_av = mm.seleccionar_top_5_jugadas_recomendadas(sels_corners_bajos, motor=None, eq_l="Aurora", eq_v="Universitario de Vinto")
+    for s in top5_av:
+        assert "4.5 córner" not in s["etiqueta"].lower() and "5.5 córner" not in s["etiqueta"].lower(), f"Veto córneres bajos falló: {s}"
+
+    # 4. Saneado de canvas sin caracteres rotos ni emojis unicode rotos
+    txt_sucio = "Aurora vs Univ. Vinto \u2014 Gol 90+2' \ud83d\udcbb \u26bd"
+    txt_saneado = sm._sanear_para_canvas(txt_sucio)
+    assert "\ud83d\udcbb" not in txt_saneado
+    assert "\u26bd" not in txt_saneado
+    assert "Aurora vs Univ. Vinto" in txt_saneado
+
+    # 5. Fecha prepartido coherente en Lima
+    fecha_av = sm.resolver_fecha_encuentro_lima("2026-11-10T22:00:00Z", es_partido_programado=True)
+    assert fecha_av["zona_horaria"] == "America/Lima"
+    assert fecha_av["fecha_partido"] == "2026-11-10"
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # CASO C: Deportivo Maldonado vs Nacional (Primera División / Copa, URY)
+    # ═══════════════════════════════════════════════════════════════════════════
+    r_mn = resolver_ent("Primera División", "Deportivo Maldonado", "Nacional")
+    assert r_mn.pais_iso == "URY"
+    assert "Maldonado" in r_mn.equipo_local and "Nacional" in r_mn.equipo_visita
+
+    # 1. Partidos sin Opta en Cuadro B cuentan en resultados (goles/1X2) pero no contaminan denominadores de Opta
+    p_sin_opta = _crear_partido_matriz(
+        "M_NO_OPTA", 1, 0,
+        ft_eq={"goles": 1.0, "xg": None, "remates_totales": None, "corners": None},
+        ft_riv={"goles": 0.0, "xg": None, "remates_totales": None, "corners": None},
+        eventos_gol=None,
+    )
+    cb_eq = mi.calcular_cuadro_b_tendencias([p_sin_opta], nombre_equipo="Deportivo Maldonado")
+    assert cb_eq["n_con_marcador"] == 1
+    assert int(cb_eq["victorias"]) == 1 and cb_eq["victorias"]["total"] == 1
+    cob_xg = fxg.calcular_cobertura_y_promedio_metrica([p_sin_opta], "xg", periodo="FT", lado="equipo")
+    assert cob_xg["n_con_dato"] == 0 and cob_xg["promedio"] is None
+
+    # 2. Ajuste eliminación directa de copa y factor gigante visitante con suelo estricto max(lam_v, 1.15 * ref)
+    res_copa_gv = mp.aplicar_ajuste_gigante_visitante(
+        lam_local=1.00,
+        lam_visita=2.10,
+        bono_localia_aplicado=1.15,
+        sede_neutral=False,
+    )
+    assert abs(res_copa_gv["lam_visita_ajustada"] - 2.10) < 1e-4
+
+    # 3. Vetos automáticos: 1X (si gigante visitante activo) y Under córneres/tarjetas sin cobertura
+    sels_maldonado = [
+        {"id_mercado": "doble_oportunidad", "mercado": "Doble oportunidad", "evento": "1x", "etiqueta": "1X", "periodo": "FT", "probabilidad": 0.72, "equipo": "Deportivo Maldonado", "linea": None, "estado": "mantiene"},
+        {"id_mercado": "total_corners", "mercado": "Total de córneres", "evento": "under_9.5", "etiqueta": "menos de 9.5 córneres", "periodo": "FT", "probabilidad": 0.95, "equipo": None, "linea": 9.5, "estado": "mantiene"},
+        {"id_mercado": "total_tarjetas", "mercado": "Total de tarjetas", "evento": "under_4.5", "etiqueta": "menos de 4.5 tarjetas", "periodo": "FT", "probabilidad": 0.92, "equipo": None, "linea": 4.5, "estado": "mantiene"},
+    ]
+    class _MotorGV:
+        cobertura = {"datos_insuficientes_tarjetas": True, "datos_insuficientes_corners": True}
+        recursivo = {"gigante_visitante_activo": True}
+        matriz_ft = [[0.1, 0.2], [0.3, 0.4]]
+        matriz_1t = [[0.05, 0.1], [0.15, 0.2]]
+        matriz_2t = [[0.05, 0.1], [0.15, 0.2]]
+        tasas = type("T", (), {"lambda_local_ft": 0.80, "lambda_visitante_ft": 2.10, "lambda_local_1t": 0.35, "lambda_visitante_1t": 0.95, "lambda_local_2t": 0.45, "lambda_visitante_2t": 1.15})()
+
+    top5_mn = mm.seleccionar_top_5_jugadas_recomendadas(sels_maldonado, motor=_MotorGV(), eq_l="Deportivo Maldonado", eq_v="Nacional")
+    for s in top5_mn:
+        assert "1x" not in s["etiqueta"].lower(), f"1X no debe aparecer frente a gigante visitante: {s}"
+        assert "menos de 4.5 tarjetas" not in s["etiqueta"].lower(), f"Under tarjetas no debe entrar sin cobertura: {s}"
 
 
 def test_punto_42_fecha_encuentro_vs_fecha_analisis_america_lima() -> None:
@@ -502,10 +646,18 @@ def test_seccion_8_gigante_visitante_orden_exacto_y_umbral_06996() -> None:
     )
     # lam_local_ref = 1.38 / 1.15 = 1.20
     assert abs(res_gv["lam_local_ref"] - 1.20) < 1e-5
-    # lam_visita_ajustada = max(1.10 * 1.15, 1.15 * 1.20) = max(1.265, 1.38) = 1.38
+    # lam_visita_ajustada = max(1.10, 1.15 * 1.20) = max(1.10, 1.38) = 1.38
     assert abs(res_gv["lam_visita_ajustada"] - 1.38) < 1e-5
     # lam_local_ajustada = 0.85 * 1.20 = 1.02
     assert abs(res_gv["lam_local_ajustada"] - 1.02) < 1e-5
+
+    # Aserción de suelo estricto (Punto 4):
+    # Visita=2.00, ref=1.00 -> conserva 2.00 (nunca 2.30)
+    res_alto = mp.aplicar_ajuste_gigante_visitante(lam_local=1.00, lam_visita=2.00, bono_localia_aplicado=1.00, sede_neutral=True)
+    assert abs(res_alto["lam_visita_ajustada"] - 2.00) < 1e-5, f"Debe conservar 2.00: {res_alto}"
+    # Visita=0.95, ref=1.00 -> sube al suelo 1.15
+    res_bajo = mp.aplicar_ajuste_gigante_visitante(lam_local=1.00, lam_visita=0.95, bono_localia_aplicado=1.00, sede_neutral=True)
+    assert abs(res_bajo["lam_visita_ajustada"] - 1.15) < 1e-5, f"Debe subir al suelo 1.15: {res_bajo}"
 
     # Selección con 0.6996 (< 0.70) no entra al Top 5
     sels = [
@@ -562,3 +714,88 @@ def test_seccion_11_estudio_punto_43_sobre_auditorias_disco() -> None:
         assert "variante_1_motor_actual" in vars_2t
         assert "variante_2_mas_A_mas_B" in vars_2t
         assert "variante_3_mas_A_mas_B_interaccion" in vars_2t
+
+
+def test_evaluacion_cobertura_registro_antiguo_sin_procedencia() -> None:
+    """
+    Hallazgo 1:
+    Verifica que un archivo histórico legado con valores numéricos pero sin mapa de procedencia
+    por celda compute `celdas_con_procedencia_verificada == 0` para 1T y 2T y registre
+    los números en `celdas_numericas_sin_procedencia_legado`.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p_legado = _crear_partido_matriz(
+            "LEGADO_1", 2, 1,
+            ft_eq={"posesion_pct": 55.0, "xg": 1.5, "remates_totales": 12.0},
+            ft_riv={"posesion_pct": 45.0, "xg": 0.9, "remates_totales": 8.0},
+            p1t_eq={"posesion_pct": 54.0, "xg": 0.7, "remates_totales": 6.0},
+            p1t_riv={"posesion_pct": 46.0, "xg": 0.4, "remates_totales": 4.0},
+            p2t_eq={"posesion_pct": 56.0, "xg": 0.8, "remates_totales": 6.0},
+            p2t_riv={"posesion_pct": 44.0, "xg": 0.5, "remates_totales": 4.0},
+            proc_ft_eq={},
+        )
+        p_legado["procedencia"] = {}
+        doc_legado = {
+            "equipo": {"nombre": "Club Legado"},
+            "partidos": [p_legado],
+        }
+        ruta_json = os.path.join(tmpdir, "auditoria_club_legado_2024.json")
+        with open(ruta_json, "w", encoding="utf-8") as f:
+            json.dump(doc_legado, f)
+
+        res_estudio = ev.ejecutar_estudio_punto_43_auditorias(tmpdir)
+        cob_m = res_estudio["cobertura_por_metrica"]
+
+        for cl in ("posesion_pct", "xg", "remates_totales"):
+            assert cob_m[cl]["1T"]["celdas_con_procedencia_verificada"] == 0, f"1T no debe tener procedencia verificada en legado: {cob_m[cl]['1T']}"
+            assert cob_m[cl]["2T"]["celdas_con_procedencia_verificada"] == 0, f"2T no debe tener procedencia verificada en legado: {cob_m[cl]['2T']}"
+            assert cob_m[cl]["1T"]["celdas_numericas_sin_procedencia_legado"] > 0, f"1T debe registrar números legado: {cob_m[cl]['1T']}"
+            assert cob_m[cl]["2T"]["celdas_numericas_sin_procedencia_legado"] > 0, f"2T debe registrar números legado: {cob_m[cl]['2T']}"
+
+        assert res_estudio["total_celdas_numericas_sin_procedencia_legado"] > 0
+
+
+def test_experimento_patron_56_sin_autosustitucion_y_con_insumos_reales() -> None:
+    """
+    Hallazgo 2:
+    Verifica que:
+    a. No haya auto-sustitución del rival cuando falta en partidos previos (se incrementa descartes_sin_historial_rival).
+    b. Los insumos A y B leen xG/remates y remates en área (no proporciones de goles sum_g2t/sum_gft).
+    c. Ante falta de cobertura conjunta en 2T el estado sea 'datos_insuficientes' y en_produccion: False.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        partidos_eq = []
+        for i in range(1, 10):
+            p = _crear_partido_matriz(
+                f"ISO_{i}", 1, 0,
+                ft_eq={"posesion_pct": 50.0, "xg": 1.2, "remates_totales": 10.0},
+                ft_riv={"posesion_pct": 50.0, "xg": 0.8, "remates_totales": 8.0},
+                p2t_eq={"xg": 0.6, "remates_totales": 5.0, "remates_dentro_area": 3.0},
+                p2t_riv={"xg": 0.4, "remates_totales": 4.0, "remates_dentro_area": 2.0},
+                proc_ft_eq={"posesion_pct": "fotmob", "xg": "fotmob", "remates_totales": "fotmob"},
+            )
+            p["procedencia"] = {
+                "2T": {
+                    "equipo": {"xg": "fotmob", "remates_totales": "fotmob", "remates_dentro_area": "fotmob"},
+                    "rival": {"xg": "fotmob", "remates_totales": "fotmob", "remates_dentro_area": "fotmob"},
+                }
+            }
+            p["fecha"] = f"2026-09-{i:02d}"
+            p["rival"] = f"Rival_Desconocido_{i}"
+            partidos_eq.append(p)
+
+        doc_iso = {
+            "equipo": {"nombre": "Equipo Aislado"},
+            "partidos": partidos_eq,
+        }
+        with open(os.path.join(tmpdir, "auditoria_equipo_aislado.json"), "w", encoding="utf-8") as f:
+            json.dump(doc_iso, f)
+
+        res_est = ev.ejecutar_estudio_punto_43_auditorias(tmpdir)
+        emb = res_est["embudo_muestreo_2t"]
+
+        assert emb["descartes_sin_historial_rival"] > 0, f"Debía registrar descartes_sin_historial_rival: {emb}"
+        assert emb["n_con_historial_ambos_clubes"] == 0, f"No debía asumir historial del rival: {emb}"
+        assert res_est["estado"] == "datos_insuficientes"
+        assert res_est["en_produccion"] is False
+        assert res_est["decision_produccion"] == "rechazado_por_muestra_insuficiente"

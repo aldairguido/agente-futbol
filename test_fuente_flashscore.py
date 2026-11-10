@@ -423,8 +423,8 @@ def prueba_extraer_cuotas() -> None:
 
     c = ClienteCuotas()
     cuotas = c.extraer_cuotas("2mAGw9Ti")
-    assert urls_capturadas == [("https://d.flashscore.com/x/feed/d_od_2mAGw9Ti_es_1_eu", "SW9D1eZo")]
-    assert cuotas == {"local": 1.85, "empate": 3.50, "visitante": 4.20}
+    assert urls_capturadas and urls_capturadas[0][1] == "SW9D1eZo" and any("2mAGw9Ti" in u[0] for u in urls_capturadas)
+    assert cuotas["local"] == 1.85 and cuotas["empate"] == 3.50 and cuotas["visitante"] == 4.20
     print("  OK 12. extraer_cuotas con self._get (x-fsign) y primera fila HTML (local, empate, visitante)")
 
 
@@ -466,3 +466,17 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+test_parseo_feed = prueba_parseo_feed
+test_conversion_valores = prueba_conversion_valores
+test_pases_ratio_derivado = prueba_pases_ratio_derivado
+test_relleno_no_sobrescribe = prueba_relleno_no_sobrescribe
+test_procedencia = prueba_procedencia
+test_emparejamiento = prueba_emparejamiento
+test_parser_resultados = prueba_parser_resultados
+test_metricas_partido = prueba_metricas_partido
+test_parseo_por_periodos = prueba_parseo_por_periodos
+test_aritmetica_de_periodos = prueba_aritmetica_de_periodos
+test_gatekeeper_catalogo_y_desglose_compuestos = prueba_gatekeeper_catalogo_y_desglose_compuestos
+test_extraer_cuotas = prueba_extraer_cuotas

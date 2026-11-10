@@ -839,14 +839,14 @@ def aplicar_ajuste_gigante_visitante(
          o si no se había aplicado bono de localía).
       2. Definir `lam_local_ref` como la λ local después de retirar el bono de localía y ANTES de
          multiplicar por 0.85.
-      3. Calcular `lam_visita_ajustada = max(lam_visita * 1.15, 1.15 * lam_local_ref)`.
+      3. Calcular `lam_visita_ajustada = max(lam_visita, 1.15 * lam_local_ref)`.
       4. Calcular `lam_local_ajustada = 0.85 * lam_local_ref`.
     """
     lam_l_in = max(0.05, float(lam_local))
     lam_v_in = max(0.05, float(lam_visita))
     bono_ef = float(bono_localia_aplicado) if (not sede_neutral and float(bono_localia_aplicado) > 1.0) else 1.0
     lam_local_ref = lam_l_in / bono_ef
-    lam_visita_ajustada = max(lam_v_in * 1.15, 1.15 * lam_local_ref)
+    lam_visita_ajustada = max(lam_v_in, 1.15 * lam_local_ref)
     lam_local_ajustada = 0.85 * lam_local_ref
     return {
         "lam_local_ref": round(lam_local_ref, 6),
@@ -946,7 +946,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
 
     # ── Sección 8.3: Regla 'Gigante Visitante' con orden exacto de operaciones ──
     if es_gigante_visitante:
-        bono_localia_a_retirar = factor_copa_l if (ajuste_unico_l == factor_copa_l and factor_copa_l > 1.0) else 1.0
+        bono_localia_a_retirar = factor_copa_l if (ajuste_l == factor_copa_l and factor_copa_l > 1.0) else 1.0
         res_gv = aplicar_ajuste_gigante_visitante(
             lam_local=lam_l,
             lam_visita=lam_v,
