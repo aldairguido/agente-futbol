@@ -92,6 +92,52 @@ def cargar_modelos_validados(ruta: Optional[str] = None) -> Dict[str, Any]:
     return modelos
 
 
+def es_celda_observada_valida(
+    fila: Dict[str, Any],
+    periodo: str,
+    partido: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Reglas estrictas de validación de celda observada (Fase 3 / Fallback):
+    1. None no cuenta: si equipo es None, no cuenta como observado.
+    2. Cero publicado sí cuenta: 0 o 0.0 cuenta como métrica observada real.
+    3. estimado=True no suma a observadas: si estimado/es_estimado es True o procedencia es 'estimado', no suma.
+    4. En 1T/2T sin procedencia por celda verificada: no se acredita cobertura de mitades
+       (evita validar repartos sintéticos 50/50 o archivos sin trazabilidad de mitades).
+    """
+    if not isinstance(fila, dict):
+        return False
+    val = fila.get("equipo")
+    if val is None:
+        return False
+    if fila.get("estimado") or fila.get("es_estimado"):
+        return False
+
+    proc_fila = str(fila.get("procedencia") or fila.get("fuente") or "").lower().strip()
+    if proc_fila in ("estimado", "estimacion", "estimacion_modelo", "sintetico", "reparto_50_50", "imputado", "derivado", "derivacion_aritmetica"):
+        return False
+
+    if periodo in ("1T", "2T"):
+        proc_celda = proc_fila
+        if not proc_celda and isinstance(partido, dict):
+            proc_root = partido.get("procedencia")
+            if isinstance(proc_root, dict):
+                proc_per = proc_root.get(periodo)
+                if isinstance(proc_per, dict):
+                    proc_celda = str(proc_per.get("equipo", {}).get(fila.get("clave"), "")).lower().strip()
+                if not proc_celda:
+                    proc_celda = str(proc_root.get("equipo", {}).get(fila.get("clave"), "")).lower().strip()
+            elif isinstance(proc_root, str):
+                proc_celda = proc_root.lower().strip()
+
+        if not proc_celda or proc_celda in (
+            "sin_procedencia", "legado_sin_procedencia", "estimado", "sintetico", "reparto_50_50", "desconocido", "derivado", "derivacion_aritmetica"
+        ):
+            return False
+
+    return True
+
+
 def emparejar_historicos_por_recencia(
     partidos_a: List[Dict[str, Any]],
     partidos_b: List[Dict[str, Any]],
@@ -124,19 +170,38 @@ def emparejar_historicos_por_recencia(
             obs_a: Set[str] = set()
             obs_b: Set[str] = set()
             if pa:
-                obs_a = set((pa.get("resumen_claves") or {}).get(per, {}).get("equipo", []))
+                res_a = (pa.get("resumen_claves") or {}).get(per, {}).get("equipo", [])
+                if res_a:
+                    obs_a = set(res_a)
+                else:
+                    obs_a = {
+                        f.get("clave")
+                        for f in (pa.get("periodos", {}).get(per, {}).get("filas", []))
+                        if f.get("clave") and es_celda_observada_valida(f, per, pa)
+                    }
             if pb:
-                obs_b = set((pb.get("resumen_claves") or {}).get(per, {}).get("equipo", []))
+                res_b = (pb.get("resumen_claves") or {}).get(per, {}).get("equipo", [])
+                if res_b:
+                    obs_b = set(res_b)
+                else:
+                    obs_b = {
+                        f.get("clave")
+                        for f in (pb.get("periodos", {}).get(per, {}).get("filas", []))
+                        if f.get("clave") and es_celda_observada_valida(f, per, pb)
+                    }
 
             comunes = sorted(obs_a & obs_b)
             exclusivas_a = sorted(obs_a - obs_b)
             exclusivas_b = sorted(obs_b - obs_a)
 
+            tiene_m_a = pa.get("goles_equipo") is not None or (isinstance(pa.get("marcador"), dict) and pa.get("marcador", {}).get("equipo") is not None) if pa else False
+            tiene_m_b = pb.get("goles_equipo") is not None or (isinstance(pb.get("marcador"), dict) and pb.get("marcador", {}).get("equipo") is not None) if pb else False
+
             if pa is None or pb is None:
                 uso = "Sin partido emparejado"
             elif comunes:
                 uso = f"A y B usan las mismas {len(comunes)} claves"
-            elif pa.get("goles_equipo") is not None and pb.get("goles_equipo") is not None and per == "FT":
+            elif tiene_m_a and tiene_m_b and per == "FT":
                 uso = "Solo historial de resultados, si hay marcador"
             else:
                 uso = f"Sin comparación estadística en {per} para esta fila"
@@ -287,6 +352,68 @@ def verificar_compatibilidad_modelo(
             )
         return True, "Red 45-DCN compatible con 15 pares completos de 45 variables", pares_45
 
+    # Sub-modelo condicional sin xG (Decisión D1): requiere interruptor encendido, validación cronológica superada
+    # y función ejecutable efectivamente implementada en el sistema (Fail-Closed)
+    if nombre_modelo == "submodelo_goles_sin_xg":
+        if not mod_info.get("permitir_goles_sin_xg", False) or not mod_info.get("validacion_cronologica_superada", False):
+            return (
+                False,
+                "Sub-modelo de goles sin xG bloqueado: interruptor apagado (permitir_goles_sin_xg=false) o validación cronológica walk-forward pendiente",
+                0,
+            )
+        func_path = mod_info.get("funcion_ejecutar", "")
+        func_existe = False
+        if func_path and "." in func_path:
+            mod_name, func_name = func_path.rsplit(".", 1)
+            try:
+                import importlib
+                mod_obj = importlib.import_module(mod_name)
+                func_existe = hasattr(mod_obj, func_name) and callable(getattr(mod_obj, func_name))
+            except Exception:
+                func_existe = False
+        if not func_existe:
+            return (
+                False,
+                f"Sub-modelo de goles sin xG bloqueado: sub-modelo sin xG no implementado (función '{func_path}' no encontrada en el sistema)",
+                0,
+            )
+
+    # Regla base coherente D1 para modelos de mitad (1T/2T) dependientes de goles FT:
+    if mod_info.get("depende_de_modelo_goles_ft"):
+        pares_xg_ft = sum(
+            1 for emp in emparejamientos
+            if emp["hay_partido_a"] and emp["hay_partido_b"]
+            and "xg" in set(emp["periodos"]["FT"]["claves_comunes"])
+        )
+        if mod_info.get("requiere_xg_estricto", True) and pares_xg_ft < min_pares:
+            modelos_cfg = cargar_modelos_validados()
+            submod = modelos_cfg.get("submodelo_goles_sin_xg") or {}
+            sub_path = submod.get("funcion_ejecutar", "")
+            sub_func_existe = False
+            if sub_path and "." in sub_path:
+                mod_name, func_name = sub_path.rsplit(".", 1)
+                try:
+                    import importlib
+                    mod_obj = importlib.import_module(mod_name)
+                    sub_func_existe = hasattr(mod_obj, func_name) and callable(getattr(mod_obj, func_name))
+                except Exception:
+                    sub_func_existe = False
+            submod_on = bool(
+                submod.get("permitir_goles_sin_xg")
+                and submod.get("validacion_cronologica_superada")
+                and sub_func_existe
+            )
+            if not submod_on:
+                if submod.get("permitir_goles_sin_xg") and not sub_func_existe:
+                    motivo_sub = "sub-modelo sin xG no implementado"
+                else:
+                    motivo_sub = "sub-modelo sin xG no validado (permitir_goles_sin_xg=false)"
+                return (
+                    False,
+                    f"Modelo de {periodo_req} bloqueado por coherencia con FT: falta xG oficial y {motivo_sub}",
+                    pares_xg_ft,
+                )
+
     # Conteo de pares con insumos completos para el modelo específico
     n_pares_completos = 0
     for emp in emparejamientos:
@@ -297,7 +424,9 @@ def verificar_compatibilidad_modelo(
 
         # Si el modelo requiere 'goles', verificar que ambos partidos tengan marcador
         if "goles" in vars_req:
-            if pa.get("goles_equipo") is None or pb.get("goles_equipo") is None:
+            tiene_m_a = pa.get("goles_equipo") is not None or (isinstance(pa.get("marcador"), dict) and pa.get("marcador", {}).get("equipo") is not None)
+            tiene_m_b = pb.get("goles_equipo") is not None or (isinstance(pb.get("marcador"), dict) and pb.get("marcador", {}).get("equipo") is not None)
+            if not (tiene_m_a and tiene_m_b):
                 continue
 
         vars_stats = {v for v in vars_req if v != "goles"}
@@ -309,9 +438,10 @@ def verificar_compatibilidad_modelo(
 
     if n_pares_completos < min_pares:
         faltantes = [v for v in sorted(vars_req) if v != "goles"]
+        msg_faltantes = " (falta xG oficial)" if ("xg" in faltantes and n_pares_completos == 0) else ""
         return (
             False,
-            f"Cobertura insuficiente para {mod_info.get('nombre', nombre_modelo)}: {n_pares_completos}/{min_pares} pares completos requeridos",
+            f"Cobertura insuficiente para {mod_info.get('nombre', nombre_modelo)}: {n_pares_completos}/{min_pares} pares completos requeridos{msg_faltantes}",
             n_pares_completos,
         )
 

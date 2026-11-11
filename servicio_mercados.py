@@ -742,8 +742,10 @@ def obtener_top5_y_seccion1_filtrados(
     if isinstance(umbral_val, (int, float)) and umbral_val > 1.0:
         umbral_val = umbral_val / 100.0
 
-    eq_l = str(meta.get("equipo_local") or "Local")
-    eq_v = str(meta.get("equipo_visitante") or "Visitante")
+    eq_l_raw = meta.get("equipo_local") or "Local"
+    eq_l = str(eq_l_raw.get("nombre") or eq_l_raw.get("nombre_oficial") or "Local") if isinstance(eq_l_raw, dict) else str(eq_l_raw)
+    eq_v_raw = meta.get("equipo_visitante") or "Visitante"
+    eq_v = str(eq_v_raw.get("nombre") or eq_v_raw.get("nombre_oficial") or "Visitante") if isinstance(eq_v_raw, dict) else str(eq_v_raw)
 
     sels_raw = _val(analisis, "selecciones_filtradas", []) or []
     if not sels_raw and hasattr(analisis, "grupos"):

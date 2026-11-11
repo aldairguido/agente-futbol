@@ -2733,8 +2733,10 @@ def generar_cuadro_auditoria_15_partidos_png(
     n_base = max(15, n_tot_l, n_tot_v)
     k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
 
-    if k_eval == 0 or tot_goles_c == 0:
-        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval}/{n_base} partidos evaluables)"
+    if k_eval == 0:
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval} de {n_base} partidos con cronología verificada)"
+    elif tot_goles_c == 0:
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin goles en ningún tramo ({k_eval} de {n_base} partidos con cronología verificada)"
     elif (g_76_l + g_76_v) > 0 and k_eval >= 3:
         txt_alerta_c = f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles ({k_eval}/{n_base} partidos evaluables)"
     else:

@@ -55,41 +55,51 @@ modelos:
       - "xgot_enfrentado"
       - "goles_evitados"
       - "saques_puerta"
-    min_claves_comunes_ft: 45
-    min_pares_con_dato: 15
+    min_claves_comunes_ft: 45  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 15  # regla operativa, sin validación cronológica
     cobertura_cronologica: [15]
     funcion_ejecutar: "motor_recursivo_45_dcn.ejecutar_red_45"
     permite_imputacion: false
 
   poisson_bivariado_goles:
     nombre: "Modelo Bivariado de Goles (Poisson / Dixon-Coles)"
-    mercados: ["1X2", "mas_menos_goles", "ambos_marcan", "marcador_exacto"]
+    mercados: ["1X2", "handicap", "doble_oportunidad", "mas_menos_goles", "ambos_marcan", "marcador_exacto"]
     variables_requeridas:
       - "goles"
       - "xg"
       - "remates_puerta"
-    min_claves_comunes_ft: 2
-    min_pares_con_dato: 8
+    min_claves_comunes_ft: 2  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_poisson_bivariado"
     permite_imputacion: false
-    # ──────────────────────────────────────────────────────────────────────────
-    # PARÁMETRO DE DECISIÓN OPERATIVA EN LIGAS SIN xG (ej. Copa AUF, Copa Colombia):
-    # - Si 'requiere_xg_estricto: true': En torneos sin cobertura xG oficial en
-    #   Flashscore/FotMob, el modelo bivariado de goles queda BLOQUEADO (1X2, goles FT,
-    #   ambos marcan). Quedan habilitados únicamente córneres, tarjetas y 1T/2T.
-    # - Si 'requiere_xg_estricto: false': En ausencia de xG oficial, se permite
-    #   evaluar el modelo de goles y 1X2 utilizando únicamente 'goles' y 'remates_puerta'.
-    # ──────────────────────────────────────────────────────────────────────────
+    # Coherencia estricta D1: En torneos sin xG oficial (ej. Copa AUF, Copa Colombia),
+    # el modelo de goles queda BLOQUEADO salvo que permitir_goles_sin_xg esté encendido.
     requiere_xg_estricto: true
+
+  submodelo_goles_sin_xg:
+    nombre: "Sub-modelo Condicional de Goles sin xG (Goles + Remates a Puerta + Remates Totales)"
+    mercados: ["1X2", "handicap", "doble_oportunidad", "mas_menos_goles", "ambos_marcan", "marcador_exacto"]
+    variables_requeridas:
+      - "goles"
+      - "remates_puerta"
+      - "remates_totales"
+    min_claves_comunes_ft: 2  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_poisson_sin_xg"
+    permite_imputacion: false
+    # Interruptor único D1: apagado por defecto hasta validación cronológica walk-forward
+    permitir_goles_sin_xg: false
+    validacion_cronologica_superada: false
 
   modelo_mercado_corners:
     nombre: "Modelo de Saques de Esquina (Poisson Univariado)"
     mercados: ["corners_totales", "corners_equipo"]
     variables_requeridas:
       - "corners"
-    min_claves_comunes_ft: 1
-    min_pares_con_dato: 8
+    min_claves_comunes_ft: 1  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_mercado_corners"
     permite_imputacion: false
@@ -99,8 +109,8 @@ modelos:
     mercados: ["tarjetas_totales", "tarjetas_equipo"]
     variables_requeridas:
       - "tarjetas_amarillas"
-    min_claves_comunes_ft: 1
-    min_pares_con_dato: 8
+    min_claves_comunes_ft: 1  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_mercado_tarjetas"
     permite_imputacion: false
@@ -112,11 +122,14 @@ modelos:
       - "goles"
       - "remates_puerta"
     periodo: "1T"
-    min_claves_comunes_periodo: 2
-    min_pares_con_dato: 8
+    min_claves_comunes_periodo: 2  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_mercado_1t"
     permite_imputacion: false
+    # Coherencia estricta D1: depende de la validez del modelo de goles FT
+    depende_de_modelo_goles_ft: true
+    requiere_xg_estricto: true
 
   modelo_mercado_2t:
     nombre: "Modelo de Segundo Tiempo (Mitad 2T)"
@@ -125,8 +138,11 @@ modelos:
       - "goles"
       - "remates_puerta"
     periodo: "2T"
-    min_claves_comunes_periodo: 2
-    min_pares_con_dato: 8
+    min_claves_comunes_periodo: 2  # regla operativa, sin validación cronológica
+    min_pares_con_dato: 8  # regla operativa, sin validación cronológica
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_mercado_2t"
     permite_imputacion: false
+    # Coherencia estricta D1: depende de la validez del modelo de goles FT
+    depende_de_modelo_goles_ft: true
+    requiere_xg_estricto: true

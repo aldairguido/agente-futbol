@@ -111,9 +111,17 @@ class DecisionCobertura:
         }
 
 
+def _extraer_nombre_club(val: Any) -> str:
+    if isinstance(val, dict):
+        return str(val.get("nombre") or val.get("nombre_oficial") or val.get("equipo") or "Equipo")
+    if val is None:
+        return "Equipo"
+    return str(val)
+
+
 def _extraer_metadatos_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     resumen = doc.get("resumen_auditoria") or doc.get("resumen") or doc
-    nombre = doc.get("equipo") or doc.get("nombre") or resumen.get("equipo") or "Equipo"
+    nombre = _extraer_nombre_club(doc.get("equipo") or doc.get("nombre") or resumen.get("equipo"))
 
     estado_identidad = doc.get("estado_identidad") or doc.get("estado") or "verificado"
     if doc.get("identidad_verificada") is False:
@@ -216,8 +224,8 @@ def evaluar_decision_cobertura(
             estado="historial_oficial_incompleto",
             publicar_probabilidades=False,
             alerta_descriptiva=(
-                f"Historial oficial incompleto: {meta_a['n_oficiales']}/{min_oficiales} partidos para {eq_a} "
-                f"y {meta_b['n_oficiales']}/{min_oficiales} para {eq_b}. "
+                f"Historial oficial incompleto: {eq_a}: {meta_a['n_oficiales']}/{min_oficiales} · "
+                f"{eq_b}: {meta_b['n_oficiales']}/{min_oficiales}. "
                 f"Se requiere un historial completo de {min_oficiales} partidos oficiales por club."
             ),
             etiqueta_cobertura_a=etq_a,
@@ -310,9 +318,10 @@ def evaluar_decision_cobertura(
     motivos_bloqueo: Dict[str, str] = {}
     modelos_activos: Dict[str, str] = {}
 
-    # Mercado 1X2 / Handicap / Doble Oportunidad:
+        # Mercado 1X2 / Handicap / Doble Oportunidad:
     # Prioridad 1: red_recursiva_45_dcn (si tiene 15 pares de 45 métricas)
     # Alternativa validada: poisson_bivariado_goles (si tiene >= 8 pares de goles/xg/remates_puerta)
+    # Sub-modelo condicional sin xG (si está habilitado y validado)
     if modelos_hab.get("red_recursiva_45_dcn"):
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = True
@@ -321,20 +330,36 @@ def evaluar_decision_cobertura(
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = True
             modelos_activos[m] = "poisson_bivariado_goles"
+    elif modelos_hab.get("submodelo_goles_sin_xg"):
+        for m in ("1X2", "handicap", "doble_oportunidad"):
+            mercados_habilitados[m] = True
+            modelos_activos[m] = "submodelo_goles_sin_xg"
     else:
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = False
-            motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or motivos_mod.get("red_recursiva_45_dcn") or "Sin modelo de resultado habilitado"
+            motivo_sub = motivos_mod.get("submodelo_goles_sin_xg")
+            if motivo_sub and "no implementado" in motivo_sub:
+                motivos_bloqueo[m] = motivo_sub
+            else:
+                motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or motivos_mod.get("red_recursiva_45_dcn") or "Sin modelo de resultado habilitado"
 
-    # Goles FT: poisson_bivariado_goles
+    # Goles FT: poisson_bivariado_goles / submodelo_goles_sin_xg
     if modelos_hab.get("poisson_bivariado_goles"):
         for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
             mercados_habilitados[m] = True
             modelos_activos[m] = "poisson_bivariado_goles"
+    elif modelos_hab.get("submodelo_goles_sin_xg"):
+        for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
+            mercados_habilitados[m] = True
+            modelos_activos[m] = "submodelo_goles_sin_xg"
     else:
         for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
             mercados_habilitados[m] = False
-            motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or "Insumos insuficientes para modelo bivariado de goles"
+            motivo_sub = motivos_mod.get("submodelo_goles_sin_xg")
+            if motivo_sub and "no implementado" in motivo_sub:
+                motivos_bloqueo[m] = motivo_sub
+            else:
+                motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or "Insumos insuficientes para modelo bivariado de goles" 
 
     # Córneres: modelo_mercado_corners
     if modelos_hab.get("modelo_mercado_corners"):
@@ -375,6 +400,28 @@ def evaluar_decision_cobertura(
         for m in ("goles_2t", "1x2_2t"):
             mercados_habilitados[m] = False
             motivos_bloqueo[m] = motivos_mod.get("modelo_mercado_2t") or "Menos de 8 pares con datos de 2T observados"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # REGLA BASE COHERENTE D1 (Coherencia Estricta de Mercados de Goles):
+    # Todos los mercados dependientes de goles (1X2, handicap, doble oportunidad,
+    # más/menos FT, ambos marcan, marcador exacto, goles 1T, 1x2 1T, goles 2T y 1x2 2T)
+    # se rigen por la misma regla estricta. Queda prohibido publicar goles_1t y
+    # goles_2t cuando los goles FT están bloqueados por falta de xG.
+    # ─────────────────────────────────────────────────────────────────────────
+    goles_ft_habilitados = bool(mercados_habilitados.get("mas_menos_goles") or mercados_habilitados.get("1X2"))
+    if not goles_ft_habilitados:
+        motivo_ft = (
+            motivos_bloqueo.get("mas_menos_goles")
+            or motivos_bloqueo.get("1X2")
+            or motivos_mod.get("poisson_bivariado_goles")
+            or "Modelo de goles FT no habilitado"
+        )
+        for m in ("goles_1t", "1x2_1t"):
+            mercados_habilitados[m] = False
+            motivos_bloqueo[m] = f"Mercado de 1T bloqueado por coherencia estricta con FT: {motivo_ft}"
+        for m in ("goles_2t", "1x2_2t"):
+            mercados_habilitados[m] = False
+            motivos_bloqueo[m] = f"Mercado de 2T bloqueado por coherencia estricta con FT: {motivo_ft}"
 
     # 4c: Si ningún mercado pudo habilitarse
     n_hab = sum(1 for v in mercados_habilitados.values() if v)

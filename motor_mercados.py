@@ -573,7 +573,8 @@ def extraer_muestra(doc: dict[str, Any], condicion: str | None = None,
     `media` del proyecto no cambia. La media corregida queda en
     `MuestraMetrica.media_ponderada`, junto a la bruta, para poder declarar ambas.
     """
-    nombre = (doc.get("equipo") or {}).get("nombre") or doc.get("equipo_solicitado", "equipo")
+    eq_val = doc.get("equipo")
+    nombre = eq_val if isinstance(eq_val, str) else ((eq_val or {}).get("nombre") or doc.get("equipo_solicitado", "equipo"))
     muestra = MuestraEquipo(equipo=nombre)
     hubo_partidos_sin_stats = False
 
@@ -1101,9 +1102,11 @@ class MotorMercados:
         self.clusters: dict[str, Any] = {}
         # Factores latentes de la Arquitectura Híbrida (XAI)
         self.xai_factores: dict[str, Any] = {}
-        self.nombre_local = participante_local or (doc_local.get("equipo") or {}).get("nombre") or "Local"
+        eq_l = doc_local.get("equipo")
+        self.nombre_local = participante_local or (eq_l if isinstance(eq_l, str) else (eq_l or {}).get("nombre")) or "Local"
+        eq_v = doc_visitante.get("equipo")
         self.nombre_visitante = (participante_visitante
-                                 or (doc_visitante.get("equipo") or {}).get("nombre")
+                                 or (eq_v if isinstance(eq_v, str) else (eq_v or {}).get("nombre"))
                                  or "Visitante")
 
     # ── preparación ────────────────────────────────────────────────────────

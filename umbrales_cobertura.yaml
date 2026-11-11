@@ -1,13 +1,24 @@
 # ==============================================================================
-# UMBRALES DE COBERTURA Y DECISIÓN (SPEC 44-45 SECCIÓN 5 Y PARTE D)
-# Archivo de configuración editable para la función pura de cobertura.
+# UMBRALES OFICIALES UNIFICADOS DE COBERTURA Y DECISIÓN (D2 - FUENTE ÚNICA DE VERDAD)
+# Puntos 44 y 45: Auditoría de Cobertura Comparable y Bloqueo sin Evidencia.
 # ==============================================================================
 
 umbrales:
-  min_partidos_oficiales: 15
-  min_partidos_con_detalle_por_equipo: 3
-  min_filas_emparejadas: 3
-  min_claves_comunes_ft: 5
-  min_pares_mercado: 8
-  min_pares_red_45: 15
-  min_claves_comunes_red_45: 45
+  # Historial oficial estricto por club (15P oficiales completos, cero amistosos)
+  min_partidos_oficiales: 15  # validación empírica de estabilidad temporal de ratings
+
+  # Umbral mínimo de partidos con detalle FT por equipo (ej. Caso Tavernes: 2 < 3)
+  min_partidos_con_detalle_por_equipo: 3  # regla operativa, sin validación cronológica
+
+  # Umbral mínimo de filas emparejadas con detalle estadístico comparable
+  min_filas_emparejadas: 3  # regla operativa, sin validación cronológica
+
+  # Umbral mínimo de métricas comunes en FT para calificar una fila como comparable
+  min_claves_comunes_ft: 5  # regla operativa, sin validación cronológica
+
+  # Mínimo de pares emparejados con dato observado para habilitar un modelo de mercado
+  min_pares_mercado: 8  # regla operativa, sin validación cronológica
+
+  # Umbral de activación para la red completa 45-DCN
+  min_pares_red_45: 15  # regla operativa, sin validación cronológica
+  min_claves_comunes_red_45: 45  # regla operativa, sin validación cronológica
