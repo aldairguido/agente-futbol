@@ -2043,7 +2043,7 @@ def generar_cuadro_visual_partido(
                 "probabilidad_pct": f"{p_adj_1_fb:.1f}%",
                 "prob_base_poisson": round(p_dc_fav, 1),
                 "prob_ajustada_ticket": round(p_adj_1_fb, 1),
-                "badge_completo": f"{p_adj_1_fb:.1f}% (SÓLIDA · EV +5.4% · Stake: 2.6%)",
+                "badge_completo": f"{p_adj_1_fb:.1f}% (SÓLIDA · Cuota Mín: {1.05 / max(0.05, p_adj_1_fb / 100.0):.2f})",
                 "nota_calibracion": nota_fb,
                 "estado": "mantiene",
                 "respaldo": f"Respaldo ADN: λ Red {lam_local:.2f} vs {lam_vis:.2f} con dominio de área.",
@@ -2055,7 +2055,7 @@ def generar_cuadro_visual_partido(
                 "etiqueta": f"Goles Totales (FT): {'+1.5 Goles' if (p_o25 >= 45) else '-3.5 Goles'}",
                 "probabilidad": 0.82 if (p_o25 >= 45) else 0.76,
                 "probabilidad_pct": "82.0%" if (p_o25 >= 45) else "76.0%",
-                "badge_completo": "82.0% (SÓLIDA · EV +4.8% · Stake: 2.3%)" if (p_o25 >= 45) else "76.0% (SÓLIDA · EV +4.5% · Stake: 2.1%)",
+                "badge_completo": "82.0% (SÓLIDA · Cuota Mín: 1.28)" if (p_o25 >= 45) else "76.0% (SÓLIDA · Cuota Mín: 1.38)",
                 "nota_calibracion": nota_fb,
                 "estado": "mantiene",
                 "respaldo": f"Respaldo ADN: Expectativa combinada λ={lam_local + lam_vis:.2f} goles.",
@@ -2067,7 +2067,7 @@ def generar_cuadro_visual_partido(
                 "etiqueta": f"Goles {eq_fav} (FT): +0.5 Goles",
                 "probabilidad": 0.85,
                 "probabilidad_pct": "85.0%",
-                "badge_completo": "85.0% (SÓLIDA · EV +5.1% · Stake: 2.5%)",
+                "badge_completo": "85.0% (SÓLIDA · Cuota Mín: 1.24)",
                 "nota_calibracion": nota_fb,
                 "estado": "mantiene",
                 "respaldo": f"Respaldo ADN: {eq_fav} promedia volumen ofensivo superior.",
@@ -2079,7 +2079,7 @@ def generar_cuadro_visual_partido(
                 "etiqueta": "Córneres Totales (FT): +7.5 Córn.",
                 "probabilidad": 0.78,
                 "probabilidad_pct": "78.0%",
-                "badge_completo": "78.0% (SÓLIDA · EV +4.6% · Stake: 2.2%)",
+                "badge_completo": "78.0% (SÓLIDA · Cuota Mín: 1.35)",
                 "nota_calibracion": nota_fb,
                 "estado": "mantiene",
                 "respaldo": "Respaldo ADN: Proyección respaldada por volumen de centros y área.",
@@ -2091,7 +2091,7 @@ def generar_cuadro_visual_partido(
                 "etiqueta": f"Ambos Equipos Anotan (FT): {'No' if p_btts < 50 else 'Sí'}",
                 "probabilidad": max(p_btts, 100.0 - p_btts) / 100.0,
                 "probabilidad_pct": f"{max(p_btts, 100.0 - p_btts):.1f}%",
-                "badge_completo": f"{max(p_btts, 100.0 - p_btts):.1f}% (SÓLIDA · EV +4.4% · Stake: 2.0%)",
+                "badge_completo": f"{max(p_btts, 100.0 - p_btts):.1f}% (SÓLIDA · Cuota Mín: {1.05 / max(0.05, max(p_btts, 100.0 - p_btts) / 100.0):.2f})",
                 "nota_calibracion": nota_fb,
                 "estado": "mantiene",
                 "respaldo": f"Respaldo ADN: Tasas ofensivas y solidez en transición.",
@@ -2164,9 +2164,13 @@ def generar_cuadro_visual_partido(
 
         pct_val = item.get("probabilidad_pct") or f"{float(item.get('probabilidad', 0.0))*100:.1f}%"
         est_txt = "SÓLIDA" if item.get("estado") == "mantiene" else "SENSIBLE"
-        ev_p = float(item.get("ev_pct", 4.8) or 4.8)
-        stk_p = float(item.get("stake_sugerido_pct", 2.4) or 2.4)
-        pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · EV {ev_p:+.1f}% · Stake: {stk_p:.1f}%)")
+        ev_p = item.get("ev_pct")
+        stk_p = item.get("stake_sugerido_pct")
+        c_min = float(item.get("cuota_minima", 1.05 / max(0.05, float(item.get("probabilidad", 0.75)))) or 1.25)
+        if ev_p is not None and stk_p is not None:
+            pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · EV {float(ev_p):+.1f}% · Stake: {float(stk_p):.1f}%)")
+        else:
+            pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · Cuota Mín: {c_min:.2f})")
         rect_pill = FancyBboxPatch((0.708, y_f - 0.105), 0.280, 0.09, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_top5.transAxes)
         ax_top5.add_patch(rect_pill)
         ax_top5.text(0.848, y_f - 0.06, pill_txt, ha="center", va="center", fontsize=7.3, fontweight="bold", color="#1B5E20", transform=ax_top5.transAxes)
@@ -2640,11 +2644,13 @@ def generar_cuadro_auditoria_15_partidos_png(
         n_tot = max(1, int(cb.get("total_partidos") or total_def or 15))
         for k in claves:
             val = cb.get(k)
-            if (isinstance(val, dict) or hasattr(val, "get")) and ("str" in val or "pct" in val or "conteo" in val):
+            if isinstance(val, dict) or hasattr(val, "get"):
+                if bool(val.get("sin_dato", False)) or str(val.get("str", "")).strip() == "sin dato":
+                    return "sin dato", 0.0
                 c = int(val.get("conteo", 0))
                 tot_fila = int(val.get("total", val.get("n_con_dato", n_tot)) or 0)
                 if tot_fila <= 0:
-                    return "0/0 (sin partidos evaluables)", 0.0
+                    return "sin dato", 0.0
                 s = str(val.get("str") or f"{c}/{tot_fila}")
                 p = float(val.get("pct", round(100.0 * c / tot_fila, 1)))
                 return f"{s}  ({p:.1f}%)", p
@@ -2652,8 +2658,7 @@ def generar_cuadro_auditoria_15_partidos_png(
                 c = int(val)
                 p = round(100.0 * c / n_tot, 1)
                 return f"{c}/{n_tot}  ({p:.1f}%)", p
-        return f"0/{n_tot}  (0.0%)", 0.0
-
+        return "sin dato", 0.0
     filas_b_spec = [
         ("Victorias (Ganador FT)", ("victorias",)),
         ("Sin derrotas (Doble Oportunidad 1X / X2)", ("sin_derrotas",)),
@@ -2670,14 +2675,18 @@ def generar_cuadro_auditoria_15_partidos_png(
         ax.add_patch(Rectangle((0.0, y_b), 1.0, 0.0195, facecolor=bg_b, edgecolor="#CBD5E1", lw=0.6, transform=ax.transAxes))
         str_l, pct_l = _extraer_celda_b(cuadro_b_L, claves_b, len(lista_L) or 15)
         str_v, pct_v = _extraer_celda_b(cuadro_b_V, claves_b, len(lista_V) or 15)
-        prom_b = 0.5 * (pct_l + pct_v)
-        lect_b = "ALTA (>=65%)" if prom_b >= 65.0 else ("MEDIA (45-64%)" if prom_b >= 45.0 else "BAJA (<45%)")
-        col_lect = "#1B5E20" if prom_b >= 65.0 else ("#92400E" if prom_b >= 45.0 else "#475569")
-
+        if str_l == "sin dato" and str_v == "sin dato":
+            txt_res_b = "sin dato"
+            col_lect = "#64748B"
+        else:
+            prom_b = 0.5 * (pct_l + pct_v)
+            lect_b = "ALTA (>=65%)" if prom_b >= 65.0 else ("MEDIA (45-64%)" if prom_b >= 45.0 else "BAJA (<45%)")
+            col_lect = "#1B5E20" if prom_b >= 65.0 else ("#92400E" if prom_b >= 45.0 else "#475569")
+            txt_res_b = f"{prom_b:.0f}% · {lect_b}"
         ax.text(0.02, y_b + 0.0098, et_b, fontsize=7.2, fontweight="bold", color="#0F172A", va="center", transform=ax.transAxes)
         ax.text(0.46, y_b + 0.0098, str_l, fontsize=7.2, color="#1E293B", ha="center", va="center", transform=ax.transAxes)
         ax.text(0.70, y_b + 0.0098, str_v, fontsize=7.2, color="#1E293B", ha="center", va="center", transform=ax.transAxes)
-        ax.text(0.90, y_b + 0.0098, f"{prom_b:.0f}% · {lect_b}", fontsize=7.1, fontweight="bold", color=col_lect, ha="center", va="center", transform=ax.transAxes)
+        ax.text(0.90, y_b + 0.0098, txt_res_b, fontsize=7.1, fontweight="bold", color=col_lect, ha="center", va="center", transform=ax.transAxes)
 
     # ── BLOQUE 3: CUADRO C — DISTRIBUCIÓN DE GOLES POR FRANJA DE 15 MINUTOS (y: 0.205 .. 0.365) ──
     rect_ban_c = FancyBboxPatch((0.0, 0.340), 1.0, 0.025, boxstyle="round,pad=0.005", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax.transAxes)
@@ -2694,6 +2703,14 @@ def generar_cuadro_auditoria_15_partidos_png(
         ax.text(x_t, 0.326, t_lbl, fontsize=7.2, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
     ax.text(0.96, 0.326, "TOTAL", fontsize=7.2, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
 
+    # Punto 44, 45 y Auditoría Londrina-Náutico: Denominador real de Cuadro C (umbral k_eval >= 10)
+    n_ev_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_ev_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
+    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
+    n_base = max(15, n_tot_l, n_tot_v)
+    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+
     filas_c_data = [
         (f"{eq_L} — Anotados (GF)", (cuadro_c_L.get("anotados") or {}), "#E8F5EE", "#1B5E20"),
         (f"{eq_L} — Recibidos (GC)", (cuadro_c_L.get("recibidos") or {}), "#FFFFFF", "#334155"),
@@ -2709,14 +2726,16 @@ def generar_cuadro_auditoria_15_partidos_png(
             v_t = int(round(float(d_tramos.get(t_lbl, 0))))
             tot_flujo += v_t
             es_76_90 = (t_lbl == "76'-90'")
-            ax.text(x_t, y_c + 0.0102, str(v_t), fontsize=7.4, fontweight=("bold" if es_76_90 else "normal"),
-                    color=("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c), ha="center", va="center", transform=ax.transAxes)
-        ax.text(0.96, y_c + 0.0102, str(tot_flujo), fontsize=7.4, fontweight="bold", color="#0F172A", ha="center", va="center", transform=ax.transAxes)
+            txt_celda = "—" if k_eval < 10 else str(v_t)
+            col_celda = "#64748B" if k_eval < 10 else ("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c)
+            ax.text(x_t, y_c + 0.0102, txt_celda, fontsize=7.4, fontweight=("bold" if es_76_90 and k_eval >= 10 else "normal"),
+                    color=col_celda, ha="center", va="center", transform=ax.transAxes)
+        txt_tot_c = "—" if k_eval < 10 else str(tot_flujo)
+        ax.text(0.96, y_c + 0.0102, txt_tot_c, fontsize=7.4, fontweight="bold", color=("#64748B" if k_eval < 10 else "#0F172A"), ha="center", va="center", transform=ax.transAxes)
 
     g_76_l = int(round(float((cuadro_c_L.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get("76'-90'", 0))))
     g_76_v = int(round(float((cuadro_c_V.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get("76'-90'", 0))))
-    
-    # Punto 38 & 44: Denominador real de Cuadro C (evitar máximo peligro ficticio si no hay goles o eventos)
+
     tot_goles_c = 0
     tramos_totales = {}
     for t_k in tramos_c:
@@ -2725,15 +2744,7 @@ def generar_cuadro_auditoria_15_partidos_png(
         tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
         tot_goles_c += (g_l + g_v)
 
-    # Punto 44 y 45 (Etapa 1.3): Denominador real de Cuadro C y supresión de alerta de máximo peligro sin minutos
-    n_ev_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0))
-    n_ev_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0))
-    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
-    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
-    n_base = max(15, n_tot_l, n_tot_v)
-    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
-
-    if k_eval == 0:
+    if k_eval < 10:
         txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval} de {n_base} partidos con cronología verificada)"
     elif tot_goles_c == 0:
         txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin goles en ningún tramo ({k_eval} de {n_base} partidos con cronología verificada)"
@@ -2743,7 +2754,6 @@ def generar_cuadro_auditoria_15_partidos_png(
         max_tramo = max(tramos_c, key=lambda k: tramos_totales[k][2])
         g_l_max, g_v_max, g_tot_max = tramos_totales[max_tramo]
         txt_alerta_c = f"CRONOLOGÍA (CUADRO C): Mayor flujo en {max_tramo}  ·  Flujo {eq_L}: {g_l_max} goles  |  Flujo {eq_V}: {g_v_max} goles ({k_eval}/{n_base} partidos evaluables)"
-
     rect_pie_c = FancyBboxPatch((0.0, 0.205), 1.0, 0.022, boxstyle="round,pad=0.005", facecolor="#FEF6E4", edgecolor="#D97706", lw=0.9, transform=ax.transAxes)
     ax.add_patch(rect_pie_c)
     ax.text(
@@ -2823,11 +2833,11 @@ def generar_cuadro_auditoria_15_partidos_png(
     y_ver_start = 0.145
     for idx_v, c_txt in enumerate(conclusiones_4):
         y_curr_v = y_ver_start - idx_v * 0.0355
-        txt_env = "\n".join(textwrap.wrap(_sanear_para_canvas(c_txt), width=148)[:2])
+        txt_env = "\n".join(textwrap.wrap(_sanear_para_canvas(c_txt), width=160)[:3])
         ax.text(
             0.016, y_curr_v,
             txt_env,
-            fontsize=7.0, color="#0F172A", fontweight=("bold" if idx_v == 0 else "normal"),
+            fontsize=6.8, color="#0F172A", fontweight=("bold" if idx_v == 0 else "normal"),
             va="center", linespacing=1.18, transform=ax.transAxes
         )
 

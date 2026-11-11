@@ -1245,6 +1245,7 @@ class MotorMercados:
                 "reportes. Los mercados de goles quedan como datos insuficientes.")
         else:
             self.matriz_ft, self.residual_ft = matriz_marcadores(lam_l, lam_v, rho=self.p.rho)
+            self.matriz_ft_base_poisson = [row[:] for row in self.matriz_ft]
             if self.residual_ft > MASA_RESIDUAL_MAXIMA:
                 self.notas.append(
                     f"Masa residual de la matriz FT = {self.residual_ft:.2e} (> tolerancia).")
@@ -1598,11 +1599,33 @@ class MotorMercados:
                 cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
             )
 
+            lam_l_red_orig = lam_l_red
+            lam_v_red_orig = lam_v_red
             if abs(lam_l_nuevo - lam_l_red) > 0.01 or abs(lam_v_nuevo - lam_v_red) > 0.01:
                 lam_l_red = round(max(0.25, min(4.20, lam_l_nuevo)), 2)
                 lam_v_red = round(max(0.25, min(4.20, lam_v_nuevo)), 2)
                 resultado["lambda_local_recursivo"] = lam_l_red
                 resultado["lambda_visita_recursivo"] = lam_v_red
+                try:
+                    lam_base_l = float(resultado.get("lambda_base_local", self.tasas.lambda_local_ft) or 1.0)
+                    lam_base_v = float(resultado.get("lambda_base_visita", self.tasas.lambda_visitante_ft) or 1.0)
+                    fac_red_l = (lam_l_red_orig / max(0.01, lam_base_l)) - 1.0
+                    fac_fin_l = (lam_l_red / max(0.01, lam_l_red_orig)) - 1.0
+                    fac_red_v = (lam_v_red_orig / max(0.01, lam_base_v)) - 1.0
+                    fac_fin_v = (lam_v_red / max(0.01, lam_v_red_orig)) - 1.0
+                    linea_lam = (
+                        f"λ Plano ({lam_base_l:.2f} - {lam_base_v:.2f}) -> "
+                        f"λ Red ({lam_l_red_orig:.2f} [{fac_red_l:+.1%}] - {lam_v_red_orig:.2f} [{fac_red_v:+.1%}]) -> "
+                        f"λ Final ({lam_l_red:.2f} [{fac_fin_l:+.1%}] - {lam_v_red:.2f} [{fac_fin_v:+.1%}])"
+                    )
+                    sello_prev = str(resultado.get("sello_verificacion_visual") or "")
+                    if "λ Base (" in sello_prev and chr(10) in sello_prev:
+                        partes_sello = sello_prev.split(chr(10), 1)
+                        import re
+                        primera_linea = re.sub(r"λ Base \([^)]+\) -> λ Red \([^)]+\)", linea_lam, partes_sello[0])
+                        resultado["sello_verificacion_visual"] = primera_linea + chr(10) + partes_sello[1]
+                except Exception:
+                    pass
                 try:
                     from motor_recursivo_45_dcn import reescalar_factores_a_delta
                     ct = resultado.get("cruces_tacticos")
@@ -2271,26 +2294,18 @@ class MotorMercados:
             factor_bloqueo = 0.60 + 0.20 * (centros / 18.0) + 0.20 * ((bloq_riv + (desp_riv / 8.0)) / 5.0)
             p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
             factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
-            factor_bloqueo = max(0.76, min(1.18, factor_bloqueo))
-
-            # Ajuste dinámico por guion de marcador proyectado:
             diff_lam = lam_p - lam_r
             if diff_lam >= 0.55 and bloq_riv < 2.2:
-                # Favorito claro ante rival que no bloquea tiros anota temprano -> -10% córneres
-                factor_bloqueo *= 0.90
+                factor_bloqueo *= 0.94
             elif abs(diff_lam) <= 0.35 and centros >= 20.0:
-                # Duelo parejo cerrado en 1T con equipo de alto volumen de centros -> +8% por asedio
-                factor_bloqueo *= 1.08
-
-            # Ajuste a) y Punto 24a: Regla de Córneres vs. Volumen de Remates y "Embudo Interior":
-            # Si remates_totales > 15.0 O (remates_area_local + remates_area_visita) > 15.0 O P11_Peligro_Area_vs_Fuera > 2.6,
-            # multiplicar su proyección de córneres por 0.80.
+                factor_bloqueo *= 1.06
             rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
             rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
             p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
             if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
-                factor_bloqueo *= 0.80
-
+                factor_bloqueo *= 0.90
+            # Acotar factor_bloqueo total entre [0.86, 1.15] para evitar colapso de medias observadas
+            factor_bloqueo = max(0.86, min(1.15, factor_bloqueo))
             base = base * factor_bloqueo
         except Exception:
             pass
@@ -3747,11 +3762,38 @@ def seleccionar_top_5_jugadas_recomendadas(
                     marcador_mas_probable = (i, j)
 
     import copy as _copy
+    def _es_linea_trivial_top5(sel_cand: Any) -> bool:
+        p_c = float(_v(sel_cand, "probabilidad", 0.0) or 0.0)
+        c_r = _v(sel_cand, "cuota_real", _v(sel_cand, "cuota", _v(sel_cand, "odds", None)))
+        tiene_ev_pos = False
+        try:
+            if c_r is not None and float(c_r) > 1.01:
+                tiene_ev_pos = ((p_c * float(c_r)) - 1.0) >= 0.03
+        except Exception:
+            pass
+        if tiene_ev_pos:
+            return False
+        ev_c = str(_v(sel_cand, "evento") or "").lower()
+        et_c = str(_v(sel_cand, "etiqueta") or "").lower()
+        lin_c = _v(sel_cand, "linea", None)
+        # Descartar Under en líneas altas con cuota justa < 1.25 (prob > 0.80) sin cuota real
+        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c > 0.80:
+            return True
+        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c > 0.80:
+            return True
+        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c > 0.80:
+            return True
+        if p_c >= 0.89 and not any(k in ev_c for k in ("1x", "x2", "dc_1x", "dc_x2")):
+            return True
+        return False
+
+    import copy as _copy
     candidatas = [
         (dict(s) if isinstance(s, dict) else _copy.copy(s))
         for s in selecciones
         if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
         and float(_v(s, "probabilidad", 0.0) or 0.0) >= 0.70
+        and not _es_linea_trivial_top5(s)
     ]
 
     xai = getattr(motor, "xai_factores", None) or {}
@@ -4613,7 +4655,7 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if i > float(lin_k)))
             if ev_k == f"visitante_over_{lin_k}":
                 return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if j > float(lin_k)))
-        return min(0.96, max(p_fallback, p_fallback + 0.042))
+        return float(p_fallback)
 
     # Calibración global de Top #1 para la nota explicativa
     prob_base_top1_pct = 88.0
@@ -4622,8 +4664,8 @@ def seleccionar_top_5_jugadas_recomendadas(
         _, s_top1 = elegidas[0]
         p_adj_1 = float(_v(s_top1, "probabilidad", 0.84) or 0.84)
         p_bas_1 = _calcular_prob_base_poisson(s_top1, p_adj_1)
-        if abs(p_bas_1 - p_adj_1) < 0.005:
-            p_bas_1 = min(0.965, p_adj_1 + 0.045)
+        # Probabilidad de Poisson real del mismo mercado
+        pass
         prob_base_top1_pct = round(p_bas_1 * 100.0, 1)
         prob_ajustada_top1_pct = round(p_adj_1 * 100.0, 1)
 
@@ -4636,35 +4678,41 @@ def seleccionar_top_5_jugadas_recomendadas(
         actual_slot = sl
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
         prob_base_p = _calcular_prob_base_poisson(s, prob)
-        if abs(prob_base_p - prob) < 0.005:
-            prob_base_p = min(0.965, prob + 0.042)
+        # Probabilidad base Poisson real del mismo mercado
+        pass
         cuota_minima = round(1.05 / max(0.05, prob), 2)
 
-        # Cálculo de EV% y Stake Kelly Fraccional (25%) garantizado para todos los badges
-        cuota_ref = round(min(2.40, max(1.18, 1.058 / max(0.10, prob))), 2)
-        ev_valor: float = round((prob * cuota_ref) - 1.0, 4)
-        b_ref = max(0.10, cuota_ref - 1.0)
-        f_kelly_ref = max(0.04, ((prob * (b_ref + 1.0)) - 1.0) / b_ref)
-        stake_sugerido = round(max(0.012, min(0.065, f_kelly_ref * 0.25)), 4)
+        # Cálculo de EV% y Stake Kelly Fraccional (25%) garantizado EXCLUSIVAMENTE con cuota real de mercado
+        cuota_justa = round(1.0 / max(0.01, prob), 2)
+        cuota_minima = round(1.05 / max(0.01, prob), 2)
+        ev_valor: float | None = None
+        stake_sugerido: float | None = None
+        ev_pct: float | None = None
+        stake_pct: float | None = None
 
         try:
             cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
             if cuota_r is not None and float(cuota_r) > 1.01:
                 c_val = float(cuota_r)
-                ev_real = round((prob * c_val) - 1.0, 4)
-                if ev_real > 0:
-                    ev_valor = ev_real
+                ev_calc = round((prob * c_val) - 1.0, 4)
+                if ev_calc > 0:
+                    ev_valor = ev_calc
+                    ev_pct = round(ev_calc * 100.0, 1)
                     b_kelly = max(0.05, c_val - 1.0)
                     q_kelly = 1.0 - prob
                     stake_sugerido = round(max(0.012, min(0.08, (((b_kelly * prob) - q_kelly) / b_kelly) * 0.25)), 4)
+                    stake_pct = round(stake_sugerido * 100.0, 1)
         except Exception:
             pass
 
-        ev_pct = round(max(3.2, ev_valor * 100.0), 1)
-        stake_pct = round(stake_sugerido * 100.0, 1)
         estado_raw = str(_v(s, "estado") or "mantiene")
         est_badge = "SÓLIDA" if estado_raw == "mantiene" else "SENSIBLE"
-        badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
+        if ev_pct is not None and stake_pct is not None:
+            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
+            etiqueta_valor_str = f"{prob * 100.0:.1f}% (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)"
+        else:
+            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
+            etiqueta_valor_str = f"{prob * 100.0:.1f}% (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
 
         podio.append({
             "rank": idx,
@@ -4676,14 +4724,15 @@ def seleccionar_top_5_jugadas_recomendadas(
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
             "prob_base_poisson": round(prob_base_p * 100.0, 1),
             "prob_ajustada_ticket": round(prob * 100.0, 1),
+            "cuota_justa": cuota_justa,
             "cuota_minima": cuota_minima,
             "stake_sugerido": stake_sugerido,
             "stake_sugerido_pct": stake_pct,
-            "ev": round(ev_pct / 100.0, 4),
+            "ev": round(ev_pct / 100.0, 4) if ev_pct is not None else None,
             "ev_pct": ev_pct,
             "badge_completo": badge_completo,
             "nota_calibracion": nota_calibracion_str,
-            "etiqueta_valor": f"{prob * 100.0:.1f}% (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)",
+            "etiqueta_valor": etiqueta_valor_str,
             "estado": estado_raw,
             "respaldo": _respaldo_xai(s, actual_slot),
             "respaldo_adn": _respaldo_xai(s, actual_slot),

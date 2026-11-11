@@ -698,14 +698,16 @@ def test_cuadro_c_caso_a_sin_cobertura_minutos():
 
 
 def test_cuadro_c_caso_b_sin_goles_en_ningun_tramo():
-    """Punto 4 (Caso b): k_eval > 0 y tot_goles_c == 0 imprime 'sin goles en ningún tramo'."""
-    mock_cc = {
-        "_meta": {"n_partidos_con_eventos": 5, "n_partidos_totales": 15},
+    """Punto 4 (Caso b): k_eval >= 10 y tot_goles_c == 0 imprime 'sin goles en ningún tramo'.
+    Con k_eval < 10 (ej. Londrina con 1 o 5 partidos), imprime 'sin cobertura de minutos'."""
+    # Subcaso 1: Cobertura verificada (15 de 15) y 0 goles en todos los tramos
+    mock_cc_15 = {
+        "_meta": {"n_partidos_con_eventos": 15, "n_partidos_totales": 15},
         "anotados": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
         "recibidos": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
     }
-    doc_l = {"equipo": {"nombre": "Local"}, "partidos": [], "cuadro_c_timeline": mock_cc}
-    doc_v = {"equipo": {"nombre": "Visita"}, "partidos": [], "cuadro_c_timeline": mock_cc}
+    doc_l = {"equipo": {"nombre": "Local"}, "partidos": [], "cuadro_c_timeline": mock_cc_15}
+    doc_v = {"equipo": {"nombre": "Visita"}, "partidos": [], "cuadro_c_timeline": mock_cc_15}
     analisis = MagicMock()
     analisis.doc_local = doc_l
     analisis.doc_visitante = doc_v
@@ -726,9 +728,29 @@ def test_cuadro_c_caso_b_sin_goles_en_ningun_tramo():
                     captured.append(args[2])
 
     assert len(captured) >= 1
-    assert captured[0] == "CRONOLOGÍA (CUADRO C): sin goles en ningún tramo (5 de 15 partidos con cronología verificada)"
+    assert captured[0] == "CRONOLOGÍA (CUADRO C): sin goles en ningún tramo (15 de 15 partidos con cronología verificada)"
     assert "máximo peligro" not in captured[0].lower()
     assert "mayor flujo" not in captured[0].lower()
+
+    # Subcaso 2: Cobertura insuficiente (< 10 partidos con cronología, ej. 5 de 15)
+    mock_cc_5 = {
+        "_meta": {"n_partidos_con_eventos": 5, "n_partidos_totales": 15},
+        "anotados": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
+        "recibidos": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
+    }
+    doc_l["cuadro_c_timeline"] = mock_cc_5
+    doc_v["cuadro_c_timeline"] = mock_cc_5
+    captured_5 = []
+    with patch("matplotlib.axes.Axes.text") as mock_text_5:
+        with tempfile.TemporaryDirectory() as td:
+            salida_5 = os.path.join(td, "test_c_caso_b_5.png")
+            generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=salida_5)
+            for call in mock_text_5.call_args_list:
+                args = call[0]
+                if len(args) >= 3 and isinstance(args[2], str) and "CRONOLOGÍA" in args[2]:
+                    captured_5.append(args[2])
+    assert len(captured_5) >= 1
+    assert captured_5[0] == "CRONOLOGÍA (CUADRO C): sin cobertura de minutos (5 de 15 partidos con cronología verificada)"
 
 
 def test_motivos_bloqueo_reales_propagados_a_1t_y_2t():
