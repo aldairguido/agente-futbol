@@ -874,3 +874,94 @@ def test_decision_cobertura_filas_3_a_7_sin_mercados_habilitados_es_insuficiente
     assert dec.estado == "cobertura_insuficiente"
     assert dec.publicar_probabilidades is False
     assert all(v is False for v in dec.mercados_habilitados.values())
+
+
+def test_historial_incompleto_caso_fenerbahce_slavia_sin_repr_dict():
+    """Punto 1 (Ronda 5): Caso real Fenerbahçe (W) vs Slavia Prague (W) produce mensaje limpio sin dict reprs ni ids."""
+    import json
+    with open('informes/auditorias/2026-10-20/auditoria_fenerbahce_w_2026-10-20_031336.json', 'r', encoding='utf-8') as f:
+        doc_a = json.load(f)
+    with open('informes/auditorias/2026-10-20/auditoria_slavia_prague_w_2026-10-20_031432.json', 'r', encoding='utf-8') as f:
+        doc_b = json.load(f)
+
+    # Ambos documentos reales contienen doc['equipo'] = {'id': '...', 'nombre': '...', 'alternativas': [...]}
+    assert isinstance(doc_a.get('equipo'), dict)
+    assert isinstance(doc_b.get('equipo'), dict)
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "historial_oficial_incompleto"
+    assert dec.publicar_probabilidades is False
+
+    # Mensaje exacto limpio con nombre y conteo
+    assert dec.alerta_descriptiva == (
+        "Historial oficial incompleto: Fenerbahçe (W): 4/15 · Slavia Prague (W): 4/15. "
+        "Se requiere un historial completo de 15 partidos oficiales por club."
+    )
+    # Verificación de que no hay reprs de dict, llaves, ids internos ni listas de alternativas
+    for fragmento_prohibido in ("{", "}", "'id':", "id_liga", "alternativas", "variante_busqueda", "ambiguous"):
+        assert fragmento_prohibido not in dec.alerta_descriptiva, f"Fragmento prohibido '{fragmento_prohibido}' hallado en alerta"
+
+
+def test_fallback_auditorias_antiguas_criterios_celda():
+    """Punto 3 (Ronda 5): Confirma que None no cuenta, 0 cuenta, estimado no cuenta y 1T/2T sin procedencia no acredita mitades."""
+    from auditoria_comparable import es_celda_observada_valida, construir_vista_comparable
+
+    # 1. None no cuenta
+    assert es_celda_observada_valida({"clave": "xg", "equipo": None}, "FT") is False
+    assert es_celda_observada_valida({"clave": "corners", "equipo": None}, "1T") is False
+
+    # 2. Cero publicado sí cuenta (0 o 0.0)
+    assert es_celda_observada_valida({"clave": "xg", "equipo": 0}, "FT") is True
+    assert es_celda_observada_valida({"clave": "corners", "equipo": 0.0}, "FT") is True
+
+    # 3. estimado=True o procedencia estimado no suma a observadas
+    assert es_celda_observada_valida({"clave": "xg", "equipo": 1.5, "estimado": True}, "FT") is False
+    assert es_celda_observada_valida({"clave": "xg", "equipo": 1.5, "es_estimado": True}, "FT") is False
+    assert es_celda_observada_valida({"clave": "xg", "equipo": 1.5, "procedencia": "estimado"}, "FT") is False
+    assert es_celda_observada_valida({"clave": "xg", "equipo": 1.5, "procedencia": "reparto_50_50"}, "FT") is False
+
+    # 4. En 1T y 2T: sin procedencia verificada por celda, NO se acredita cobertura de mitades
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0}, "1T") is False
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "reparto_50_50"}, "1T") is False
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "legado_sin_procedencia"}, "1T") is False
+
+    # Con procedencia verificada de proveedor, SÍ se acredita en mitades
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "fotmob"}, "1T") is True
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "flashscore"}, "2T") is True
+
+    # Integración completa con documento de partidos con mitades sin procedencia
+    claves = ["xg", "remates_totales", "remates_puerta", "corners", "faltas"]
+    # Partidos con FT verificado pero 1T/2T sin procedencia
+    pts_a = []
+    pts_b = []
+    for i in range(1, 16):
+        pa = _mock_partido(i, claves_ft=claves)
+        pb = _mock_partido(i, claves_ft=claves)
+        # Borrar procedencia en mitades
+        for f in pa["periodos"]["1T"]["filas"]:
+            f.pop("procedencia", None)
+            f["procedencia"] = ""
+        for f in pb["periodos"]["1T"]["filas"]:
+            f.pop("procedencia", None)
+            f["procedencia"] = ""
+        pts_a.append(pa)
+        pts_b.append(pb)
+
+    resumen_a = _construir_resumen({"partidos": pts_a})
+    resumen_b = _construir_resumen({"partidos": pts_b})
+
+    # Simular auditorias antiguas en disco: sin resumen_claves precalculado por partido
+    for p in pts_a + pts_b:
+        p.pop("resumen_claves", None)
+
+    doc_a = {"equipo": "Club A", "partidos": pts_a, "resumen_auditoria": resumen_a}
+    doc_b = {"equipo": "Club B", "partidos": pts_b, "resumen_auditoria": resumen_b}
+
+    vista = construir_vista_comparable(doc_a, doc_b)
+    dec = evaluar_decision_cobertura(doc_a, doc_b, vista_comparable=vista)
+
+    # FT sí tiene cobertura porque no requiere mitades
+    assert dec.mercados_habilitados["mas_menos_goles"] is True
+    # 1T y 2T quedan bloqueados porque 1T carece de procedencia verificada por celda
+    assert dec.mercados_habilitados["goles_1t"] is False
+    assert "1T" in dec.motivos_bloqueo["goles_1t"]

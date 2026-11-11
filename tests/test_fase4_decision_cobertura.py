@@ -92,7 +92,7 @@ def test_precedencia_2_historial_oficial_incompleto():
     dec = evaluar_decision_cobertura(doc_a, doc_b)
     assert dec.estado == "historial_oficial_incompleto"
     assert dec.publicar_probabilidades is False
-    assert "Historial oficial incompleto: 12/15" in dec.alerta_descriptiva
+    assert "Historial oficial incompleto: Club A: 12/15 · Club B: 15/15" in dec.alerta_descriptiva
 
 
 def test_precedencia_3_solo_resultados_caso_anaitasuna():

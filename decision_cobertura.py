@@ -111,9 +111,17 @@ class DecisionCobertura:
         }
 
 
+def _extraer_nombre_club(val: Any) -> str:
+    if isinstance(val, dict):
+        return str(val.get("nombre") or val.get("nombre_oficial") or val.get("equipo") or "Equipo")
+    if val is None:
+        return "Equipo"
+    return str(val)
+
+
 def _extraer_metadatos_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     resumen = doc.get("resumen_auditoria") or doc.get("resumen") or doc
-    nombre = doc.get("equipo") or doc.get("nombre") or resumen.get("equipo") or "Equipo"
+    nombre = _extraer_nombre_club(doc.get("equipo") or doc.get("nombre") or resumen.get("equipo"))
 
     estado_identidad = doc.get("estado_identidad") or doc.get("estado") or "verificado"
     if doc.get("identidad_verificada") is False:
@@ -216,8 +224,8 @@ def evaluar_decision_cobertura(
             estado="historial_oficial_incompleto",
             publicar_probabilidades=False,
             alerta_descriptiva=(
-                f"Historial oficial incompleto: {meta_a['n_oficiales']}/{min_oficiales} partidos para {eq_a} "
-                f"y {meta_b['n_oficiales']}/{min_oficiales} para {eq_b}. "
+                f"Historial oficial incompleto: {eq_a}: {meta_a['n_oficiales']}/{min_oficiales} · "
+                f"{eq_b}: {meta_b['n_oficiales']}/{min_oficiales}. "
                 f"Se requiere un historial completo de {min_oficiales} partidos oficiales por club."
             ),
             etiqueta_cobertura_a=etq_a,

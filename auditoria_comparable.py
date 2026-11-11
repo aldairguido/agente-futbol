@@ -92,6 +92,52 @@ def cargar_modelos_validados(ruta: Optional[str] = None) -> Dict[str, Any]:
     return modelos
 
 
+def es_celda_observada_valida(
+    fila: Dict[str, Any],
+    periodo: str,
+    partido: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """
+    Reglas estrictas de validación de celda observada (Fase 3 / Fallback):
+    1. None no cuenta: si equipo es None, no cuenta como observado.
+    2. Cero publicado sí cuenta: 0 o 0.0 cuenta como métrica observada real.
+    3. estimado=True no suma a observadas: si estimado/es_estimado es True o procedencia es 'estimado', no suma.
+    4. En 1T/2T sin procedencia por celda verificada: no se acredita cobertura de mitades
+       (evita validar repartos sintéticos 50/50 o archivos sin trazabilidad de mitades).
+    """
+    if not isinstance(fila, dict):
+        return False
+    val = fila.get("equipo")
+    if val is None:
+        return False
+    if fila.get("estimado") or fila.get("es_estimado"):
+        return False
+
+    proc_fila = str(fila.get("procedencia") or fila.get("fuente") or "").lower().strip()
+    if proc_fila in ("estimado", "estimacion", "estimacion_modelo", "sintetico", "reparto_50_50", "imputado"):
+        return False
+
+    if periodo in ("1T", "2T"):
+        proc_celda = proc_fila
+        if not proc_celda and isinstance(partido, dict):
+            proc_root = partido.get("procedencia")
+            if isinstance(proc_root, dict):
+                proc_per = proc_root.get(periodo)
+                if isinstance(proc_per, dict):
+                    proc_celda = str(proc_per.get("equipo", {}).get(fila.get("clave"), "")).lower().strip()
+                if not proc_celda:
+                    proc_celda = str(proc_root.get("equipo", {}).get(fila.get("clave"), "")).lower().strip()
+            elif isinstance(proc_root, str):
+                proc_celda = proc_root.lower().strip()
+
+        if not proc_celda or proc_celda in (
+            "sin_procedencia", "legado_sin_procedencia", "estimado", "sintetico", "reparto_50_50", "desconocido"
+        ):
+            return False
+
+    return True
+
+
 def emparejar_historicos_por_recencia(
     partidos_a: List[Dict[str, Any]],
     partidos_b: List[Dict[str, Any]],
@@ -131,7 +177,7 @@ def emparejar_historicos_por_recencia(
                     obs_a = {
                         f.get("clave")
                         for f in (pa.get("periodos", {}).get(per, {}).get("filas", []))
-                        if f.get("clave") and f.get("equipo") is not None
+                        if f.get("clave") and es_celda_observada_valida(f, per, pa)
                     }
             if pb:
                 res_b = (pb.get("resumen_claves") or {}).get(per, {}).get("equipo", [])
@@ -141,7 +187,7 @@ def emparejar_historicos_por_recencia(
                     obs_b = {
                         f.get("clave")
                         for f in (pb.get("periodos", {}).get(per, {}).get("filas", []))
-                        if f.get("clave") and f.get("equipo") is not None
+                        if f.get("clave") and es_celda_observada_valida(f, per, pb)
                     }
 
             comunes = sorted(obs_a & obs_b)
