@@ -929,6 +929,12 @@ def test_fallback_auditorias_antiguas_criterios_celda():
     assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "fotmob"}, "1T") is True
     assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 2.0, "procedencia": "flashscore"}, "2T") is True
 
+    # 5. Celdas calculadas como FT - 1T o derivadas ("derivado" / "derivacion_aritmetica") NO cuentan como observadas
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 1.0, "procedencia": "derivado"}, "2T") is False
+    assert es_celda_observada_valida({"clave": "remates_puerta", "equipo": 1.0, "procedencia": "derivacion_aritmetica"}, "2T") is False
+    assert es_celda_observada_valida({"clave": "pases_ratio", "equipo": 5.2, "procedencia": "derivado"}, "FT") is False
+    assert es_celda_observada_valida({"clave": "pases_ratio", "equipo": 5.2, "procedencia": "derivado"}, "1T") is False
+
     # Integración completa con documento de partidos con mitades sin procedencia
     claves = ["xg", "remates_totales", "remates_puerta", "corners", "faltas"]
     # Partidos con FT verificado pero 1T/2T sin procedencia

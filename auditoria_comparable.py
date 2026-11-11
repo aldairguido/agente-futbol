@@ -114,7 +114,7 @@ def es_celda_observada_valida(
         return False
 
     proc_fila = str(fila.get("procedencia") or fila.get("fuente") or "").lower().strip()
-    if proc_fila in ("estimado", "estimacion", "estimacion_modelo", "sintetico", "reparto_50_50", "imputado"):
+    if proc_fila in ("estimado", "estimacion", "estimacion_modelo", "sintetico", "reparto_50_50", "imputado", "derivado", "derivacion_aritmetica"):
         return False
 
     if periodo in ("1T", "2T"):
@@ -131,7 +131,7 @@ def es_celda_observada_valida(
                 proc_celda = proc_root.lower().strip()
 
         if not proc_celda or proc_celda in (
-            "sin_procedencia", "legado_sin_procedencia", "estimado", "sintetico", "reparto_50_50", "desconocido"
+            "sin_procedencia", "legado_sin_procedencia", "estimado", "sintetico", "reparto_50_50", "desconocido", "derivado", "derivacion_aritmetica"
         ):
             return False
 
