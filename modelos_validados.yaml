@@ -1,0 +1,123 @@
+# ==============================================================================
+# REGISTRO OFICIAL DE MODELOS VALIDADOS EN PRODUCCIÓN (SPEC 44-45 SECCIÓN 4)
+# Prohíbe terminantemente ejecutar modelos sobre subconjuntos rellenados.
+# Si un modelo no está en este archivo, o no cumple su mínimo de pares con dato,
+# no puede utilizarse en producción.
+# ==============================================================================
+
+modelos:
+  red_recursiva_45_dcn:
+    nombre: "Red Neuronal Recursiva 45-DCN"
+    mercados: ["1X2", "handicap", "doble_oportunidad"]
+    variables_requeridas:
+      - "xg"
+      - "posesion_pct"
+      - "remates_totales"
+      - "remates_puerta"
+      - "grandes_ocasiones"
+      - "grandes_ocasiones_falladas"
+      - "corners"
+      - "pases_total"
+      - "pases_precision_pct"
+      - "pases_ratio"
+      - "tarjetas_amarillas"
+      - "tarjetas_rojas"
+      - "xgot"
+      - "xg_juego_abierto"
+      - "xg_balon_parado"
+      - "xg_sin_penalti"
+      - "remates_fuera"
+      - "remates_rechazados"
+      - "remates_dentro_area"
+      - "remates_fuera_area"
+      - "al_palo"
+      - "toques_area_rival"
+      - "pases_entre_lineas"
+      - "fueras_juego"
+      - "tiros_libres"
+      - "pases_largos_pct"
+      - "pases_tercio_final_pct"
+      - "cruces_pct"
+      - "xa_equipo"
+      - "saques_banda"
+      - "faltas"
+      - "entradas_pct"
+      - "duelos_ganados"
+      - "duelos_suelo_pct"
+      - "duelos_aereos_pct"
+      - "despejes"
+      - "intercepciones"
+      - "bloqueos"
+      - "recuperaciones"
+      - "errores_remate"
+      - "errores_gol"
+      - "paradas"
+      - "xgot_enfrentado"
+      - "goles_evitados"
+      - "saques_puerta"
+    min_claves_comunes_ft: 45
+    min_pares_con_dato: 15
+    cobertura_cronologica: [15]
+    funcion_ejecutar: "motor_recursivo_45_dcn.ejecutar_red_45"
+    permite_imputacion: false
+
+  poisson_bivariado_goles:
+    nombre: "Modelo Bivariado de Goles (Poisson / Dixon-Coles)"
+    mercados: ["1X2", "mas_menos_goles", "ambos_marcan", "marcador_exacto"]
+    variables_requeridas:
+      - "goles"
+      - "xg"
+      - "remates_puerta"
+    min_claves_comunes_ft: 2
+    min_pares_con_dato: 8
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_poisson_bivariado"
+    permite_imputacion: false
+
+  modelo_mercado_corners:
+    nombre: "Modelo de Saques de Esquina (Poisson Univariado)"
+    mercados: ["corners_totales", "corners_equipo"]
+    variables_requeridas:
+      - "corners"
+    min_claves_comunes_ft: 1
+    min_pares_con_dato: 8
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_mercado_corners"
+    permite_imputacion: false
+
+  modelo_mercado_tarjetas:
+    nombre: "Modelo Disciplinario de Tarjetas (Poisson Univariado)"
+    mercados: ["tarjetas_totales", "tarjetas_equipo"]
+    variables_requeridas:
+      - "tarjetas_amarillas"
+    min_claves_comunes_ft: 1
+    min_pares_con_dato: 8
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_mercado_tarjetas"
+    permite_imputacion: false
+
+  modelo_mercado_1t:
+    nombre: "Modelo de Primer Tiempo (Mitad 1T)"
+    mercados: ["goles_1t", "1x2_1t"]
+    variables_requeridas:
+      - "goles"
+      - "remates_puerta"
+    periodo: "1T"
+    min_claves_comunes_periodo: 2
+    min_pares_con_dato: 8
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_mercado_1t"
+    permite_imputacion: false
+
+  modelo_mercado_2t:
+    nombre: "Modelo de Segundo Tiempo (Mitad 2T)"
+    mercados: ["goles_2t", "1x2_2t"]
+    variables_requeridas:
+      - "goles"
+      - "remates_puerta"
+    periodo: "2T"
+    min_claves_comunes_periodo: 2
+    min_pares_con_dato: 8
+    cobertura_cronologica: [8, 10, 12, 15]
+    funcion_ejecutar: "motor_mercados.calcular_mercado_2t"
+    permite_imputacion: false
