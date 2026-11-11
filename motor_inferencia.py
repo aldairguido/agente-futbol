@@ -333,6 +333,8 @@ def calcular_cuadro_b_tendencias(
                         if isinstance(f, dict) and f.get("clave") == "tarjetas_amarillas":
                             if f.get("equipo") is not None and f.get("rival") is not None:
                                 tarj_val = float(f["equipo"]) + float(f["rival"])
+                            elif f.get("valor_local") is not None and f.get("valor_visita") is not None:
+                                tarj_val = float(f["valor_local"]) + float(f["valor_visita"])
                             break
             if tarj_val is not None:
                 n_con_tarjetas += 1
@@ -350,6 +352,8 @@ def calcular_cuadro_b_tendencias(
                         if isinstance(f, dict) and f.get("clave") == "corners":
                             if f.get("equipo") is not None and f.get("rival") is not None:
                                 corn_val = float(f["equipo"]) + float(f["rival"])
+                            elif f.get("valor_local") is not None and f.get("valor_visita") is not None:
+                                corn_val = float(f["valor_local"]) + float(f["valor_visita"])
                             break
             if corn_val is not None:
                 n_con_corners += 1
@@ -902,6 +906,19 @@ def generar_reporte_xai_telegram(
                 return int(v)
         return 0
 
+    def _fmt_b(d: Dict[str, Any], *claves: str) -> str:
+        for k in claves:
+            v = d.get(k)
+            if hasattr(v, "_meta") and isinstance(v._meta, dict) and "str" in v._meta:
+                return str(v._meta["str"])
+            if isinstance(v, dict) and "str" in v:
+                return str(v["str"])
+            if isinstance(v, dict) and "conteo" in v and "total" in v:
+                return f"{v['conteo']}/{v['total']}"
+            if isinstance(v, (int, float)):
+                return f"{int(v)}/15"
+        return "0/0" 
+
     def _cnt_c(d: Dict[str, Any], fr1: str, fr2: str, campo: str) -> int:
         for fr in (fr1, fr2):
             if fr in d and isinstance(d[fr], dict):
@@ -950,9 +967,9 @@ def generar_reporte_xai_telegram(
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
         f"• *Patrón #39 - Estilo Directo:* {nombre_local} usa {_fmt_p(patrones_loc, 'P39_Estilo_Directo', 100.0, 1, '%')} de pases largos precisos vs {_fmt_p(patrones_vis, 'P39_Estilo_Directo', 100.0, 1, '%')} de {nombre_visita}.",
-        f"• *Patrón #43 - Fricción y Tarjetas:* {nombre_local} comete {_fmt_p(patrones_loc, 'faltas')} faltas ({_cnt_b(cuadro_b_loc, 'menos_4_5_tarjetas', 'menos_45_tarjetas')}/15 partidos bajo 4.5 tarjetas) vs {_fmt_p(patrones_vis, 'faltas')} faltas de {nombre_visita}.",
+        f"• *Patrón #43 - Fricción y Tarjetas:* {nombre_local} comete {_fmt_p(patrones_loc, 'faltas')} faltas ({_fmt_b(cuadro_b_loc, 'menos_4_5_tarjetas', 'menos_45_tarjetas')} partidos bajo 4.5 tarjetas) vs {_fmt_p(patrones_vis, 'faltas')} faltas de {nombre_visita}.",
         f"• *Patrón #48/#54/#55 - Asedio de Córneres y Contraataque:* {nombre_local} genera {_fmt_p(patrones_loc, 'corners')} córneres vs {_fmt_p(patrones_vis, 'corners')} de {nombre_visita} (Índice de asedio 2T P54: {_fmt_p(patrones_loc, 'P54_Asedio_Corners_Matchup')} vs {_fmt_p(patrones_vis, 'P54_Asedio_Corners_Matchup')} | Contraataque P55: {_fmt_p(patrones_loc, 'P55_Contraataque_Letal')} vs {_fmt_p(patrones_vis, 'P55_Contraataque_Letal')}).",
-        f"• *Tendencias 15 Partidos (Cuadro B):* Sin derrotas: {nombre_local} {_cnt_b(cuadro_b_loc, 'sin_derrotas')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'sin_derrotas')}/15 | +2.5 Goles: {nombre_local} {_cnt_b(cuadro_b_loc, 'mas_2_5_goles', 'mas_25_goles')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'mas_2_5_goles', 'mas_25_goles')}/15 | BTTS: {nombre_local} {_cnt_b(cuadro_b_loc, 'btts', 'btts_si')}/15 vs {nombre_visita} {_cnt_b(cuadro_b_vis, 'btts', 'btts_si')}/15.",
+        f"• *Tendencias 15 Partidos (Cuadro B):* Sin derrotas: {nombre_local} {_fmt_b(cuadro_b_loc, 'sin_derrotas')} vs {nombre_visita} {_fmt_b(cuadro_b_vis, 'sin_derrotas')} | +2.5 Goles: {nombre_local} {_fmt_b(cuadro_b_loc, 'mas_2_5_goles', 'mas_25_goles')} vs {nombre_visita} {_fmt_b(cuadro_b_vis, 'mas_2_5_goles', 'mas_25_goles')} | BTTS: {nombre_local} {_fmt_b(cuadro_b_loc, 'btts', 'btts_si')} vs {nombre_visita} {_fmt_b(cuadro_b_vis, 'btts', 'btts_si')}.",
         "",
         "*5. Alertas Activadas del Motor de 55 Patrones*",
     ]

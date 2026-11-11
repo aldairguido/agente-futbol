@@ -2715,11 +2715,30 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     g_76_l = int(round(float((cuadro_c_L.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get("76'-90'", 0))))
     g_76_v = int(round(float((cuadro_c_V.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get("76'-90'", 0))))
+    
+    # Punto 38 & 44: Denominador real de Cuadro C (evitar máximo peligro ficticio si no hay goles o eventos)
+    tot_goles_c = 0
+    tramos_totales = {}
+    for t_k in tramos_c:
+        g_l = int(round(float((cuadro_c_L.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get(t_k, 0))))
+        g_v = int(round(float((cuadro_c_V.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get(t_k, 0))))
+        tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
+        tot_goles_c += (g_l + g_v)
+
+    if (g_76_l + g_76_v) > 0:
+        txt_alerta_c = f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles"
+    elif tot_goles_c > 0:
+        max_tramo = max(tramos_c, key=lambda k: tramos_totales[k][2])
+        g_l_max, g_v_max, g_tot_max = tramos_totales[max_tramo]
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): Mayor flujo en {max_tramo}  ·  Flujo {eq_L}: {g_l_max} goles  |  Flujo {eq_V}: {g_v_max} goles"
+    else:
+        txt_alerta_c = "CRONOLOGÍA (CUADRO C): Sin eventos cronológicos de gol documentados en los partidos auditados"
+
     rect_pie_c = FancyBboxPatch((0.0, 0.205), 1.0, 0.022, boxstyle="round,pad=0.005", facecolor="#FEF6E4", edgecolor="#D97706", lw=0.9, transform=ax.transAxes)
     ax.add_patch(rect_pie_c)
     ax.text(
         0.50, 0.216,
-        f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles",
+        txt_alerta_c,
         fontsize=7.3, fontweight="bold", color="#92400E", ha="center", va="center", transform=ax.transAxes
     )
 
