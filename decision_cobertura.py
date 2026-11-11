@@ -34,6 +34,11 @@ DEFAULTS_UMBRALES = {
     "min_pares_mercado": 8,
     "min_pares_red_45": 15,
     "min_claves_comunes_red_45": 45,
+    "min_partidos_cronologia_verificada": 10,
+    "min_cuota_justa_no_trivial_top5": 1.25,
+    "max_desvio_frecuencia_observada_pts": 10.0,
+    "bloqueo_recorte_independiente_calibracion": True,
+    "techo_lambda_ataque_bajo": 1.10,
 }
 
 CATALOGO_MERCADOS = [

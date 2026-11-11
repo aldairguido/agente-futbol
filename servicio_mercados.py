@@ -833,7 +833,7 @@ def obtener_top5_y_seccion1_filtrados(
         ]
 
     top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18)
+    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
     if not sels_top_tabla and sels_validas:
         sels_top_tabla = sels_validas[:18]
 
@@ -1339,7 +1339,7 @@ def renderizar_ticket_mercados_png(
         top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
 
         # Limitar el total de opciones en la tabla inferior a las 15-20 opciones más competitivas
-        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18)
+        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
         if not sels_top_tabla and sels_validas:
             sels_top_tabla = sels_validas[:18]
 
@@ -1567,9 +1567,13 @@ def renderizar_ticket_mercados_png(
                 # Píldora de probabilidad + EV% + Stake Kelly 25% a la derecha
                 pct_str = item["probabilidad_pct"]
                 est_str = "SÓLIDA" if item.get("estado") == "mantiene" else "SENSIBLE"
-                ev_p = float(item.get("ev_pct", 4.8) or 4.8)
-                stk_p = float(item.get("stake_sugerido_pct", 2.4) or 2.4)
-                badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · EV {ev_p:+.1f}% · Stake: {stk_p:.1f}%)")
+                ev_raw = item.get("ev_pct")
+                stk_raw = item.get("stake_sugerido_pct")
+                if ev_raw is not None and stk_raw is not None:
+                    badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · EV {float(ev_raw):+.1f}% · Stake: {float(stk_raw):.1f}%)")
+                else:
+                    c_min = float(item.get("cuota_minima", 1.05 / max(0.01, float(item.get("probabilidad", 0.70)))) or 1.25)
+                    badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · Cuota Mín: {c_min:.2f})")
                 bw_p = _get_w(badge_p_txt, f_pill_pct) + 20
                 bx_p = PAD_X + ANCHO_TABLA - 14 - bw_p
                 by_p = y_c + 10
@@ -2069,6 +2073,9 @@ def preparar_analisis(
         parametros=params, aviso=progreso,
     )
 
+    analisis.doc_local = contexto.get("doc_local")
+    analisis.doc_visitante = contexto.get("doc_visitante")
+
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
     analisis.metadatos["estado_cobertura"] = decision_cob.estado
     analisis.metadatos["etiqueta_cobertura_local"] = decision_cob.etiqueta_cobertura_a
@@ -2289,6 +2296,8 @@ def preparar_analisis(
             analisis,
             info_h2h=info_h2h_2024_2026,
             cuotas_flashscore=cuotas_flashscore,
+            doc_local=contexto.get("doc_local"),
+            doc_visitante=contexto.get("doc_visitante"),
         )
         if analisis_texto_3_parrafos:
             with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:

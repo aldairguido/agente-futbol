@@ -222,7 +222,12 @@ def test_especificacion_20_puntos_produccion():
     assert len(top5) >= 3
     assert all("Sin Empate" not in it["etiqueta"] for it in top5), f"12 Sin Empate debe quedar excluido del Top 5: {top5}"
     assert "cuota_minima" in top5[0] and top5[0]["cuota_minima"] > 1.05
-    assert "stake_sugerido_pct" in top5[0] and 1.0 <= top5[0]["stake_sugerido_pct"] <= 8.0
+    assert top5[0]["stake_sugerido_pct"] is None and top5[0]["ev_pct"] is None
+    assert "Cuota Mín:" in top5[0]["badge_completo"]
+
+    sels_con_cuotas = [dict(s, cuota_real=1.45) for s in sels_test]
+    top5_cuotas = seleccionar_top_5_jugadas_recomendadas(sels_con_cuotas, motor=None, eq_l="San Lorenzo", eq_v="Platense")
+    assert "stake_sugerido_pct" in top5_cuotas[0] and 1.0 <= top5_cuotas[0]["stake_sugerido_pct"] <= 8.0
 
     # 11 & 15. Ponderación 60/40 de rachas y Validación de Esquema
     racha_info = calcular_promedios_racha_60_40(
@@ -240,7 +245,8 @@ def test_especificacion_20_puntos_produccion():
 
     # Verificación de Badges con EV% + Stake Kelly 25%, Nota de Calibración y Veredicto Táctico (4 conclusiones)
     from motor_inferencia import generar_veredicto_tactico_partido
-    assert "badge_completo" in top5[0] and "EV +" in top5[0]["badge_completo"] and "Stake:" in top5[0]["badge_completo"]
+    assert "badge_completo" in top5[0] and "Cuota Mín:" in top5[0]["badge_completo"]
+    assert "EV +" in top5_cuotas[0]["badge_completo"] and "Stake:" in top5_cuotas[0]["badge_completo"]
     assert "nota_calibracion" in top5[0] and "Base Matriz Poisson:" in top5[0]["nota_calibracion"]
     veredicto_txt = generar_veredicto_tactico_partido(
         nombre_local="Nottingham Forest",

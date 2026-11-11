@@ -371,9 +371,10 @@ def calcular_cuadro_b_tendencias(
                 "total": tot_real,
                 "n_con_dato": tot_real,
                 "pct": pct,
-                "str": f"{int(conteo)}/{tot_real}" if tot_real > 0 else "0/0",
+                "str": f"{int(conteo)}/{tot_real}",
                 "fmt": fmt_str,
                 "texto": fmt_str,
+                "sin_dato": (tot_real == 0),
             }
             return obj
 
@@ -877,6 +878,9 @@ def generar_reporte_xai_telegram(
     cuadro_b_vis: Dict[str, Any],
     cuadro_c_loc: Dict[str, Any],
     cuadro_c_vis: Dict[str, Any],
+    ratings_loc: Optional[Dict[str, Any]] = None,
+    ratings_vis: Optional[Dict[str, Any]] = None,
+    top5_podio: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -986,6 +990,9 @@ def generar_reporte_xai_telegram(
         cuadro_b_vis=cuadro_b_vis,
         cuadro_c_loc=cuadro_c_loc,
         cuadro_c_vis=cuadro_c_vis,
+        ratings_loc=ratings_loc,
+        ratings_vis=ratings_vis,
+        top5_podio=top5_podio,
     )
     if veredicto_4:
         lineas.append("")
@@ -1189,28 +1196,62 @@ def generar_veredicto_tactico_partido(
         else "🧠 *VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?*"
     )
     sub = "Si tuvieras que apostar hoy con este Ticket, estas son las 4 conclusiones irrefutables:"
+    p_fav_max = max(p_loc, p_vis)
+    c1_tit = (
+        f"1. El {eq_fav} va a ganar (o mínimo empatar):"
+        if p_fav_max >= 0.50
+        else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
+    )
     c1 = (
-        f"1. El {eq_fav} va a ganar (o mínimo empatar): El agente le otorga {atk_fav:.1f} de Attack frente a "
+        f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
         f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
         f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). El Ticket protege con '{jugada_1_nombre}' al "
         f"{jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
     )
-    c2 = (
-        f"2. Cuidado con los goles de {eq_peligro_tramo} al final: El Cuadro C (Timeline) revela un dato letal: "
-        f"{eq_peligro_tramo} ha anotado {goles_anot_tramo} goles en el tramo {mejor_tramo_lbl}, y {riv_tramo} ha "
-        f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
-    )
+
+    if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
+        n_ev_l = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_l = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+
+    if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
+        n_ev_v = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_v = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+
+    k_eval_ver = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+
+    if k_eval_ver < k_min_cron:
+        c2 = (
+            f"2. Cronología de goles: Cobertura de minutos insuficiente ({k_eval_ver}/15 partidos con cronología "
+            f"verificada). No se proyecta alerta en tramos específicos por prudencia estadística hasta contar con datos completos."
+        )
+    else:
+        c2 = (
+            f"2. Cuidado con los goles de {eq_peligro_tramo} al final: El Cuadro C (Timeline) revela un dato letal: "
+            f"{eq_peligro_tramo} ha anotado {goles_anot_tramo} goles en el tramo {mejor_tramo_lbl}, y {riv_tramo} ha "
+            f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
+        )
+
     c3 = (
         f"3. {titulo_ritmo}: El agente destaca '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
         f"{eq_control} monopoliza el balón ({pos_control:.1f}% de posesión, Pressing {press_ctrl:.1f}) y {riv_control} "
         f"se repliega en bloque ({fal_l:.1f} vs {fal_v:.1f} faltas/partido)."
     )
     txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
-    c4 = (
-        f"4. La segunda mitad tendrá goles: El modelo respalda '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-        f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
-        f"({flujo_76_90} goles combinados), es una selección con total respaldo estadístico."
-    )
+    if k_eval_ver < k_min_cron:
+        c4 = (
+            f"4. Dinámica de la segunda mitad: El modelo proyecta '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
+            f"proyectado en 2T y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
+        )
+    else:
+        c4 = (
+            f"4. La segunda mitad tendrá goles: El modelo respalda '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
+            f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
+            f"({flujo_76_90} goles combinados), es una selección con total respaldo estadístico."
+        )
     return "\n".join([encabezado, sub, c1, c2, c3, c4])
 
 
@@ -1250,20 +1291,38 @@ def calcular_cuadro_b_tendencias_15p(
     res["filas"] = {}
     for k_vis, k_raw, titulo in mapa_claves:
         val = raw.get(k_raw, raw.get(k_vis, 8))
-        if isinstance(val, dict):
+        if isinstance(val, dict) or hasattr(val, "get"):
             cnt = int(val.get("cumple", val.get("conteo", 8)))
+            tot_raw = val.get("total", val.get("n_con_dato", n_tot))
+            tot = int(tot_raw) if tot_raw is not None else n_tot
+            es_sd = bool(val.get("sin_dato", False)) or (tot == 0 and k_raw in ("ganador_1t", "primero_marcar", "primero_en_marcar"))
         else:
             cnt = int(val)
-        pct = round((cnt / max(1, n_tot)) * 100.0, 1)
-        nodo = {
-            "titulo": titulo,
-            "conteo": cnt,
-            "cumple": cnt,
-            "total": n_tot,
-            "pct": pct,
-            "str": f"{cnt}/{n_tot}",
-            "texto": f"{cnt}/{n_tot} ({pct:.0f}%)",
-        }
+            tot = n_tot
+            es_sd = False
+        if es_sd or tot <= 0:
+            nodo = {
+                "titulo": titulo,
+                "conteo": 0,
+                "cumple": 0,
+                "total": 0,
+                "pct": 0.0,
+                "str": "sin dato",
+                "texto": "sin dato",
+                "sin_dato": True,
+            }
+        else:
+            pct = round((cnt / max(1, tot)) * 100.0, 1)
+            nodo = {
+                "titulo": titulo,
+                "conteo": cnt,
+                "cumple": cnt,
+                "total": tot,
+                "pct": pct,
+                "str": f"{cnt}/{tot}",
+                "texto": f"{cnt}/{tot} ({pct:.0f}%)",
+                "sin_dato": False,
+            }
         res["filas"][k_vis] = nodo
         res["filas"][k_raw] = nodo
         res[k_vis] = nodo
@@ -1337,6 +1396,9 @@ def generar_informe_narrativo_xai(
     cuadro_b_visita: Optional[Dict[str, Any]] = None,
     cuadro_c_local: Optional[Dict[str, Any]] = None,
     cuadro_c_visita: Optional[Dict[str, Any]] = None,
+    ratings_local: Optional[Dict[str, Any]] = None,
+    ratings_visita: Optional[Dict[str, Any]] = None,
+    top5_podio: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -1354,4 +1416,7 @@ def generar_informe_narrativo_xai(
         cb_v,
         cc_l,
         cc_v,
+        ratings_loc=ratings_local,
+        ratings_vis=ratings_visita,
+        top5_podio=top5_podio,
     )

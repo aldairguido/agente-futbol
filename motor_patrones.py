@@ -896,11 +896,11 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     rL = ratings_local or {}
     rV = ratings_visita or {}
 
-    attack_rating_local = float(rL.get("Final_Attack_Strength", rL.get("attack", 50.0)) or 50.0)
-    attack_rating_visita = float(rV.get("Final_Attack_Strength", rV.get("attack", 50.0)) or 50.0)
-    defense_rating_local = float(rL.get("Final_Defense_Strength", rL.get("defense", 50.0)) or 50.0)
-    defense_rating_visita = float(rV.get("Final_Defense_Strength", rV.get("defense", 50.0)) or 50.0)
-    pressing_rating_visita = float(rV.get("Pressing_Intensity_Score", rV.get("pressing", 50.0)) or 50.0)
+    attack_rating_local = float(rL.get("Final_Attack_Strength", rL.get("attack", rL.get("Attack_Rating", 50.0))) or 50.0)
+    attack_rating_visita = float(rV.get("Final_Attack_Strength", rV.get("attack", rV.get("Attack_Rating", 50.0))) or 50.0)
+    defense_rating_local = float(rL.get("Final_Defense_Strength", rL.get("defense", rL.get("Defense_Rating", 50.0))) or 50.0)
+    defense_rating_visita = float(rV.get("Final_Defense_Strength", rV.get("defense", rV.get("Defense_Rating", 50.0))) or 50.0)
+    pressing_rating_visita = float(rV.get("Pressing_Intensity_Score", rV.get("pressing", rV.get("Pressing_Rating", 50.0))) or 50.0)
 
     lam_b_l = max(0.10, float(lam_base_local))
     lam_b_v = max(0.10, float(lam_base_visita))
@@ -968,12 +968,18 @@ def aplicar_freno_de_mano_y_matchup_21_22(
 
     # ── Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús") ──
     # 1. Local con ataque paupérrimo:
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        techo_atk_bajo = float(cargar_umbrales_cobertura().get("techo_lambda_ataque_bajo", 1.10))
+    except Exception:
+        techo_atk_bajo = 1.10
+
     if attack_rating_local < 25.0:
         lam_l = min(lam_l, 0.90)
     if attack_rating_local < 20.0 and (en_crisis_local or goles_ult5_local < 0.50):
         lam_l = min(lam_l, 0.60)
     elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
-        lam_l = min(lam_l, 1.10)
+        lam_l = min(lam_l, techo_atk_bajo)
 
     # 2. Visitante en Bloque Bajo ("Autobús"):
     if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
@@ -983,7 +989,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     if attack_rating_visita < 20.0 and (en_crisis_visita or goles_ult5_visita < 0.50):
         lam_v = min(lam_v, 0.60)
     elif (en_crisis_visita or attack_rating_visita < 35.0) and defense_rating_local >= 30.0:
-        lam_v = min(lam_v, 1.10)
+        lam_v = min(lam_v, techo_atk_bajo)
 
     # ── Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating ──
     delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0

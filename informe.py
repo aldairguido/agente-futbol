@@ -686,6 +686,8 @@ def redactar_analisis_3_parrafos(
     analisis: Any,
     info_h2h: dict[str, Any] | None = None,
     cuotas_flashscore: dict[str, float | None] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
 ) -> str:
     """
     Redacta el análisis de texto detallado en 3 párrafos claros para Telegram
@@ -839,7 +841,11 @@ def redactar_analisis_3_parrafos(
                 "cuya cuota real supere la Cuota Justa calculada por la Red Neuronal."
             )
 
-    bloque_xai = generar_bloque_narrativo_xai_desde_analisis(analisis)
+    bloque_xai = generar_bloque_narrativo_xai_desde_analisis(
+        analisis,
+        doc_local=doc_local,
+        doc_visitante=doc_visitante,
+    )
     if bloque_xai:
         return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}"
     return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}"
@@ -912,6 +918,9 @@ def generar_bloque_narrativo_xai_desde_analisis(
             P_L, P_V, probs_1x2["p_local"], probs_1x2["p_empate"], probs_1x2["p_visitante"], eq_l, eq_v
         )
 
+        doc_local = doc_local or getattr(analisis, "doc_local", None) or getattr(motor, "doc_local", None)
+        doc_visitante = doc_visitante or getattr(analisis, "doc_visitante", None) or getattr(motor, "doc_visitante", None)
+
         pts_l = (doc_local.get("partidos") if isinstance(doc_local, dict) else None) or getattr(motor, "partidos_local", []) or []
         pts_v = (doc_visitante.get("partidos") if isinstance(doc_visitante, dict) else None) or getattr(motor, "partidos_visitante", []) or []
 
@@ -920,8 +929,26 @@ def generar_bloque_narrativo_xai_desde_analisis(
         cc_L = calcular_cuadro_c_timeline_15min(pts_l, eq_l, d_gen_L)
         cc_V = calcular_cuadro_c_timeline_15min(pts_v, eq_v, d_gen_V)
 
+        ratings_L_v = None
+        ratings_V_v = None
+        top5_v = None
+        try:
+            import cuadro_especialista as _ce
+            if motor is not None and getattr(motor, "muestras", None):
+                b_l_v = _ce.bloque_para_lado(motor, "local", peso_roja=_ce.PESO_PARTIDO_CON_ROJA)
+                b_v_v = _ce.bloque_para_lado(motor, "visitante", peso_roja=_ce.PESO_PARTIDO_CON_ROJA)
+                ratings_L_v = _ce.construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
+                ratings_V_v = _ce.construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
+            from servicio_mercados import obtener_top5_y_seccion1_filtrados
+            top5_v, _, _ = obtener_top5_y_seccion1_filtrados(analisis)
+        except Exception:
+            pass
+
         return generar_informe_narrativo_xai(
-            eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V
+            eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V,
+            ratings_local=ratings_L_v,
+            ratings_visita=ratings_V_v,
+            top5_podio=top5_v,
         )
     except Exception:
         return ""
