@@ -2710,6 +2710,8 @@ def generar_cuadro_auditoria_15_partidos_png(
     n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
     n_base = max(15, n_tot_l, n_tot_v)
     k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 
     filas_c_data = [
         (f"{eq_L} — Anotados (GF)", (cuadro_c_L.get("anotados") or {}), "#E8F5EE", "#1B5E20"),
@@ -2726,12 +2728,12 @@ def generar_cuadro_auditoria_15_partidos_png(
             v_t = int(round(float(d_tramos.get(t_lbl, 0))))
             tot_flujo += v_t
             es_76_90 = (t_lbl == "76'-90'")
-            txt_celda = "—" if k_eval < 10 else str(v_t)
-            col_celda = "#64748B" if k_eval < 10 else ("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c)
-            ax.text(x_t, y_c + 0.0102, txt_celda, fontsize=7.4, fontweight=("bold" if es_76_90 and k_eval >= 10 else "normal"),
+            txt_celda = "—" if k_eval < k_min_cron else str(v_t)
+            col_celda = "#64748B" if k_eval < k_min_cron else ("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c)
+            ax.text(x_t, y_c + 0.0102, txt_celda, fontsize=7.4, fontweight=("bold" if es_76_90 and k_eval >= k_min_cron else "normal"),
                     color=col_celda, ha="center", va="center", transform=ax.transAxes)
-        txt_tot_c = "—" if k_eval < 10 else str(tot_flujo)
-        ax.text(0.96, y_c + 0.0102, txt_tot_c, fontsize=7.4, fontweight="bold", color=("#64748B" if k_eval < 10 else "#0F172A"), ha="center", va="center", transform=ax.transAxes)
+        txt_tot_c = "—" if k_eval < k_min_cron else str(tot_flujo)
+        ax.text(0.96, y_c + 0.0102, txt_tot_c, fontsize=7.4, fontweight="bold", color=("#64748B" if k_eval < k_min_cron else "#0F172A"), ha="center", va="center", transform=ax.transAxes)
 
     g_76_l = int(round(float((cuadro_c_L.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get("76'-90'", 0))))
     g_76_v = int(round(float((cuadro_c_V.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get("76'-90'", 0))))
@@ -2744,7 +2746,7 @@ def generar_cuadro_auditoria_15_partidos_png(
         tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
         tot_goles_c += (g_l + g_v)
 
-    if k_eval < 10:
+    if k_eval < k_min_cron:
         txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval} de {n_base} partidos con cronología verificada)"
     elif tot_goles_c == 0:
         txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin goles en ningún tramo ({k_eval} de {n_base} partidos con cronología verificada)"

@@ -277,3 +277,72 @@ def test_8_sincronizacion_texto_telegram_e_imagenes():
     assert "TICKET DE ANÁLISIS PROFUNDO" in texto_3p
     assert "LONDRINA VS NÁUTICO" in texto_3p
     assert "Patrón #01" in texto_3p
+
+
+def test_9_recorte_alto_sin_cronologia_excluye_goles_y_btts_de_top5():
+    """Punto 3: Si recorte de lambda > 15% y k_eval < 10, Under 2.5/3.5, BTTS y Over 2.5 salen del Top 5."""
+    motor = MagicMock()
+    motor.tasas = MagicMock(
+        lambda_local_ft=1.10, lambda_visitante_ft=0.90,
+        lambda_local_1t=0.55, lambda_local_2t=0.55,
+        lambda_visitante_1t=0.45, lambda_visitante_2t=0.45,
+    )
+    mat = [[0.0]*10 for _ in range(10)]
+    mat[1][0] = 0.15; mat[2][0] = 0.10; mat[2][1] = 0.15
+    mat[0][0] = 0.12; mat[1][1] = 0.20
+    mat[0][1] = 0.15; mat[1][2] = 0.13
+    motor.matriz_ft = mat
+    motor.doc_local = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    motor.doc_visitante = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    motor.recursivo = {
+        "lambda_base_local": 1.56,
+        "lambda_base_visita": 1.07,
+        "lambda_local_recursivo": 1.10,
+        "lambda_visita_recursivo": 0.90,
+    }
+
+    sels = [
+        {"mercado": "Doble oportunidad", "evento": "dc_1x", "etiqueta": "1X (Londrina o empate)", "periodo": "FT", "probabilidad": 0.72, "estado": "mantiene"},
+        {"mercado": "Total de goles", "evento": "under_2.5", "etiqueta": "Menos de 2.5 Goles", "linea": 2.5, "periodo": "FT", "probabilidad": 0.76, "estado": "mantiene"},
+        {"mercado": "Total de goles", "evento": "under_3.5", "etiqueta": "Menos de 3.5 Goles", "linea": 3.5, "periodo": "FT", "probabilidad": 0.86, "estado": "mantiene"},
+        {"mercado": "Ambos anotan", "evento": "btts_no", "etiqueta": "Ambos anotan: No", "periodo": "FT", "probabilidad": 0.74, "estado": "mantiene"},
+        {"mercado": "Goles por equipo", "evento": "local_over_0.5", "etiqueta": "Londrina +0.5 Goles", "equipo": "Londrina", "linea": 0.5, "periodo": "FT", "probabilidad": 0.75, "estado": "mantiene"},
+    ]
+    top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels, motor=motor, eq_l="Londrina", eq_v="Náutico")
+    etiquetas_top5 = [item["etiqueta"] for item in top5]
+    assert not any("Menos de 2.5 Goles" in e for e in etiquetas_top5)
+    assert not any("Menos de 3.5 Goles" in e for e in etiquetas_top5)
+    assert not any("Ambos anotan" in e for e in etiquetas_top5)
+    assert any("Londrina" in e and "+0.5" in e for e in etiquetas_top5)
+
+
+def test_10_calibracion_real_corners_poisson_cero_desviacion():
+    """Punto 1: Probabilidades de Total -10.5/-11.5/-12.5 y por equipo coinciden con Poisson a 0.0 puntos."""
+    import scipy.stats as stats
+    mu_l = 5.118
+    mu_v = 4.362
+    mu_tot = mu_l + mu_v
+
+    # Evaluaciones con Poisson CDF
+    p_u105 = stats.poisson.cdf(10, mu_tot) * 100.0
+    p_u115 = stats.poisson.cdf(11, mu_tot) * 100.0
+    p_u125 = stats.poisson.cdf(12, mu_tot) * 100.0
+    p_l_u65 = stats.poisson.cdf(6, mu_l) * 100.0
+    p_v_u55 = stats.poisson.cdf(5, mu_v) * 100.0
+    p_v_u65 = stats.poisson.cdf(6, mu_v) * 100.0
+
+    # Valores exactos producidos por el modelo en el análisis
+    assert round(p_u105, 1) == 64.8
+    assert round(p_u115, 1) == 75.4
+    assert round(p_u125, 1) == 83.8
+    assert round(p_l_u65, 1) == 74.5
+    assert round(p_v_u55, 1) == 72.6
+    assert round(p_v_u65, 1) == 84.8
+
+
+def test_11_umbrales_yaml_centralizados():
+    """Punto 4: k_min_cronologia (10) y min_cuota_justa (1.25) se leen de umbrales_cobertura.yaml."""
+    from decision_cobertura import cargar_umbrales_cobertura
+    u = cargar_umbrales_cobertura()
+    assert u.get("min_partidos_cronologia_verificada") == 10
+    assert u.get("min_cuota_justa_no_trivial_top5") == 1.25

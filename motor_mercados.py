@@ -3776,12 +3776,15 @@ def seleccionar_top_5_jugadas_recomendadas(
         ev_c = str(_v(sel_cand, "evento") or "").lower()
         et_c = str(_v(sel_cand, "etiqueta") or "").lower()
         lin_c = _v(sel_cand, "linea", None)
-        # Descartar Under en líneas altas con cuota justa < 1.25 (prob > 0.80) sin cuota real
-        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c > 0.80:
+        # Descartar Under en líneas altas con cuota justa < min_cuota_justa sin cuota real
+        from decision_cobertura import cargar_umbrales_cobertura
+        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.25))
+        prob_max_trivial = round(1.0 / max(0.01, cuota_justa_min), 4)
+        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c >= prob_max_trivial:
             return True
-        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c > 0.80:
+        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c >= prob_max_trivial:
             return True
-        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c > 0.80:
+        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c >= prob_max_trivial:
             return True
         if p_c >= 0.89 and not any(k in ev_c for k in ("1x", "x2", "dc_1x", "dc_x2")):
             return True
@@ -3849,6 +3852,46 @@ def seleccionar_top_5_jugadas_recomendadas(
             return bool(es_t and es_ov and lin_t is not None and float(lin_t) >= 4.5)
         candidatas = [s for s in candidatas if not _es_over_tarj_alta(s)]
 
+    # ── Regla de Recorte Alto sin Validación Cronológica (Puntos 2 y 3) ──
+    # Si el recorte total supera 15% y no tiene validación cronológica (k_eval < k_min_cron):
+    # Under 2.5/3.5, BTTS y Over 2.5 no se publican por encima del umbral de alta probabilidad.
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    doc_l_m = getattr(motor, "doc_local", {}) if motor is not None else {}
+    doc_v_m = getattr(motor, "doc_visitante", {}) if motor is not None else {}
+    cc_l = (doc_l_m.get("cuadro_c_timeline") or {}) if isinstance(doc_l_m, dict) else {}
+    cc_v = (doc_v_m.get("cuadro_c_timeline") or {}) if isinstance(doc_v_m, dict) else {}
+    n_ev_l = int((cc_l.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_l, dict) else 0
+    n_ev_v = int((cc_v.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_v, dict) else 0
+    k_eval_cron = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+
+    lam_b_l = float(rec.get("lambda_base_local") or lam_l)
+    lam_b_v = float(rec.get("lambda_base_visita") or lam_v)
+    recorte_comb = 1.0 - ((lam_l + lam_v) / max(0.01, lam_b_l + lam_b_v))
+    recorte_l = 1.0 - (lam_l / max(0.01, lam_b_l))
+    recorte_v = 1.0 - (lam_v / max(0.01, lam_b_v))
+    recorte_alto = (recorte_comb >= 0.15 or recorte_l >= 0.15 or recorte_v >= 0.15)
+
+    if recorte_alto and k_eval_cron < k_min_cron:
+        def _es_mercado_afectado_recorte(s: Any) -> bool:
+            ev_r = str(_v(s, "evento") or "").lower()
+            et_r = str(_v(s, "etiqueta") or "").lower()
+            m_r = str(_v(s, "mercado") or "").lower()
+            lin_r = _v(s, "linea", None)
+            try:
+                lin_f = float(lin_r) if lin_r is not None else None
+            except Exception:
+                lin_f = None
+            if ("under" in ev_r or "menos" in et_r) and lin_f in (2.5, 3.5):
+                return True
+            if ("over" in ev_r or "más" in et_r or "mas" in et_r) and lin_f == 2.5:
+                return True
+            if any(k in ev_r or k in et_r or k in m_r for k in ("ambos_anotan", "btts")):
+                return True
+            return False
+
+        candidatas = [s for s in candidatas if not _es_mercado_afectado_recorte(s)]
+
     # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
     candidatas_filtradas_ev: list[Any] = []
     for s in candidatas:
@@ -3908,7 +3951,7 @@ def seleccionar_top_5_jugadas_recomendadas(
     es_diesel = False
     if (xg1_l > 0 and xg2_l >= 1.30 * xg1_l) or (xg1_v > 0 and xg2_v >= 1.30 * xg1_v):
         es_diesel = True
-    elif (t1_l and t2_l and t2_l >= 1.30 * t1_l) or (t1_v and t2_v and t2_v >= 1.30 * t1_v):
+    elif (isinstance(t1_l, (int, float)) and isinstance(t2_l, (int, float)) and t2_l >= 1.30 * t1_l) or (isinstance(t1_v, (int, float)) and isinstance(t2_v, (int, float)) and t2_v >= 1.30 * t1_v):
         es_diesel = True
 
     lam_1t_comb = ((t1_l or 0.50) + (t1_v or 0.45)) if (t1_l is not None) else (0.45 * (lam_l + lam_v))
@@ -4053,11 +4096,14 @@ def seleccionar_top_5_jugadas_recomendadas(
         attack_local=atk_l_top,
         attack_visita=atk_v_top,
     )
+    gv_motor = getattr(motor, "es_gigante_visitante", False)
+    if not isinstance(gv_motor, bool):
+        gv_motor = False
     es_gigante_visitante = bool(
         info_gv.get("activo", False)
-        or rec.get("gigante_visitante_activo")
-        or rec.get("es_gigante_visitante")
-        or getattr(motor, "es_gigante_visitante", False)
+        or rec.get("gigante_visitante_activo") is True
+        or rec.get("es_gigante_visitante") is True
+        or gv_motor is True
     )
     vetar_1x_por_gigante_visita = bool(
         es_gigante_visitante
@@ -4066,9 +4112,13 @@ def seleccionar_top_5_jugadas_recomendadas(
     if es_gigante_visitante or vetar_1x_por_gigante_visita:
         # Vetar 1X, 1 directo local y cualquier hándicap/DNB a favor del local
         def _es_favor_local_slot1(s: Any) -> bool:
+            m_s_l = str(_v(s, "mercado") or "").lower()
             ev_s_l = str(_v(s, "evento") or "").lower().strip()
             eq_s_l = str(_v(s, "equipo") or "").strip().lower()
-            if ev_s_l in ("1", "local_gana", "1x", "dc_1x") or ev_s_l.endswith("_1x") or "local" in ev_s_l:
+            if not any(k in m_s_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "resultado")):
+                if not (ev_s_l in ("1", "local", "local_gana", "1x", "dc_1x") or ev_s_l.endswith("_1x") or "dnb" in ev_s_l):
+                    return False
+            if ev_s_l in ("1", "local", "local_gana", "1x", "dc_1x") or ev_s_l.endswith("_1x"):
                 return True
             if eq_s_l and (eq_s_l == eq_l.strip().lower() or eq_s_l in eq_l.strip().lower()):
                 if any(k in ev_s_l for k in ("dnb", "h0_", "h1_", "h-1_", "h_minus1_")):

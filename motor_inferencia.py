@@ -1220,8 +1220,10 @@ def generar_veredicto_tactico_partido(
         n_ev_v = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
 
     k_eval_ver = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 
-    if k_eval_ver < 10:
+    if k_eval_ver < k_min_cron:
         c2 = (
             f"2. Cronología de goles: Cobertura de minutos insuficiente ({k_eval_ver}/15 partidos con cronología "
             f"verificada). No se proyecta alerta en tramos específicos por prudencia estadística hasta contar con datos completos."
@@ -1239,7 +1241,7 @@ def generar_veredicto_tactico_partido(
         f"se repliega en bloque ({fal_l:.1f} vs {fal_v:.1f} faltas/partido)."
     )
     txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
-    if k_eval_ver < 10:
+    if k_eval_ver < k_min_cron:
         c4 = (
             f"4. Dinámica de la segunda mitad: El modelo proyecta '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
             f"proyectado en 2T y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."

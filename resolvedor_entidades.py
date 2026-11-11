@@ -469,6 +469,12 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "olympiacos": ("Olympiacos", "GRC"),
     "panathinaikos": ("Panathinaikos", "GRC"),
     "paok": ("PAOK", "GRC"),
+    # BRASIL (Série A, Série B, Série C)
+    "londrina": ("Londrina", "BRA"),
+    "londrina ec": ("Londrina", "BRA"),
+    "nautico": ("Náutico", "BRA"),
+    "clube nautico capibaribe": ("Náutico", "BRA"),
+    "nautico pe": ("Náutico", "BRA"),
     # SUDAMÉRICA Y MÉXICO
     "platense": ("CA Platense", "ARG"),
     "ca platense": ("CA Platense", "ARG"),
@@ -642,6 +648,8 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Atlético Nacional", "COL"): "10093",
     ("Valencia", "ESP"): "10205",
     ("UD Tavernes", "ESP"): "1543888",
+    ("Londrina", "BRA"): "298660",
+    ("Náutico", "BRA"): "2369",
 }
 
 # Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
@@ -1399,6 +1407,16 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
             liga_info = liga_loc
             loc_raw = loc_limpio
 
+    # Si vis_raw termina en paréntesis con especificación de liga (ej. 'Nautico (Serie B)'):
+    m_par = re.search(r"\(([^)]+)\)\s*$", vis_raw)
+    if m_par:
+        posible_liga = m_par.group(1).strip()
+        liga_suf, _ = extraer_liga_flashscore(posible_liga)
+        if liga_suf or posible_liga.lower() in ("serie b", "serie a", "serie c"):
+            if not liga_info:
+                liga_info = liga_suf or {"nombre": posible_liga, "liga_norm": posible_liga.lower(), "pais_iso": "BRA" if posible_liga.lower() in ("serie b", "serie c") else ""}
+            vis_raw = vis_raw[:m_par.start()].strip()
+
     liga_nombre = (liga_info or {}).get("nombre", "")
     liga_norm = (liga_info or {}).get("liga_norm", "")
     pais_iso = (liga_info or {}).get("pais_iso", "")
@@ -1521,8 +1539,13 @@ def resolver(
 
     if not es_internacional:
         if pais_iso_liga and pais_iso_liga != "INT":
-            pais_conjunto = pais_iso_liga
-            criterio_desempate = f"liga_declarada ({pais_iso_liga})"
+            inter = cands_paises_l & cands_paises_v
+            if inter and pais_iso_liga not in inter and "serie b" in liga_norm and "BRA" in inter:
+                pais_conjunto = "BRA"
+                criterio_desempate = "liga_declarada (serie_b_brasil)"
+            else:
+                pais_conjunto = pais_iso_liga
+                criterio_desempate = f"liga_declarada ({pais_iso_liga})"
         elif iso_calif_l:
             pais_conjunto = iso_calif_l
             criterio_desempate = f"calificador_local ({loc_str})"
