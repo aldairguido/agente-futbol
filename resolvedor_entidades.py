@@ -1434,6 +1434,8 @@ def resolver(
     liga_o_comando: str,
     equipo_local: Optional[str] = None,
     equipo_visita: Optional[str] = None,
+    candidatos_local: Optional[List[Dict[str, Any]]] = None,
+    candidatos_visita: Optional[List[Dict[str, Any]]] = None,
 ) -> ResultadoResolucion:
     """
     Resuelve de forma conjunta (Entity Resolution) `(liga, equipo_local, equipo_visita)` o comando
@@ -1552,10 +1554,23 @@ def resolver(
     cand_l_known = bool((nom_loc, pais_local) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_loc) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_loc)
     cand_v_known = bool((nom_vis, pais_visita) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_vis) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_vis)
 
-    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis):
+    # Detección de homónimos desconocidos o candidatos ambiguos
+    cands_l_paises = {c.get("pais_iso") or c.get("country") for c in (candidatos_local or []) if (c.get("pais_iso") or c.get("country"))}
+    cands_v_paises = {c.get("pais_iso") or c.get("country") for c in (candidatos_visita or []) if (c.get("pais_iso") or c.get("country"))}
+
+    es_homonimo_ambiguo_l = bool(len(cands_l_paises) > 1 and not pais_iso_liga and not iso_calif_l and not pais_conjunto)
+    es_homonimo_ambiguo_v = bool(len(cands_v_paises) > 1 and not pais_iso_liga and not iso_calif_v and not pais_conjunto)
+
+    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis) or criterio_desempate == "sin_desempate_claro" or es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
         identidad_verificada = False
         estado_identidad = "identidad_no_verificada"
-        motivo_identidad = f"No se pudo verificar la identidad fehaciente de: {loc_str if (not cand_l_known and not iso_loc) else vis_str}"
+        if es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
+            nom_amb = loc_str if es_homonimo_ambiguo_l else vis_str
+            motivo_identidad = f"Homónimo no verificado para '{nom_amb}': existen múltiples candidatos en distintos países sin contexto de liga/país para desempatar fehacientemente."
+        elif (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis):
+            motivo_identidad = f"No se pudo verificar la identidad fehaciente de: {loc_str if (not cand_l_known and not iso_loc) else vis_str}"
+        else:
+            motivo_identidad = f"No se pudo verificar la identidad fehaciente (sin desempate claro entre '{loc_str}' y '{vis_str}'). Indique la liga o país oficial."
         nivel_confianza = "nula"
     else:
         identidad_verificada = True
@@ -1582,8 +1597,8 @@ def resolver(
         identidad_verificada=identidad_verificada,
         estado_identidad=estado_identidad,
         motivo_identidad=motivo_identidad,
-        candidatos_local=[{"nombre": nom_loc, "pais_iso": pais_local, "id": id_prov_l}],
-        candidatos_visita=[{"nombre": nom_vis, "pais_iso": pais_visita, "id": id_prov_v}],
+        candidatos_local=candidatos_local if candidatos_local else [{"nombre": nom_loc, "pais_iso": pais_local, "id": id_prov_l}],
+        candidatos_visita=candidatos_visita if candidatos_visita else [{"nombre": nom_vis, "pais_iso": pais_visita, "id": id_prov_v}],
         criterio_desempate=criterio_desempate,
         nivel_confianza=nivel_confianza,
         id_proveedor_local=id_prov_l,

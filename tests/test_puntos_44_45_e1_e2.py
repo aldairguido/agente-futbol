@@ -749,3 +749,27 @@ def test_resolucion_valencia_cf_vs_ud_tavernes_anti_colision_filial_y_extranjero
     cand_ven = {"name": "Valencia FC", "leagueName": "Primera División", "country": "VEN"}
     score_ven = validar_y_puntuar_candidato_fotmob(cand_ven, "Valencia", texto_liga_o_contexto="Copa del Rey", pais_iso_esperado="ESP")
     assert score_ven == -9999.0
+
+
+def test_homonimo_desconocido_multiples_candidatos_bloquea_sin_elegir():
+    """Punto 3: Club no registrado en diccionarios con múltiples candidatos homónimos devuelve identidad_no_verificada y detiene el pronóstico."""
+    cands_desconocidos = [
+        {"id": "9901", "nombre": "Deportivo Desconocido", "pais_iso": "GTM"},
+        {"id": "9902", "nombre": "Deportivo Desconocido", "pais_iso": "HND"},
+    ]
+
+    # Resolver sin contexto de liga ni calificador: NO debe elegir arbitrariamente un candidato
+    res = resolver_entidades("", "Deportivo Desconocido", "Rival Desconocido", candidatos_local=cands_desconocidos)
+    assert res.estado_identidad == "identidad_no_verificada"
+    assert res.identidad_verificada is False
+    assert len(res.candidatos_local) == 2
+    assert res.candidatos_local[0]["id"] == "9901"
+    assert res.candidatos_local[1]["id"] == "9902"
+
+    # En la decisión de cobertura: detención inmediata del pronóstico
+    doc_l = {"equipo": {"nombre": "Deportivo Desconocido"}, "estado_identidad": res.estado_identidad, "partidos": []}
+    doc_v = {"equipo": {"nombre": "Rival Desconocido"}, "partidos": []}
+    dec = evaluar_decision_cobertura(doc_l, doc_v)
+    assert dec.estado == "identidad_no_verificada"
+    assert dec.publicar_probabilidades is False
+    assert "Identidad no verificada" in dec.alerta_descriptiva

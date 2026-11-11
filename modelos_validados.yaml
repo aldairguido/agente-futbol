@@ -5,19 +5,6 @@
 # no puede utilizarse en producción.
 # ==============================================================================
 
-politica_goles_sin_xg:
-  # Interruptor oficial D1: Apagado por defecto.
-  # Solo puede encenderse tras ejecutar y superar validación cronológica
-  # (walk-forward sin fuga de información vs línea base de frecuencias).
-  permitir_goles_sin_xg: false
-  criterio_validacion: "walk_forward_brier_logloss_vs_baseline"
-  validacion_cronologica_superada: false
-  variables_submodelo_sin_xg:
-    - "goles"
-    - "remates_puerta"
-    - "remates_totales"
-  min_pares_con_dato: 8  # regla operativa, sin validación cronológica
-
 modelos:
   red_recursiva_45_dcn:
     nombre: "Red Neuronal Recursiva 45-DCN"
@@ -89,7 +76,6 @@ modelos:
     # Coherencia estricta D1: En torneos sin xG oficial (ej. Copa AUF, Copa Colombia),
     # el modelo de goles queda BLOQUEADO salvo que permitir_goles_sin_xg esté encendido.
     requiere_xg_estricto: true
-    permitir_goles_sin_xg: false
 
   submodelo_goles_sin_xg:
     nombre: "Sub-modelo Condicional de Goles sin xG (Goles + Remates a Puerta + Remates Totales)"
@@ -103,6 +89,7 @@ modelos:
     cobertura_cronologica: [8, 10, 12, 15]
     funcion_ejecutar: "motor_mercados.calcular_poisson_sin_xg"
     permite_imputacion: false
+    # Interruptor único D1: apagado por defecto hasta validación cronológica walk-forward
     permitir_goles_sin_xg: false
     validacion_cronologica_superada: false
 
