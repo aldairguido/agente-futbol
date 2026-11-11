@@ -124,19 +124,38 @@ def emparejar_historicos_por_recencia(
             obs_a: Set[str] = set()
             obs_b: Set[str] = set()
             if pa:
-                obs_a = set((pa.get("resumen_claves") or {}).get(per, {}).get("equipo", []))
+                res_a = (pa.get("resumen_claves") or {}).get(per, {}).get("equipo", [])
+                if res_a:
+                    obs_a = set(res_a)
+                else:
+                    obs_a = {
+                        f.get("clave")
+                        for f in (pa.get("periodos", {}).get(per, {}).get("filas", []))
+                        if f.get("clave") and f.get("equipo") is not None
+                    }
             if pb:
-                obs_b = set((pb.get("resumen_claves") or {}).get(per, {}).get("equipo", []))
+                res_b = (pb.get("resumen_claves") or {}).get(per, {}).get("equipo", [])
+                if res_b:
+                    obs_b = set(res_b)
+                else:
+                    obs_b = {
+                        f.get("clave")
+                        for f in (pb.get("periodos", {}).get(per, {}).get("filas", []))
+                        if f.get("clave") and f.get("equipo") is not None
+                    }
 
             comunes = sorted(obs_a & obs_b)
             exclusivas_a = sorted(obs_a - obs_b)
             exclusivas_b = sorted(obs_b - obs_a)
 
+            tiene_m_a = pa.get("goles_equipo") is not None or (isinstance(pa.get("marcador"), dict) and pa.get("marcador", {}).get("equipo") is not None) if pa else False
+            tiene_m_b = pb.get("goles_equipo") is not None or (isinstance(pb.get("marcador"), dict) and pb.get("marcador", {}).get("equipo") is not None) if pb else False
+
             if pa is None or pb is None:
                 uso = "Sin partido emparejado"
             elif comunes:
                 uso = f"A y B usan las mismas {len(comunes)} claves"
-            elif pa.get("goles_equipo") is not None and pb.get("goles_equipo") is not None and per == "FT":
+            elif tiene_m_a and tiene_m_b and per == "FT":
                 uso = "Solo historial de resultados, si hay marcador"
             else:
                 uso = f"Sin comparación estadística en {per} para esta fila"
@@ -287,12 +306,29 @@ def verificar_compatibilidad_modelo(
             )
         return True, "Red 45-DCN compatible con 15 pares completos de 45 variables", pares_45
 
-    # Sub-modelo condicional sin xG (Decisión D1): requiere interruptor encendido y validación cronológica superada
+    # Sub-modelo condicional sin xG (Decisión D1): requiere interruptor encendido, validación cronológica superada
+    # y función ejecutable efectivamente implementada en el sistema (Fail-Closed)
     if nombre_modelo == "submodelo_goles_sin_xg":
         if not mod_info.get("permitir_goles_sin_xg", False) or not mod_info.get("validacion_cronologica_superada", False):
             return (
                 False,
                 "Sub-modelo de goles sin xG bloqueado: interruptor apagado (permitir_goles_sin_xg=false) o validación cronológica walk-forward pendiente",
+                0,
+            )
+        func_path = mod_info.get("funcion_ejecutar", "")
+        func_existe = False
+        if func_path and "." in func_path:
+            mod_name, func_name = func_path.rsplit(".", 1)
+            try:
+                import importlib
+                mod_obj = importlib.import_module(mod_name)
+                func_existe = hasattr(mod_obj, func_name) and callable(getattr(mod_obj, func_name))
+            except Exception:
+                func_existe = False
+        if not func_existe:
+            return (
+                False,
+                f"Sub-modelo de goles sin xG bloqueado: sub-modelo sin xG no implementado (función '{func_path}' no encontrada en el sistema)",
                 0,
             )
 
@@ -306,11 +342,29 @@ def verificar_compatibilidad_modelo(
         if mod_info.get("requiere_xg_estricto", True) and pares_xg_ft < min_pares:
             modelos_cfg = cargar_modelos_validados()
             submod = modelos_cfg.get("submodelo_goles_sin_xg") or {}
-            submod_on = bool(submod.get("permitir_goles_sin_xg") and submod.get("validacion_cronologica_superada"))
+            sub_path = submod.get("funcion_ejecutar", "")
+            sub_func_existe = False
+            if sub_path and "." in sub_path:
+                mod_name, func_name = sub_path.rsplit(".", 1)
+                try:
+                    import importlib
+                    mod_obj = importlib.import_module(mod_name)
+                    sub_func_existe = hasattr(mod_obj, func_name) and callable(getattr(mod_obj, func_name))
+                except Exception:
+                    sub_func_existe = False
+            submod_on = bool(
+                submod.get("permitir_goles_sin_xg")
+                and submod.get("validacion_cronologica_superada")
+                and sub_func_existe
+            )
             if not submod_on:
+                if submod.get("permitir_goles_sin_xg") and not sub_func_existe:
+                    motivo_sub = "sub-modelo sin xG no implementado"
+                else:
+                    motivo_sub = "sub-modelo sin xG no validado (permitir_goles_sin_xg=false)"
                 return (
                     False,
-                    f"Modelo de {periodo_req} bloqueado por coherencia con FT: falta xG oficial y sub-modelo sin xG no validado (permitir_goles_sin_xg=false)",
+                    f"Modelo de {periodo_req} bloqueado por coherencia con FT: falta xG oficial y {motivo_sub}",
                     pares_xg_ft,
                 )
 
@@ -324,7 +378,9 @@ def verificar_compatibilidad_modelo(
 
         # Si el modelo requiere 'goles', verificar que ambos partidos tengan marcador
         if "goles" in vars_req:
-            if pa.get("goles_equipo") is None or pb.get("goles_equipo") is None:
+            tiene_m_a = pa.get("goles_equipo") is not None or (isinstance(pa.get("marcador"), dict) and pa.get("marcador", {}).get("equipo") is not None)
+            tiene_m_b = pb.get("goles_equipo") is not None or (isinstance(pb.get("marcador"), dict) and pb.get("marcador", {}).get("equipo") is not None)
+            if not (tiene_m_a and tiene_m_b):
                 continue
 
         vars_stats = {v for v in vars_req if v != "goles"}

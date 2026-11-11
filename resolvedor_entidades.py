@@ -1505,7 +1505,16 @@ def resolver(
     iso_calif_v = calif_v.get("pais_iso")
 
     cands_paises_l = _paises_posibles_para_club(loc_str)
+    for c in (candidatos_local or []):
+        iso_c = c.get("pais_iso") or c.get("country")
+        if iso_c:
+            cands_paises_l.add(iso_c)
+
     cands_paises_v = _paises_posibles_para_club(vis_str)
+    for c in (candidatos_visita or []):
+        iso_c = c.get("pais_iso") or c.get("country")
+        if iso_c:
+            cands_paises_v.add(iso_c)
 
     criterio_desempate = ""
     pais_conjunto = ""
@@ -1579,7 +1588,11 @@ def resolver(
         nivel_confianza = "alta" if (criterio_desempate != "sin_desempate_claro") else "media"
 
     id_prov_l = FOTMOB_IDS_CONOCIDOS.get((nom_loc, pais_local))
+    if not id_prov_l and candidatos_local and len(candidatos_local) == 1:
+        id_prov_l = candidatos_local[0].get("id")
     id_prov_v = FOTMOB_IDS_CONOCIDOS.get((nom_vis, pais_visita))
+    if not id_prov_v and candidatos_visita and len(candidatos_visita) == 1:
+        id_prov_v = candidatos_visita[0].get("id")
 
     return ResultadoResolucion(
         nom_loc,

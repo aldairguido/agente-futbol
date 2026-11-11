@@ -310,9 +310,10 @@ def evaluar_decision_cobertura(
     motivos_bloqueo: Dict[str, str] = {}
     modelos_activos: Dict[str, str] = {}
 
-    # Mercado 1X2 / Handicap / Doble Oportunidad:
+        # Mercado 1X2 / Handicap / Doble Oportunidad:
     # Prioridad 1: red_recursiva_45_dcn (si tiene 15 pares de 45 métricas)
     # Alternativa validada: poisson_bivariado_goles (si tiene >= 8 pares de goles/xg/remates_puerta)
+    # Sub-modelo condicional sin xG (si está habilitado y validado)
     if modelos_hab.get("red_recursiva_45_dcn"):
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = True
@@ -321,20 +322,36 @@ def evaluar_decision_cobertura(
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = True
             modelos_activos[m] = "poisson_bivariado_goles"
+    elif modelos_hab.get("submodelo_goles_sin_xg"):
+        for m in ("1X2", "handicap", "doble_oportunidad"):
+            mercados_habilitados[m] = True
+            modelos_activos[m] = "submodelo_goles_sin_xg"
     else:
         for m in ("1X2", "handicap", "doble_oportunidad"):
             mercados_habilitados[m] = False
-            motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or motivos_mod.get("red_recursiva_45_dcn") or "Sin modelo de resultado habilitado"
+            motivo_sub = motivos_mod.get("submodelo_goles_sin_xg")
+            if motivo_sub and "no implementado" in motivo_sub:
+                motivos_bloqueo[m] = motivo_sub
+            else:
+                motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or motivos_mod.get("red_recursiva_45_dcn") or "Sin modelo de resultado habilitado"
 
-    # Goles FT: poisson_bivariado_goles
+    # Goles FT: poisson_bivariado_goles / submodelo_goles_sin_xg
     if modelos_hab.get("poisson_bivariado_goles"):
         for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
             mercados_habilitados[m] = True
             modelos_activos[m] = "poisson_bivariado_goles"
+    elif modelos_hab.get("submodelo_goles_sin_xg"):
+        for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
+            mercados_habilitados[m] = True
+            modelos_activos[m] = "submodelo_goles_sin_xg"
     else:
         for m in ("mas_menos_goles", "ambos_marcan", "marcador_exacto"):
             mercados_habilitados[m] = False
-            motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or "Insumos insuficientes para modelo bivariado de goles"
+            motivo_sub = motivos_mod.get("submodelo_goles_sin_xg")
+            if motivo_sub and "no implementado" in motivo_sub:
+                motivos_bloqueo[m] = motivo_sub
+            else:
+                motivos_bloqueo[m] = motivos_mod.get("poisson_bivariado_goles") or "Insumos insuficientes para modelo bivariado de goles" 
 
     # Córneres: modelo_mercado_corners
     if modelos_hab.get("modelo_mercado_corners"):

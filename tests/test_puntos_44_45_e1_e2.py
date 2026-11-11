@@ -262,25 +262,48 @@ def test_e1_10_cuadro_c_sin_minutos_cuadro_b_sin_descanso():
 
 
 def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
-    """E.1.11: Cambio exclusivo en métrica de A excluida de la vista comparable deja la proyección final idéntica bit a bit."""
+    """E.1.11: Cambio exclusivo en métrica de A excluida de la vista comparable deja la proyección final idéntica bit a bit.
+    Incluye ejecución de control que demuestra falsabilidad (si no se filtrara, el cambio sí alteraría el cálculo)."""
+    # Métrica exclusiva: 'xgot' (consumida activamente por calibrar_lambda_efectivo en el motor cuantitativo)
     claves_comunes = ["xg", "remates_totales", "remates_puerta", "corners"]
-    doc_a1 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["despejes"])
-    doc_a2 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["despejes"])
-    # Modificar estadística exclusiva 'despejes' en a2
-    doc_a2["partidos"][0]["periodos"]["FT"]["filas"][-1]["equipo"] = 999.0
+    doc_a1 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["xgot"])
+    doc_a2 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["xgot"])
+    # Modificar xgot en doc_a2 a un valor sustancialmente mayor (4.5 vs 1.2)
+    for p in doc_a2["partidos"]:
+        for f in p["periodos"]["FT"]["filas"]:
+            if f.get("clave") == "xgot":
+                f["equipo"] = 4.5
+                f["rival"] = 0.2
 
     doc_b = _mock_doc("Club B", 15, 15, claves_ft=claves_comunes)
 
+    # 1. CONTROL NEGATIVO (Falsabilidad): Sin el filtro de vista comparable, el motor SÍ altera lambda y probabilidades
+    np.random.seed(42)
+    m_ctrl_1 = mm.MotorMercados(doc_a1, doc_b)
+    m_ctrl_1.preparar()
+    res_ctrl_1 = m_ctrl_1.evaluar_catalogo()
+
+    np.random.seed(42)
+    m_ctrl_2 = mm.MotorMercados(doc_a2, doc_b)
+    m_ctrl_2.preparar()
+    res_ctrl_2 = m_ctrl_2.evaluar_catalogo()
+
+    # Comprobación de falsabilidad: lambda_local y probabilidades difieren
+    assert m_ctrl_1.tasas.lambda_local_ft != m_ctrl_2.tasas.lambda_local_ft, (
+        f"Control negativo falló: lambda_local debió variar sin filtro ({m_ctrl_1.tasas.lambda_local_ft} vs {m_ctrl_2.tasas.lambda_local_ft})"
+    )
+    probs_ctrl_1 = {s.clave_unica: s.probabilidad for r in res_ctrl_1 for s in r.selecciones}
+    probs_ctrl_2 = {s.clave_unica: s.probabilidad for r in res_ctrl_2 for s in r.selecciones}
+    assert probs_ctrl_1 != probs_ctrl_2, "Control negativo falló: las probabilidades debieron diferir sin filtro"
+
+    # 2. PRODUCCIÓN (Vista Comparable Simétrica): 'xgot' no está en B, por tanto se filtra de vista_a
     v1 = construir_vista_comparable(doc_a1, doc_b)
     v2 = construir_vista_comparable(doc_a2, doc_b)
 
-    # 'despejes' no está en B, por tanto se filtra de vista_a
     assert v1["emparejamientos"][0]["periodos"]["FT"]["claves_comunes"] == sorted(claves_comunes)
     assert v2["emparejamientos"][0]["periodos"]["FT"]["claves_comunes"] == sorted(claves_comunes)
-    # Las filas finales enviadas al motor son exactamente las mismas
     assert len(v1["vista_a"][0]["periodos"]["FT"]["filas"]) == len(v2["vista_a"][0]["periodos"]["FT"]["filas"]) == 4
 
-    # Salida de decisión de cobertura idéntica
     dec1 = evaluar_decision_cobertura(doc_a1, doc_b, vista_comparable=v1)
     dec2 = evaluar_decision_cobertura(doc_a2, doc_b, vista_comparable=v2)
     assert dec1.estado == dec2.estado
@@ -288,7 +311,6 @@ def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
     assert dec1.mercados_habilitados == dec2.mercados_habilitados
     assert dec1.motivos_bloqueo == dec2.motivos_bloqueo
 
-    # Invarianza numérica bit a bit del motor cuantitativo completo (lambda_L, lambda_V, matriz 7x7 y catálogo de mercados)
     doc_1_l = dict(doc_a1, partidos=v1["vista_a"])
     doc_1_v = dict(doc_b, partidos=v1["vista_b"])
     doc_2_l = dict(doc_a2, partidos=v2["vista_a"])
@@ -304,9 +326,9 @@ def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
     m2.preparar()
     res2 = m2.evaluar_catalogo()
 
-    # Comprobación estricta bit a bit
-    assert m1.tasas.lambda_local_ft == m2.tasas.lambda_local_ft
-    assert m1.tasas.lambda_visitante_ft == m2.tasas.lambda_visitante_ft
+    # Comprobación estricta bit a bit bajo vista comparable
+    assert m1.tasas.lambda_local_ft == m2.tasas.lambda_local_ft == 1.1
+    assert m1.tasas.lambda_visitante_ft == m2.tasas.lambda_visitante_ft == 0.97
     assert m1.matriz_ft == m2.matriz_ft
     mat_7x7_1 = [row[:7] for row in m1.matriz_ft[:7]]
     mat_7x7_2 = [row[:7] for row in m2.matriz_ft[:7]]
@@ -773,3 +795,82 @@ def test_homonimo_desconocido_multiples_candidatos_bloquea_sin_elegir():
     assert dec.estado == "identidad_no_verificada"
     assert dec.publicar_probabilidades is False
     assert "Identidad no verificada" in dec.alerta_descriptiva
+
+
+def test_fail_closed_permitir_goles_sin_xg_cuando_funcion_no_existe():
+    """Punto 1: Activar permitir_goles_sin_xg falla cerrado con motivo claro si la función no existe."""
+    import unittest.mock
+    import auditoria_comparable as ac
+    claves = ["remates_totales", "remates_puerta", "corners", "tarjetas_amarillas", "faltas"]
+    doc_a = _mock_doc("Club A", 15, 15, claves_ft=claves)
+    doc_b = _mock_doc("Club B", 15, 15, claves_ft=claves)
+
+    cfg_mock = ac.cargar_modelos_validados()
+    if "submodelo_goles_sin_xg" in cfg_mock:
+        cfg_mock["submodelo_goles_sin_xg"]["permitir_goles_sin_xg"] = True
+        cfg_mock["submodelo_goles_sin_xg"]["validacion_cronologica_superada"] = True
+        cfg_mock["submodelo_goles_sin_xg"]["funcion_ejecutar"] = "motor_mercados.calcular_poisson_sin_xg"
+
+    with unittest.mock.patch("auditoria_comparable.cargar_modelos_validados", return_value=cfg_mock):
+        vista = ac.construir_vista_comparable(doc_a, doc_b)
+        dec = evaluar_decision_cobertura(doc_a, doc_b, vista_comparable=vista)
+
+        for m in ("1X2", "handicap", "doble_oportunidad", "mas_menos_goles", "ambos_marcan", "marcador_exacto", "goles_1t", "goles_2t"):
+            assert dec.mercados_habilitados[m] is False, f"Mercado {m} debió quedar bloqueado"
+            assert "sub-modelo sin xG no implementado" in dec.motivos_bloqueo[m], f"Motivo en {m}: {dec.motivos_bloqueo[m]}"
+
+
+def test_resolver_club_desconocido_con_liga_declarada_verificado():
+    """Punto 3a: Club fuera de diccionarios con liga declarada se verifica y no se bloquea."""
+    from resolvedor_entidades import resolver
+    res = resolver("Premier League", "AFC Richmond", "Chelsea")
+    assert res.identidad_verificada is True
+    assert res.estado_identidad == "verificada"
+    assert res.pais_local == "ENG"
+    assert res.pais_visita == "ENG"
+    assert res.nivel_confianza == "alta"
+
+
+def test_resolver_club_desconocido_con_unico_candidato_proveedor_coherente_verificado():
+    """Punto 3b: Club fuera de diccionarios con candidato único del proveedor y cruce coherente se verifica."""
+    from resolvedor_entidades import resolver
+    cands_l = [{"nombre": "AFC Richmond", "pais_iso": "ENG", "id": "99999"}]
+    res = resolver("", "AFC Richmond", "Chelsea", candidatos_local=cands_l)
+    assert res.identidad_verificada is True
+    assert res.estado_identidad == "verificada"
+    assert res.pais_local == "ENG"
+    assert res.pais_visita == "ENG"
+    assert res.id_proveedor_local == "99999"
+
+
+def test_resolver_homonimo_ambiguo_sin_evidencia_sigue_bloqueado():
+    """Punto 3: Homónimo ambiguo con candidatos en múltiples países sin desempate sigue en identidad_no_verificada."""
+    from resolvedor_entidades import resolver
+    cands_l = [
+        {"nombre": "Club Homonimo", "pais_iso": "URY", "id": "111"},
+        {"nombre": "Club Homonimo", "pais_iso": "ARG", "id": "222"}
+    ]
+    cands_v = [
+        {"nombre": "Club Rival", "pais_iso": "CHL", "id": "333"},
+        {"nombre": "Club Rival", "pais_iso": "COL", "id": "444"}
+    ]
+    res = resolver("", "Club Homonimo", "Club Rival", candidatos_local=cands_l, candidatos_visita=cands_v)
+    assert res.identidad_verificada is False
+    assert res.estado_identidad == "identidad_no_verificada"
+    assert "Homónimo no verificado" in res.motivo_identidad
+
+
+def test_decision_cobertura_filas_3_a_7_sin_mercados_habilitados_es_insuficiente():
+    """Punto 5: Con 3 a 7 filas comparables pero 0 mercados habilitados, el estado es cobertura_insuficiente."""
+    claves_no_modelables = ["fueras_juego", "tiros_libres", "pases_total", "despejes", "intercepciones"]
+    pts_a = [_mock_partido(i, goles_l=None, goles_v=None, claves_ft=claves_no_modelables if i <= 5 else []) for i in range(1, 16)]
+    pts_b = [_mock_partido(i, goles_l=None, goles_v=None, claves_ft=claves_no_modelables if i <= 5 else []) for i in range(1, 16)]
+
+    doc_a = {"equipo": "A", "partidos": pts_a, "resumen_auditoria": _construir_resumen({"partidos": pts_a})}
+    doc_b = {"equipo": "B", "partidos": pts_b, "resumen_auditoria": _construir_resumen({"partidos": pts_b})}
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.n_filas_comparables == 5
+    assert dec.estado == "cobertura_insuficiente"
+    assert dec.publicar_probabilidades is False
+    assert all(v is False for v in dec.mercados_habilitados.values())
