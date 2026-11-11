@@ -648,8 +648,6 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Atlético Nacional", "COL"): "10093",
     ("Valencia", "ESP"): "10205",
     ("UD Tavernes", "ESP"): "1543888",
-    ("Londrina", "BRA"): "298660",
-    ("Náutico", "BRA"): "2369",
 }
 
 # Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
@@ -1412,9 +1410,11 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
     if m_par:
         posible_liga = m_par.group(1).strip()
         liga_suf, _ = extraer_liga_flashscore(posible_liga)
-        if liga_suf or posible_liga.lower() in ("serie b", "serie a", "serie c"):
+        pos_norm = normalizar_texto(posible_liga)
+        if liga_suf or any(k in pos_norm for k in ("serie a", "serie b", "serie c")):
             if not liga_info:
-                liga_info = liga_suf or {"nombre": posible_liga, "liga_norm": posible_liga.lower(), "pais_iso": "BRA" if posible_liga.lower() in ("serie b", "serie c") else ""}
+                iso_det = normalizar_pais_iso(posible_liga)
+                liga_info = liga_suf or {"nombre": posible_liga, "liga_norm": pos_norm, "pais_iso": iso_det}
             vis_raw = vis_raw[:m_par.start()].strip()
 
     liga_nombre = (liga_info or {}).get("nombre", "")
@@ -1540,9 +1540,9 @@ def resolver(
     if not es_internacional:
         if pais_iso_liga and pais_iso_liga != "INT":
             inter = cands_paises_l & cands_paises_v
-            if inter and pais_iso_liga not in inter and "serie b" in liga_norm and "BRA" in inter:
+            if inter and pais_iso_liga not in inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter:
                 pais_conjunto = "BRA"
-                criterio_desempate = "liga_declarada (serie_b_brasil)"
+                criterio_desempate = "liga_declarada (serie_b_c_brasil)"
             else:
                 pais_conjunto = pais_iso_liga
                 criterio_desempate = f"liga_declarada ({pais_iso_liga})"

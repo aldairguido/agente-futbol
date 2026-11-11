@@ -432,9 +432,11 @@ def test_14_desambiguacion_serie_b_brasil_no_altera_homonimos_ni_cache():
     assert res.get("equipo_visita") in ("Nautico", "Náutico")
     assert "serie b" in str(res.get("liga") or "").lower()
 
-    # Verificar que CLUBES_HOMONIMOS no contiene Londrina ni Náutico (no son homónimos multi-país)
+    # Verificar que CLUBES_HOMONIMOS y FOTMOB_IDS_CONOCIDOS no contienen Londrina ni Náutico
     assert "londrina" not in re_ent.CLUBES_HOMONIMOS
     assert "nautico" not in re_ent.CLUBES_HOMONIMOS
+    assert ("Londrina", "BRA") not in re_ent.FOTMOB_IDS_CONOCIDOS
+    assert ("Náutico", "BRA") not in re_ent.FOTMOB_IDS_CONOCIDOS
 
     # Verificar que construir_clave_cache_entidad preserva la estructura de campos
     key = re_ent.construir_clave_cache_entidad("298660", "BRA", False, False)
@@ -460,3 +462,100 @@ def test_15_btts_bloqueo_recorte_independiente_calibracion():
     ]
     top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels, motor=motor, eq_l="Londrina", eq_v="Náutico")
     assert not any("Ambos anotan" in item["etiqueta"] for item in top5)
+
+
+def test_16_serie_b_italiana_resuelve_ita_y_solo_brasil_con_ambos_brasileños():
+    """Anti-regresión Serie B / Serie C: Pisa vs Cremonese resuelve a ITA; Londrina vs Náutico a BRA."""
+    import resolvedor_entidades as re_ent
+
+    res_ita = re_ent.parsear_comando_mercados("/mercados Pisa vs Cremonese (Serie B)")
+    assert res_ita.get("pais_iso") == "ITA"
+    assert "ITA" in res_ita.get("criterio_desempate", "")
+
+    res_ita_c = re_ent.parsear_comando_mercados("/mercados Cesena vs Torres (Serie C)")
+    assert res_ita_c.get("pais_iso") == "ITA"
+
+    res_bra = re_ent.parsear_comando_mercados("/mercados Londrina vs Nautico (Serie B)")
+    assert res_bra.get("pais_iso") == "BRA"
+    assert "brasil" in res_bra.get("criterio_desempate", "").lower()
+
+
+def test_17_doble_oportunidad_1x_evalua_calibracion_y_excluye_por_desvio_mayor_10pts():
+    """Regla uniforme: 1X (71.7%) contra frecuencia 6/15 (40.0%) da desvío de 31.7 pts y sale de Top 5."""
+    from motor_mercados import tiene_desvio_excesivo_calibracion, Seleccion
+
+    doc_l = {"partidos": [{"marcador": {"equipo": 1, "rival": 0}}]*6 + [{"marcador": {"equipo": 0, "rival": 1}}]*9}
+    doc_v = {"partidos": [{"marcador": {"equipo": 1, "rival": 0}}]*4 + [{"marcador": {"equipo": 0, "rival": 1}}]*11}
+
+    s_1x = Seleccion("doble_oportunidad", "Doble oportunidad", "dc_1x", "1X (Londrina o empate)", "FT", "", None, 0.717, estado="mantiene")
+    excede, desv, f_obs = tiene_desvio_excesivo_calibracion(s_1x, doc_l, doc_v, "Londrina", "Náutico")
+
+    assert f_obs == 0.40
+    assert abs(desv - 31.7) < 0.1
+    assert excede is True
+
+    motor = MagicMock()
+    motor.tasas = MagicMock(lambda_local_ft=1.10, lambda_visitante_ft=0.90, lambda_local_1t=0.55, lambda_local_2t=0.55, lambda_visitante_1t=0.45, lambda_visitante_2t=0.45)
+    motor.matriz_ft = [[0.01]*10 for _ in range(10)]
+    motor.doc_local = doc_l
+    motor.doc_visitante = doc_v
+    motor.recursivo = {}
+
+    top5 = mm.seleccionar_top_5_jugadas_recomendadas([s_1x], motor=motor, eq_l="Londrina", eq_v="Náutico")
+    assert not any("1X" in item.get("etiqueta", "") for item in top5)
+
+
+def test_18_denominador_excluye_partidos_sin_dato_corners_n_evaluable_14():
+    """Denominador real: partidos con datos faltantes (None) se excluyen de N (14 en lugar de 15)."""
+    from motor_mercados import calcular_frecuencia_observada, Seleccion
+
+    # 14 partidos con córneres válidos y 1 partido con None (total 15)
+    # De los 14 válidos, 7 tienen < 5.5 córneres: f_obs = 7 / 14 = 50.0%
+    filas_con_corners = lambda c: [{"clave": "corners", "equipo": c, "rival": 3.0}]
+    filas_sin_corners = [{"clave": "corners", "equipo": None, "rival": None}]
+
+    partidos_v = []
+    # 7 partidos con < 5.5 córneres (ej. 3.0)
+    for _ in range(7):
+        partidos_v.append({"periodos": {"FT": {"filas": filas_con_corners(3.0)}}})
+    # 7 partidos con >= 5.5 córneres (ej. 8.0)
+    for _ in range(7):
+        partidos_v.append({"periodos": {"FT": {"filas": filas_con_corners(8.0)}}})
+    # 1 partido sin dato de córneres (None)
+    partidos_v.append({"periodos": {"FT": {"filas": filas_sin_corners}}})
+
+    doc_v = {"partidos": partidos_v}
+    doc_l = {"partidos": []}
+
+    s_under_55 = Seleccion("corners_visitante", "Nautico - Tiros de esquina", "visita_corners_under_5.5", "menos de 5.5 córneres", "FT", "Náutico", 5.5, 0.726, estado="mantiene")
+    f_obs = calcular_frecuencia_observada(s_under_55, doc_l, doc_v, eq_l="Londrina", eq_v="Náutico")
+
+    assert f_obs is not None
+    assert round(f_obs, 4) == 0.5000  # 7 / 14 = 50.0% (N=14 evaluable, cero contado para el None)
+
+
+def test_19_regla_21_techo_lambda_ataque_bajo_en_umbrales():
+    """Regla 21: Tope de lambda ofensivo registrado en umbrales_cobertura.yaml y aplicado a Attack < 35."""
+    from decision_cobertura import cargar_umbrales_cobertura
+    from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
+
+    u = cargar_umbrales_cobertura()
+    assert u.get("techo_lambda_ataque_bajo") == 1.10
+
+    # Local con Attack_Rating = 30.0 (< 35.0) y lambda_red = 1.35 -> tope a 1.10
+    lam_l, lam_v, d_l, d_v = aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.20,
+        lam_base_visita=1.00,
+        lam_red_local=1.35,
+        lam_red_visita=1.00,
+        ratings_local={"Attack_Rating": 30.0, "Defense_Rating": 50.0},
+        ratings_visita={"Attack_Rating": 50.0, "Defense_Rating": 50.0},
+        posesion_proyectada_local=50.0,
+        posesion_proyectada_visita=50.0,
+        en_crisis_local=False,
+        en_crisis_visita=False,
+        goles_ult5_local=1.0,
+        goles_ult5_visita=1.0,
+    )
+    assert lam_l <= 1.10
+

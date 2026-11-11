@@ -38,6 +38,7 @@ DEFAULTS_UMBRALES = {
     "min_cuota_justa_no_trivial_top5": 1.25,
     "max_desvio_frecuencia_observada_pts": 10.0,
     "bloqueo_recorte_independiente_calibracion": True,
+    "techo_lambda_ataque_bajo": 1.10,
 }
 
 CATALOGO_MERCADOS = [

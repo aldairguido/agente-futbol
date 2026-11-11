@@ -31,7 +31,10 @@ umbrales:
 
   # Desvío máximo permitido entre probabilidad del modelo y frecuencia observada (puntos porcentuales)
   # Todo mercado con desvío > umbral se excluye del Top 5 y de SECCIÓN 1 (o se publica con etiqueta "sin calibración validada")
-  max_desvio_frecuencia_observada_pts: 10.0  # regla operativa, sin validación cronológica
+  max_desvio_frecuencia_observada_pts: 10.0  # cautela estructural sin validación cronológica
 
   # Salvaguarda estructural: el bloqueo por recorte de lambda > 15% sin cronología es independiente de la calibración
-  bloqueo_recorte_independiente_calibracion: true  # salvaguarda estructural previa a calibración
+  bloqueo_recorte_independiente_calibracion: true  # cautela estructural sin validación cronológica
+
+  # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0
+  techo_lambda_ataque_bajo: 1.10  # regla operativa, sin validación cronológica

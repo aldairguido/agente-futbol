@@ -3711,14 +3711,14 @@ def calcular_frecuencia_observada(
     ev = str(_v(sel, "evento") or "").lower()
     et = str(_v(sel, "etiqueta") or "").lower()
     mkt = str(_v(sel, "mercado") or "").lower()
-    eq = str(_v(sel, "equipo") or "").strip().lower()
+    eq = str(_v(sel, "equipo") or "").strip()
     lin_raw = _v(sel, "linea", None)
-    if lin_raw is None:
-        return None
-    try:
-        lin = float(lin_raw)
-    except Exception:
-        return None
+    lin = None
+    if lin_raw is not None:
+        try:
+            lin = float(lin_raw)
+        except Exception:
+            lin = None
 
     def _extraer_pts(doc: Any) -> list[dict[str, Any]]:
         if not isinstance(doc, dict):
@@ -3731,14 +3731,16 @@ def calcular_frecuencia_observada(
             m = p.get("marcador", {}) or {}
             gf = m.get("equipo")
             gc = m.get("rival")
-            cf, cr = None, None
+            cf, cr, tf, tr = None, None, None, None
             filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
             for f in filas:
                 if f.get("clave") == "corners":
                     cf = f.get("equipo")
                     cr = f.get("rival")
-                    break
-            res.append({"gf": gf, "gc": gc, "cf": cf, "cr": cr})
+                elif f.get("clave") in ("tarjetas_amarillas", "tarjetas"):
+                    tf = f.get("equipo")
+                    tr = f.get("rival")
+            res.append({"gf": gf, "gc": gc, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
         return res
 
     pts_l = _extraer_pts(doc_local)
@@ -3746,18 +3748,38 @@ def calcular_frecuencia_observada(
     if not pts_l and not pts_v:
         return None
 
-    nom_l = eq_l.strip().lower()
-    nom_v = eq_v.strip().lower()
+    from resolvedor_entidades import normalizar_texto
+    nom_l = normalizar_texto(eq_l)
+    nom_v = normalizar_texto(eq_v)
+    eq_norm = normalizar_texto(eq)
     es_under = ("under" in ev or "menos" in et)
 
-    # 1. Córneres por equipo o totales
-    if any(k in mkt for k in ("corner", "córner")) or "corner" in ev:
-        if "local" in ev or (eq and (eq == nom_l or eq in nom_l or nom_l in eq)):
+    # 1. Doble oportunidad (1X, X2, 12)
+    if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
+        if "1x" in ev or "1x" in et:
+            valid_l = [p for p in pts_l if p.get("gf") is not None and p.get("gc") is not None]
+            if not valid_l:
+                return None
+            return sum(1 for p in valid_l if p["gf"] >= p["gc"]) / len(valid_l)
+        elif "x2" in ev or "x2" in et:
+            valid_v = [p for p in pts_v if p.get("gf") is not None and p.get("gc") is not None]
+            if not valid_v:
+                return None
+            return sum(1 for p in valid_v if p["gf"] >= p["gc"]) / len(valid_v)
+        elif "12" in ev or "12" in et:
+            valid = [p for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+            if not valid:
+                return None
+            return sum(1 for p in valid if p["gf"] != p["gc"]) / len(valid)
+
+    # 2. Córneres por equipo o totales
+    if (any(k in mkt for k in ("corner", "córner")) or "corner" in ev) and lin is not None:
+        if "local" in ev or (eq_norm and (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)):
             valid = [float(p["cf"]) for p in pts_l if p.get("cf") is not None]
             if not valid:
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
-        elif "visita" in ev or "visitante" in ev or (eq and (eq == nom_v or eq in nom_v or nom_v in eq)):
+        elif "visita" in ev or "visitante" in ev or (eq_norm and (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)):
             valid = [float(p["cf"]) for p in pts_v if p.get("cf") is not None]
             if not valid:
                 return None
@@ -3768,27 +3790,27 @@ def calcular_frecuencia_observada(
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
 
-    # 2. Goles totales
-    if ("total" in mkt or "goles" in mkt) and not eq and not any(k in ev for k in ("local", "visita")):
+    # 3. Goles totales
+    if ("total" in mkt or "goles" in mkt) and not eq_norm and not any(k in ev for k in ("local", "visita")) and lin is not None:
         valid = [float(p["gf"] + p["gc"]) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
         if not valid:
             return None
         return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
 
-    # 3. Goles por equipo
-    if ("goles" in mkt or "gol" in ev) and eq:
-        if eq == nom_l or eq in nom_l or nom_l in eq:
+    # 4. Goles por equipo
+    if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
+        if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
             valid = [float(p["gf"]) for p in pts_l if p.get("gf") is not None]
             if not valid:
                 return None
             return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
-        elif eq == nom_v or eq in nom_v or nom_v in eq:
+        elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
             valid = [float(p["gf"]) for p in pts_v if p.get("gf") is not None]
             if not valid:
                 return None
             return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
 
-    # 4. Ambos anotan (BTTS)
+    # 5. Ambos anotan (BTTS)
     if "ambos_anotan" in ev or "btts" in ev:
         valid = [(float(p["gf"]), float(p["gc"])) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
         if not valid:
@@ -3797,6 +3819,13 @@ def calcular_frecuencia_observada(
             return sum(1 for gf, gc in valid if gf == 0 or gc == 0) / len(valid)
         else:
             return sum(1 for gf, gc in valid if gf > 0 and gc > 0) / len(valid)
+
+    # 6. Tarjetas totales
+    if (any(k in mkt for k in ("tarjeta", "tarjetas")) or "tarjeta" in ev) and lin is not None:
+        valid = [float(p["tf"] + p["tr"]) for p in (pts_l + pts_v) if p.get("tf") is not None and p.get("tr") is not None]
+        if not valid:
+            return None
+        return (sum(1 for t in valid if t < lin) / len(valid)) if es_under else (sum(1 for t in valid if t > lin) / len(valid))
 
     return None
 
