@@ -833,7 +833,7 @@ def obtener_top5_y_seccion1_filtrados(
         ]
 
     top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18)
+    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
     if not sels_top_tabla and sels_validas:
         sels_top_tabla = sels_validas[:18]
 
@@ -1339,7 +1339,7 @@ def renderizar_ticket_mercados_png(
         top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
 
         # Limitar el total de opciones en la tabla inferior a las 15-20 opciones más competitivas
-        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18)
+        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
         if not sels_top_tabla and sels_validas:
             sels_top_tabla = sels_validas[:18]
 

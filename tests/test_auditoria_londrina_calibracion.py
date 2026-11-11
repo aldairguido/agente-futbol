@@ -346,3 +346,117 @@ def test_11_umbrales_yaml_centralizados():
     u = cargar_umbrales_cobertura()
     assert u.get("min_partidos_cronologia_verificada") == 10
     assert u.get("min_cuota_justa_no_trivial_top5") == 1.25
+    assert u.get("max_desvio_frecuencia_observada_pts") == 10.0
+    assert u.get("bloqueo_recorte_independiente_calibracion") is True
+
+
+def test_12_regla_uniforme_desvio_frecuencia_observada_excluye_top5_y_sec1():
+    """Punto 2: Regla uniforme en umbrales_cobertura.yaml: desvío > 10 pts excluye del Top 5 y SECCIÓN 1."""
+    from motor_mercados import Seleccion, tiene_desvio_excesivo_calibracion, filtrar_top_opciones_ticket, seleccionar_top_5_jugadas_recomendadas
+
+    doc_l = {
+        "partidos": [
+            {"marcador": {"equipo": 1, "rival": 1}, "periodos": {"FT": {"filas": [{"clave": "corners", "equipo": 6.0, "rival": 4.0}]}}}
+            for _ in range(15)
+        ]
+    }
+    doc_v = {
+        "partidos": [
+            {"marcador": {"equipo": 0, "rival": 1}, "periodos": {"FT": {"filas": [{"clave": "corners", "equipo": 6.0, "rival": 4.0}]}}}
+            for _ in range(15)
+        ]
+    }
+
+    # En los 15 partidos de doc_l, cf = 6.0 siempre. Por tanto, Menos de 6.5 córneres cumple en 15/15 = 100%
+    # Si el modelo publica 74.5%, el desvío es |74.5 - 100| = 25.5 pts > 10.0 pts -> excede
+    s_l_corn = Seleccion("corners_local", "Londrina - Tiros de esquina", "local_corners_under_6.5", "menos de 6.5 córneres", "FT", "Londrina", 6.5, 0.745, estado="mantiene")
+    excede, desv, f_obs = tiene_desvio_excesivo_calibracion(s_l_corn, doc_l, doc_v, "Londrina", "Náutico")
+    assert excede is True
+    assert desv > 10.0
+
+    # Si construimos un caso con 8/15 cumplidas (frecuencia observada = 53.3%) y probabilidad publicada = 74.5%
+    # Desvío = |74.5% - 53.3%| = 21.2 pts > 10.0 pts -> excede
+    doc_l_53 = {
+        "partidos": [
+            {"marcador": {"equipo": 1, "rival": 1}, "periodos": {"FT": {"filas": [{"clave": "corners", "equipo": 5.0, "rival": 4.0}]}}}
+            for _ in range(8)
+        ] + [
+            {"marcador": {"equipo": 1, "rival": 1}, "periodos": {"FT": {"filas": [{"clave": "corners", "equipo": 8.0, "rival": 4.0}]}}}
+            for _ in range(7)
+        ]
+    }
+    excede_53, desv_53, f_obs_53 = tiene_desvio_excesivo_calibracion(s_l_corn, doc_l_53, doc_v, "Londrina", "Náutico")
+    assert excede_53 is True
+    assert round(f_obs_53 * 100, 1) == 53.3
+    assert desv_53 > 10.0
+
+    # filtrar_top_opciones_ticket excluye s_l_corn por desvío excesivo
+    top_sec1 = filtrar_top_opciones_ticket([s_l_corn], eq_l="Londrina", eq_v="Náutico", doc_local=doc_l_53, doc_visitante=doc_v)
+    assert not any("menos de 6.5 córneres" in getattr(item, "etiqueta", "") for item in top_sec1)
+
+
+def test_13_no_inflacion_diesel_sin_cronologia_publica_poisson_puro():
+    """Punto 3: Si Poisson 2T da 65.5%, NO se infla manualmente a 72.0% ni entra al Top 5 (< 70%)."""
+    motor = MagicMock()
+    motor.tasas = MagicMock(
+        lambda_local_ft=1.10, lambda_visitante_ft=0.90,
+        lambda_local_1t=0.57, lambda_local_2t=0.53,
+        lambda_visitante_1t=0.36, lambda_visitante_2t=0.54,
+    )
+    motor.matriz_ft = [[0.01]*10 for _ in range(10)]
+    motor.doc_local = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    motor.doc_visitante = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    motor.recursivo = {
+        "lambda_base_local": 1.56, "lambda_base_visita": 1.07,
+        "lambda_local_recursivo": 1.10, "lambda_visita_recursivo": 0.90,
+        "patrones_55_local": {"P26_Poder_Cierre_2T": 0.55},
+        "patrones_55_visita": {"P26_Poder_Cierre_2T": 0.55},
+    }
+
+    sels = [
+        {"mercado": "Doble oportunidad", "evento": "dc_1x", "etiqueta": "1X (Londrina o empate)", "periodo": "FT", "probabilidad": 0.72, "estado": "mantiene"},
+    ]
+    top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels, motor=motor, eq_l="Londrina", eq_v="Náutico")
+    # Con lam_2t = 0.53 + 0.54 = 1.07, 1 - exp(-1.07) = 65.7% (< 70%).
+    # El código ya NO aplica max(0.72, ...) arbitrario; por tanto, no se inyecta con 72% en el Top 5.
+    etiquetas_top5 = [item["etiqueta"] for item in top5]
+    assert not any("más de 0.5 goles" in e.lower() and "2t" in e.lower() for e in etiquetas_top5)
+
+
+def test_14_desambiguacion_serie_b_brasil_no_altera_homonimos_ni_cache():
+    """Punto 4: parsear_comando_mercados con (Serie B) desambigua a Brasil sin alterar CLUBES_HOMONIMOS ni cache_key."""
+    import resolvedor_entidades as re_ent
+
+    res = re_ent.parsear_comando_mercados("/mercados Londrina vs Nautico (Serie B)")
+    assert res.get("equipo_local") == "Londrina"
+    assert res.get("equipo_visita") in ("Nautico", "Náutico")
+    assert "serie b" in str(res.get("liga") or "").lower()
+
+    # Verificar que CLUBES_HOMONIMOS no contiene Londrina ni Náutico (no son homónimos multi-país)
+    assert "londrina" not in re_ent.CLUBES_HOMONIMOS
+    assert "nautico" not in re_ent.CLUBES_HOMONIMOS
+
+    # Verificar que construir_clave_cache_entidad preserva la estructura de campos
+    key = re_ent.construir_clave_cache_entidad("298660", "BRA", False, False)
+    assert key == "fotmob_298660_BRA_False_False"
+
+
+def test_15_btts_bloqueo_recorte_independiente_calibracion():
+    """Punto 5: El bloqueo por recorte de lambda > 15% sin cronología excluye BTTS independientemente de su calibración."""
+    from decision_cobertura import cargar_umbrales_cobertura
+    u = cargar_umbrales_cobertura()
+    assert u.get("bloqueo_recorte_independiente_calibracion") is True
+
+    motor = MagicMock()
+    motor.tasas = MagicMock(lambda_local_ft=1.10, lambda_visitante_ft=0.90, lambda_local_1t=0.55, lambda_local_2t=0.55, lambda_visitante_1t=0.45, lambda_visitante_2t=0.45)
+    motor.matriz_ft = [[0.01]*10 for _ in range(10)]
+    motor.doc_local = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    motor.doc_visitante = {"cuadro_c_timeline": {"_meta": {"n_partidos_con_eventos": 1}}}
+    # Recorte local: (1.56 -> 1.10) = 29.5% > 15%
+    motor.recursivo = {"lambda_base_local": 1.56, "lambda_base_visita": 1.07, "lambda_local_recursivo": 1.10, "lambda_visita_recursivo": 0.90}
+
+    sels = [
+        {"mercado": "Ambos anotan", "evento": "btts_no", "etiqueta": "Ambos anotan: No", "periodo": "FT", "probabilidad": 0.74, "estado": "mantiene"},
+    ]
+    top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels, motor=motor, eq_l="Londrina", eq_v="Náutico")
+    assert not any("Ambos anotan" in item["etiqueta"] for item in top5)

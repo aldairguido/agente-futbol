@@ -2242,8 +2242,9 @@ class MotorMercados:
                                       prob_under(base, linea)))
         return ResultadoMercado(
             idm, numero, nombre, selecciones=sels,
-            nota=("Córneres: cruce de córneres propios con los concedidos por el rival. "
-                  "La sensibilidad contrasta Poisson con binomial negativa."),
+            nota=(f"Córneres: cruce bilateral de córneres propios con concedidos por el rival, "
+                  f"ajustado por factor de bloqueo interior y moduladores (μ_L={mu_l:.2f}, μ_V={mu_v:.2f}, total={mu_l+mu_v:.2f}). "
+                  f"Difiere del Cuadro Especialista, que muestra la producción ofensiva unilateral del Doble ADN."),
             detalle={"mu_local": mu_l, "mu_visitante": mu_v,
                      "mu_total": mu_l + mu_v})
 
@@ -2397,8 +2398,11 @@ class MotorMercados:
                 sels.append(self._sel(idm, nombre, f"{bando}_corners_under_{linea}",
                                       f"{equipo}: menos de {linea} córneres", "FT", equipo, linea,
                                       prob_under(dist, linea)))
-        return ResultadoMercado(idm, numero, nombre, selecciones=sels,
-                                detalle={"mu": mu})
+        return ResultadoMercado(
+            idm, numero, nombre, selecciones=sels,
+            nota=(f"Córneres {equipo}: Poisson bilateral ponderado (μ={mu:.2f}), ajustado por resistencia defensiva rival y moduladores."),
+            detalle={"mu": mu},
+        )
 
     def _m_corners_local(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
         return self._corners_equipo(numero, idm, nombre, "local")
@@ -2570,6 +2574,9 @@ def _linea_seleccion(seleccion: "Seleccion", umbral: float,
     """Una viñeta: «• Menos de 4.5 goles (FT): 88,5%»."""
     linea = f"• {etiqueta_corta(seleccion)} ({seleccion.periodo}): " \
             f"{formatear_pct(seleccion.probabilidad, umbral)}"
+    mot = str(getattr(seleccion, "motivo", "") or "").lower()
+    if "sin calibración validada" in mot:
+        return f"{linea} — sin calibración validada"
     return linea + sufijo
 
 
@@ -3684,24 +3691,173 @@ def es_seleccion_competitiva_ticket(
     return True
 
 
-def filtrar_top_opciones_ticket(
-    selecciones: list[Any],
+def calcular_frecuencia_observada(
+    sel: Any,
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
     eq_l: str = "Local",
     eq_v: str = "Visitante",
-    p_1x2: tuple[float, float, float] | None = None,
-    max_opciones: int = 18,
-) -> list[Any]:
+) -> float | None:
     """
-    Filtra las selecciones competitivas reales y limita la tabla del Ticket PNG
-    a las `max_opciones` (15-20) jugadas de mayor valor práctico (priorizando el rango 70%-90%
-    y diversificando por categorías).
+    Calcula la frecuencia observada empírica para la línea y mercado de una selección
+    en el historial de 15 partidos de doc_local y doc_visitante.
+    Devuelve un float en [0.0, 1.0], o None si no es calculable.
     """
     def _v(obj: Any, k: str, d: Any = None) -> Any:
         if isinstance(obj, dict):
             return obj.get(k, d)
         return getattr(obj, k, d)
 
-    competitivas = [s for s in selecciones if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)]
+    ev = str(_v(sel, "evento") or "").lower()
+    et = str(_v(sel, "etiqueta") or "").lower()
+    mkt = str(_v(sel, "mercado") or "").lower()
+    eq = str(_v(sel, "equipo") or "").strip().lower()
+    lin_raw = _v(sel, "linea", None)
+    if lin_raw is None:
+        return None
+    try:
+        lin = float(lin_raw)
+    except Exception:
+        return None
+
+    def _extraer_pts(doc: Any) -> list[dict[str, Any]]:
+        if not isinstance(doc, dict):
+            return []
+        pts = doc.get("partidos", []) or []
+        res = []
+        for p in pts:
+            if not isinstance(p, dict):
+                continue
+            m = p.get("marcador", {}) or {}
+            gf = m.get("equipo")
+            gc = m.get("rival")
+            cf, cr = None, None
+            filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
+            for f in filas:
+                if f.get("clave") == "corners":
+                    cf = f.get("equipo")
+                    cr = f.get("rival")
+                    break
+            res.append({"gf": gf, "gc": gc, "cf": cf, "cr": cr})
+        return res
+
+    pts_l = _extraer_pts(doc_local)
+    pts_v = _extraer_pts(doc_visitante)
+    if not pts_l and not pts_v:
+        return None
+
+    nom_l = eq_l.strip().lower()
+    nom_v = eq_v.strip().lower()
+    es_under = ("under" in ev or "menos" in et)
+
+    # 1. Córneres por equipo o totales
+    if any(k in mkt for k in ("corner", "córner")) or "corner" in ev:
+        if "local" in ev or (eq and (eq == nom_l or eq in nom_l or nom_l in eq)):
+            valid = [float(p["cf"]) for p in pts_l if p.get("cf") is not None]
+            if not valid:
+                return None
+            return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
+        elif "visita" in ev or "visitante" in ev or (eq and (eq == nom_v or eq in nom_v or nom_v in eq)):
+            valid = [float(p["cf"]) for p in pts_v if p.get("cf") is not None]
+            if not valid:
+                return None
+            return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
+        else:
+            valid = [float(p["cf"] + p["cr"]) for p in (pts_l + pts_v) if p.get("cf") is not None and p.get("cr") is not None]
+            if not valid:
+                return None
+            return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
+
+    # 2. Goles totales
+    if ("total" in mkt or "goles" in mkt) and not eq and not any(k in ev for k in ("local", "visita")):
+        valid = [float(p["gf"] + p["gc"]) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+        if not valid:
+            return None
+        return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+
+    # 3. Goles por equipo
+    if ("goles" in mkt or "gol" in ev) and eq:
+        if eq == nom_l or eq in nom_l or nom_l in eq:
+            valid = [float(p["gf"]) for p in pts_l if p.get("gf") is not None]
+            if not valid:
+                return None
+            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+        elif eq == nom_v or eq in nom_v or nom_v in eq:
+            valid = [float(p["gf"]) for p in pts_v if p.get("gf") is not None]
+            if not valid:
+                return None
+            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+
+    # 4. Ambos anotan (BTTS)
+    if "ambos_anotan" in ev or "btts" in ev:
+        valid = [(float(p["gf"]), float(p["gc"])) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+        if not valid:
+            return None
+        if "no" in ev:
+            return sum(1 for gf, gc in valid if gf == 0 or gc == 0) / len(valid)
+        else:
+            return sum(1 for gf, gc in valid if gf > 0 and gc > 0) / len(valid)
+
+    return None
+
+
+def tiene_desvio_excesivo_calibracion(
+    sel: Any,
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+) -> tuple[bool, float | None, float | None]:
+    """
+    Evalúa si el desvío absoluto entre la probabilidad del modelo y la frecuencia
+    observada supera el umbral central `max_desvio_frecuencia_observada_pts` (10.0 pts).
+    Devuelve (excede_desvio, desvio_pts, freq_obs).
+    """
+    def _v(obj: Any, k: str, d: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(k, d)
+        return getattr(obj, k, d)
+
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        max_desvio = float(cargar_umbrales_cobertura().get("max_desvio_frecuencia_observada_pts", 10.0))
+    except Exception:
+        max_desvio = 10.0
+    p_modelo = float(_v(sel, "probabilidad", 0.0) or 0.0)
+    f_obs = calcular_frecuencia_observada(sel, doc_local, doc_visitante, eq_l, eq_v)
+    if f_obs is None:
+        return False, None, None
+    desvio_pts = round(abs(p_modelo - f_obs) * 100.0, 2)
+    return (desvio_pts > max_desvio), desvio_pts, f_obs
+
+
+def filtrar_top_opciones_ticket(
+    selecciones: list[Any],
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    p_1x2: tuple[float, float, float] | None = None,
+    max_opciones: int = 18,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    motor: Any = None,
+) -> list[Any]:
+    """
+    Filtra las selecciones competitivas reales y limita la tabla del Ticket PNG
+    a las `max_opciones` (15-20) jugadas de mayor valor práctico (priorizando el rango 70%-90%
+    y diversificando por categorías). Excluye selecciones con desvío > 10 pts vs frecuencia observada.
+    """
+    def _v(obj: Any, k: str, d: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(k, d)
+        return getattr(obj, k, d)
+
+    d_l = doc_local or getattr(motor, "doc_local", None)
+    d_v = doc_visitante or getattr(motor, "doc_visitante", None)
+    competitivas = [
+        s for s in selecciones
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        and not tiene_desvio_excesivo_calibracion(s, d_l, d_v, eq_l, eq_v)[0]
+    ]
     if len(competitivas) <= max_opciones:
         return competitivas
 
@@ -3891,6 +4047,13 @@ def seleccionar_top_5_jugadas_recomendadas(
             return False
 
         candidatas = [s for s in candidatas if not _es_mercado_afectado_recorte(s)]
+
+    # ── Regla Uniforme de Calibración Observada (Punto 2) ──
+    # Todo mercado con desvío > max_desvio_frecuencia_observada_pts (10.0 pts) se excluye del Top 5
+    candidatas = [
+        s for s in candidatas
+        if not tiene_desvio_excesivo_calibracion(s, doc_l_m, doc_v_m, eq_l, eq_v)[0]
+    ]
 
     # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
     candidatas_filtradas_ev: list[Any] = []
@@ -4254,18 +4417,19 @@ def seleccionar_top_5_jugadas_recomendadas(
             and prom_p26 >= 0.51
         ):
             lam_2t_c = ((t2_l or 0.65) + (t2_v or 0.55)) if (t2_l is not None) else max(0.85, 0.56 * (lam_l + lam_v))
-            p_2t_05 = round(min(0.88, max(0.72, 1.0 - math.exp(-lam_2t_c))), 4)
-            candidatas.append({
-                "id_mercado": "total_goles",
-                "mercado": "Total de goles",
-                "evento": "over_0.5",
-                "etiqueta": "más de 0.5 goles",
-                "periodo": "2T",
-                "equipo": None,
-                "linea": 0.5,
-                "probabilidad": p_2t_05,
-                "estado": "mantiene",
-            })
+            p_2t_05 = round(1.0 - math.exp(-lam_2t_c), 4)
+            if p_2t_05 >= 0.70:
+                candidatas.append({
+                    "id_mercado": "total_goles",
+                    "mercado": "Total de goles",
+                    "evento": "over_0.5",
+                    "etiqueta": "más de 0.5 goles",
+                    "periodo": "2T",
+                    "equipo": None,
+                    "linea": 0.5,
+                    "probabilidad": p_2t_05,
+                    "estado": "mantiene",
+                })
 
     # Punto 23c y Sección 5.3: Alerta de Posesión Estéril vs. Portero Figura (preservando P01=None como no_evaluable)
     p01_l_raw = pat_l_top.get("P01_xG_por_Remate")
@@ -5774,6 +5938,13 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             estado, motivo = clasificar(s.probabilidad, esc, req, params.umbral)
             if not estado:
                 continue
+            # Punto 2: Regla uniforme de calibración observada (> 10.0 pts)
+            excede_desv, desv_pts, f_obs = tiene_desvio_excesivo_calibracion(
+                s, motor.doc_local, motor.doc_visitante, motor.nombre_local, motor.nombre_visitante
+            )
+            if excede_desv:
+                estado = ESTADO_SENSIBLE
+                motivo = f"sin calibración validada (obs: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, desvío {desv_pts:.1f} pts > 10.0)"
             s.estado = estado
             if motivo:
                 s.motivo = motivo

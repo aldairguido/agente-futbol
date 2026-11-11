@@ -28,3 +28,10 @@ umbrales:
 
   # Cuota justa mínima para calificar una línea como no trivial en el Top 5
   min_cuota_justa_no_trivial_top5: 1.25  # regla operativa, sin validación cronológica
+
+  # Desvío máximo permitido entre probabilidad del modelo y frecuencia observada (puntos porcentuales)
+  # Todo mercado con desvío > umbral se excluye del Top 5 y de SECCIÓN 1 (o se publica con etiqueta "sin calibración validada")
+  max_desvio_frecuencia_observada_pts: 10.0  # regla operativa, sin validación cronológica
+
+  # Salvaguarda estructural: el bloqueo por recorte de lambda > 15% sin cronología es independiente de la calibración
+  bloqueo_recorte_independiente_calibracion: true  # salvaguarda estructural previa a calibración

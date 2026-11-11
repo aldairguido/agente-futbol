@@ -1256,7 +1256,8 @@ def _organizar_sec1_para_cuadro(
 
     # Si vienen más de 18, acotar a las 18 más competitivas
     if len(validadas) > 18:
-        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, p_1x2=p_1x2_mat, max_opciones=18)
+        mot_obj = getattr(analisis, "motor", None) if analisis is not None else None
+        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, p_1x2=p_1x2_mat, max_opciones=18, motor=mot_obj)
 
     def _clasificar(s: Any) -> tuple[str, str]:
         m_l = str(_v(s, "mercado") or "").lower()
