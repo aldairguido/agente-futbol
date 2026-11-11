@@ -127,14 +127,16 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "primera b chile": "CHL", "segunda division": "CHL", "copa chile": "CHL",
     "colombia": "COL", "primera a": "COL", "liga betplay": "COL", "liga betplay dimayor": "COL",
     "torneo betplay": "COL", "primera b": "COL", "copa betplay": "COL",
-    "ecuador": "ECU", "liga pro": "ECU", "ligapro": "ECU", "liga pro serie b": "ECU",
+    "copa colombia": "COL", "copa betplay dimayor": "COL", "superliga colombia": "COL",
+    "ecuador": "ECU", "liga pro": "ECU", "ligapro": "ECU", "liga pro serie b": "ECU", "copa ecuador": "ECU",
     "peru": "PER", "liga 1": "PER", "liga 1 te apuesto": "PER", "liga 1 peru": "PER", "liga 1 de peru": "PER",
     "liga 2 peru": "PER", "liga 2 de peru": "PER", "copa peru": "PER", "liga femenina": "PER",
     "bolivia": "BOL", "division profesional": "BOL", "copa pacena": "BOL", "copa simon bolivar": "BOL",
     "panama": "PAN", "lpf": "PAN", "lpf apertura": "PAN", "lpf clausura": "PAN", "liga panamena": "PAN",
-    "paraguay": "PRY", "copa de primera": "PRY", "primera division paraguay": "PRY", "division intermedia": "PRY",
+    "paraguay": "PRY", "copa de primera": "PRY", "primera division paraguay": "PRY", "division intermedia": "PRY", "copa paraguay": "PRY",
     "venezuela": "VEN", "liga futve": "VEN", "liga futve 2": "VEN",
     "uruguay": "URY", "primera division uruguay": "URY", "primera division": "URY", "liga auf uruguaya": "URY", "liga auf": "URY",
+    "copa auf uruguay": "URY", "copa uruguay": "URY", "copa auf": "URY",
     "costa rica": "CRI", "primera division costa rica": "CRI", "liga promerica": "CRI", "liga de ascenso": "CRI",
     "guatemala": "GTM", "liga nacional guatemala": "GTM",
     "honduras": "HND", "liga nacional honduras": "HND",
@@ -567,6 +569,13 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "boston river": ("Boston River", "URY"),
     "cerro largo": ("Cerro Largo", "URY"),
     "liverpool montevideo": ("Liverpool FC", "URY"),
+    "liverpool m.": ("Liverpool FC", "URY"),
+    "liverpool m": ("Liverpool FC", "URY"),
+    "liverpool de montevideo": ("Liverpool FC", "URY"),
+    "juventud": ("Juventud de Las Piedras", "URY"),
+    "juventud de las piedras": ("Juventud de Las Piedras", "URY"),
+    "ca juventud": ("Juventud de Las Piedras", "URY"),
+    "juventud las piedras": ("Juventud de Las Piedras", "URY"),
     "montevideo wanderers": ("Montevideo Wanderers", "URY"),
     "miramar misiones": ("Miramar Misiones", "URY"),
     "rampla juniors": ("Rampla Juniors", "URY"),
@@ -622,6 +631,32 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Juventus", "ITA"): "9885",
     ("AC Milan", "ITA"): "8564",
     ("Internazionale", "ITA"): "8636",
+    ("Liverpool FC", "URY"): "7942",
+    ("Liverpool", "ENG"): "8650",
+    ("Juventud de Las Piedras", "URY"): "8390",
+    ("Arsenal", "ENG"): "9825",
+    ("Arsenal de Sarandí", "ARG"): "10084",
+    ("Once Caldas", "COL"): "10091",
+    ("Atlético Nacional", "COL"): "10093",
+}
+
+# Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
+CLUBES_HOMONIMOS: Dict[str, List[Tuple[str, str]]] = {
+    "liverpool": [("Liverpool FC", "URY"), ("Liverpool", "ENG")],
+    "arsenal": [("Arsenal", "ENG"), ("Arsenal de Sarandí", "ARG")],
+    "barcelona": [("Barcelona", "ESP"), ("Barcelona SC", "ECU")],
+    "everton": [("Everton", "ENG"), ("Everton de Viña del Mar", "CHL")],
+    "nacional": [("Nacional", "URY"), ("Atlético Nacional", "COL"), ("Club Nacional", "PRY")],
+    "platense": [("CA Platense", "ARG"), ("Platense FC", "HND")],
+    "santa fe": [("Independiente Santa Fe", "COL"), ("Unión de Santa Fe", "ARG")],
+    "san lorenzo": [("San Lorenzo", "ARG"), ("San Lorenzo", "PRY")],
+    "juventud": [("Juventud de Las Piedras", "URY")],
+    "universitario": [
+        ("Universitario de Deportes", "PER"),
+        ("Universitario de Vinto", "BOL"),
+        ("Técnico Universitario", "ECU"),
+        ("CD Universitario", "PAN"),
+    ],
 }
 
 # Equivalencias entre códigos FIFA/FotMob/nombres en español/inglés -> Código ISO-3 oficial
@@ -1083,6 +1118,66 @@ def _construir_regex_prefijo_liga(patron_norm: str) -> re.Pattern:
     return pat
 
 
+def extraer_calificadores_nombre(nombre_equipo: str) -> Tuple[str, Dict[str, Any]]:
+    """
+    Extrae calificadores geográficos o de entidad de un nombre de club:
+      - 'Liverpool M.' -> ('Liverpool', {'calificador': 'montevideo', 'pais_iso': 'URY'})
+      - 'Liverpool Montevideo' -> ('Liverpool', {'calificador': 'montevideo', 'pais_iso': 'URY'})
+      - 'Juventud de Las Piedras' -> ('Juventud', {'calificador': 'las piedras', 'pais_iso': 'URY'})
+      - 'Arsenal de Sarandí' -> ('Arsenal', {'calificador': 'sarandi', 'pais_iso': 'ARG'})
+    """
+    limpio = str(nombre_equipo or "").strip()
+    norm = normalizar_texto(limpio)
+    info: Dict[str, Any] = {"calificador": "", "pais_iso": ""}
+
+    if re.search(r"\b(?:m\.|montevideo|de montevideo)\b", norm) or norm.endswith(" m"):
+        info["calificador"] = "montevideo"
+        info["pais_iso"] = "URY"
+        limpio_sin = re.sub(r"\s+(?:m\.|montevideo|de montevideo|m)\b", "", norm).strip()
+        return limpio_sin, info
+    if re.search(r"\b(?:las piedras|de las piedras)\b", norm):
+        info["calificador"] = "las piedras"
+        info["pais_iso"] = "URY"
+        limpio_sin = re.sub(r"\s+(?:las piedras|de las piedras)\b", "", norm).strip()
+        return limpio_sin, info
+    if re.search(r"\b(?:sarandi|de sarandi)\b", norm):
+        info["calificador"] = "sarandi"
+        info["pais_iso"] = "ARG"
+        limpio_sin = re.sub(r"\s+(?:sarandi|de sarandi)\b", "", norm).strip()
+        return limpio_sin, info
+    if re.search(r"\b(?:vina del mar|de vina del mar|vina)\b", norm):
+        info["calificador"] = "vina del mar"
+        info["pais_iso"] = "CHL"
+        return norm, info
+    if re.search(r"\b(?:vinto|de vinto)\b", norm):
+        info["calificador"] = "vinto"
+        info["pais_iso"] = "BOL"
+        return norm, info
+
+    return norm, info
+
+
+def _paises_posibles_para_club(nombre: str) -> set[str]:
+    """Determina los posibles países para un club según el diccionario y homónimos."""
+    norm = normalizar_texto(nombre)
+    norm_sin_siglas = re.sub(r"\b(?:fc|cf|sc|ac|rcd|cd|ud|sd|sv|vfl|vfb|ca|club)\b", " ", norm)
+    norm_sin_siglas = re.sub(r"\s+", " ", norm_sin_siglas).strip()
+
+    paises: set[str] = set()
+    _, calif = extraer_calificadores_nombre(nombre)
+    if calif.get("pais_iso"):
+        paises.add(calif["pais_iso"])
+
+    for k in (norm, norm_sin_siglas):
+        if k in CLUBES_HOMONIMOS:
+            for _, iso in CLUBES_HOMONIMOS[k]:
+                paises.add(iso)
+        if k in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB:
+            paises.add(DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB[k][1])
+
+    return paises
+
+
 def resolver_equipo_individual(
     nombre_equipo: str,
     pais_iso_contexto: Optional[str] = None,
@@ -1097,10 +1192,13 @@ def resolver_equipo_individual(
     if not limpio:
         return "", pais_iso_contexto or ""
 
-    # Limpiar posible sufijo de categoría para buscar la raíz en el diccionario y luego restaurarlo si aplica
     norm = normalizar_texto(limpio)
     norm_sin_siglas = re.sub(r"\b(?:fc|cf|sc|ac|rcd|cd|ud|sd|sv|vfl|vfb|ca|club)\b", " ", norm)
     norm_sin_siglas = re.sub(r"\s+", " ", norm_sin_siglas).strip()
+
+    nom_base, calif = extraer_calificadores_nombre(limpio)
+    if calif.get("pais_iso") and (not pais_iso_contexto or pais_iso_contexto == "INT"):
+        pais_iso_contexto = calif["pais_iso"]
 
     # Regla dura anti-colisión Bayer vs Bayern
     tokens_norm = set(re.findall(r"[a-z0-9]+", norm))
@@ -1109,14 +1207,19 @@ def resolver_equipo_individual(
     if ({"bayern", "munich", "munchen"} & tokens_norm) and "leverkusen" not in tokens_norm:
         return "FC Bayern München", "DEU"
 
+    # Verificar tabla CLUBES_HOMONIMOS con país de contexto
+    if pais_iso_contexto and pais_iso_contexto not in ("", "INT"):
+        for k in (norm, norm_sin_siglas, nom_base):
+            if k in CLUBES_HOMONIMOS:
+                for nom_cand, iso_cand in CLUBES_HOMONIMOS[k]:
+                    if iso_cand == pais_iso_contexto:
+                        return nom_cand, iso_cand
+
     # Buscar en DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB
-    for clave_busqueda in (norm, norm_sin_siglas):
+    for clave_busqueda in (norm, norm_sin_siglas, nom_base):
         if clave_busqueda in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB:
             nom_fotmob, iso_eq = DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB[clave_busqueda]
-            # Si hay un país nacional forzado distinto de INT y el alias es de otro país homónimo,
-            # verificar si coincide con el país esperado.
             if pais_iso_contexto and pais_iso_contexto not in ("", "INT") and iso_eq != pais_iso_contexto:
-                # Ejemplo: si buscan "Colonia" en Uruguay (URY), no devolver "1. FC Köln" (DEU)
                 continue
             return nom_fotmob, iso_eq
 
@@ -1128,7 +1231,6 @@ def resolver_equipo_individual(
             if iso_eq != pais_iso_contexto:
                 continue
             if len(k_alias) >= 4 and re.search(rf"\b{re.escape(k_alias)}\b", norm):
-                # Evitar colisión "bayer" dentro de "bayern" (el regex \b ya lo protege)
                 if len(k_alias) > mejor_len:
                     mejor_match = (nom_fot, iso_eq)
                     mejor_len = len(k_alias)
@@ -1145,6 +1247,8 @@ class ResultadoResolucion(tuple):
       - `loc, vis, pais = resolver(...)`
       - `resolver(...) == ("1. FC Köln", "Bayer 04 Leverkusen", "DEU")`
       - `res.es_femenino`, `res.es_juvenil`, `res.liga`, `res["es_femenino"]`
+      - `res.pais_local`, `res.pais_visita`, `res.es_copa`, `res.es_internacional`
+      - `res.identidad_verificada`, `res.estado_identidad`, `res.motivo_identidad`
     """
     def __new__(
         cls,
@@ -1156,16 +1260,42 @@ class ResultadoResolucion(tuple):
         es_juvenil: bool = False,
         equipo_local_raw: str = "",
         equipo_visita_raw: str = "",
+        pais_local: str = "",
+        pais_visita: str = "",
+        es_internacional: bool = False,
+        es_copa: bool = False,
+        identidad_verificada: bool = True,
+        estado_identidad: str = "verificada",
+        motivo_identidad: str = "",
+        candidatos_local: Optional[List[Dict[str, Any]]] = None,
+        candidatos_visita: Optional[List[Dict[str, Any]]] = None,
+        criterio_desempate: str = "",
+        nivel_confianza: str = "alta",
+        id_proveedor_local: Optional[str] = None,
+        id_proveedor_visita: Optional[str] = None,
     ):
         inst = super().__new__(cls, (equipo_local, equipo_visita, pais_iso))
         inst.equipo_local = equipo_local
         inst.equipo_visita = equipo_visita
         inst.pais_iso = pais_iso
         inst.liga = liga
-        inst.es_femenino = es_femenino
-        inst.es_juvenil = es_juvenil
+        inst.es_femenino = bool(es_femenino)
+        inst.es_juvenil = bool(es_juvenil)
         inst.equipo_local_raw = equipo_local_raw or equipo_local
         inst.equipo_visita_raw = equipo_visita_raw or equipo_visita
+        inst.pais_local = pais_local or pais_iso
+        inst.pais_visita = pais_visita or pais_iso
+        inst.es_internacional = bool(es_internacional)
+        inst.es_copa = bool(es_copa)
+        inst.identidad_verificada = bool(identidad_verificada)
+        inst.estado_identidad = estado_identidad
+        inst.motivo_identidad = motivo_identidad
+        inst.candidatos_local = list(candidatos_local or [])
+        inst.candidatos_visita = list(candidatos_visita or [])
+        inst.criterio_desempate = criterio_desempate
+        inst.nivel_confianza = nivel_confianza
+        inst.id_proveedor_local = id_proveedor_local
+        inst.id_proveedor_visita = id_proveedor_visita
         return inst
 
     def __getitem__(self, item: Any) -> Any:
@@ -1178,11 +1308,24 @@ class ResultadoResolucion(tuple):
             "equipo_local": self.equipo_local,
             "equipo_visita": self.equipo_visita,
             "pais_iso": self.pais_iso,
+            "pais_local": self.pais_local,
+            "pais_visita": self.pais_visita,
             "liga": self.liga,
             "es_femenino": self.es_femenino,
             "es_juvenil": self.es_juvenil,
+            "es_internacional": self.es_internacional,
+            "es_copa": self.es_copa,
             "equipo_local_raw": self.equipo_local_raw,
             "equipo_visita_raw": self.equipo_visita_raw,
+            "identidad_verificada": self.identidad_verificada,
+            "estado_identidad": self.estado_identidad,
+            "motivo_identidad": self.motivo_identidad,
+            "candidatos_local": self.candidatos_local,
+            "candidatos_visita": self.candidatos_visita,
+            "criterio_desempate": self.criterio_desempate,
+            "nivel_confianza": self.nivel_confianza,
+            "id_proveedor_local": self.id_proveedor_local,
+            "id_proveedor_visita": self.id_proveedor_visita,
         }
 
 
@@ -1198,12 +1341,23 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
             "liga": "",
             "liga_norm": "",
             "pais_iso": "",
+            "pais_local": "",
+            "pais_visita": "",
             "equipo_local_raw": "",
             "equipo_visita_raw": "",
             "equipo_local": "",
             "equipo_visita": "",
             "es_femenino": False,
             "es_juvenil": False,
+            "es_internacional": False,
+            "es_copa": False,
+            "identidad_verificada": False,
+            "estado_identidad": "identidad_no_verificada",
+            "motivo_identidad": "Comando vacío",
+            "criterio_desempate": "",
+            "nivel_confianza": "nula",
+            "id_proveedor_local": None,
+            "id_proveedor_visita": None,
         }
 
     # Limpiar comando inicial y parámetros opcionales (umbral, limite, borrador)
@@ -1248,15 +1402,26 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
     res = resolver(liga_nombre, loc_raw, vis_raw)
 
     return {
-        "liga": liga_nombre,
+        "liga": res.liga or liga_nombre,
         "liga_norm": liga_norm,
         "pais_iso": res.pais_iso or pais_iso,
+        "pais_local": res.pais_local,
+        "pais_visita": res.pais_visita,
         "equipo_local_raw": loc_raw,
         "equipo_visita_raw": vis_raw,
         "equipo_local": res.equipo_local,
         "equipo_visita": res.equipo_visita,
         "es_femenino": res.es_femenino or es_fem,
         "es_juvenil": res.es_juvenil or es_juv,
+        "es_internacional": res.es_internacional,
+        "es_copa": res.es_copa,
+        "identidad_verificada": res.identidad_verificada,
+        "estado_identidad": res.estado_identidad,
+        "motivo_identidad": res.motivo_identidad,
+        "criterio_desempate": res.criterio_desempate,
+        "nivel_confianza": res.nivel_confianza,
+        "id_proveedor_local": res.id_proveedor_local,
+        "id_proveedor_visita": res.id_proveedor_visita,
     }
 
 
@@ -1266,8 +1431,8 @@ def resolver(
     equipo_visita: Optional[str] = None,
 ) -> ResultadoResolucion:
     """
-    Resuelve `(liga, equipo_local, equipo_visita)` o un comando completo `/mercados ...`
-    a `ResultadoResolucion(equipo_local_fotmob, equipo_visita_fotmob, pais_iso)`.
+    Resuelve de forma conjunta (Entity Resolution) `(liga, equipo_local, equipo_visita)` o comando
+    a `ResultadoResolucion(equipo_local_fotmob, equipo_visita_fotmob, pais_iso)` enriquecida.
     """
     if equipo_local is None and equipo_visita is None:
         parsed = parsear_comando_mercados(liga_o_comando)
@@ -1280,6 +1445,19 @@ def resolver(
             es_juvenil=parsed["es_juvenil"],
             equipo_local_raw=parsed["equipo_local_raw"],
             equipo_visita_raw=parsed["equipo_visita_raw"],
+            pais_local=parsed.get("pais_local", parsed["pais_iso"]),
+            pais_visita=parsed.get("pais_visita", parsed["pais_iso"]),
+            es_internacional=parsed.get("es_internacional", False),
+            es_copa=parsed.get("es_copa", False),
+            identidad_verificada=parsed.get("identidad_verificada", True),
+            estado_identidad=parsed.get("estado_identidad", "verificada"),
+            motivo_identidad=parsed.get("motivo_identidad", ""),
+            candidatos_local=parsed.get("candidatos_local", []),
+            candidatos_visita=parsed.get("candidatos_visita", []),
+            criterio_desempate=parsed.get("criterio_desempate", ""),
+            nivel_confianza=parsed.get("nivel_confianza", "alta"),
+            id_proveedor_local=parsed.get("id_proveedor_local"),
+            id_proveedor_visita=parsed.get("id_proveedor_visita"),
         )
 
     liga_str = (liga_o_comando or "").strip()
@@ -1293,31 +1471,95 @@ def resolver(
             liga_str = info_l["nombre"]
             loc_str = loc_limpio
     elif liga_str and loc_str:
-        # Verificar que el nombre de la liga no haya quedado duplicado al inicio de loc_str
         info_l2, loc_limpio2 = extraer_liga_flashscore(loc_str)
         if info_l2 and loc_limpio2:
             loc_str = loc_limpio2
 
-    pais_iso = normalizar_pais_iso(liga_str)
+    pais_iso_liga = normalizar_pais_iso(liga_str)
+    liga_norm = normalizar_texto(liga_str)
     es_fem, es_juv = detectar_categoria_desde_texto(f"{liga_str} {loc_str} {vis_str}")
 
-    ctx_inicial = pais_iso if (pais_iso and pais_iso != "INT") else None
-    nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=ctx_inicial, es_femenino=es_fem, es_juvenil=es_juv)
-    # Si la liga no especificó país (o era INT) pero el local sí tiene país conocido, propagarlo a la visita
-    iso_ctx_vis = ctx_inicial or (iso_loc if iso_loc and iso_loc != "INT" else None)
-    nom_vis, iso_vis = resolver_equipo_individual(vis_str, pais_iso_contexto=iso_ctx_vis, es_femenino=es_fem, es_juvenil=es_juv)
-
-    # Si el visitante reveló el país y el local aún no tenía país definido, propagarlo al local
-    if not ctx_inicial and (not iso_loc or iso_loc == "INT") and iso_vis and iso_vis != "INT":
-        nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=iso_vis, es_femenino=es_fem, es_juvenil=es_juv)
-
-    pais_final = (
-        ctx_inicial
-        or (iso_loc if iso_loc and iso_loc != "INT" else "")
-        or (iso_vis if iso_vis and iso_vis != "INT" else "")
-        or pais_iso
-        or ""
+    es_internacional = (pais_iso_liga == "INT") or any(
+        k in liga_norm
+        for k in (
+            "champions", "europa league", "conference", "libertadores",
+            "sudamericana", "concacaf", "mundial", "international", "friendly", "amistoso"
+        )
     )
+    es_copa = any(
+        k in liga_norm
+        for k in ("copa", "cup", "pokal", "beker", "taca", "supercopa", "superliga")
+    )
+
+    # Paso conjunto: analizar calificadores y países posibles
+    _, calif_l = extraer_calificadores_nombre(loc_str)
+    _, calif_v = extraer_calificadores_nombre(vis_str)
+    iso_calif_l = calif_l.get("pais_iso")
+    iso_calif_v = calif_v.get("pais_iso")
+
+    cands_paises_l = _paises_posibles_para_club(loc_str)
+    cands_paises_v = _paises_posibles_para_club(vis_str)
+
+    criterio_desempate = ""
+    pais_conjunto = ""
+
+    if not es_internacional:
+        if pais_iso_liga and pais_iso_liga != "INT":
+            pais_conjunto = pais_iso_liga
+            criterio_desempate = f"liga_declarada ({pais_iso_liga})"
+        elif iso_calif_l:
+            pais_conjunto = iso_calif_l
+            criterio_desempate = f"calificador_local ({loc_str})"
+        elif iso_calif_v:
+            pais_conjunto = iso_calif_v
+            criterio_desempate = f"calificador_visita ({vis_str})"
+        else:
+            inter = cands_paises_l & cands_paises_v
+            if inter:
+                pais_conjunto = sorted(inter)[0]
+                criterio_desempate = f"interseccion_cruzada_rival ({pais_conjunto})"
+            elif len(cands_paises_l) == 1:
+                pais_conjunto = list(cands_paises_l)[0]
+                criterio_desempate = f"pais_unico_local ({pais_conjunto})"
+            elif len(cands_paises_v) == 1:
+                pais_conjunto = list(cands_paises_v)[0]
+                criterio_desempate = f"pais_unico_visita ({pais_conjunto})"
+            else:
+                pais_conjunto = ""
+                criterio_desempate = "sin_desempate_claro"
+
+        ctx_loc = pais_conjunto or None
+        ctx_vis = pais_conjunto or None
+        nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=ctx_loc, es_femenino=es_fem, es_juvenil=es_juv)
+        nom_vis, iso_vis = resolver_equipo_individual(vis_str, pais_iso_contexto=ctx_vis, es_femenino=es_fem, es_juvenil=es_juv)
+        pais_final = pais_conjunto or iso_loc or iso_vis or ""
+        pais_local = iso_loc or pais_final
+        pais_visita = iso_vis or pais_final
+    else:
+        criterio_desempate = "cruce_internacional"
+        nom_loc, iso_loc = resolver_equipo_individual(loc_str, es_femenino=es_fem, es_juvenil=es_juv)
+        nom_vis, iso_vis = resolver_equipo_individual(vis_str, es_femenino=es_fem, es_juvenil=es_juv)
+        pais_local = iso_loc or ""
+        pais_visita = iso_vis or ""
+        pais_final = "INT"
+
+    # Verificar si la identidad está confirmada o no verificada
+    cand_l_known = bool((nom_loc, pais_local) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_loc) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_loc)
+    cand_v_known = bool((nom_vis, pais_visita) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_vis) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_vis)
+
+    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis):
+        identidad_verificada = False
+        estado_identidad = "identidad_no_verificada"
+        motivo_identidad = f"No se pudo verificar la identidad fehaciente de: {loc_str if (not cand_l_known and not iso_loc) else vis_str}"
+        nivel_confianza = "nula"
+    else:
+        identidad_verificada = True
+        estado_identidad = "verificada"
+        motivo_identidad = ""
+        nivel_confianza = "alta" if (criterio_desempate != "sin_desempate_claro") else "media"
+
+    id_prov_l = FOTMOB_IDS_CONOCIDOS.get((nom_loc, pais_local))
+    id_prov_v = FOTMOB_IDS_CONOCIDOS.get((nom_vis, pais_visita))
 
     return ResultadoResolucion(
         nom_loc,
@@ -1328,6 +1570,19 @@ def resolver(
         es_juvenil=es_juv,
         equipo_local_raw=loc_str,
         equipo_visita_raw=vis_str,
+        pais_local=pais_local,
+        pais_visita=pais_visita,
+        es_internacional=es_internacional,
+        es_copa=es_copa,
+        identidad_verificada=identidad_verificada,
+        estado_identidad=estado_identidad,
+        motivo_identidad=motivo_identidad,
+        candidatos_local=[{"nombre": nom_loc, "pais_iso": pais_local, "id": id_prov_l}],
+        candidatos_visita=[{"nombre": nom_vis, "pais_iso": pais_visita, "id": id_prov_v}],
+        criterio_desempate=criterio_desempate,
+        nivel_confianza=nivel_confianza,
+        id_proveedor_local=id_prov_l,
+        id_proveedor_visita=id_prov_v,
     )
 
 
@@ -1478,6 +1733,7 @@ def construir_clave_cache_entidad(
     pais_iso: str = "",
     es_femenino: bool = False,
     es_juvenil: bool = False,
+    competicion: str = "",
 ) -> str:
     """
     Construye la clave canónica de caché en memoria indexada por:
@@ -1495,7 +1751,12 @@ def construir_clave_cache_entidad(
             tid = tid_conocido
         else:
             tid = re.sub(r"[^a-z0-9]+", "_", normalizar_texto(nom_of or tid)).strip("_") or "equipo"
-    return f"{tid}_{iso}_{bool(es_femenino)}_{bool(es_juvenil)}"
+    comp_slug = ""
+    if competicion and str(competicion).strip():
+        comp_norm = normalizar_texto(competicion)
+        if any(k in comp_norm for k in ("copa", "cup", "pokal", "beker", "taca", "champions", "libertadores", "sudamericana")):
+            comp_slug = f"_{re.sub(r'[^a-z0-9]+', '_', comp_norm).strip('_')}"
+    return f"{tid}_{iso}_{bool(es_femenino)}_{bool(es_juvenil)}{comp_slug}"
 
 
 def formatear_mensaje_entidades_verificadas(
@@ -1508,22 +1769,35 @@ def formatear_mensaje_entidades_verificadas(
     """
     Genera el mensaje oficial de verificación de entidades para Telegram:
     ✅ Entidades verificadas: 1. FC Köln [DEU] vs Bayer 04 Leverkusen [DEU] (Liga: Bundesliga).
+    ✅ Entidades verificadas: Real Madrid [ESP] vs FC Bayern München [DEU] (Liga: Champions League).
     """
     _, iso_eq_l = resolver_equipo_individual(nombre_local)
     _, iso_eq_v = resolver_equipo_individual(nombre_visita)
-    iso_l = (
-        (normalizar_pais_iso(pais_local) if normalizar_pais_iso(pais_local) != "INT" else "")
-        or (normalizar_pais_iso(liga) if normalizar_pais_iso(liga) != "INT" else "")
-        or iso_eq_l
-        or iso_eq_v
-        or normalizar_pais_iso(pais_local)
-        or "INT"
+    iso_liga = normalizar_pais_iso(liga)
+    es_int = (iso_liga == "INT") or any(
+        k in normalizar_texto(liga)
+        for k in ("champions", "europa league", "conference", "libertadores", "sudamericana", "concacaf", "mundial", "international")
     )
-    iso_v = (
-        (normalizar_pais_iso(pais_visita) if normalizar_pais_iso(pais_visita) != "INT" else "")
-        or (normalizar_pais_iso(liga) if normalizar_pais_iso(liga) != "INT" else "")
-        or iso_eq_v
-        or iso_l
-    )
+
+    if es_int:
+        iso_l = normalizar_pais_iso(pais_local) or iso_eq_l or "INT"
+        iso_v = normalizar_pais_iso(pais_visita) or iso_eq_v or "INT"
+    else:
+        iso_l_norm = normalizar_pais_iso(pais_local)
+        iso_v_norm = normalizar_pais_iso(pais_visita)
+        iso_l = (
+            (iso_l_norm if iso_l_norm != "INT" else "")
+            or (iso_liga if iso_liga != "INT" else "")
+            or iso_eq_l
+            or iso_eq_v
+            or iso_l_norm
+            or "INT"
+        )
+        iso_v = (
+            (iso_v_norm if iso_v_norm != "INT" else "")
+            or (iso_liga if iso_liga != "INT" else "")
+            or iso_eq_v
+            or iso_l
+        )
     liga_txt = liga.strip() if liga and str(liga).strip() else "Oficial"
     return f"✅ Entidades verificadas: {nombre_local} [{iso_l}] vs {nombre_visita} [{iso_v}] (Liga: {liga_txt})."

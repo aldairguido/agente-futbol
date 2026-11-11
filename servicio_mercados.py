@@ -555,8 +555,13 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
-    if not contexto.get("competicion") and isinstance(liga_final, dict) and liga_final.get("nombre"):
-        contexto["competicion"] = liga_final["nombre"]
+    if isinstance(liga_final, dict) and liga_final.get("nombre"):
+        if res_puente.es_copa or liga_final.get("liga_forzada") or not contexto.get("competicion"):
+            contexto["competicion"] = liga_final["nombre"]
+    elif isinstance(liga_final, str) and liga_final.strip():
+        if res_puente.es_copa or not contexto.get("competicion"):
+            contexto["competicion"] = liga_final.strip()
+
     avisar(f"condición: {nombre_a}={contexto.get('condicion_local')} · "
            f"{nombre_b}={contexto.get('condicion_visitante')} "
            f"({contexto.get('evidencia_condicion')})")
@@ -570,6 +575,11 @@ def resolver_enfrentamiento(
         "meta_visitante": meta_b,
         "contexto": contexto,
         "liga_solicitada": liga_final,
+        "estado_identidad": res_puente.estado_identidad,
+        "motivo_identidad": res_puente.motivo_identidad,
+        "identidad_verificada": res_puente.identidad_verificada,
+        "criterio_desempate": res_puente.criterio_desempate,
+        "nivel_confianza": res_puente.nivel_confianza,
         "ambiguedad_condicion": (contexto.get("condicion_local") is None
                                  or contexto.get("condicion_visitante") is None),
     }

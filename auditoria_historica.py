@@ -988,15 +988,48 @@ def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
 
 
 def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = None) -> dict[str, Any] | None:
-    """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando coherencia de país."""
+    """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando identidad y coherencia de país."""
     meta_ctx = dict(meta_ctx) if isinstance(meta_ctx, dict) else {"pais_iso": "INT", "liga": "Desconocida", "es_femenino": False, "es_juvenil": False}
     try:
+        from resolvedor_entidades import normalizar_pais_iso
         ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
         if not os.path.isfile(ruta):
-            return None
+            slug_simple = _slug(nombre_equipo)
+            ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
+            if os.path.isfile(ruta_simple):
+                ruta = ruta_simple
+            else:
+                return None
         with open(ruta, "r", encoding="utf-8") as f:
             doc = json.load(f)
         eq_doc = doc.get("equipo") or {}
+        ident_doc = doc.get("identidad") or {}
+        id_prov = eq_doc.get("id") or ident_doc.get("id_proveedor")
+        pais_doc = eq_doc.get("pais_iso") or ident_doc.get("pais_iso") or _pais_de_liga(eq_doc.get("liga"))
+
+        pais_esperado = normalizar_pais_iso(meta_ctx.get("pais_iso"))
+        # Si el país del archivo contradice el país esperado, NO reutilizar (ej. Liverpool Inglaterra en consulta de Uruguay)
+        if pais_esperado and pais_esperado != "INT" and pais_doc and pais_doc != "INT" and pais_doc != pais_esperado:
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
+
+        # Si el archivo carece de ID de proveedor y país en una consulta con país requerido, marcarlo antiguo y NO reutilizar
+        if not id_prov and not pais_doc and pais_esperado and pais_esperado != "INT":
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
+
         tiene_ctx_real = bool(
             (meta_ctx.get("pais_iso") and meta_ctx.get("pais_iso") != "INT")
             or (meta_ctx.get("liga") and meta_ctx.get("liga") != "Desconocida")
@@ -1109,7 +1142,15 @@ def auditar_equipo(
 
     with lock_equipo:
         if fuente_obj is None:
-            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad) or obtener_auditoria_en_memoria(slug_equipo)
+            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad)
+            if doc_mem is None and slug_equipo:
+                cand_mem = obtener_auditoria_en_memoria(slug_equipo)
+                if cand_mem:
+                    cand_pais = (cand_mem.get("equipo") or {}).get("pais_iso") or (cand_mem.get("identidad") or {}).get("pais_iso")
+                    if pais_iso_ctx not in ("", "INT") and cand_pais and cand_pais != pais_iso_ctx:
+                        doc_mem = None
+                    else:
+                        doc_mem = cand_mem
             if doc_mem is not None:
                 eq_doc = doc_mem.get("equipo") or {}
                 pts_mem = puntuar_candidato(
@@ -1154,7 +1195,7 @@ def auditar_equipo(
                 rival=rival,
             )
         except Exception:
-            doc_resiliencia = _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
+            doc_resiliencia = _cargar_cache_resiliencia(clave_cache_entidad, nombre_equipo, meta_ctx=meta_ctx) or _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
             if doc_resiliencia is not None:
                 return doc_resiliencia
             raise
@@ -1165,11 +1206,24 @@ def auditar_equipo(
             str(eq_res.get("pais_iso") or pais_iso_ctx or ""),
             bool(eq_res.get("es_femenino", es_fem_ctx)),
             bool(eq_res.get("es_juvenil", es_juv_ctx)),
+            competicion=meta_ctx.get("liga") or "",
         )
+        res["identidad"] = {
+            "id_proveedor": str(eq_res.get("id") or ""),
+            "nombre_canonico": str(eq_res.get("nombre") or nombre_equipo),
+            "pais_iso": str(eq_res.get("pais_iso") or pais_iso_ctx or ""),
+            "competicion": str(meta_ctx.get("liga") or ""),
+            "es_femenino": bool(eq_res.get("es_femenino", es_fem_ctx)),
+            "es_juvenil": bool(eq_res.get("es_juvenil", es_juv_ctx)),
+            "clave_cache": clave_id_oficial,
+            "criterio_desempate": meta_ctx.get("criterio_desempate", "directo"),
+            "confianza": "alta",
+        }
+        res["estado_identidad"] = "verificada"
         guardar_auditoria_en_memoria(clave_id_oficial, res)
         guardar_auditoria_en_memoria(clave_cache_entidad, res)
-        guardar_auditoria_en_memoria(slug_equipo, res)
-        _guardar_cache_resiliencia(slug_equipo, res)
+        _guardar_cache_resiliencia(clave_id_oficial, res)
+        _guardar_cache_resiliencia(clave_cache_entidad, res)
         nom_resuelto = eq_res.get("nombre")
         if nom_resuelto and _slug(nom_resuelto) != slug_equipo:
             guardar_auditoria_en_memoria(_slug(nom_resuelto), res)
