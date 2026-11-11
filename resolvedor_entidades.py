@@ -1734,12 +1734,15 @@ def construir_clave_cache_entidad(
     es_femenino: bool = False,
     es_juvenil: bool = False,
     competicion: str = "",
+    proveedor: str = "fotmob",
 ) -> str:
     """
-    Construye la clave canónica de caché en memoria indexada por:
-        f"{team_id}_{pais_iso}_{es_femenino}_{es_juvenil}"
-    Nunca usa el string crudo del usuario ('colonia' o 'bayer').
+    Construye la clave canónica de caché con prefijo del proveedor:
+        f"{proveedor}_{team_id}_{pais_iso}_{es_femenino}_{es_juvenil}"
     """
+    prov = str(proveedor or "fotmob").strip().lower()
+    if prov not in ("fotmob", "flashscore"):
+        prov = "fotmob"
     tid = str(team_id_o_nombre or "").strip()
     iso = normalizar_pais_iso(pais_iso) or "UNK"
     if not tid.isdigit():
@@ -1756,7 +1759,7 @@ def construir_clave_cache_entidad(
         comp_norm = normalizar_texto(competicion)
         if any(k in comp_norm for k in ("copa", "cup", "pokal", "beker", "taca", "champions", "libertadores", "sudamericana")):
             comp_slug = f"_{re.sub(r'[^a-z0-9]+', '_', comp_norm).strip('_')}"
-    return f"{tid}_{iso}_{bool(es_femenino)}_{bool(es_juvenil)}{comp_slug}"
+    return f"{prov}_{tid}_{iso}_{bool(es_femenino)}_{bool(es_juvenil)}{comp_slug}"
 
 
 def formatear_mensaje_entidades_verificadas(

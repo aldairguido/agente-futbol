@@ -107,8 +107,12 @@ def test_clave_cache_entidad_diferenciada_por_id_y_pais():
     """Las claves canónicas de caché para entidades homónimas (Liverpool URY vs Liverpool ENG) jamás colisionan."""
     clave_ury = construir_clave_cache_entidad("Liverpool FC", "URY", False, False)
     clave_eng = construir_clave_cache_entidad("Liverpool", "ENG", False, False)
-    assert clave_ury == "7942_URY_False_False"
-    assert clave_eng == "8650_ENG_False_False"
+    assert clave_ury == "fotmob_7942_URY_False_False"
+    assert clave_eng == "fotmob_8650_ENG_False_False"
+
+    # Clave con proveedor explícito Flashscore
+    clave_flash = construir_clave_cache_entidad("7942", "URY", False, False, proveedor="flashscore")
+    assert clave_flash == "flashscore_7942_URY_False_False"
     assert clave_ury != clave_eng
 
     # Clave con competición de copa
@@ -133,29 +137,43 @@ def test_cache_resiliencia_rechaza_pais_incompatible():
     guardar_auditoria_en_memoria("liverpool", doc_liverpool_eng)
     _guardar_cache_resiliencia("test_liverpool_eng", doc_liverpool_eng)
 
-    # 1. Al consultar con contexto de Uruguay (URY), la caché de Inglaterra debe ser rechazada
-    meta_ury = {"pais_iso": "URY", "liga": "Primera División Uruguay"}
-    doc_cargado = _cargar_cache_resiliencia("test_liverpool_eng", "Liverpool", meta_ctx=meta_ury)
-    assert doc_cargado is None
-
-    # Verificar que el archivo en disco fue marcado como antiguo y no reutilizable
     import json
     import os
     from auditoria_historica import CACHE_RESILIENCIA_DIR
-    with open(os.path.join(CACHE_RESILIENCIA_DIR, "cache_test_liverpool_eng.json"), "r", encoding="utf-8") as f:
+
+    # 1. Entrada antigua sin proveedor (legado_sin_proveedor)
+    ruta_legado = os.path.join(CACHE_RESILIENCIA_DIR, "cache_legado_sin_prov.json")
+    with open(ruta_legado, "w", encoding="utf-8") as f:
+        json.dump({"equipo": {"nombre": "Liverpool", "pais_iso": "ENG"}}, f)
+
+    doc_legado = _cargar_cache_resiliencia("legado_sin_prov", "Liverpool", meta_ctx={"pais_iso": "ENG"})
+    assert doc_legado is None, "Entrada antigua sin proveedor no debe ser reutilizada"
+    with open(ruta_legado, "r", encoding="utf-8") as f:
+        doc_legado_disco = json.load(f)
+    assert doc_legado_disco.get("legado_sin_proveedor") is True
+    assert doc_legado_disco.get("no_reutilizable") is True
+
+    # 2. Entrada con proveedor FotMob y país incompatible
+    doc_liverpool_eng["proveedor"] = "fotmob"
+    _guardar_cache_resiliencia("fotmob_test_liverpool_eng", doc_liverpool_eng)
+    meta_ury = {"pais_iso": "URY", "liga": "Primera División Uruguay"}
+    doc_cargado = _cargar_cache_resiliencia("fotmob_test_liverpool_eng", "Liverpool", meta_ctx=meta_ury)
+    assert doc_cargado is None
+    with open(os.path.join(CACHE_RESILIENCIA_DIR, "cache_fotmob_test_liverpool_eng.json"), "r", encoding="utf-8") as f:
         doc_disco = json.load(f)
     assert doc_disco.get("antiguo") is True
     assert doc_disco.get("no_reutilizable") is True
 
-    # 2. Con contexto de Inglaterra (ENG), la caché sí se reutiliza
+    # 3. Con contexto de Inglaterra (ENG) y proveedor válido, la caché sí se reutiliza
     meta_eng = {"pais_iso": "ENG", "liga": "Premier League"}
     doc_eng_ok = {
+        "proveedor": "fotmob",
         "equipo": {"id": "8650", "nombre": "Liverpool", "liga": "Premier League", "pais_iso": "ENG"},
         "identidad": {"id_proveedor": "8650", "nombre_canonico": "Liverpool", "pais_iso": "ENG"},
         "partidos": [{"id_partido": f"p{i}", "fecha": "2026-01-01"} for i in range(15)],
         "resumen": {"partidos_con_datos": 15},
     }
-    _guardar_cache_resiliencia("test_liverpool_eng_valido", doc_eng_ok)
-    res_eng = _cargar_cache_resiliencia("test_liverpool_eng_valido", "Liverpool", meta_ctx=meta_eng)
+    _guardar_cache_resiliencia("fotmob_test_liverpool_eng_valido", doc_eng_ok)
+    res_eng = _cargar_cache_resiliencia("fotmob_test_liverpool_eng_valido", "Liverpool", meta_ctx=meta_eng)
     assert res_eng is not None
     assert res_eng["equipo"]["pais_iso"] == "ENG"

@@ -551,13 +551,19 @@ def calcular_55_patrones_equipo(
     p: Dict[str, Any] = {}
 
     # A. EFICIENCIA OFENSIVA (P01 - P12)
-    if rem_tot_obs is not None and rem_tot_obs <= 0.0:
+    if (rem_tot_obs is not None and rem_tot_obs <= 0.0) or xg_obs is None:
         p["P01_xG_por_Remate"] = None
     else:
         p["P01_xG_por_Remate"] = round(xg / max(1.0, rem_tot), 4)
-    p["P02_xG_Area_por_Remate"] = round(xg_abierto / rem_area, 4)
-    p["P03_Calidad_xGOT_vs_xG"] = round(xgot / max(0.05, xg), 4) if xg > 0 else None
-    p["P04_Eficiencia_npxG"] = round(npxg / max(1.0, rem_tot), 4) if rem_tot > 0 else None
+
+    p["P02_xG_Area_por_Remate"] = round(xg_abierto / rem_area, 4) if xg_obs is not None else None
+
+    xgot_obs = _val_opt(m, "xgot", "xgot_favor")
+    if xgot_obs is not None and xg_obs is not None and xg > 0:
+        p["P03_Calidad_xGOT_vs_xG"] = round(xgot_obs / max(0.05, xg), 4)
+    else:
+        p["P03_Calidad_xGOT_vs_xG"] = None
+    p["P04_Eficiencia_npxG"] = round(npxg / max(1.0, rem_tot), 4) if (rem_tot > 0 and xg_obs is not None) else None
     p["P05_Conversion_Real"] = round(goles / rem_pue, 4)
     p["P06_Desperdicio_Ocasiones"] = round(g_oc_fall / g_oc, 4)
     p["P07_Precision_Disparo"] = round(rem_pue / max(1.0, rem_tot), 4) if rem_tot > 0 else None

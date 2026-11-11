@@ -301,6 +301,8 @@ def verificar_compatibilidad_modelo(
                 continue
 
         vars_stats = {v for v in vars_req if v != "goles"}
+        if nombre_modelo == "poisson_bivariado_goles" and not mod_info.get("requiere_xg_estricto", True):
+            vars_stats = {v for v in vars_stats if v != "xg"}
         comunes_per = set(emp["periodos"][periodo_req]["claves_comunes"])
         if vars_stats.issubset(comunes_per) and len(comunes_per) >= min_claves_per:
             n_pares_completos += 1

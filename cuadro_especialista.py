@@ -2725,14 +2725,22 @@ def generar_cuadro_auditoria_15_partidos_png(
         tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
         tot_goles_c += (g_l + g_v)
 
-    if (g_76_l + g_76_v) > 0:
-        txt_alerta_c = f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles"
-    elif tot_goles_c > 0:
+    # Punto 44 y 45 (Etapa 1.3): Denominador real de Cuadro C y supresión de alerta de máximo peligro sin minutos
+    n_ev_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_ev_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
+    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
+    n_base = max(15, n_tot_l, n_tot_v)
+    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+
+    if k_eval == 0 or tot_goles_c == 0:
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval}/{n_base} partidos evaluables)"
+    elif (g_76_l + g_76_v) > 0 and k_eval >= 3:
+        txt_alerta_c = f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles ({k_eval}/{n_base} partidos evaluables)"
+    else:
         max_tramo = max(tramos_c, key=lambda k: tramos_totales[k][2])
         g_l_max, g_v_max, g_tot_max = tramos_totales[max_tramo]
-        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): Mayor flujo en {max_tramo}  ·  Flujo {eq_L}: {g_l_max} goles  |  Flujo {eq_V}: {g_v_max} goles"
-    else:
-        txt_alerta_c = "CRONOLOGÍA (CUADRO C): Sin eventos cronológicos de gol documentados en los partidos auditados"
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): Mayor flujo en {max_tramo}  ·  Flujo {eq_L}: {g_l_max} goles  |  Flujo {eq_V}: {g_v_max} goles ({k_eval}/{n_base} partidos evaluables)"
 
     rect_pie_c = FancyBboxPatch((0.0, 0.205), 1.0, 0.022, boxstyle="round,pad=0.005", facecolor="#FEF6E4", edgecolor="#D97706", lw=0.9, transform=ax.transAxes)
     ax.add_patch(rect_pie_c)

@@ -459,6 +459,10 @@ def validar_cobertura_matriz(auditoria: dict[str, Any]) -> dict[str, Any]:
                         proc_partido.get(lado) if isinstance(proc_partido.get(lado), dict) else {}
                     )
                     etiqueta_proc = str((proc_lado or {}).get(clave) or "").lower().strip()
+                    if not etiqueta_proc and fila.get("procedencia"):
+                        etiqueta_proc = str(fila.get("procedencia") or "").lower().strip()
+                    if fila.get("estimado"):
+                        etiqueta_proc = "estimacion_modelo"
 
                     if not _es_valor_vacio_o_invalido(val_celda):
                         if etiqueta_proc == "estimacion_modelo":
@@ -977,31 +981,64 @@ CACHE_RESILIENCIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
-    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\\agente_futbol\\cache\\."""
+    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\agente_futbol\cache\."""
     try:
         os.makedirs(CACHE_RESILIENCIA_DIR, exist_ok=True)
-        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
+        prov = str(doc.get("proveedor") or "fotmob").strip().lower()
+        if not slug.startswith("fotmob_") and not slug.startswith("flashscore_"):
+            slug_prov = f"{prov}_{slug}"
+        else:
+            slug_prov = slug
+        doc["proveedor"] = prov
+        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_prov}.json")
         with open(ruta, "w", encoding="utf-8") as f:
             json.dump(doc, f, ensure_ascii=False)
     except Exception:
         pass
 
-
 def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = None) -> dict[str, Any] | None:
-    """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando identidad y coherencia de país."""
     meta_ctx = dict(meta_ctx) if isinstance(meta_ctx, dict) else {"pais_iso": "INT", "liga": "Desconocida", "es_femenino": False, "es_juvenil": False}
     try:
         from resolvedor_entidades import normalizar_pais_iso
         ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
         if not os.path.isfile(ruta):
-            slug_simple = _slug(nombre_equipo)
-            ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
-            if os.path.isfile(ruta_simple):
-                ruta = ruta_simple
+            if not slug.startswith("fotmob_") and not slug.startswith("flashscore_"):
+                ruta_prov = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_fotmob_{slug}.json")
+                if os.path.isfile(ruta_prov):
+                    ruta = ruta_prov
+                else:
+                    slug_simple = _slug(nombre_equipo)
+                    ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
+                    if os.path.isfile(ruta_simple):
+                        ruta = ruta_simple
+                    else:
+                        return None
             else:
-                return None
+                slug_simple = _slug(nombre_equipo)
+                ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
+                if os.path.isfile(ruta_simple):
+                    ruta = ruta_simple
+                else:
+                    return None
         with open(ruta, "r", encoding="utf-8") as f:
             doc = json.load(f)
+
+        base_nom = os.path.basename(ruta)
+        tiene_prefijo_proveedor = base_nom.startswith("cache_fotmob_") or base_nom.startswith("cache_flashscore_")
+        tiene_proveedor_doc = bool(doc.get("proveedor") in ("fotmob", "flashscore"))
+
+        # Punto 44 y 45 (Etapa 1.2): Las entradas antiguas sin proveedor se marcan como
+        # antiguas (legado_sin_proveedor) y no se reutilizan; no se borran.
+        if not tiene_prefijo_proveedor or not tiene_proveedor_doc:
+            doc["legado_sin_proveedor"] = True
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
         eq_doc = doc.get("equipo") or {}
         ident_doc = doc.get("identidad") or {}
         id_prov = eq_doc.get("id") or ident_doc.get("id_proveedor")

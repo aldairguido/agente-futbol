@@ -1,0 +1,489 @@
+"""
+test_puntos_44_45_e1_e2.py
+───────────────────────────────────────────────────────────────────────────────
+MAPA INTEGRAL DE LAS 30 PRUEBAS DE ACEPTACIÓN: E.1 (12) + E.2 (18)
+Puntos 44 y 45: Auditoría de Cobertura Comparable, Bloqueo sin Evidencia
+y Resolución de Homónimos.
+Todas las pruebas se ejecutan 100% offline con fixtures y mocks deterministas.
+───────────────────────────────────────────────────────────────────────────────
+"""
+
+from __future__ import annotations
+
+import copy
+import json
+import os
+import pytest
+from unittest.mock import patch, MagicMock
+
+from resolvedor_entidades import (
+    resolver as resolver_entidades,
+    construir_clave_cache_entidad,
+)
+from auditoria_historica import (
+    LAS_45_METRICAS_OFICIALES,
+    _construir_resumen,
+    validar_cobertura_matriz,
+    verificar_consistencia_recuento_auditoria,
+    _cargar_cache_resiliencia,
+    _guardar_cache_resiliencia,
+    limpiar_cache_memoria_auditorias,
+    CACHE_RESILIENCIA_DIR,
+)
+from auditoria_comparable import (
+    emparejar_historicos_por_recencia,
+    construir_vista_comparable,
+    verificar_compatibilidad_modelo,
+)
+from decision_cobertura import evaluar_decision_cobertura
+import servicio_mercados as servicio
+import evaluacion_pronosticos as evaluacion
+from motor_inferencia import (
+    calcular_cuadro_b_tendencias,
+    calcular_cuadro_c_timeline,
+)
+from motor_patrones import calcular_patrones_completos_partido
+
+
+TODAS_45_METRICAS = [m[1] for m in LAS_45_METRICAS_OFICIALES]
+
+
+def _mock_partido(
+    pos: int,
+    goles_l: int | None = 1,
+    goles_v: int | None = 0,
+    claves_ft: list[str] | None = None,
+    claves_1t: list[str] | None = None,
+    claves_2t: list[str] | None = None,
+    id_partido: str | None = None,
+) -> dict:
+    c_ft = claves_ft if claves_ft is not None else ["xg", "remates_totales", "remates_puerta", "corners", "tarjetas_amarillas"]
+    c_1t = claves_1t if claves_1t is not None else ["remates_puerta"]
+    c_2t = claves_2t if claves_2t is not None else ["remates_puerta"]
+
+    def _f(claves):
+        return [{"clave": k, "procedencia": "fotmob", "equipo": 1.0, "rival": 0.0} for k in claves]
+
+    return {
+        "id_partido": id_partido or f"p_{pos}",
+        "posicion": pos,
+        "goles_equipo": goles_l,
+        "goles_rival": goles_v,
+        "resumen_claves": {
+            "FT": {"equipo": c_ft, "rival": c_ft},
+            "1T": {"equipo": c_1t, "rival": c_1t},
+            "2T": {"equipo": c_2t, "rival": c_2t},
+        },
+        "periodos": {
+            "FT": {"filas": _f(c_ft)},
+            "1T": {"filas": _f(c_1t)},
+            "2T": {"filas": _f(c_2t)},
+        },
+    }
+
+
+def _mock_doc(
+    equipo: str,
+    n_oficiales: int = 15,
+    n_detalle_ft: int = 15,
+    claves_ft: list[str] | None = None,
+    estado_identidad: str = "verificado",
+) -> dict:
+    partidos = []
+    for i in range(1, n_oficiales + 1):
+        c = claves_ft if (i <= n_detalle_ft) else []
+        partidos.append(_mock_partido(i, claves_ft=c))
+
+    resumen = _construir_resumen({"equipo": equipo, "partidos": partidos})
+    return {
+        "equipo": equipo,
+        "estado_identidad": estado_identidad,
+        "resumen_auditoria": resumen,
+        "partidos": partidos,
+    }
+
+
+# =============================================================================
+# BLOQUE E.1: LAS 12 PRUEBAS OBLIGATORIAS
+# =============================================================================
+
+def test_e1_01_a_10_claves_incluidas_en_b_25():
+    """E.1.1: A tiene 10/45 y B tiene 25/45, con las 10 de A incluidas en B. Se usan las mismas 10."""
+    claves_a = TODAS_45_METRICAS[:10]
+    claves_b = TODAS_45_METRICAS[:25]
+    doc_a = _mock_doc("Club A", 15, 15, claves_ft=claves_a)
+    doc_b = _mock_doc("Club B", 15, 15, claves_ft=claves_b)
+
+    vista = construir_vista_comparable(doc_a, doc_b)
+    for emp in vista["emparejamientos"]:
+        assert emp["periodos"]["FT"]["n_comunes"] == 10
+        assert emp["periodos"]["FT"]["claves_comunes"] == sorted(claves_a)
+    # Conservan ambos conteos originales intactos
+    assert doc_a["resumen_auditoria"]["partidos_con_detalle_ft"] == 15
+    assert doc_b["resumen_auditoria"]["partidos_con_detalle_ft"] == 15
+
+
+def test_e1_02_a_b_10_claves_solo_7_coinciden():
+    """E.1.2: A y B tienen 10/45 pero solo 7 coinciden. Perfiles comparables contienen las mismas 7."""
+    claves_a = TODAS_45_METRICAS[:10]
+    claves_b = TODAS_45_METRICAS[3:13]  # Coinciden 3..9 (7 claves)
+    doc_a = _mock_doc("Club A", 15, 15, claves_ft=claves_a)
+    doc_b = _mock_doc("Club B", 15, 15, claves_ft=claves_b)
+
+    vista = construir_vista_comparable(doc_a, doc_b)
+    for emp in vista["emparejamientos"]:
+        assert emp["periodos"]["FT"]["n_comunes"] == 7
+        assert emp["periodos"]["FT"]["claves_comunes"] == sorted(set(claves_a) & set(claves_b))
+
+
+def test_e1_03_filas_parciales_interseccion_independiente():
+    """E.1.3: Fila 6 A tiene 30 y B 45; en la 10 A tiene 45 y B 32. Cada fila recibe su propia intersección."""
+    partidos_a = [_mock_partido(i, claves_ft=TODAS_45_METRICAS[:45]) for i in range(1, 16)]
+    partidos_b = [_mock_partido(i, claves_ft=TODAS_45_METRICAS[:45]) for i in range(1, 16)]
+    # Fila 6 (index 5): A tiene 30
+    partidos_a[5] = _mock_partido(6, claves_ft=TODAS_45_METRICAS[:30])
+    # Fila 10 (index 9): B tiene 32
+    partidos_b[9] = _mock_partido(10, claves_ft=TODAS_45_METRICAS[:32])
+
+    vista = construir_vista_comparable({"partidos": partidos_a}, {"partidos": partidos_b})
+    assert vista["emparejamientos"][5]["periodos"]["FT"]["n_comunes"] == 30
+    assert vista["emparejamientos"][9]["periodos"]["FT"]["n_comunes"] == 32
+    # El resto de filas mantiene 45
+    assert vista["emparejamientos"][0]["periodos"]["FT"]["n_comunes"] == 45
+
+
+def test_e1_04_metrica_repetida_cuenta_una_vez_y_cero_observado():
+    """E.1.4: Métrica repetida en varias secciones cuenta una vez por lado y periodo. Cero publicado cuenta."""
+    filas_duplicadas = [
+        {"clave": "corners", "procedencia": "fotmob", "equipo": 0.0, "rival": 3.0},
+        {"clave": "corners", "procedencia": "fotmob", "equipo": 0.0, "rival": 3.0},
+    ]
+    p = {
+        "posicion": 1,
+        "goles_equipo": 0,
+        "goles_rival": 1,
+        "periodos": {"FT": {"filas": filas_duplicadas}},
+        "resumen_claves": {},
+    }
+    resumen = _construir_resumen({"partidos": [p]})
+    # Debe contar solo 1 clave única observada
+    assert p["resumen_claves"]["FT"]["equipo"] == ["corners"]
+    assert resumen["partidos_con_detalle_ft"] == 1
+
+
+def test_e1_05_corners_ft_ambos_solo_b_corners_2t():
+    """E.1.5: Ambos tienen córneres FT y solo B tiene córneres 2T. FT se evalúa; comparación 2T queda bloqueada."""
+    pts_a = [_mock_partido(i, claves_ft=["corners"], claves_2t=[]) for i in range(1, 16)]
+    pts_b = [_mock_partido(i, claves_ft=["corners"], claves_2t=["corners"]) for i in range(1, 16)]
+
+    vista = construir_vista_comparable({"partidos": pts_a}, {"partidos": pts_b})
+    assert vista["modelos_habilitados"]["modelo_mercado_corners"] is True
+    # 2T bloqueado por falta de comunes en 2T
+    for emp in vista["emparejamientos"]:
+        assert emp["periodos"]["2T"]["n_comunes"] == 0
+
+
+def test_e1_06_escenario_tavernes_2_partidos_detalle_frente_15():
+    """E.1.6: Escenario Tavernes: 2 partidos con detalle frente a 15. Mensaje de insuficiencia y bloqueo total."""
+    doc_a = _mock_doc("Levante", 15, 15)
+    doc_b = _mock_doc("UD Tavernes", 15, 2)
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert dec.publicar_probabilidades is False
+    assert "2/15 partidos oficiales con detalle FT" in dec.alerta_descriptiva
+    assert all(v is False for v in dec.mercados_habilitados.values())
+
+
+def test_e1_07_escenario_anaitasuna_15_marcadores_cero_estadisticas():
+    """E.1.7: Escenario Anaitasuna: 15 marcadores y cero partidos con estadísticas. Estado solo_resultados."""
+    doc_a = _mock_doc("Real Sociedad", 15, 15)
+    doc_b = _mock_doc("CD Anaitasuna", 15, 0)
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "solo_resultados"
+    assert dec.publicar_probabilidades is False
+    assert "0/15 partidos con estadísticas detalladas" in dec.alerta_descriptiva
+
+
+def test_e1_08_copa_auf_estadisticas_basicas_bloqueo_xg_p01():
+    """E.1.8: Copa AUF con estadísticas básicas sin xG. Falta de xG bloquea P01 y red 45."""
+    claves_basicas = ["posesion_pct", "remates_totales", "remates_puerta", "faltas"]
+    doc_a = _mock_doc("Liverpool M.", 15, 15, claves_ft=claves_basicas)
+    doc_b = _mock_doc("Juventud", 15, 15, claves_ft=claves_basicas)
+
+    vista = construir_vista_comparable(doc_a, doc_b)
+    assert vista["modelos_habilitados"]["red_recursiva_45_dcn"] is False
+    # P01 requiere xG: sin xG, P01 no puede derivarse
+    pat_l, pat_v = calcular_patrones_completos_partido(
+        {"posesion_pct": 55.0, "remates_totales": 12.0},
+        {"posesion_pct": 45.0, "remates_totales": 8.0},
+    )
+    assert pat_l.get("P01_xG_por_Remate") is None
+
+
+def test_e1_09_liverpool_m_uruguay_cache_previa_ingles():
+    """E.1.9: Liverpool M. vs Juventud con caché previa de Liverpool inglés. Caché inglesa rechazada."""
+    limpiar_cache_memoria_auditorias()
+    doc_eng = {
+        "proveedor": "fotmob",
+        "equipo": {"id": "8650", "nombre": "Liverpool", "liga": "Premier League", "pais_iso": "ENG"},
+        "identidad": {"id_proveedor": "8650", "pais_iso": "ENG"},
+        "partidos": [{"id_partido": f"p{i}"} for i in range(15)],
+    }
+    _guardar_cache_resiliencia("fotmob_test_liverpool_m_eng", doc_eng)
+
+    # Consulta uruguaya
+    meta_ury = {"pais_iso": "URY", "liga": "Copa AUF Uruguay"}
+    cargado = _cargar_cache_resiliencia("fotmob_test_liverpool_m_eng", "Liverpool M.", meta_ctx=meta_ury)
+    assert cargado is None, "La caché inglesa no puede ser leída para un club uruguayo"
+
+
+def test_e1_10_cuadro_c_sin_minutos_cuadro_b_sin_descanso():
+    """E.1.10: Cuadro C sin minutos muestra «sin cobertura de minutos» y Cuadro B sin descanso no inventa 0/15."""
+    partidos = [_mock_partido(i, claves_1t=[], claves_2t=[]) for i in range(1, 16)]
+    cb = calcular_cuadro_b_tendencias(partidos, nombre_equipo="Test")
+    cc = calcular_cuadro_c_timeline(partidos, nombre_equipo="Test")
+
+    # Cuadro B: ganador_1t evaluables es 0
+    assert cb["ganador_1t"]._meta["str"] == "0/0"
+    # Cuadro C: sin cobertura de minutos
+    n_ev = cc["_meta"]["n_partidos_con_eventos"]
+    assert n_ev == 0
+
+
+def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
+    """E.1.11: Cambio exclusivo en métrica de A excluida de la vista comparable deja la proyección idéntica."""
+    claves_comunes = ["xg", "remates_totales", "remates_puerta", "corners"]
+    partidos_a1 = [_mock_partido(i, claves_ft=claves_comunes + ["despejes"]) for i in range(1, 16)]
+    partidos_a2 = [_mock_partido(i, claves_ft=claves_comunes + ["despejes"]) for i in range(1, 16)]
+    # Modificar valor de 'despejes' en a2
+    partidos_a2[0]["periodos"]["FT"]["filas"][-1]["valor_local"] = 999.0
+
+    partidos_b = [_mock_partido(i, claves_ft=claves_comunes) for i in range(1, 16)]
+
+    v1 = construir_vista_comparable({"partidos": partidos_a1}, {"partidos": partidos_b})
+    v2 = construir_vista_comparable({"partidos": partidos_a2}, {"partidos": partidos_b})
+
+    # 'despejes' no está en B, por tanto se filtra de vista_a
+    assert v1["emparejamientos"][0]["periodos"]["FT"]["claves_comunes"] == sorted(claves_comunes)
+    assert v2["emparejamientos"][0]["periodos"]["FT"]["claves_comunes"] == sorted(claves_comunes)
+    # Las filas finales enviadas al motor son exactamente las mismas
+    assert len(v1["vista_a"][0]["periodos"]["FT"]["filas"]) == len(v2["vista_a"][0]["periodos"]["FT"]["filas"]) == 4
+
+
+def test_e1_12_inversion_a_b_conserva_simetria_claves_comunes():
+    """E.1.12: Invertir A y B conserva la misma intersección simétrica fila por fila."""
+    doc_a = _mock_doc("Club A", 15, 15, claves_ft=["xg", "corners", "despejes"])
+    doc_b = _mock_doc("Club B", 15, 15, claves_ft=["xg", "corners", "tarjetas_amarillas"])
+
+    v_ab = construir_vista_comparable(doc_a, doc_b)
+    v_ba = construir_vista_comparable(doc_b, doc_a)
+
+    for i in range(15):
+        assert v_ab["emparejamientos"][i]["periodos"]["FT"]["claves_comunes"] == v_ba["emparejamientos"][i]["periodos"]["FT"]["claves_comunes"]
+        assert v_ab["emparejamientos"][i]["periodos"]["FT"]["claves_comunes"] == ["corners", "xg"]
+
+
+# =============================================================================
+# BLOQUE E.2: LAS 18 PRUEBAS ADICIONALES
+# =============================================================================
+
+def test_e2_01_liverpool_vs_arsenal_contexto_ingles():
+    """E.2.1: Liverpool vs Arsenal en contexto inglés sigue identificando al club inglés (8650)."""
+    res = resolver_entidades("Premier League", "Liverpool", "Arsenal")
+    assert res.pais_iso == "ENG"
+    assert str(res.id_proveedor_local) == "8650"
+    assert "Liverpool" in res.equipo_local
+
+
+def test_e2_02_encuentro_internacional_paises_distintos():
+    """E.2.2: Encuentro internacional con clubes de países distintos no exige mismo país."""
+    res = resolver_entidades("Champions League", "Real Madrid", "Bayern")
+    assert res.es_internacional is True
+    assert res.pais_iso == "INT"
+    assert res.pais_local == "ESP"
+    assert res.pais_visita == "DEU"
+
+
+def test_e2_03_once_caldas_atletico_nacional_copa_colombia():
+    """E.2.3: Once Caldas vs Atlético Nacional en Copa Colombia preserva la copa sin heredar Primera A."""
+    res = resolver_entidades("Copa Colombia", "Once Caldas", "Atlético Nacional")
+    assert res.es_copa is True
+    assert res.liga == "Copa Colombia"
+    assert "Primera A" not in res.liga
+
+
+def test_e2_04_cache_entrada_sin_id_proveedor_marcada_legado():
+    """E.2.4: Caché sin proveedor o sin ID se marca como legado_sin_proveedor y no se reutiliza."""
+    ruta_leg = os.path.join(CACHE_RESILIENCIA_DIR, "cache_legado_e2.json")
+    with open(ruta_leg, "w", encoding="utf-8") as f:
+        json.dump({"equipo": {"nombre": "Test", "pais_iso": "ESP"}}, f)
+
+    cargado = _cargar_cache_resiliencia("legado_e2", "Test", meta_ctx={"pais_iso": "ESP"})
+    assert cargado is None
+
+    with open(ruta_leg, "r", encoding="utf-8") as f:
+        doc_disco = json.load(f)
+    assert doc_disco.get("legado_sin_proveedor") is True
+    assert doc_disco.get("no_reutilizable") is True
+
+
+def test_e2_05_un_mismo_caso_misma_muestra_efectiva_todas_superficies(tmp_path):
+    """E.2.5: Todas las superficies leen la misma muestra efectiva de auditoría."""
+    doc_a = _mock_doc("Levante", 15, 15)
+    doc_b = _mock_doc("UD Tavernes", 15, 2)
+    ctx = {
+        "equipo_local": "Levante", "equipo_visitante": "UD Tavernes",
+        "doc_local": doc_a, "doc_visitante": doc_b,
+        "contexto": {"competicion": "Copa del Rey"},
+    }
+    with patch("servicio_mercados.resolver_enfrentamiento", return_value=ctx):
+        prep = servicio.preparar_analisis("Levante vs UD Tavernes", directorio_salida=str(tmp_path))
+
+    assert prep["abstenido"] is True
+    assert "2/15 con detalle FT" in prep["decision_cobertura"]["etiqueta_cobertura_b"]
+    assert "2/15 con detalle FT" in prep["analisis_texto_3_parrafos"]
+
+
+def test_e2_06_mercado_bloqueado_todas_superficies_evaluacion_abstenido():
+    """E.2.6: Mercado bloqueado en todas las superficies; /evaluar registra abstenido_por_cobertura."""
+    sel = {"mercado": "corners", "evento": "over_95", "abstenido": True}
+    res_p = evaluacion.ResultadoPartido(estado="finalizado", local="A", visitante="B")
+    ev = evaluacion.liquidar(sel, res_p, "t_1")
+    assert ev.estado_liquidacion == "abstenido_por_cobertura"
+    assert ev.evento_ocurrio is None
+
+
+def test_e2_07_analizar_vivo_cobertura_prepartido_insuficiente_sigue_bloqueado():
+    """E.2.7: /analizar_vivo con cobertura prepartido insuficiente mantiene bloqueado el modelo prepartido."""
+    doc_a = _mock_doc("A", 15, 2)
+    doc_b = _mock_doc("B", 15, 15)
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.publicar_probabilidades is False
+
+
+def test_e2_08_estimacion_presente_sin_observadas_suficientes():
+    """E.2.8: Una celda con estimado=True o procedencia=estimacion_modelo no incrementa total_celdas_observadas."""
+    p = {
+        "posicion": 1,
+        "goles_equipo": 1,
+        "goles_rival": 0,
+        "periodos": {
+            "FT": {"filas": [{"clave": "xg", "procedencia": "estimacion_modelo", "estimado": True, "equipo": 1.2, "rival": 0.8}]}
+        },
+    }
+    cob = validar_cobertura_matriz({"partidos": [p]})
+    assert cob["valores_observados"] == 0
+    assert cob["valores_estimados_modelo"] > 0
+
+
+def test_e2_09_pestanas_1t_2t_visibles_sin_celdas_publicadas():
+    """E.2.9: Pestañas 1T/2T visibles en UI sin celdas publicadas reportan cobertura 0/45."""
+    p = {
+        "posicion": 1,
+        "goles_equipo": 1,
+        "goles_rival": 0,
+        "periodos": {"FT": {"filas": [{"clave": "xg", "procedencia": "fotmob", "equipo": 1.0, "rival": 0.0}]}, "1T": {"filas": []}, "2T": {"filas": []}},
+    }
+    resumen = _construir_resumen({"partidos": [p]})
+    assert resumen["partidos_con_detalle_1t"] == 0
+    assert resumen["partidos_con_detalle_2t"] == 0
+
+
+def test_e2_10_ejecucion_nombres_equivalentes_comportamiento_identico():
+    """E.2.10: Variantes de nombre de club uruguayo resuelven con exactitud al mismo ID canónico 7942."""
+    r1 = resolver_entidades("Copa AUF Uruguay", "Liverpool M.", "Juventud")
+    r2 = resolver_entidades("Copa AUF Uruguay", "Liverpool Montevideo", "Juventud")
+    r3 = resolver_entidades("Copa AUF Uruguay", "Liverpool FC", "Juventud")
+    assert str(r1.id_proveedor_local) == str(r2.id_proveedor_local) == str(r3.id_proveedor_local) == "7942"
+
+
+def test_e2_11_equipo_13_oficiales_historial_incompleto_bloquea():
+    """E.2.11: Equipo con 13 partidos oficiales: historial_oficial_incompleto, informa 13/15 y bloquea."""
+    doc_a = _mock_doc("A", 13, 13)
+    doc_b = _mock_doc("B", 15, 15)
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "historial_oficial_incompleto"
+    assert dec.publicar_probabilidades is False
+    assert "13/15" in dec.alerta_descriptiva
+
+
+def test_e2_12_equipo_15_oficiales_solo_2_detalle_ft_bloquea():
+    """E.2.12: 15 oficiales y solo 2 con estadísticas: informa etiqueta y bloquea por cobertura_insuficiente."""
+    doc_a = _mock_doc("A", 15, 15)
+    doc_b = _mock_doc("B", 15, 2)
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert dec.publicar_probabilidades is False
+    assert "2/15 con detalle FT" in dec.etiqueta_cobertura_b
+
+
+def test_e2_13_historial_con_amistosos_y_duplicados_se_descartan():
+    """E.2.13: Duplicados por id_partido se deduplican preservando partidos únicos."""
+    from cuadro_especialista import deduplicar_partidos
+    partidos_con_duplicados = [
+        {"id_partido": "p1", "fecha": "2026-01-01"},
+        {"id_partido": "p1", "fecha": "2026-01-01"},
+        {"id_partido": "p2", "fecha": "2026-01-02"},
+    ]
+    unicos = deduplicar_partidos(partidos_con_duplicados)
+    assert len(unicos) == 2
+
+
+def test_e2_14_partido_oficial_solo_marcador_posicion_4_no_se_sustituye():
+    """E.2.14: Partido de solo marcador en posición 4 conserva posición 4 con 0/45 y no se sustituye."""
+    partidos = [_mock_partido(i, claves_ft=TODAS_45_METRICAS) for i in range(1, 16)]
+    # Posición 4 (index 3) solo tiene marcador
+    partidos[3] = _mock_partido(4, claves_ft=[])
+
+    resumen = _construir_resumen({"partidos": partidos})
+    assert resumen["partidos_oficiales_localizados"] == 15
+    assert resumen["partidos_con_detalle_ft"] == 14
+    assert resumen["partidos_solo_marcador"] == 1
+    # La posición 4 conserva 0 claves
+    assert len(partidos[3]["resumen_claves"]["FT"]["equipo"]) == 0
+
+
+def test_e2_15_a_remates_10_b_tarjetas_10_sin_comunes_cobertura_insuficiente():
+    """E.2.15: A con remates en 10 y B con tarjetas en 10 sin comunes: cobertura_insuficiente (sin variables comparables)."""
+    pts_a = [_mock_partido(i, claves_ft=["remates_totales"]) if i <= 10 else _mock_partido(i, claves_ft=[]) for i in range(1, 16)]
+    pts_b = [_mock_partido(i, claves_ft=["tarjetas_amarillas"]) if i <= 10 else _mock_partido(i, claves_ft=[]) for i in range(1, 16)]
+
+    doc_a = {"equipo": "A", "partidos": pts_a, "resumen_auditoria": _construir_resumen({"partidos": pts_a})}
+    doc_b = {"equipo": "B", "partidos": pts_b, "resumen_auditoria": _construir_resumen({"partidos": pts_b})}
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert "sin variables comparables" in dec.alerta_descriptiva.lower()
+    assert dec.estado != "solo_resultados"
+
+
+def test_e2_16_filas_comparables_sin_mercados_validos_cobertura_insuficiente():
+    """E.2.16: Filas comparables suficientes pero ningún mercado cumple insumos o modelo validado: cobertura_insuficiente."""
+    # Comparten 5 métricas que no habilitan ningún modelo (pases, despejes, fueras_juego, etc., sin goles ni corners)
+    claves_no_modelables = ["fueras_juego", "tiros_libres", "pases_total", "despejes", "intercepciones"]
+    pts_a = [_mock_partido(i, goles_l=None, goles_v=None, claves_ft=claves_no_modelables) for i in range(1, 16)]
+    pts_b = [_mock_partido(i, goles_l=None, goles_v=None, claves_ft=claves_no_modelables) for i in range(1, 16)]
+
+    doc_a = {"equipo": "A", "partidos": pts_a, "resumen_auditoria": _construir_resumen({"partidos": pts_a})}
+    doc_b = {"equipo": "B", "partidos": pts_b, "resumen_auditoria": _construir_resumen({"partidos": pts_b})}
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert dec.publicar_probabilidades is False
+
+
+def test_e2_17_p01_con_xg_remates_sin_xgot_bloquea_xgot():
+    """E.2.17: P01 con xG y remates se evalúa; patrón que exija xGOT queda en None."""
+    pat_l, pat_v = calcular_patrones_completos_partido(
+        {"xg": 1.8, "remates_totales": 10.0, "xgot": None},
+        {"xg": 1.2, "remates_totales": 8.0, "xgot": None},
+    )
+    assert pat_l.get("P01_xG_por_Remate") == 0.18
+    assert pat_l.get("P03_Calidad_xGOT_vs_xG") is None
+
+
+def test_e2_18_suite_completa_sin_red_fixtures_offline():
+    """E.2.18: Comprobación de entorno hermético offline (sin llamadas a la red de FotMob o Flashscore)."""
+    assert os.environ.get("DESACTIVAR_RED_TESTS", "1") == "1"

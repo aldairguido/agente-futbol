@@ -399,13 +399,15 @@ def evaluar_decision_cobertura(
     # ESTADO 5 vs 6: cobertura_parcial vs cobertura_suficiente
     # ─────────────────────────────────────────────────────────────────────────
     todos_habilitados = all(mercados_habilitados.get(m, False) for m in CATALOGO_MERCADOS)
-    red_45_activa = modelos_hab.get("red_recursiva_45_dcn", False)
+    red_45_activa = bool(modelos_hab.get("red_recursiva_45_dcn", False))
 
-    if todos_habilitados and red_45_activa:
+    # Punto 44 y 45 (Ajuste Etapa 1.1): Cobertura suficiente no exige 45-DCN completa.
+    # Exige que todos los mercados evaluados dispongan de su sub-modelo validado.
+    if todos_habilitados:
         estado = "cobertura_suficiente"
         alerta = (
-            "Cobertura suficiente: todos los mercados disponen de modelos cuantitativos validados "
-            "y datos homogéneos completos (15 pares con 45 variables oficiales)."
+            "Cobertura suficiente: todos los mercados evaluados disponen de modelos cuantitativos validados "
+            f"con insumos completos ({'Red 45-DCN activa' if red_45_activa else 'Poisson/Dixon-Coles bivariado activo'})."
         )
     else:
         estado = "cobertura_parcial"
