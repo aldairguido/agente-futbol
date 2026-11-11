@@ -1231,41 +1231,154 @@ def auditar_equipo(
         return res
 
 
+def verificar_consistencia_recuento_auditoria(resumen: dict[str, Any], partidos: list[dict[str, Any]]) -> bool:
+    """
+    Compara los conteos de resumen (localizados, con marcador, con detalle FT, 1T, 2T, solo marcador)
+    contra los registros originales fila por fila. Falla si difieren.
+    """
+    n_partidos = len(partidos)
+    if resumen.get("partidos_auditados") != n_partidos:
+        return False
+    if resumen.get("partidos_oficiales_localizados") != n_partidos:
+        return False
+    con_marcador = sum(1 for p in partidos if p.get("goles_equipo") is not None and p.get("goles_rival") is not None)
+    if resumen.get("partidos_con_marcador") != con_marcador:
+        return False
+    con_ft = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("FT", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_ft") != con_ft:
+        return False
+    con_1t = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("1T", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_1t") != con_1t:
+        return False
+    con_2t = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("2T", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_2t") != con_2t:
+        return False
+    con_solo = sum(1 for p in partidos if (p.get("goles_equipo") is not None and p.get("goles_rival") is not None) and len((p.get("resumen_claves") or {}).get("FT", {}).get("equipo", [])) == 0)
+    if resumen.get("partidos_solo_marcador") != con_solo:
+        return False
+    return True
+
+
 def _construir_resumen(auditoria: dict[str, Any]) -> dict[str, Any]:
     partidos = auditoria.get("partidos", [])
-    con_datos = [p for p in partidos if any(
-        any(fila["equipo"] is not None or fila["rival"] is not None
-            for fila in mat.get("filas", []))
-        for mat in (p.get("periodos") or {}).values()
-    )]
+    n_partidos = len(partidos)
+
+    # 1. Analizar cada fila por periodo y claves observadas (máx 45 por periodo)
+    claves_45_oficiales = {cl for _, cl, _, _ in LAS_45_METRICAS_OFICIALES}
+    con_marcador_lista = []
+    con_detalle_ft_lista = []
+    con_detalle_1t_lista = []
+    con_detalle_2t_lista = []
+    con_detalle_1t_2t_lista = []
+    solo_marcador_lista = []
+
+    cobertura: dict[str, int] = {}
+
+    for p in partidos:
+        resumen_claves_p: dict[str, Any] = {}
+        periodos = p.get("periodos") or {}
+
+        ge = p.get("goles_equipo")
+        gr = p.get("goles_rival")
+        tiene_marcador = (ge is not None and gr is not None)
+        if tiene_marcador:
+            con_marcador_lista.append(p)
+
+        for periodo in ("FT", "1T", "2T"):
+            mat = periodos.get(periodo) or {}
+            filas = mat.get("filas") or []
+            obs_eq = set()
+            obs_rv = set()
+            for fila in filas:
+                if not isinstance(fila, dict):
+                    continue
+                k = str(fila.get("clave") or "").strip()
+                if not k or k not in claves_45_oficiales:
+                    continue
+                v_eq = fila.get("equipo")
+                v_rv = fila.get("rival")
+                es_est = bool(fila.get("estimado"))
+                proc = str(fila.get("procedencia") or "").lower()
+
+                if v_eq is not None and not es_est and proc not in ("sin_dato", "dato_ausente", "estimacion_modelo"):
+                    obs_eq.add(k)
+                if v_rv is not None and not es_est and proc not in ("sin_dato", "dato_ausente", "estimacion_modelo"):
+                    obs_rv.add(k)
+
+            resumen_claves_p[periodo] = {
+                "equipo": sorted(obs_eq),
+                "rival": sorted(obs_rv),
+                "k_45_equipo": len(obs_eq),
+                "k_45_rival": len(obs_rv),
+            }
+            if periodo == "FT":
+                for k_obs in obs_eq:
+                    cobertura[k_obs] = cobertura.get(k_obs, 0) + 1
+
+        p["resumen_claves"] = resumen_claves_p
+
+        tiene_ft = (resumen_claves_p.get("FT", {}).get("k_45_equipo", 0) > 0)
+        tiene_1t = (resumen_claves_p.get("1T", {}).get("k_45_equipo", 0) > 0)
+        tiene_2t = (resumen_claves_p.get("2T", {}).get("k_45_equipo", 0) > 0)
+
+        if tiene_ft:
+            con_detalle_ft_lista.append(p)
+        if tiene_1t:
+            con_detalle_1t_lista.append(p)
+        if tiene_2t:
+            con_detalle_2t_lista.append(p)
+        if tiene_1t and tiene_2t:
+            con_detalle_1t_2t_lista.append(p)
+        if tiene_marcador and not tiene_ft:
+            solo_marcador_lista.append(p)
+
+    con_datos = con_detalle_ft_lista
     sin_datos = [p for p in partidos if p not in con_datos]
 
-    # Cobertura por métrica: en cuántos partidos aparece con dato
-    cobertura: dict[str, int] = {}
-    for p in partidos:
-        vistas = set()
-        for mat in (p.get("periodos") or {}).values():
-            for fila in mat.get("filas", []):
-                if fila["equipo"] is not None or fila["rival"] is not None:
-                    vistas.add(fila["clave"])
-        for clave in vistas:
-            cobertura[clave] = cobertura.get(clave, 0) + 1
+    partidos_oficiales_localizados = n_partidos
+    partidos_con_marcador = len(con_marcador_lista)
+    partidos_con_detalle_ft = len(con_detalle_ft_lista)
+    partidos_con_detalle_1t = len(con_detalle_1t_lista)
+    partidos_con_detalle_2t = len(con_detalle_2t_lista)
+    partidos_con_detalle_1t_2t = len(con_detalle_1t_2t_lista)
+    partidos_solo_marcador = len(solo_marcador_lista)
+
+    historial_incompleto = (partidos_oficiales_localizados < 15)
+
+    if historial_incompleto:
+        etiqueta_resumen = f"{partidos_oficiales_localizados}/15 oficiales (historial_oficial_incompleto)"
+    else:
+        etiqueta_resumen = f"15/15 oficiales · {partidos_con_detalle_ft}/15 con detalle FT · {partidos_solo_marcador}/15 solo con marcador"
 
     etiquetas = {d.clave: d.etiqueta for d in CATALOGO_METRICAS}
     cobertura_legible = {
-        etiquetas.get(k, k): {"partidos_con_dato": v,
-                              "cobertura_pct": round(v / max(1, len(partidos)) * 100, 1)}
+        etiquetas.get(k, k): {
+            "partidos_con_dato": v,
+            "cobertura_pct": round(v / max(1, n_partidos) * 100, 1),
+        }
         for k, v in sorted(cobertura.items(), key=lambda kv: -kv[1])
     }
-    ausentes_totales = [etiquetas.get(d.clave, d.clave) for d in CATALOGO_METRICAS
-                        if cobertura.get(d.clave, 0) == 0]
+    ausentes_totales = [
+        etiquetas.get(d.clave, d.clave)
+        for d in CATALOGO_METRICAS
+        if cobertura.get(d.clave, 0) == 0
+    ]
 
-    return {
+    resumen = {
         "partidos_solicitados": auditoria.get("limite_partidos"),
         "minimo_con_datos": auditoria.get("minimo_con_datos"),
         "objetivo_alcanzado": (auditoria.get("escaneo") or {}).get("objetivo_alcanzado"),
-        "partidos_auditados": len(partidos),
-        "partidos_obtenidos": len(partidos),
+        "partidos_auditados": n_partidos,
+        "partidos_obtenidos": n_partidos,
+        "partidos_oficiales_localizados": partidos_oficiales_localizados,
+        "partidos_con_marcador": partidos_con_marcador,
+        "partidos_con_detalle_ft": partidos_con_detalle_ft,
+        "partidos_con_detalle_1t": partidos_con_detalle_1t,
+        "partidos_con_detalle_2t": partidos_con_detalle_2t,
+        "partidos_con_detalle_1t_2t": partidos_con_detalle_1t_2t,
+        "partidos_solo_marcador": partidos_solo_marcador,
+        "historial_oficial_incompleto": historial_incompleto,
+        "etiqueta_resumen_cobertura": etiqueta_resumen,
         "partidos_con_datos": len(con_datos),
         "partidos_sin_datos": len(sin_datos),
         "ids_sin_datos": [p.get("id_partido") for p in sin_datos],
@@ -1274,6 +1387,14 @@ def _construir_resumen(auditoria: dict[str, Any]) -> dict[str, Any]:
         "metricas_sin_datos_en_ningun_partido": ausentes_totales,
         "cobertura_por_metrica": cobertura_legible,
     }
+
+    # Verificación estricta contra registros originales
+    assert verificar_consistencia_recuento_auditoria(resumen, partidos), (
+        f"Inconsistencia en los conteos de auditoría contra registros originales: "
+        f"auditados={n_partidos}, con_marcador={partidos_con_marcador}, con_ft={partidos_con_detalle_ft}"
+    )
+
+    return resumen
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
