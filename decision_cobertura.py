@@ -376,6 +376,24 @@ def evaluar_decision_cobertura(
             mercados_habilitados[m] = False
             motivos_bloqueo[m] = motivos_mod.get("modelo_mercado_2t") or "Menos de 8 pares con datos de 2T observados"
 
+    # ─────────────────────────────────────────────────────────────────────────
+    # REGLA BASE COHERENTE D1 (Coherencia Estricta de Mercados de Goles):
+    # Todos los mercados dependientes de goles (1X2, handicap, doble oportunidad,
+    # más/menos FT, ambos marcan, marcador exacto, goles 1T, 1x2 1T, goles 2T y 1x2 2T)
+    # se rigen por la misma regla estricta. Queda prohibido publicar goles_1t y
+    # goles_2t cuando los goles FT están bloqueados por falta de xG.
+    # ─────────────────────────────────────────────────────────────────────────
+    goles_ft_habilitados = bool(mercados_habilitados.get("mas_menos_goles") or mercados_habilitados.get("1X2"))
+    if not goles_ft_habilitados:
+        for m in ("goles_1t", "1x2_1t"):
+            if mercados_habilitados.get(m):
+                mercados_habilitados[m] = False
+                motivos_bloqueo[m] = "Mercado de 1T bloqueado por coherencia estricta con FT: falta xG oficial y permitir_goles_sin_xg=false"
+        for m in ("goles_2t", "1x2_2t"):
+            if mercados_habilitados.get(m):
+                mercados_habilitados[m] = False
+                motivos_bloqueo[m] = "Mercado de 2T bloqueado por coherencia estricta con FT: falta xG oficial y permitir_goles_sin_xg=false"
+
     # 4c: Si ningún mercado pudo habilitarse
     n_hab = sum(1 for v in mercados_habilitados.values() if v)
     if n_hab == 0:

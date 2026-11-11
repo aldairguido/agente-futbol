@@ -55,3 +55,9 @@ htmlcov/
 .idea/
 *.swp
 *.swo
+
+# Respaldos y snapshots locales
+*_backup*/
+**/*_backup*/
+informes/pronosticos/
+informes/*_backup*/

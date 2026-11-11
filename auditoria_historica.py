@@ -981,7 +981,7 @@ CACHE_RESILIENCIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
-    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\agente_futbol\cache\."""
+    r"""Guarda copia de respaldo de los últimos 15 partidos validados en cache/."""
     try:
         os.makedirs(CACHE_RESILIENCIA_DIR, exist_ok=True)
         prov = str(doc.get("proveedor") or "fotmob").strip().lower()

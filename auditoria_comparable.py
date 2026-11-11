@@ -287,6 +287,33 @@ def verificar_compatibilidad_modelo(
             )
         return True, "Red 45-DCN compatible con 15 pares completos de 45 variables", pares_45
 
+    # Sub-modelo condicional sin xG (Decisión D1): requiere interruptor encendido y validación cronológica superada
+    if nombre_modelo == "submodelo_goles_sin_xg":
+        if not mod_info.get("permitir_goles_sin_xg", False) or not mod_info.get("validacion_cronologica_superada", False):
+            return (
+                False,
+                "Sub-modelo de goles sin xG bloqueado: interruptor apagado (permitir_goles_sin_xg=false) o validación cronológica walk-forward pendiente",
+                0,
+            )
+
+    # Regla base coherente D1 para modelos de mitad (1T/2T) dependientes de goles FT:
+    if mod_info.get("depende_de_modelo_goles_ft"):
+        pares_xg_ft = sum(
+            1 for emp in emparejamientos
+            if emp["hay_partido_a"] and emp["hay_partido_b"]
+            and "xg" in set(emp["periodos"]["FT"]["claves_comunes"])
+        )
+        if mod_info.get("requiere_xg_estricto", True) and pares_xg_ft < min_pares:
+            modelos_cfg = cargar_modelos_validados()
+            submod = modelos_cfg.get("submodelo_goles_sin_xg") or {}
+            submod_on = bool(submod.get("permitir_goles_sin_xg") and submod.get("validacion_cronologica_superada"))
+            if not submod_on:
+                return (
+                    False,
+                    f"Modelo de {periodo_req} bloqueado por coherencia con FT: falta xG oficial y sub-modelo sin xG no validado (permitir_goles_sin_xg=false)",
+                    pares_xg_ft,
+                )
+
     # Conteo de pares con insumos completos para el modelo específico
     n_pares_completos = 0
     for emp in emparejamientos:
