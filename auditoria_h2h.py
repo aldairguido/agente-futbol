@@ -499,7 +499,15 @@ def cargar_o_crear_auditoria(
         clave_cache_entidad = construir_clave_cache_entidad(
             equipo_efectivo, str(pais_iso_cache or ""), es_fem_c, es_juv_c
         )
-        doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad) or obtener_auditoria_en_memoria(_slug(equipo_efectivo))
+        doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad)
+        if doc_mem is None and equipo_efectivo:
+            cand_mem = obtener_auditoria_en_memoria(_slug(equipo_efectivo))
+            if cand_mem:
+                cand_pais = (cand_mem.get("equipo") or {}).get("pais_iso") or (cand_mem.get("identidad") or {}).get("pais_iso")
+                if pais_iso_cache not in ("", "INT") and cand_pais and cand_pais != pais_iso_cache:
+                    doc_mem = None
+                else:
+                    doc_mem = cand_mem
         if doc_mem is not None:
             ok_mem, _ = _auditoria_corresponde_a_consulta(doc_mem, equipo_efectivo, rival=rival_efectivo)
             pais_doc = _pais_de_liga((doc_mem.get("equipo") or {}).get("liga"))

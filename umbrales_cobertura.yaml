@@ -1,0 +1,13 @@
+# ==============================================================================
+# UMBRALES DE COBERTURA Y DECISIÓN (SPEC 44-45 SECCIÓN 5 Y PARTE D)
+# Archivo de configuración editable para la función pura de cobertura.
+# ==============================================================================
+
+umbrales:
+  min_partidos_oficiales: 15
+  min_partidos_con_detalle_por_equipo: 3
+  min_filas_emparejadas: 3
+  min_claves_comunes_ft: 5
+  min_pares_mercado: 8
+  min_pares_red_45: 15
+  min_claves_comunes_red_45: 45

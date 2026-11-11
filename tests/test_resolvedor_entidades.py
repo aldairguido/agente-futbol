@@ -116,13 +116,13 @@ def test_separador_ligas_compuestas_y_cache_entidad():
     assert p3["equipo_visita"] == "Juventus"
     assert p3["es_femenino"] is True
 
-    # Clave de caché indexada por (fotmob_team_id, pais_iso, es_femenino, es_juvenil)
+    # Clave de caché indexada por (proveedor, team_id, pais_iso, es_femenino, es_juvenil)
     c_koln = construir_clave_cache_entidad("colonia", "DEU", False, False)
-    assert c_koln == "8722_DEU_False_False"
+    assert c_koln == "fotmob_8722_DEU_False_False"
     c_bayer = construir_clave_cache_entidad("bayer", "DEU", False, False)
-    assert c_bayer == "8178_DEU_False_False"
+    assert c_bayer == "fotmob_8178_DEU_False_False"
     c_bayern = construir_clave_cache_entidad("bayern", "DEU", False, False)
-    assert c_bayern == "9823_DEU_False_False"
+    assert c_bayern == "fotmob_9823_DEU_False_False"
     assert c_bayer != c_bayern
 
     msg = formatear_mensaje_entidades_verificadas("1. FC Köln", "DEU", "Bayer 04 Leverkusen", "DEU", "Bundesliga")

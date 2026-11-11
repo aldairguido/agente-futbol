@@ -78,7 +78,7 @@ ACUMULADOS: tuple[tuple[str, float], ...] = (
 )
 
 ESTADOS_LIQUIDACION = ("ganada", "perdida", "devolucion", "anulada", "pendiente",
-                       "no_verificable", "regla_no_definida")
+                       "no_verificable", "regla_no_definida", "abstenido_por_cobertura")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -157,6 +157,10 @@ class SnapshotPronostico:
     umbral_publicado: float
     referencia: str                      # ruta del informe/mensaje original
     origen: str = "nuevo"                # nuevo | importado_historico
+    abstenido: bool = False
+    estado_cobertura: str | None = None
+    motivo_abstencion: str | None = None
+    decision_cobertura: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         return {
@@ -173,6 +177,10 @@ class SnapshotPronostico:
             "selecciones_publicadas": self.selecciones_publicadas,
             "referencia": self.referencia,
             "origen": self.origen,
+            "abstenido": self.abstenido,
+            "estado_cobertura": self.estado_cobertura,
+            "motivo_abstencion": self.motivo_abstencion,
+            "decision_cobertura": self.decision_cobertura,
             "inmutable": True,
         }
 
@@ -205,7 +213,38 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     para poder evaluar el modelo completo, y marca aparte las publicadas.
     """
     analisis = preparado["analisis"]
-    metadatos = analisis.metadatos
+    metadatos = getattr(analisis, "metadatos", {}) or {}
+    abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
+    if abstenido:
+        dec_cob = metadatos.get("decision_cobertura") or {}
+        est_cob = str(dec_cob.get("estado") or metadatos.get("estado_cobertura") or "abstenido")
+        mot_abs = str(dec_cob.get("alerta_descriptiva") or metadatos.get("motivo_abstencion") or "")
+        umbral_val = float(getattr(analisis.parametros, "umbral", 0.70) if hasattr(analisis, "parametros") and analisis.parametros else 0.70)
+        return SnapshotPronostico(
+            id_trabajo=preparado.get("id_trabajo") or "abstenido",
+            equipos={"local": metadatos.get("equipo_local"), "visitante": metadatos.get("equipo_visitante")},
+            partido={
+                "fecha": metadatos.get("fecha_partido"),
+                "competicion": metadatos.get("competicion"),
+                "sede": metadatos.get("sede"),
+                "condicion_local": metadatos.get("condicion_local"),
+                "condicion_visitante": metadatos.get("condicion_visitante"),
+                "origen_condicion": metadatos.get("origen_condicion"),
+            },
+            generado_en=str(metadatos.get("generado_en")),
+            publicado_en=publicado_en,
+            modelo={"nombre": NOMBRE_MODELO, "version": VERSION_MODELO, "umbral": umbral_val,
+                    "w_condicion": 0.0, "w_xg": 0.0, "distribucion_conteos": "poisson"},
+            datos_corte={"abstenido": True, "estado_cobertura": est_cob, "motivo_abstencion": mot_abs, "fuente": metadatos.get("fuente")},
+            selecciones=[],
+            selecciones_publicadas=[],
+            umbral_publicado=umbral_val,
+            referencia=(preparado.get("rutas") or {}).get("informe") or "",
+            abstenido=True,
+            estado_cobertura=est_cob,
+            motivo_abstencion=mot_abs,
+            decision_cobertura=dec_cob,
+        )
     motor = analisis.motor
     umbral = float(analisis.parametros.umbral)
 
@@ -679,6 +718,26 @@ def _interpretar_linea(texto: str) -> float | None:
 
 def liquidar(seleccion: dict[str, Any], resultado: ResultadoPartido,
              id_trabajo: str) -> Evaluacion:
+    if seleccion.get("abstenido") or seleccion.get("estado_liquidacion") == "abstenido_por_cobertura":
+        return Evaluacion(
+            id_trabajo=id_trabajo,
+            partido=f"{resultado.local} vs {resultado.visitante}",
+            mercado=str(seleccion.get("mercado") or ""),
+            evento=str(seleccion.get("evento") or ""),
+            etiqueta=str(seleccion.get("etiqueta") or ""),
+            periodo=str(seleccion.get("periodo") or "FT"),
+            equipo=seleccion.get("equipo"),
+            linea=seleccion.get("linea"),
+            probabilidad_original=None,
+            probabilidad_origen="abstenido",
+            estado_sensibilidad="abstenido",
+            id_partido=resultado.id_partido,
+            referencia=str(seleccion.get("referencia") or ""),
+            estado_liquidacion="abstenido_por_cobertura",
+            evento_ocurrio=None,
+            objetivo_probabilidad="no_evaluable",
+            detalle=str(seleccion.get("motivo") or "Pronóstico abstenido por política de cobertura insuficiente"),
+        )
     """
     Liquida UNA selección usando la definición original del pronóstico.
 
@@ -1529,6 +1588,7 @@ class InformeEvaluacion:
     evidencia: dict[str, Any]
     faltantes: list[str]
     limitaciones: list[str]
+    abstenidos_por_cobertura: int = 0
     versiones: dict[str, Any] = field(default_factory=dict)
     filtro: str | None = None
 
@@ -2088,6 +2148,7 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
         evidencia=diagnostico_evidencia(publicadas),
         faltantes=faltantes,
         limitaciones=limitaciones,
+        abstenidos_por_cobertura=sum(1 for d in pronosticos if d.get("abstenido")),
         versiones=info_versiones,
         filtro=texto_filtro,
     )

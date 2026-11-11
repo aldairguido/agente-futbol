@@ -555,8 +555,13 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
-    if not contexto.get("competicion") and isinstance(liga_final, dict) and liga_final.get("nombre"):
-        contexto["competicion"] = liga_final["nombre"]
+    if isinstance(liga_final, dict) and liga_final.get("nombre"):
+        if res_puente.es_copa or liga_final.get("liga_forzada") or not contexto.get("competicion"):
+            contexto["competicion"] = liga_final["nombre"]
+    elif isinstance(liga_final, str) and liga_final.strip():
+        if res_puente.es_copa or not contexto.get("competicion"):
+            contexto["competicion"] = liga_final.strip()
+
     avisar(f"condición: {nombre_a}={contexto.get('condicion_local')} · "
            f"{nombre_b}={contexto.get('condicion_visitante')} "
            f"({contexto.get('evidencia_condicion')})")
@@ -570,6 +575,11 @@ def resolver_enfrentamiento(
         "meta_visitante": meta_b,
         "contexto": contexto,
         "liga_solicitada": liga_final,
+        "estado_identidad": res_puente.estado_identidad,
+        "motivo_identidad": res_puente.motivo_identidad,
+        "identidad_verificada": res_puente.identidad_verificada,
+        "criterio_desempate": res_puente.criterio_desempate,
+        "nivel_confianza": res_puente.nivel_confianza,
         "ambiguedad_condicion": (contexto.get("condicion_local") is None
                                  or contexto.get("condicion_visitante") is None),
     }
@@ -921,6 +931,79 @@ def renderizar_ticket_mercados_png(
 
     while _get_w(partido_titulo, f_title) > 620 and getattr(f_title, "size", 24) > 18:
         f_title = _cargar_fuentes_ticket(getattr(f_title, "size", 24) - 2, bold=True)
+
+    abstenido = bool(meta.get("abstenido") or getattr(analisis, "abstenido", False))
+    if abstenido:
+        # Renderizar Ticket Oficial de Abstención Preventiva (Puntos 44 y 45)
+        w_img, h_img = 1000, 520
+        im = Image.new("RGB", (w_img, h_img), "#F7F9FC")
+        draw = ImageDraw.Draw(im)
+
+        # Header
+        draw.rectangle([0, 0, w_img, 95], fill="#131D31")
+        draw.text((30, 20), partido_titulo, font=f_title, fill="#FFFFFF")
+        draw.text((30, 60), f"{competicion} · {fecha}", font=f_meta, fill="#94A3B8")
+
+        # Badge AUDITORÍA en esquina superior derecha
+        w_b = _get_w("AUDITORÍA DE COBERTURA D.1", f_badge_hdr) + 24
+        draw.rounded_rectangle([w_img - w_b - 30, 30, w_img - 30, 65], radius=6, fill="#1E3A8A")
+        draw.text((w_img - w_b - 18, 38), "AUDITORÍA DE COBERTURA D.1", font=f_badge_hdr, fill="#FFFFFF")
+
+        # Tarjeta de Alerta de Abstención
+        est_cob = str(meta.get("estado_cobertura") or "cobertura_insuficiente").upper()
+        etq_l = str(meta.get("etiqueta_cobertura_local") or "Historial auditado")
+        etq_v = str(meta.get("etiqueta_cobertura_visitante") or "Historial auditado")
+        mot_abs = str(meta.get("motivo_abstencion") or "Muestra estadística insuficiente")
+
+        # Card container
+        draw.rounded_rectangle([30, 115, w_img - 30, 445], radius=8, fill="#FEF2F2", outline="#F87171", width=2)
+
+        # Banner interno rojo
+        draw.rounded_rectangle([45, 130, w_img - 45, 175], radius=6, fill="#DC2626")
+        draw.text((60, 142), f"PRONÓSTICO ABSTENIDO: {est_cob}", font=f_banner_tit, fill="#FFFFFF")
+
+        # Etiquetas de cobertura de los clubes
+        draw.text((60, 195), f"• {eq_l}:", font=f_sub, fill="#1E293B")
+        draw.text((60 + _get_w(f"• {eq_l}:", f_sub) + 10, 195), etq_l, font=f_meta, fill="#334155")
+
+        draw.text((60, 225), f"• {eq_v}:", font=f_sub, fill="#1E293B")
+        draw.text((60 + _get_w(f"• {eq_v}:", f_sub) + 10, 225), etq_v, font=f_meta, fill="#334155")
+
+        # Línea divisoria
+        draw.line([60, 260, w_img - 60, 260], fill="#FECACA", width=1)
+
+        # Justificación técnica
+        draw.text((60, 275), "JUSTIFICACIÓN TÉCNICA:", font=f_sub, fill="#991B1B")
+
+        palabras = mot_abs.split()
+        lineas_mot = []
+        cur_l = []
+        for p in palabras:
+            cur_l.append(p)
+            if _get_w(" ".join(cur_l), f_meta) > 860:
+                cur_l.pop()
+                lineas_mot.append(" ".join(cur_l))
+                cur_l = [p]
+        if cur_l:
+            lineas_mot.append(" ".join(cur_l))
+
+        y_txt = 300
+        for l_m in lineas_mot[:3]:
+            draw.text((60, y_txt), l_m, font=f_meta, fill="#1F2937")
+            y_txt += 22
+
+        # Directiva de garantía
+        draw.rounded_rectangle([60, 375, w_img - 60, 425], radius=6, fill="#FFFBEB", outline="#FCD34D", width=1)
+        draw.text((75, 385), "GARANTÍA CUANTITATIVA (Puntos 44 y 45):", font=f_banner_sub, fill="#92400E")
+        draw.text((75, 403), "Prohibido calcular o publicar probabilidades cuantitativas o matrices de Poisson sin evidencia suficiente.", font=f_meta, fill="#78350F")
+
+        # Footer
+        draw.text((30, 475), "AGENTE CUANTITATIVO DE FÚTBOL · MÓDULO DE DECISIÓN DE COBERTURA D.1 · PREVENCIÓN DE ALUCINACIONES", font=f_footer, fill="#64748B")
+
+        ruta_salida = destino or os.path.join(MERCADOS_DIR, f"ticket_abstenido_{_slug(eq_l)}_vs_{_slug(eq_v)}.png")
+        os.makedirs(os.path.dirname(os.path.abspath(ruta_salida)), exist_ok=True)
+        im.save(ruta_salida, format="PNG")
+        return ruta_salida
 
     def _formatear_pildora(s: Any, cat: str) -> tuple[str, str, float]:
         ev = str(_val(s, "evento") or "").lower()
@@ -1843,6 +1926,136 @@ def preparar_analisis(
         params.distribucion_conteos = "poisson"   # la central usa Poisson (documentado)
 
     ctx = contexto["contexto"]
+
+    # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
+    from decision_cobertura import evaluar_decision_cobertura
+    doc_l_eval = dict(contexto["doc_local"])
+    doc_v_eval = dict(contexto["doc_visitante"])
+    if not contexto.get("identidad_verificada", True) or contexto.get("estado_identidad") == "identidad_no_verificada":
+        doc_l_eval["estado_identidad"] = "identidad_no_verificada"
+        doc_l_eval["identidad_verificada"] = False
+
+    decision_cob = evaluar_decision_cobertura(doc_l_eval, doc_v_eval)
+
+    if not decision_cob.publicar_probabilidades:
+        # Estado de bloqueo (identidad_no_verificada, historial_oficial_incompleto, solo_resultados, cobertura_insuficiente)
+        meta_abs = {
+            "equipo_local": contexto["equipo_local"],
+            "equipo_visitante": contexto["equipo_visitante"],
+            "competicion": ctx.get("competicion", "Competición oficial"),
+            "fecha_partido": ctx.get("fecha_partido"),
+            "generado_en": _ahora(),
+            "abstenido": True,
+            "bloqueado_por_cobertura": True,
+            "estado_cobertura": decision_cob.estado,
+            "motivo_abstencion": decision_cob.alerta_descriptiva,
+            "decision_cobertura": decision_cob.a_dict(),
+            "etiqueta_cobertura_local": decision_cob.etiqueta_cobertura_a,
+            "etiqueta_cobertura_visitante": decision_cob.etiqueta_cobertura_b,
+            "fuente": "Auditoría Cobertura D.1",
+            "red_neuronal": {"aplicado": False, "motivo": f"Abstenido por cobertura ({decision_cob.estado})"},
+        }
+
+        informe_md = (
+            f"# INFORME DE AUDITORÍA: ABSTENCIÓN POR COBERTURA INSUFICIENTE\n\n"
+            f"**Encuentro:** {contexto['equipo_local']} vs {contexto['equipo_visitante']}\n"
+            f"**Competición:** {ctx.get('competicion', 'Competición oficial')}\n"
+            f"**Estado Oficial:** `{decision_cob.estado}`\n\n"
+            f"### Cobertura de Historiales Oficiales:\n"
+            f"- **{contexto['equipo_local']}:** {decision_cob.etiqueta_cobertura_a}\n"
+            f"- **{contexto['equipo_visitante']}:** {decision_cob.etiqueta_cobertura_b}\n\n"
+            f"### Justificación Técnica:\n"
+            f"{decision_cob.alerta_descriptiva}\n\n"
+            f"> **GARANTÍA CUANTITATIVA (Puntos 44 y 45):**\n"
+            f"> Se suspende la publicación de probabilidades, matrices de Poisson, cuotas de valor y stakes Kelly "
+            f"> para salvaguardar la integridad matemática del sistema ante la falta de evidencia homogénea suficiente.\n"
+        )
+
+        class _TasasZero:
+            lambda_local_ft = 0.0
+            lambda_visitante_ft = 0.0
+            lambda_local_1t = 0.0
+            lambda_visitante_1t = 0.0
+            lambda_local_2t = 0.0
+            lambda_visitante_2t = 0.0
+            procedencia_tiempos = "abstenido_por_cobertura"
+
+        class _MotorZero:
+            tasas = _TasasZero()
+            residual_ft = 0.0
+            matriz_ft = []
+            muestras = {
+                "local_general": type("M", (), {"partidos_general": []})(),
+                "visitante_general": type("M", (), {"partidos_general": []})(),
+                "local_cond": type("M", (), {"partidos_condicion": []})(),
+                "visitante_cond": type("M", (), {"partidos_condicion": []})(),
+            }
+
+        analisis_abstenido = type("AnalisisAbstenidoObj", (), {
+            "metadatos": meta_abs,
+            "parametros": params,
+            "motor": _MotorZero(),
+            "selecciones_filtradas": [],
+            "mercados": [],
+            "informe": informe_md,
+            "abstenido": True,
+            "estado_cobertura": decision_cob.estado,
+            "motivo_abstencion": decision_cob.alerta_descriptiva,
+            "grupos": {"mantiene": [], "sensible": []},
+        })()
+
+        id_trabajo = identificar_trabajo(meta_abs, contexto["doc_local"], contexto["doc_visitante"])
+        fecha_dir = datetime.now().strftime("%Y-%m-%d")
+        base_dir = directorio_salida or os.path.join(MERCADOS_DIR, fecha_dir)
+        os.makedirs(base_dir, exist_ok=True)
+        raiz = os.path.join(base_dir, f"mercados_{_slug(contexto['equipo_local'])}_vs_"
+                                      f"{_slug(contexto['equipo_visitante'])}_{id_trabajo}")
+        rutas = {"informe": raiz + ".md", "datos": raiz + ".json"}
+        with open(rutas["informe"], "w", encoding="utf-8") as f:
+            f.write(informe_md)
+        with open(rutas["datos"], "w", encoding="utf-8") as f:
+            json.dump({
+                "metadatos": meta_abs,
+                "id_trabajo": id_trabajo,
+                "abstenido": True,
+                "estado_cobertura": decision_cob.estado,
+                "motivo_abstencion": decision_cob.alerta_descriptiva,
+                "decision_cobertura": decision_cob.a_dict(),
+                "selecciones_filtradas": [],
+                "mercados": [],
+            }, f, ensure_ascii=False, indent=1)
+
+        ruta_imagen = raiz + ".png"
+        try:
+            renderizar_ticket_mercados_png(analisis_abstenido, metadatos=meta_abs,
+                                           umbral=params.umbral, destino=ruta_imagen)
+            rutas["imagen"] = ruta_imagen
+        except Exception as e_img:
+            print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el ticket PNG de abstención: {e_img}")
+            ruta_imagen = None
+
+        texto_alerta = (
+            f"🚨 PRONÓSTICO ABSTENIDO POR COBERTURA INSUFICIENTE\n"
+            f"Estado Oficial: {decision_cob.estado.upper()}\n\n"
+            f"• {contexto['equipo_local']}: {decision_cob.etiqueta_cobertura_a}\n"
+            f"• {contexto['equipo_visitante']}: {decision_cob.etiqueta_cobertura_b}\n\n"
+            f"{decision_cob.alerta_descriptiva}\n\n"
+            f"⚠️ Por política cuantitativa estricta, no se publican probabilidades ni matrices sin evidencia estadística suficiente."
+        )
+
+        return {
+            "analisis": analisis_abstenido,
+            "id_trabajo": id_trabajo,
+            "rutas": rutas,
+            "contexto": contexto,
+            "abstenido": True,
+            "estado_cobertura": decision_cob.estado,
+            "motivo_abstencion": decision_cob.alerta_descriptiva,
+            "decision_cobertura": decision_cob.a_dict(),
+            "analisis_texto_3_parrafos": texto_alerta,
+            "ruta_imagen": ruta_imagen,
+        }
+
     analisis: Analisis = analizar(
         contexto["doc_local"], contexto["doc_visitante"],
         contexto["equipo_local"], contexto["equipo_visitante"],
@@ -1853,6 +2066,25 @@ def preparar_analisis(
         condicion_visitante=ctx.get("condicion_visitante"),
         parametros=params, aviso=progreso,
     )
+
+    analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
+    analisis.metadatos["estado_cobertura"] = decision_cob.estado
+    analisis.metadatos["etiqueta_cobertura_local"] = decision_cob.etiqueta_cobertura_a
+    analisis.metadatos["etiqueta_cobertura_visitante"] = decision_cob.etiqueta_cobertura_b
+
+    if decision_cob.estado == "cobertura_parcial":
+        mercados_permitidos = {m for m, ok in decision_cob.mercados_habilitados.items() if ok}
+        analisis.selecciones_filtradas = [
+            s for s in analisis.selecciones_filtradas
+            if getattr(s, "mercado", None) in mercados_permitidos
+        ]
+        if hasattr(analisis, "grupos") and isinstance(analisis.grupos, dict):
+            for g_k in ("mantiene", "sensible"):
+                if g_k in analisis.grupos:
+                    analisis.grupos[g_k] = [
+                        s for s in analisis.grupos[g_k]
+                        if getattr(s, "mercado", None) in mercados_permitidos
+                    ]
 
     # ── RED NEURONAL RECURSIVA: misma matriz para texto e imagen ─────────────
     # El motor ya la aplicó en `preparar()` (antes de evaluar los mercados); aquí
@@ -2202,7 +2434,10 @@ def enviar_analisis(
         eq_v = ctx.get("equipo_visitante") or "Visitante"
         analisis_obj = preparado.get("analisis")
         umbral_val = getattr(getattr(analisis_obj, "parametros", None), "umbral", 0.70)
-        caption = f"🎯 {eq_l} vs {eq_v} | Umbral >{umbral_val:.0%}"
+        if preparado.get("abstenido"):
+            caption = f"🚨 {eq_l} vs {eq_v} | Pronóstico Abstenido ({preparado.get('estado_cobertura', 'cobertura_insuficiente')})"
+        else:
+            caption = f"🎯 {eq_l} vs {eq_v} | Umbral >{umbral_val:.0%}"
 
         marcar_estado(id_trabajo, "envio_en_curso", {"tipo": "foto", "ruta": ruta_imagen})
         try:
@@ -2226,8 +2461,12 @@ def enviar_analisis(
                     except Exception as e_txt_3p:
                         print(f"[SERVICIO MERCADOS] ⚠️ Aviso al enviar análisis de 3 párrafos: {e_txt_3p}")
 
-            # 1) Primera imagen: Ticket General de Mercados
+            # 1) Primera imagen: Ticket General de Mercados (o Ticket de Abstención)
             resultado = foto_sender(ruta_imagen, caption=caption, chat_id=chat_id)
+
+            if preparado.get("abstenido"):
+                marcar_estado(id_trabajo, "envio_confirmado", {"tipo": "foto_abstencion", "ruta": ruta_imagen})
+                return {"enviado": True, "id_trabajo": id_trabajo, "estado": "abstenido_enviado", "rutas": preparado.get("rutas")}
             if isinstance(resultado, dict):
                 if not resultado.get("ok", True):
                     raise RuntimeError(resultado.get("error") or "envío de foto no confirmado")

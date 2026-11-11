@@ -459,6 +459,10 @@ def validar_cobertura_matriz(auditoria: dict[str, Any]) -> dict[str, Any]:
                         proc_partido.get(lado) if isinstance(proc_partido.get(lado), dict) else {}
                     )
                     etiqueta_proc = str((proc_lado or {}).get(clave) or "").lower().strip()
+                    if not etiqueta_proc and fila.get("procedencia"):
+                        etiqueta_proc = str(fila.get("procedencia") or "").lower().strip()
+                    if fila.get("estimado"):
+                        etiqueta_proc = "estimacion_modelo"
 
                     if not _es_valor_vacio_o_invalido(val_celda):
                         if etiqueta_proc == "estimacion_modelo":
@@ -977,26 +981,92 @@ CACHE_RESILIENCIA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def _guardar_cache_resiliencia(slug: str, doc: dict[str, Any]) -> None:
-    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\\agente_futbol\\cache\\."""
+    """Guarda copia de respaldo de los últimos 15 partidos validados en D:\agente_futbol\cache\."""
     try:
         os.makedirs(CACHE_RESILIENCIA_DIR, exist_ok=True)
-        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
+        prov = str(doc.get("proveedor") or "fotmob").strip().lower()
+        if not slug.startswith("fotmob_") and not slug.startswith("flashscore_"):
+            slug_prov = f"{prov}_{slug}"
+        else:
+            slug_prov = slug
+        doc["proveedor"] = prov
+        ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_prov}.json")
         with open(ruta, "w", encoding="utf-8") as f:
             json.dump(doc, f, ensure_ascii=False)
     except Exception:
         pass
 
-
 def _cargar_cache_resiliencia(slug: str, nombre_equipo: str, meta_ctx: Any = None) -> dict[str, Any] | None:
-    """Lee desde D:\\agente_futbol\\cache\\ si la API falla tras los reintentos, validando coherencia de país."""
     meta_ctx = dict(meta_ctx) if isinstance(meta_ctx, dict) else {"pais_iso": "INT", "liga": "Desconocida", "es_femenino": False, "es_juvenil": False}
     try:
+        from resolvedor_entidades import normalizar_pais_iso
         ruta = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug}.json")
         if not os.path.isfile(ruta):
-            return None
+            if not slug.startswith("fotmob_") and not slug.startswith("flashscore_"):
+                ruta_prov = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_fotmob_{slug}.json")
+                if os.path.isfile(ruta_prov):
+                    ruta = ruta_prov
+                else:
+                    slug_simple = _slug(nombre_equipo)
+                    ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
+                    if os.path.isfile(ruta_simple):
+                        ruta = ruta_simple
+                    else:
+                        return None
+            else:
+                slug_simple = _slug(nombre_equipo)
+                ruta_simple = os.path.join(CACHE_RESILIENCIA_DIR, f"cache_{slug_simple}.json")
+                if os.path.isfile(ruta_simple):
+                    ruta = ruta_simple
+                else:
+                    return None
         with open(ruta, "r", encoding="utf-8") as f:
             doc = json.load(f)
+
+        base_nom = os.path.basename(ruta)
+        tiene_prefijo_proveedor = base_nom.startswith("cache_fotmob_") or base_nom.startswith("cache_flashscore_")
+        tiene_proveedor_doc = bool(doc.get("proveedor") in ("fotmob", "flashscore"))
+
+        # Punto 44 y 45 (Etapa 1.2): Las entradas antiguas sin proveedor se marcan como
+        # antiguas (legado_sin_proveedor) y no se reutilizan; no se borran.
+        if not tiene_prefijo_proveedor or not tiene_proveedor_doc:
+            doc["legado_sin_proveedor"] = True
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
         eq_doc = doc.get("equipo") or {}
+        ident_doc = doc.get("identidad") or {}
+        id_prov = eq_doc.get("id") or ident_doc.get("id_proveedor")
+        pais_doc = eq_doc.get("pais_iso") or ident_doc.get("pais_iso") or _pais_de_liga(eq_doc.get("liga"))
+
+        pais_esperado = normalizar_pais_iso(meta_ctx.get("pais_iso"))
+        # Si el país del archivo contradice el país esperado, NO reutilizar (ej. Liverpool Inglaterra en consulta de Uruguay)
+        if pais_esperado and pais_esperado != "INT" and pais_doc and pais_doc != "INT" and pais_doc != pais_esperado:
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
+
+        # Si el archivo carece de ID de proveedor y país en una consulta con país requerido, marcarlo antiguo y NO reutilizar
+        if not id_prov and not pais_doc and pais_esperado and pais_esperado != "INT":
+            doc["antiguo"] = True
+            doc["no_reutilizable"] = True
+            try:
+                with open(ruta, "w", encoding="utf-8") as f_out:
+                    json.dump(doc, f_out, ensure_ascii=False)
+            except Exception:
+                pass
+            return None
+
         tiene_ctx_real = bool(
             (meta_ctx.get("pais_iso") and meta_ctx.get("pais_iso") != "INT")
             or (meta_ctx.get("liga") and meta_ctx.get("liga") != "Desconocida")
@@ -1109,7 +1179,15 @@ def auditar_equipo(
 
     with lock_equipo:
         if fuente_obj is None:
-            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad) or obtener_auditoria_en_memoria(slug_equipo)
+            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad)
+            if doc_mem is None and slug_equipo:
+                cand_mem = obtener_auditoria_en_memoria(slug_equipo)
+                if cand_mem:
+                    cand_pais = (cand_mem.get("equipo") or {}).get("pais_iso") or (cand_mem.get("identidad") or {}).get("pais_iso")
+                    if pais_iso_ctx not in ("", "INT") and cand_pais and cand_pais != pais_iso_ctx:
+                        doc_mem = None
+                    else:
+                        doc_mem = cand_mem
             if doc_mem is not None:
                 eq_doc = doc_mem.get("equipo") or {}
                 pts_mem = puntuar_candidato(
@@ -1154,7 +1232,7 @@ def auditar_equipo(
                 rival=rival,
             )
         except Exception:
-            doc_resiliencia = _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
+            doc_resiliencia = _cargar_cache_resiliencia(clave_cache_entidad, nombre_equipo, meta_ctx=meta_ctx) or _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
             if doc_resiliencia is not None:
                 return doc_resiliencia
             raise
@@ -1165,11 +1243,24 @@ def auditar_equipo(
             str(eq_res.get("pais_iso") or pais_iso_ctx or ""),
             bool(eq_res.get("es_femenino", es_fem_ctx)),
             bool(eq_res.get("es_juvenil", es_juv_ctx)),
+            competicion=meta_ctx.get("liga") or "",
         )
+        res["identidad"] = {
+            "id_proveedor": str(eq_res.get("id") or ""),
+            "nombre_canonico": str(eq_res.get("nombre") or nombre_equipo),
+            "pais_iso": str(eq_res.get("pais_iso") or pais_iso_ctx or ""),
+            "competicion": str(meta_ctx.get("liga") or ""),
+            "es_femenino": bool(eq_res.get("es_femenino", es_fem_ctx)),
+            "es_juvenil": bool(eq_res.get("es_juvenil", es_juv_ctx)),
+            "clave_cache": clave_id_oficial,
+            "criterio_desempate": meta_ctx.get("criterio_desempate", "directo"),
+            "confianza": "alta",
+        }
+        res["estado_identidad"] = "verificada"
         guardar_auditoria_en_memoria(clave_id_oficial, res)
         guardar_auditoria_en_memoria(clave_cache_entidad, res)
-        guardar_auditoria_en_memoria(slug_equipo, res)
-        _guardar_cache_resiliencia(slug_equipo, res)
+        _guardar_cache_resiliencia(clave_id_oficial, res)
+        _guardar_cache_resiliencia(clave_cache_entidad, res)
         nom_resuelto = eq_res.get("nombre")
         if nom_resuelto and _slug(nom_resuelto) != slug_equipo:
             guardar_auditoria_en_memoria(_slug(nom_resuelto), res)
@@ -1177,41 +1268,154 @@ def auditar_equipo(
         return res
 
 
+def verificar_consistencia_recuento_auditoria(resumen: dict[str, Any], partidos: list[dict[str, Any]]) -> bool:
+    """
+    Compara los conteos de resumen (localizados, con marcador, con detalle FT, 1T, 2T, solo marcador)
+    contra los registros originales fila por fila. Falla si difieren.
+    """
+    n_partidos = len(partidos)
+    if resumen.get("partidos_auditados") != n_partidos:
+        return False
+    if resumen.get("partidos_oficiales_localizados") != n_partidos:
+        return False
+    con_marcador = sum(1 for p in partidos if p.get("goles_equipo") is not None and p.get("goles_rival") is not None)
+    if resumen.get("partidos_con_marcador") != con_marcador:
+        return False
+    con_ft = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("FT", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_ft") != con_ft:
+        return False
+    con_1t = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("1T", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_1t") != con_1t:
+        return False
+    con_2t = sum(1 for p in partidos if len((p.get("resumen_claves") or {}).get("2T", {}).get("equipo", [])) >= 1)
+    if resumen.get("partidos_con_detalle_2t") != con_2t:
+        return False
+    con_solo = sum(1 for p in partidos if (p.get("goles_equipo") is not None and p.get("goles_rival") is not None) and len((p.get("resumen_claves") or {}).get("FT", {}).get("equipo", [])) == 0)
+    if resumen.get("partidos_solo_marcador") != con_solo:
+        return False
+    return True
+
+
 def _construir_resumen(auditoria: dict[str, Any]) -> dict[str, Any]:
     partidos = auditoria.get("partidos", [])
-    con_datos = [p for p in partidos if any(
-        any(fila["equipo"] is not None or fila["rival"] is not None
-            for fila in mat.get("filas", []))
-        for mat in (p.get("periodos") or {}).values()
-    )]
+    n_partidos = len(partidos)
+
+    # 1. Analizar cada fila por periodo y claves observadas (máx 45 por periodo)
+    claves_45_oficiales = {cl for _, cl, _, _ in LAS_45_METRICAS_OFICIALES}
+    con_marcador_lista = []
+    con_detalle_ft_lista = []
+    con_detalle_1t_lista = []
+    con_detalle_2t_lista = []
+    con_detalle_1t_2t_lista = []
+    solo_marcador_lista = []
+
+    cobertura: dict[str, int] = {}
+
+    for p in partidos:
+        resumen_claves_p: dict[str, Any] = {}
+        periodos = p.get("periodos") or {}
+
+        ge = p.get("goles_equipo")
+        gr = p.get("goles_rival")
+        tiene_marcador = (ge is not None and gr is not None)
+        if tiene_marcador:
+            con_marcador_lista.append(p)
+
+        for periodo in ("FT", "1T", "2T"):
+            mat = periodos.get(periodo) or {}
+            filas = mat.get("filas") or []
+            obs_eq = set()
+            obs_rv = set()
+            for fila in filas:
+                if not isinstance(fila, dict):
+                    continue
+                k = str(fila.get("clave") or "").strip()
+                if not k or k not in claves_45_oficiales:
+                    continue
+                v_eq = fila.get("equipo")
+                v_rv = fila.get("rival")
+                es_est = bool(fila.get("estimado"))
+                proc = str(fila.get("procedencia") or "").lower()
+
+                if v_eq is not None and not es_est and proc not in ("sin_dato", "dato_ausente", "estimacion_modelo"):
+                    obs_eq.add(k)
+                if v_rv is not None and not es_est and proc not in ("sin_dato", "dato_ausente", "estimacion_modelo"):
+                    obs_rv.add(k)
+
+            resumen_claves_p[periodo] = {
+                "equipo": sorted(obs_eq),
+                "rival": sorted(obs_rv),
+                "k_45_equipo": len(obs_eq),
+                "k_45_rival": len(obs_rv),
+            }
+            if periodo == "FT":
+                for k_obs in obs_eq:
+                    cobertura[k_obs] = cobertura.get(k_obs, 0) + 1
+
+        p["resumen_claves"] = resumen_claves_p
+
+        tiene_ft = (resumen_claves_p.get("FT", {}).get("k_45_equipo", 0) > 0)
+        tiene_1t = (resumen_claves_p.get("1T", {}).get("k_45_equipo", 0) > 0)
+        tiene_2t = (resumen_claves_p.get("2T", {}).get("k_45_equipo", 0) > 0)
+
+        if tiene_ft:
+            con_detalle_ft_lista.append(p)
+        if tiene_1t:
+            con_detalle_1t_lista.append(p)
+        if tiene_2t:
+            con_detalle_2t_lista.append(p)
+        if tiene_1t and tiene_2t:
+            con_detalle_1t_2t_lista.append(p)
+        if tiene_marcador and not tiene_ft:
+            solo_marcador_lista.append(p)
+
+    con_datos = con_detalle_ft_lista
     sin_datos = [p for p in partidos if p not in con_datos]
 
-    # Cobertura por métrica: en cuántos partidos aparece con dato
-    cobertura: dict[str, int] = {}
-    for p in partidos:
-        vistas = set()
-        for mat in (p.get("periodos") or {}).values():
-            for fila in mat.get("filas", []):
-                if fila["equipo"] is not None or fila["rival"] is not None:
-                    vistas.add(fila["clave"])
-        for clave in vistas:
-            cobertura[clave] = cobertura.get(clave, 0) + 1
+    partidos_oficiales_localizados = n_partidos
+    partidos_con_marcador = len(con_marcador_lista)
+    partidos_con_detalle_ft = len(con_detalle_ft_lista)
+    partidos_con_detalle_1t = len(con_detalle_1t_lista)
+    partidos_con_detalle_2t = len(con_detalle_2t_lista)
+    partidos_con_detalle_1t_2t = len(con_detalle_1t_2t_lista)
+    partidos_solo_marcador = len(solo_marcador_lista)
+
+    historial_incompleto = (partidos_oficiales_localizados < 15)
+
+    if historial_incompleto:
+        etiqueta_resumen = f"{partidos_oficiales_localizados}/15 oficiales (historial_oficial_incompleto)"
+    else:
+        etiqueta_resumen = f"15/15 oficiales · {partidos_con_detalle_ft}/15 con detalle FT · {partidos_solo_marcador}/15 solo con marcador"
 
     etiquetas = {d.clave: d.etiqueta for d in CATALOGO_METRICAS}
     cobertura_legible = {
-        etiquetas.get(k, k): {"partidos_con_dato": v,
-                              "cobertura_pct": round(v / max(1, len(partidos)) * 100, 1)}
+        etiquetas.get(k, k): {
+            "partidos_con_dato": v,
+            "cobertura_pct": round(v / max(1, n_partidos) * 100, 1),
+        }
         for k, v in sorted(cobertura.items(), key=lambda kv: -kv[1])
     }
-    ausentes_totales = [etiquetas.get(d.clave, d.clave) for d in CATALOGO_METRICAS
-                        if cobertura.get(d.clave, 0) == 0]
+    ausentes_totales = [
+        etiquetas.get(d.clave, d.clave)
+        for d in CATALOGO_METRICAS
+        if cobertura.get(d.clave, 0) == 0
+    ]
 
-    return {
+    resumen = {
         "partidos_solicitados": auditoria.get("limite_partidos"),
         "minimo_con_datos": auditoria.get("minimo_con_datos"),
         "objetivo_alcanzado": (auditoria.get("escaneo") or {}).get("objetivo_alcanzado"),
-        "partidos_auditados": len(partidos),
-        "partidos_obtenidos": len(partidos),
+        "partidos_auditados": n_partidos,
+        "partidos_obtenidos": n_partidos,
+        "partidos_oficiales_localizados": partidos_oficiales_localizados,
+        "partidos_con_marcador": partidos_con_marcador,
+        "partidos_con_detalle_ft": partidos_con_detalle_ft,
+        "partidos_con_detalle_1t": partidos_con_detalle_1t,
+        "partidos_con_detalle_2t": partidos_con_detalle_2t,
+        "partidos_con_detalle_1t_2t": partidos_con_detalle_1t_2t,
+        "partidos_solo_marcador": partidos_solo_marcador,
+        "historial_oficial_incompleto": historial_incompleto,
+        "etiqueta_resumen_cobertura": etiqueta_resumen,
         "partidos_con_datos": len(con_datos),
         "partidos_sin_datos": len(sin_datos),
         "ids_sin_datos": [p.get("id_partido") for p in sin_datos],
@@ -1220,6 +1424,14 @@ def _construir_resumen(auditoria: dict[str, Any]) -> dict[str, Any]:
         "metricas_sin_datos_en_ningun_partido": ausentes_totales,
         "cobertura_por_metrica": cobertura_legible,
     }
+
+    # Verificación estricta contra registros originales
+    assert verificar_consistencia_recuento_auditoria(resumen, partidos), (
+        f"Inconsistencia en los conteos de auditoría contra registros originales: "
+        f"auditados={n_partidos}, con_marcador={partidos_con_marcador}, con_ft={partidos_con_detalle_ft}"
+    )
+
+    return resumen
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

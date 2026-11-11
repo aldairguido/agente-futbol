@@ -2715,11 +2715,38 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     g_76_l = int(round(float((cuadro_c_L.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get("76'-90'", 0))))
     g_76_v = int(round(float((cuadro_c_V.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get("76'-90'", 0))))
+    
+    # Punto 38 & 44: Denominador real de Cuadro C (evitar máximo peligro ficticio si no hay goles o eventos)
+    tot_goles_c = 0
+    tramos_totales = {}
+    for t_k in tramos_c:
+        g_l = int(round(float((cuadro_c_L.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get(t_k, 0))))
+        g_v = int(round(float((cuadro_c_V.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get(t_k, 0))))
+        tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
+        tot_goles_c += (g_l + g_v)
+
+    # Punto 44 y 45 (Etapa 1.3): Denominador real de Cuadro C y supresión de alerta de máximo peligro sin minutos
+    n_ev_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_ev_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
+    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
+    n_base = max(15, n_tot_l, n_tot_v)
+    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+
+    if k_eval == 0 or tot_goles_c == 0:
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): sin cobertura de minutos ({k_eval}/{n_base} partidos evaluables)"
+    elif (g_76_l + g_76_v) > 0 and k_eval >= 3:
+        txt_alerta_c = f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles ({k_eval}/{n_base} partidos evaluables)"
+    else:
+        max_tramo = max(tramos_c, key=lambda k: tramos_totales[k][2])
+        g_l_max, g_v_max, g_tot_max = tramos_totales[max_tramo]
+        txt_alerta_c = f"CRONOLOGÍA (CUADRO C): Mayor flujo en {max_tramo}  ·  Flujo {eq_L}: {g_l_max} goles  |  Flujo {eq_V}: {g_v_max} goles ({k_eval}/{n_base} partidos evaluables)"
+
     rect_pie_c = FancyBboxPatch((0.0, 0.205), 1.0, 0.022, boxstyle="round,pad=0.005", facecolor="#FEF6E4", edgecolor="#D97706", lw=0.9, transform=ax.transAxes)
     ax.add_patch(rect_pie_c)
     ax.text(
         0.50, 0.216,
-        f"ALERTA CRONOLÓGICA (CUADRO C): Tramo de máximo peligro en 76'-90'  ·  Flujo {eq_L} (GF+GC rival): {g_76_l} goles  |  Flujo {eq_V} (GF+GC rival): {g_76_v} goles",
+        txt_alerta_c,
         fontsize=7.3, fontweight="bold", color="#92400E", ha="center", va="center", transform=ax.transAxes
     )
 
