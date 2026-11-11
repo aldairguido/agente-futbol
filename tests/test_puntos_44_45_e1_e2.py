@@ -16,10 +16,15 @@ import os
 import pytest
 from unittest.mock import patch, MagicMock
 
+import tempfile
+import numpy as np
+import motor_mercados as mm
+from cuadro_especialista import generar_cuadro_auditoria_15_partidos_png
 from resolvedor_entidades import (
     parsear_comando_mercados,
     resolver as resolver_entidades,
     construir_clave_cache_entidad,
+    validar_y_puntuar_candidato_fotmob,
 )
 from auditoria_historica import (
     LAS_45_METRICAS_OFICIALES,
@@ -257,7 +262,7 @@ def test_e1_10_cuadro_c_sin_minutos_cuadro_b_sin_descanso():
 
 
 def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
-    """E.1.11: Cambio exclusivo en métrica de A excluida de la vista comparable deja la proyección final idéntica."""
+    """E.1.11: Cambio exclusivo en métrica de A excluida de la vista comparable deja la proyección final idéntica bit a bit."""
     claves_comunes = ["xg", "remates_totales", "remates_puerta", "corners"]
     doc_a1 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["despejes"])
     doc_a2 = _mock_doc("Club A", 15, 15, claves_ft=claves_comunes + ["despejes"])
@@ -275,13 +280,42 @@ def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
     # Las filas finales enviadas al motor son exactamente las mismas
     assert len(v1["vista_a"][0]["periodos"]["FT"]["filas"]) == len(v2["vista_a"][0]["periodos"]["FT"]["filas"]) == 4
 
-    # Salida final completa del motor de mercados y probabilidades idéntica
+    # Salida de decisión de cobertura idéntica
     dec1 = evaluar_decision_cobertura(doc_a1, doc_b, vista_comparable=v1)
     dec2 = evaluar_decision_cobertura(doc_a2, doc_b, vista_comparable=v2)
     assert dec1.estado == dec2.estado
     assert dec1.publicar_probabilidades == dec2.publicar_probabilidades
     assert dec1.mercados_habilitados == dec2.mercados_habilitados
     assert dec1.motivos_bloqueo == dec2.motivos_bloqueo
+
+    # Invarianza numérica bit a bit del motor cuantitativo completo (lambda_L, lambda_V, matriz 7x7 y catálogo de mercados)
+    doc_1_l = dict(doc_a1, partidos=v1["vista_a"])
+    doc_1_v = dict(doc_b, partidos=v1["vista_b"])
+    doc_2_l = dict(doc_a2, partidos=v2["vista_a"])
+    doc_2_v = dict(doc_b, partidos=v2["vista_b"])
+
+    np.random.seed(42)
+    m1 = mm.MotorMercados(doc_1_l, doc_1_v)
+    m1.preparar()
+    res1 = m1.evaluar_catalogo()
+
+    np.random.seed(42)
+    m2 = mm.MotorMercados(doc_2_l, doc_2_v)
+    m2.preparar()
+    res2 = m2.evaluar_catalogo()
+
+    # Comprobación estricta bit a bit
+    assert m1.tasas.lambda_local_ft == m2.tasas.lambda_local_ft
+    assert m1.tasas.lambda_visitante_ft == m2.tasas.lambda_visitante_ft
+    assert m1.matriz_ft == m2.matriz_ft
+    mat_7x7_1 = [row[:7] for row in m1.matriz_ft[:7]]
+    mat_7x7_2 = [row[:7] for row in m2.matriz_ft[:7]]
+    assert mat_7x7_1 == mat_7x7_2
+    assert len(mat_7x7_1) == 7 and len(mat_7x7_1[0]) == 7
+
+    probs1 = {s.clave_unica: s.probabilidad for r in res1 for s in r.selecciones}
+    probs2 = {s.clave_unica: s.probabilidad for r in res2 for s in r.selecciones}
+    assert probs1 == probs2
 
 
 def test_e1_12_inversion_a_b_conserva_simetria_claves_comunes():
@@ -426,13 +460,45 @@ def test_e2_09_pestanas_1t_2t_visibles_sin_celdas_publicadas():
     assert resumen["partidos_con_detalle_2t"] == 0
 
 
-def test_e2_10_ejecucion_nombres_equivalentes_comportamiento_identico():
-    """E.2.10: Variantes ortográficas de clubes (Nacional vs Peñarol) resuelven idénticamente demostrando que no hay if/hardcoding a un caso específico."""
+def test_variantes_ortograficas_uruguay():
+    """Variantes ortográficas de clubes (Nacional vs Peñarol) resuelven idénticamente demostrando normalización anti-sesgo."""
     r1 = parsear_comando_mercados("/mercados Copa AUF Uruguay Nacional vs Peñarol")
     r2 = parsear_comando_mercados("/mercados Copa AUF Uruguay Club Nacional vs Peñarol")
     r3 = parsear_comando_mercados("/mercados Copa AUF Uruguay Nacional de Montevideo vs Peñarol")
     assert r1["equipo_local"] == r2["equipo_local"] == r3["equipo_local"] == "Nacional"
-    assert r1["pais_iso"] == r2["pais_iso"] == r3["pais_iso"] == "URY" 
+    assert r1["pais_iso"] == r2["pais_iso"] == r3["pais_iso"] == "URY"
+
+
+def test_e2_10_independencia_nombres_ids_escenarios_tavernes_y_liverpool():
+    """E.2.10: Independencia total de nombres e IDs en el escenario asimétrico (tipo Tavernes) y homónimo (tipo Liverpool M.)."""
+    # 1. Escenario asimétrico (15/15 con detalle vs 2/15) con clubes equivalentes independientes
+    doc_l_orig = _mock_doc("Levante", 15, 15)
+    doc_v_orig = _mock_doc("UD Tavernes", 15, 2)
+    dec_orig = evaluar_decision_cobertura(doc_l_orig, doc_v_orig)
+
+    doc_l_equiv = _mock_doc("Club Titan", 15, 15)
+    doc_v_equiv = _mock_doc("Deportivo Regional", 15, 2)
+    dec_equiv = evaluar_decision_cobertura(doc_l_equiv, doc_v_equiv)
+
+    assert dec_orig.estado == dec_equiv.estado == "cobertura_insuficiente"
+    assert dec_orig.publicar_probabilidades == dec_equiv.publicar_probabilidades is False
+    assert dec_orig.mercados_habilitados == dec_equiv.mercados_habilitados
+    assert "2/15 partidos oficiales con detalle FT" in (dec_orig.alerta_descriptiva or dec_orig.mensaje)
+    assert "2/15 partidos oficiales con detalle FT" in (dec_equiv.alerta_descriptiva or dec_equiv.mensaje)
+
+    # 2. Escenario homónimo (desambiguación cruzada sin liga declarada) con clubes equivalentes independientes
+    # Liverpool M. (URY) vs Juventud (URY) desempata a URY (7942), no Inglaterra (8650)
+    res_orig = resolver_entidades("", "Liverpool", "Juventud de Las Piedras")
+    # Arsenal de Sarandí (ARG) vs Boca Juniors (ARG) desempata a ARG (10084), no Inglaterra (9825)
+    res_equiv = resolver_entidades("", "Arsenal", "Boca Juniors")
+
+    assert res_orig.pais_local == res_orig.pais_visita == "URY"
+    assert str(res_orig.id_proveedor_local) == "7942"
+    assert res_orig.identidad_verificada is True
+
+    assert res_equiv.pais_local == res_equiv.pais_visita == "ARG"
+    assert str(res_equiv.id_proveedor_local) == "10084"
+    assert res_equiv.identidad_verificada is True
 
 
 def test_e2_11_equipo_13_oficiales_historial_incompleto_bloquea():
@@ -561,3 +627,125 @@ def test_d1_copa_auf_y_copa_colombia_coherencia_goles_sin_xg():
     assert mercados_bloq == sorted(esperados_bloq)
     assert "falta xG oficial" in dec.motivos_bloqueo["goles_1t"]
     assert "falta xG oficial" in dec.motivos_bloqueo["goles_2t"]
+
+
+# =============================================================================
+# PRUEBAS ESPECÍFICAS DE LA SEGUNDA RONDA DE AUDITORÍA POST-DESPLIEGUE
+# =============================================================================
+
+def test_persistencia_informes_pronosticos_no_ignorado_en_gitignore():
+    """Punto 1: .gitignore no ignora informes/pronosticos/ y conserva ignorados los respaldos."""
+    with open(".gitignore", "r", encoding="utf-8") as f:
+        lineas_git = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+    assert "informes/pronosticos/" not in lineas_git
+    assert "informes/pronosticos" not in lineas_git
+
+    # Comprueba que respaldos siguen estrictamente ignorados
+    assert "*_backup*/" in lineas_git
+    assert "**/*_backup*/" in lineas_git
+    assert "informes/*_backup*/" in lineas_git
+
+
+def test_cuadro_c_caso_a_sin_cobertura_minutos():
+    """Punto 4 (Caso a): k_eval == 0 imprime 'sin cobertura de minutos' y suprime tramo de peligro."""
+    doc_l = {"equipo": {"nombre": "Local"}, "partidos": []}
+    doc_v = {"equipo": {"nombre": "Visita"}, "partidos": []}
+    analisis = MagicMock()
+    analisis.doc_local = doc_l
+    analisis.doc_visitante = doc_v
+    analisis.nombre_local = "Local"
+    analisis.nombre_visitante = "Visita"
+    analisis.grupos = {}
+    analisis.selecciones = []
+    analisis.mercados = []
+
+    captured = []
+    with patch("matplotlib.axes.Axes.text") as mock_text:
+        with tempfile.TemporaryDirectory() as td:
+            salida = os.path.join(td, "test_c_caso_a.png")
+            generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=salida)
+            for call in mock_text.call_args_list:
+                args = call[0]
+                if len(args) >= 3 and isinstance(args[2], str) and "CRONOLOGÍA" in args[2]:
+                    captured.append(args[2])
+
+    assert len(captured) >= 1
+    assert captured[0] == "CRONOLOGÍA (CUADRO C): sin cobertura de minutos (0 de 15 partidos con cronología verificada)"
+    assert "máximo peligro" not in captured[0].lower()
+
+
+def test_cuadro_c_caso_b_sin_goles_en_ningun_tramo():
+    """Punto 4 (Caso b): k_eval > 0 y tot_goles_c == 0 imprime 'sin goles en ningún tramo'."""
+    mock_cc = {
+        "_meta": {"n_partidos_con_eventos": 5, "n_partidos_totales": 15},
+        "anotados": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
+        "recibidos": {t: 0 for t in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'")},
+    }
+    doc_l = {"equipo": {"nombre": "Local"}, "partidos": [], "cuadro_c_timeline": mock_cc}
+    doc_v = {"equipo": {"nombre": "Visita"}, "partidos": [], "cuadro_c_timeline": mock_cc}
+    analisis = MagicMock()
+    analisis.doc_local = doc_l
+    analisis.doc_visitante = doc_v
+    analisis.nombre_local = "Local"
+    analisis.nombre_visitante = "Visita"
+    analisis.grupos = {}
+    analisis.selecciones = []
+    analisis.mercados = []
+
+    captured = []
+    with patch("matplotlib.axes.Axes.text") as mock_text:
+        with tempfile.TemporaryDirectory() as td:
+            salida = os.path.join(td, "test_c_caso_b.png")
+            generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=salida)
+            for call in mock_text.call_args_list:
+                args = call[0]
+                if len(args) >= 3 and isinstance(args[2], str) and "CRONOLOGÍA" in args[2]:
+                    captured.append(args[2])
+
+    assert len(captured) >= 1
+    assert captured[0] == "CRONOLOGÍA (CUADRO C): sin goles en ningún tramo (5 de 15 partidos con cronología verificada)"
+    assert "máximo peligro" not in captured[0].lower()
+    assert "mayor flujo" not in captured[0].lower()
+
+
+def test_motivos_bloqueo_reales_propagados_a_1t_y_2t():
+    """Punto 5: Propaga el motivo real de bloqueo de FT a 1T y 2T (falta de xG oficial vs pares insuficientes)."""
+    claves_sin_xg = ["remates_totales", "remates_puerta", "corners", "tarjetas_amarillas", "faltas"]
+    parts_a = [_mock_partido(i, claves_ft=claves_sin_xg, claves_1t=["remates_puerta"], claves_2t=["remates_puerta"]) for i in range(1, 16)]
+    parts_b = [_mock_partido(i, claves_ft=claves_sin_xg, claves_1t=["remates_puerta"], claves_2t=["remates_puerta"]) for i in range(1, 16)]
+
+    doc_a = _mock_doc("Club A", 15, 15, claves_ft=claves_sin_xg)
+    doc_a["partidos"] = parts_a
+    doc_b = _mock_doc("Club B", 15, 15, claves_ft=claves_sin_xg)
+    doc_b["partidos"] = parts_b
+
+    dec = evaluar_decision_cobertura(doc_a, doc_b)
+    motivo_ft = dec.motivos_bloqueo.get("mas_menos_goles")
+    assert motivo_ft is not None
+    assert dec.mercados_habilitados["goles_1t"] is False
+    assert dec.mercados_habilitados["goles_2t"] is False
+    assert motivo_ft in dec.motivos_bloqueo["goles_1t"]
+    assert motivo_ft in dec.motivos_bloqueo["goles_2t"]
+
+
+def test_resolucion_valencia_cf_vs_ud_tavernes_anti_colision_filial_y_extranjero():
+    """Punto 6: Valencia CF vs UD Tavernes resuelve con IDs (10205 y 1543888) y veta filiales (Mestalla) y extranjeros."""
+    res = resolver_entidades("Copa del Rey", "Valencia CF", "UD Tavernes")
+    assert res.pais_local == res.pais_visita == "ESP"
+    assert str(res.id_proveedor_local) == "10205"
+    assert str(res.id_proveedor_visita) == "1543888"
+    assert res.identidad_verificada is True
+
+    # Comprobación de no colisión contra filial (Valencia Mestalla)
+    cand_mestalla = {"name": "Valencia Mestalla", "leagueName": "Segunda Federación", "country": "ESP"}
+    cand_valencia = {"name": "Valencia", "leagueName": "LaLiga", "country": "ESP"}
+    score_mestalla = validar_y_puntuar_candidato_fotmob(cand_mestalla, "Valencia", texto_liga_o_contexto="Copa del Rey")
+    score_valencia = validar_y_puntuar_candidato_fotmob(cand_valencia, "Valencia", texto_liga_o_contexto="Copa del Rey")
+    assert score_mestalla == -9999.0
+    assert score_valencia > 100.0
+
+    # Comprobación de veto de homónimo extranjero (Valencia FC de Venezuela) cuando se espera ESP
+    cand_ven = {"name": "Valencia FC", "leagueName": "Primera División", "country": "VEN"}
+    score_ven = validar_y_puntuar_candidato_fotmob(cand_ven, "Valencia", texto_liga_o_contexto="Copa del Rey", pais_iso_esperado="ESP")
+    assert score_ven == -9999.0

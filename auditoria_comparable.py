@@ -336,9 +336,10 @@ def verificar_compatibilidad_modelo(
 
     if n_pares_completos < min_pares:
         faltantes = [v for v in sorted(vars_req) if v != "goles"]
+        msg_faltantes = " (falta xG oficial)" if ("xg" in faltantes and n_pares_completos == 0) else ""
         return (
             False,
-            f"Cobertura insuficiente para {mod_info.get('nombre', nombre_modelo)}: {n_pares_completos}/{min_pares} pares completos requeridos",
+            f"Cobertura insuficiente para {mod_info.get('nombre', nombre_modelo)}: {n_pares_completos}/{min_pares} pares completos requeridos{msg_faltantes}",
             n_pares_completos,
         )
 

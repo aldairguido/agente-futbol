@@ -385,14 +385,18 @@ def evaluar_decision_cobertura(
     # ─────────────────────────────────────────────────────────────────────────
     goles_ft_habilitados = bool(mercados_habilitados.get("mas_menos_goles") or mercados_habilitados.get("1X2"))
     if not goles_ft_habilitados:
+        motivo_ft = (
+            motivos_bloqueo.get("mas_menos_goles")
+            or motivos_bloqueo.get("1X2")
+            or motivos_mod.get("poisson_bivariado_goles")
+            or "Modelo de goles FT no habilitado"
+        )
         for m in ("goles_1t", "1x2_1t"):
-            if mercados_habilitados.get(m):
-                mercados_habilitados[m] = False
-                motivos_bloqueo[m] = "Mercado de 1T bloqueado por coherencia estricta con FT: falta xG oficial y permitir_goles_sin_xg=false"
+            mercados_habilitados[m] = False
+            motivos_bloqueo[m] = f"Mercado de 1T bloqueado por coherencia estricta con FT: {motivo_ft}"
         for m in ("goles_2t", "1x2_2t"):
-            if mercados_habilitados.get(m):
-                mercados_habilitados[m] = False
-                motivos_bloqueo[m] = "Mercado de 2T bloqueado por coherencia estricta con FT: falta xG oficial y permitir_goles_sin_xg=false"
+            mercados_habilitados[m] = False
+            motivos_bloqueo[m] = f"Mercado de 2T bloqueado por coherencia estricta con FT: {motivo_ft}"
 
     # 4c: Si ningún mercado pudo habilitarse
     n_hab = sum(1 for v in mercados_habilitados.values() if v)

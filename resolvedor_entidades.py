@@ -341,6 +341,8 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "sevilla fc": ("Sevilla", "ESP"),
     "valencia": ("Valencia", "ESP"),
     "valencia cf": ("Valencia", "ESP"),
+    "ud tavernes": ("UD Tavernes", "ESP"),
+    "tavernes": ("UD Tavernes", "ESP"),
     "villarreal": ("Villarreal", "ESP"),
     "villarreal cf": ("Villarreal", "ESP"),
     "barcelona": ("Barcelona", "ESP"),
@@ -638,6 +640,8 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Arsenal de Sarandí", "ARG"): "10084",
     ("Once Caldas", "COL"): "10091",
     ("Atlético Nacional", "COL"): "10093",
+    ("Valencia", "ESP"): "10205",
+    ("UD Tavernes", "ESP"): "1543888",
 }
 
 # Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
@@ -651,6 +655,7 @@ CLUBES_HOMONIMOS: Dict[str, List[Tuple[str, str]]] = {
     "santa fe": [("Independiente Santa Fe", "COL"), ("Unión de Santa Fe", "ARG")],
     "san lorenzo": [("San Lorenzo", "ARG"), ("San Lorenzo", "PRY")],
     "juventud": [("Juventud de Las Piedras", "URY")],
+    "valencia": [("Valencia", "ESP"), ("Valencia FC", "VEN")],
     "universitario": [
         ("Universitario de Deportes", "PER"),
         ("Universitario de Vinto", "BOL"),
@@ -931,7 +936,7 @@ _RE_CANDIDATO_FEMENINO = re.compile(
 )
 
 _RE_CANDIDATO_JUVENIL_O_FILIAL = re.compile(
-    r"(?:\bu17\b|\bu18\b|\bu19\b|\bu20\b|\bu21\b|\bu23\b|\bsub[- ]?(?:17|18|19|20|21|23)\b|\bii\b|\bb\b|\byouth\b|\bprimavera\b|\breserves?\b)",
+    r"(?:\bu17\b|\bu18\b|\bu19\b|\bu20\b|\bu21\b|\bu23\b|\bsub[- ]?(?:17|18|19|20|21|23)\b|\bii\b|\bb\b|\byouth\b|\bprimavera\b|\breserves?\b|\bmestalla\b|\bcastilla\b|\bfilial\b)",
     re.IGNORECASE,
 )
 
