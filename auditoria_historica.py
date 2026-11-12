@@ -1835,10 +1835,19 @@ def reconstruir_marcador_mitades_partido(
     if any(op is None for op in operands):
         return None, None, None, None, False, "sin_dato"
 
-    gl_1t = int(round(xgot_v_1t - gev_v_1t))
-    gv_1t = int(round(xgot_l_1t - gev_l_1t))
-    gl_2t = int(round(xgot_v_2t - gev_v_2t))
-    gv_2t = int(round(xgot_l_2t - gev_l_2t))
+    diff_gl1 = xgot_v_1t - gev_v_1t
+    diff_gv1 = xgot_l_1t - gev_l_1t
+    diff_gl2 = xgot_v_2t - gev_v_2t
+    diff_gv2 = xgot_l_2t - gev_l_2t
+
+    # Tolerancia estricta de residuo: menos de 0.05 del entero más cercano
+    if any(abs(d - round(d)) >= 0.05 for d in (diff_gl1, diff_gv1, diff_gl2, diff_gv2)):
+        return None, None, None, None, False, "sin_dato"
+
+    gl_1t = int(round(diff_gl1))
+    gv_1t = int(round(diff_gv1))
+    gl_2t = int(round(diff_gl2))
+    gv_2t = int(round(diff_gv2))
 
     if gl_1t < 0 or gv_1t < 0 or gl_2t < 0 or gv_2t < 0:
         return None, None, None, None, False, "sin_dato"
@@ -1854,17 +1863,24 @@ def _formatear_valor_metrica_45(
     valor: Any,
     filas_map: dict[str, dict[str, Any]] | None = None,
     lado: str = "equipo",
+    fuente_partido: str = "",
 ) -> str:
     """Formatea limpiamente un valor según la especificación de la métrica y formato compuesto c/t (pct%)."""
     if valor is None:
         return "sin_dato"
 
-    # Punto 1.2: Métricas sin cobertura que permanecen constantes en 0 -> sin_dato
-    METRICAS_SIN_COBERTURA_ESTANDAR = frozenset({
+    # Detector de métricas no cubiertas según proveedor:
+    # Si la fuente es Flashscore o no hay cobertura Opta, los ceros constantes de métricas no reportadas se tratan como sin_dato.
+    # Si el proveedor es FotMob y sí reporta la métrica, un 0 individual se preserva si la serie tiene valores positivos.
+    es_flashscore = (
+        "flashscore" in str(fuente_partido or "").lower()
+        or (filas_map and any("flashscore" in str(f.get("fuente", "")).lower() for f in filas_map.values()))
+    )
+    METRICAS_NO_CUBIERTAS_FLASHSCORE = frozenset({
         "grandes_ocasiones_falladas", "xg_balon_parado",
         "duelos_suelo_pct", "duelos_aereos_pct", "bloqueos", "recuperaciones"
     })
-    if clave in METRICAS_SIN_COBERTURA_ESTANDAR:
+    if (es_flashscore or not fuente_partido) and clave in METRICAS_NO_CUBIERTAS_FLASHSCORE:
         if valor == 0 or valor == 0.0 or str(valor).strip() in ("0", "0.0", "0.00"):
             return "sin_dato"
 

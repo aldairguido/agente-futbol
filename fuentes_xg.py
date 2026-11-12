@@ -1262,6 +1262,10 @@ CATALOGO_LIGAS_PREFIJO: list[tuple[list[str], dict[str, Any]]] = [
         {"nombre": "Brasileirão Série B", "pais": "brasil", "ids_liga": [8814, 268], "keywords_liga": ["serie b", "brasileirao"]},
     ),
     (
+        ["brasileirao serie c", "serie c de brasil", "serie c brasil", "serie c"],
+        {"nombre": "Brasileirão Série C", "pais": "brasil", "ids_liga": [8971], "keywords_liga": ["serie c", "brasileirao serie c"]},
+    ),
+    (
         ["liga betplay dimayor", "liga betplay", "primera a de colombia", "primera a colombia", "liga de colombia", "liga colombiana"],
         {"nombre": "Liga BetPlay", "pais": "colombia", "ids_liga": [274], "keywords_liga": ["primera a", "liga betplay", "colombia"]},
     ),

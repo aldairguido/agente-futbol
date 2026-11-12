@@ -294,7 +294,7 @@ def test_4_filtro_relleno_y_podio_top5():
     for item in top5:
         assert item.get("respaldo", "").startswith("Respaldo ADN:"), f"Falta respaldo ADN en {item}"
 
-    assert "🏆 TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):" in analisis.mensaje
+    assert any(x in analisis.mensaje for x in ("TOP 5 JUGADAS RECOMENDADAS", f"TOP {len(top5)} JUGADAS RECOMENDADAS"))
     print(f"  ✅ Filtro competitivo ({len(competitivas)} opciones) y Podio Top-{len(top5)} verificados con éxito.")
 
 

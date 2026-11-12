@@ -2174,7 +2174,9 @@ def generar_cuadro_visual_partido(
 
     rect_banner_top5 = FancyBboxPatch((0.0, 0.84), 1.0, 0.16, boxstyle="round,pad=0.01", facecolor="#E3F2FD", edgecolor="#1A6BA8", lw=1.2, transform=ax_top5.transAxes)
     ax_top5.add_patch(rect_banner_top5)
-    ax_top5.text(0.02, 0.93, "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)", fontsize=9.2, fontweight="bold", color="#131D31", transform=ax_top5.transAxes)
+    n_top5_cnt = len(top5_podio_calc[:5])
+    tit_top5_box = f"TOP {n_top5_cnt} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if n_top5_cnt < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+    ax_top5.text(0.02, 0.93, tit_top5_box, fontsize=9.2, fontweight="bold", color="#131D31", transform=ax_top5.transAxes)
     ax_top5.text(0.02, 0.865, nota_cal_top, fontsize=7.1, color="#334155", transform=ax_top5.transAxes)
 
     rect_badge_podio = FancyBboxPatch((0.84, 0.86), 0.14, 0.11, boxstyle="round,pad=0.01", facecolor="#FFFFFF", edgecolor="#1A6BA8", lw=1.0, transform=ax_top5.transAxes)

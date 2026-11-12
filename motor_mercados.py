@@ -2742,7 +2742,9 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     )
     if top5_podio:
         L.append("")
-        L.append("🏆 TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):")
+        n_top_reales = len(top5_podio)
+        tit_top_reales = f"🏆 TOP {n_top_reales} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):" if n_top_reales < 5 else f"🏆 TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):"
+        L.append(tit_top_reales)
         nota_cal = top5_podio[0].get("nota_calibracion")
         if nota_cal:
             L.append(f"ℹ️ {nota_cal}")
@@ -4402,8 +4404,8 @@ def seleccionar_top_5_jugadas_recomendadas(
     permitir_1t_over_05 = (max(atk_l_top, atk_v_top) >= 70.0 and lam_1t_comb >= 1.45) and not hay_bloque_bajo_23
     prohibir_1t_over_05 = (
         not permitir_1t_over_05
-        or (prom_p26 is not None and prom_p26 >= 0.51)
-        or prop_2t_cc > 0.55
+        or (prom_p26 is not None and prom_p26 >= 0.60)
+        or prop_2t_cc > 0.60
         or hay_bloque_bajo_23
     )
     # Sección 8.4: En copa/eliminatoria con λ_L + λ_V < 2.2, eliminar prioridad automática de Goles 2T: +0.5 Goles
