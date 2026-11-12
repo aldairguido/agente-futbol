@@ -325,11 +325,43 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                     cond_l = str(p.get("condicion", "")).lower()
                 if nombre_v in k or k in nombre_v:
                     cond_v = str(p.get("condicion", "")).lower()
+
+            m_l = pl.get("marcador") or {}
+            m_v = pv.get("marcador") or {}
+            g_l = None
+            g_v = None
+            if cond_l == "casa":
+                g_l = pl.get("goles_favor") if pl.get("goles_favor") is not None else m_l.get("equipo")
+                g_v = pl.get("goles_contra") if pl.get("goles_contra") is not None else m_l.get("rival")
+            elif cond_l == "fuera":
+                g_v = pl.get("goles_favor") if pl.get("goles_favor") is not None else m_l.get("equipo")
+                g_l = pl.get("goles_contra") if pl.get("goles_contra") is not None else m_l.get("rival")
+            elif cond_v == "casa":
+                g_v = pv.get("goles_favor") if pv.get("goles_favor") is not None else m_v.get("equipo")
+                g_l = pv.get("goles_contra") if pv.get("goles_contra") is not None else m_v.get("rival")
+            elif cond_v == "fuera":
+                g_l = pv.get("goles_favor") if pv.get("goles_favor") is not None else m_v.get("equipo")
+                g_v = pv.get("goles_contra") if pv.get("goles_contra") is not None else m_v.get("rival")
+            if (g_l is None or g_v is None) and m_l.get("texto") and "-" in str(m_l.get("texto")):
+                parts = str(m_l["texto"]).split("-")
+                try:
+                    g_l, g_v = int(parts[0].strip()), int(parts[1].strip())
+                except Exception:
+                    pass
+
+            res_txt = f"{equipo_local} {g_l} - {g_v} {equipo_visitante}" if (g_l is not None and g_v is not None) else (m_l.get("texto") or "Finalizado")
+            fecha_jug = pl.get("fecha") or pv.get("fecha")
+
             return {
                 "id_partido": pid,
+                "partido_ya_jugado": True,
+                "resultado_partido": res_txt,
+                "goles_local": g_l,
+                "goles_visitante": g_v,
+                "fecha_jugado": fecha_jug,
                 "fecha_partido": info_analisis["etiqueta_fecha"],
                 "etiqueta_fecha": info_analisis["etiqueta_fecha"],
-                "fecha_ultimo_h2h": pl.get("fecha") or pv.get("fecha"),
+                "fecha_ultimo_h2h": fecha_jug,
                 "zona_horaria": "America/Lima",
                 "es_fecha_analisis": True,
                 "partido_activo": False,
@@ -337,7 +369,7 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                 "competicion": pl.get("torneo") or pv.get("torneo"),
                 "condicion_local": cond_l,
                 "condicion_visitante": cond_v,
-                "evidencia_condicion": "condición por enfrentamiento previo registrado (sin partido futuro en calendario)",
+                "evidencia_condicion": "condición por enfrentamiento previo registrado (partido ya jugado)",
                 "sin_partido_proximo": True,
             }
 
@@ -1948,6 +1980,87 @@ def preparar_analisis(
 
     ctx = contexto["contexto"]
 
+    # ── Bloque A2: Si el partido objetivo ya se jugó o su hora de inicio ya pasó,
+    # /mercados NO genera pronóstico prepartido: responde "partido ya jugado, usa /evaluar" y muestra el resultado.
+    if ctx.get("partido_ya_jugado"):
+        eq_l = contexto["equipo_local"]
+        eq_v = contexto["equipo_visitante"]
+        f_jug = ctx.get("fecha_jugado") or ctx.get("fecha_partido") or ""
+        res_txt = ctx.get("resultado_partido")
+        if not res_txt or res_txt == "Finalizado":
+            g_l = ctx.get("goles_local")
+            g_v = ctx.get("goles_visitante")
+            if g_l is not None and g_v is not None:
+                res_txt = f"{eq_l} {g_l} - {g_v} {eq_v}"
+            else:
+                res_txt = f"{eq_l} vs {eq_v}"
+
+        texto_partido_jugado = (
+            f"⚠️ Partido ya jugado, usa /evaluar\n"
+            f"Resultado: {res_txt} ({f_jug} · Finalizado)"
+        )
+        meta_jugado = {
+            "equipo_local": eq_l,
+            "equipo_visitante": eq_v,
+            "competicion": ctx.get("competicion", "Competición oficial"),
+            "fecha_partido": f_jug,
+            "generado_en": _ahora(),
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "bloqueado_por_cobertura": False,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "resultado_partido": res_txt,
+            "fuente": "Filtro prepartido (A2)",
+            "red_neuronal": {"aplicado": False, "motivo": "Partido ya jugado"},
+        }
+        class _TasasZeroA2:
+            lambda_local_ft = 0.0
+            lambda_visitante_ft = 0.0
+            lambda_local_1t = 0.0
+            lambda_visitante_1t = 0.0
+            lambda_local_2t = 0.0
+            lambda_visitante_2t = 0.0
+            procedencia_tiempos = "partido_ya_jugado"
+
+        class _MotorZeroA2:
+            tasas = _TasasZeroA2()
+            residual_ft = 0.0
+            matriz_ft = []
+            muestras = {
+                "local_general": type("M", (), {"partidos_general": []})(),
+                "visitante_general": type("M", (), {"partidos_general": []})(),
+                "local_cond": type("M", (), {"partidos_condicion": []})(),
+                "visitante_cond": type("M", (), {"partidos_condicion": []})(),
+            }
+
+        analisis_jugado = type("AnalisisPartidoJugadoObj", (), {
+            "metadatos": meta_jugado,
+            "parametros": params,
+            "motor": _MotorZeroA2(),
+            "selecciones_filtradas": [],
+            "mercados": [],
+            "informe": texto_partido_jugado,
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "grupos": {"mantiene": [], "sensible": []},
+        })()
+        return {
+            "analisis": analisis_jugado,
+            "id_trabajo": "partido_ya_jugado",
+            "rutas": {},
+            "contexto": contexto,
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "decision_cobertura": {},
+            "analisis_texto_3_parrafos": texto_partido_jugado,
+            "ruta_imagen": None,
+        }
+
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
     from decision_cobertura import evaluar_decision_cobertura
     doc_l_eval = dict(contexto["doc_local"])
@@ -2086,6 +2199,7 @@ def preparar_analisis(
         condicion_local=ctx.get("condicion_local"),
         condicion_visitante=ctx.get("condicion_visitante"),
         parametros=params, aviso=progreso,
+        id_partido_excluir=ctx.get("id_partido"),
     )
 
     analisis.doc_local = contexto.get("doc_local")
@@ -2245,7 +2359,9 @@ def preparar_analisis(
         info_h2h_2024_2026 = h2h_puro_mod.generar_cuadro_h2h_desde_analisis(
             analisis, contexto["doc_local"], contexto["doc_visitante"],
             destino=destino_cuadro_h2h, peso_roja=h2h_puro_mod.PESO_PARTIDO_CON_ROJA,
-            aviso=progreso)
+            aviso=progreso,
+            fecha_corte=ctx.get("fecha_partido"),
+            id_partido_excluir=ctx.get("id_partido"))
         ruta_cuadro_h2h = info_h2h_2024_2026.get("ruta")
         if ruta_cuadro_h2h:
             rutas["cuadro_h2h"] = ruta_cuadro_h2h

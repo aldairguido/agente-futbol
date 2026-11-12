@@ -47,6 +47,7 @@ estimaciones con supuestos declarados, no garantías.
 from __future__ import annotations
 
 import json
+import re
 import math
 import os
 from dataclasses import dataclass, field
@@ -5598,17 +5599,37 @@ def clasificar(prob_central: float, escenarios: dict[str, float] | None,
 # CARGA DE REPORTES Y RESOLUCIÓN DE LOCAL/VISITANTE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def filtrar_por_fecha(doc: dict[str, Any], fecha_corte: str | None) -> dict[str, Any]:
+def filtrar_por_fecha(doc: dict[str, Any], fecha_corte: str | None,
+                      id_partido_excluir: str | None = None) -> dict[str, Any]:
     """
     Devuelve una copia del documento con SOLO los partidos anteriores a `fecha_corte`
-    (excluye el propio partido y cualquier resultado futuro). Si la fecha no es
-    conocida, se conservan todos los partidos ya finalizados registrados.
+    (excluye el propio partido objetivo y cualquier resultado con fecha igual o posterior).
+    Si la fecha no es conocida y no hay id a excluir, se conservan todos los partidos.
     """
-    if not fecha_corte:
+    if not fecha_corte and not id_partido_excluir:
         return doc
     copia = dict(doc)
-    copia["partidos"] = [p for p in doc.get("partidos", [])
-                         if str(p.get("fecha") or "") < str(fecha_corte)]
+    partidos = list(doc.get("partidos", []))
+
+    fecha_corte_iso = None
+    if fecha_corte:
+        m = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", str(fecha_corte))
+        if m:
+            fecha_corte_iso = m.group(1)
+        elif re.match(r"^\d{4}-\d{2}-\d{2}", str(fecha_corte)):
+            fecha_corte_iso = str(fecha_corte)[:10]
+
+    partidos_filtrados = []
+    for p in partidos:
+        pid = str(p.get("id_partido") or p.get("id") or "")
+        if id_partido_excluir and pid and pid == str(id_partido_excluir):
+            continue
+        if fecha_corte_iso:
+            f_p = str(p.get("fecha") or "")[:10]
+            if f_p and f_p >= fecha_corte_iso:
+                continue
+        partidos_filtrados.append(p)
+    copia["partidos"] = partidos_filtrados
     return copia
 
 
@@ -5937,7 +5958,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
              sede: str | None = None, condicion_local: str | None = None,
              condicion_visitante: str | None = None,
              parametros: Parametros | None = None,
-             aviso: Callable[[str], None] | None = None) -> Analisis:
+             aviso: Callable[[str], None] | None = None,
+             id_partido_excluir: str | None = None) -> Analisis:
     """
     Ejecuta el análisis completo del enfrentamiento.
 
@@ -5964,9 +5986,9 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             avisar(f"⚠️ condición no verificable: se asume {equipo_local} local "
                    f"y {equipo_visitante} visitante (declarado en el informe)")
 
-    # 2) Solo partidos anteriores al encuentro
-    dl = filtrar_por_fecha(doc_local, fecha_partido)
-    dv = filtrar_por_fecha(doc_visitante, fecha_partido)
+    # 2) Solo partidos anteriores al encuentro (excluyendo el objetivo y >= corte)
+    dl = filtrar_por_fecha(doc_local, fecha_partido, id_partido_excluir=id_partido_excluir)
+    dv = filtrar_por_fecha(doc_visitante, fecha_partido, id_partido_excluir=id_partido_excluir)
 
     metadatos = {
         "equipo_local": equipo_local,

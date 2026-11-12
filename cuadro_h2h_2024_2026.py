@@ -87,14 +87,26 @@ def filtrar_enfrentamientos_2024_2026(
     partidos_h2h: List[Dict[str, Any]],
     anio_min: int = ANIO_MINIMO_H2H,
     anio_max: int = ANIO_MAXIMO_H2H,
+    fecha_corte: str | None = None,
+    id_partido_excluir: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Filtra únicamente los enfrentamientos directos terminados cuya fecha esté entre
     el 1 de enero de 2024 y el cierre de 2026 (descartando 2023 o anteriores y amistosos).
+    Excluye cualquier partido con ID igual a `id_partido_excluir` o con fecha igual o posterior
+    a `fecha_corte` (A3: cero fuga de información del partido objetivo).
     Ordena de más reciente a más antiguo.
     """
     validos: List[Dict[str, Any]] = []
     vistos = set()
+
+    iso_corte = None
+    if fecha_corte:
+        m_c = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", str(fecha_corte))
+        if m_c:
+            iso_corte = m_c.group(1)
+        elif re.match(r"^\d{4}-\d{2}-\d{2}", str(fecha_corte)):
+            iso_corte = str(fecha_corte)[:10]
 
     for p in partidos_h2h:
         if not isinstance(p, dict):
@@ -102,8 +114,12 @@ def filtrar_enfrentamientos_2024_2026(
         if p.get("es_amistoso") or es_competicion_amistosa(str(p.get("torneo") or "")):
             continue
         m_id = p.get("id") or p.get("match_id") or p.get("id_partido")
+        if id_partido_excluir and m_id and str(m_id) == str(id_partido_excluir):
+            continue
         fecha_raw = str(p.get("fecha") or p.get("utcTime") or "")[:10]
         if len(fecha_raw) < 4 or not fecha_raw[:4].isdigit():
+            continue
+        if iso_corte and fecha_raw >= iso_corte:
             continue
         anio = int(fecha_raw[:4])
         if anio_min <= anio <= anio_max:
@@ -711,6 +727,8 @@ def recolectar_duelos_h2h_2024_2026(
     headless: bool = True,
     frescura_horas: float = 12.0,
     aviso: Any = None,
+    fecha_corte: str | None = None,
+    id_partido_excluir: str | None = None,
 ) -> dict[str, Any]:
     """
     Recolecta todos los enfrentamientos directos oficiales entre Equipo A y Equipo B
@@ -747,7 +765,7 @@ def recolectar_duelos_h2h_2024_2026(
             es_h2h = (pid and pid in ids_en_b) or _coincide_equipo(p.get("rival"), p.get("id_rival"), id_b, claves_b)
         if not es_h2h:
             continue
-        if not filtrar_enfrentamientos_2024_2026([p]):
+        if not filtrar_enfrentamientos_2024_2026([p], fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir):
             continue
         clave = pid or f"{p.get('fecha')}_{nom_a}_{nom_b}"
         partidos_orientados_a[clave] = orientar_partido_h2h_a_equipo(
@@ -767,7 +785,7 @@ def recolectar_duelos_h2h_2024_2026(
             es_h2h = (pid and pid in ids_en_a) or _coincide_equipo(p.get("rival"), p.get("id_rival"), id_a, claves_a)
         if not es_h2h:
             continue
-        if not filtrar_enfrentamientos_2024_2026([p]):
+        if not filtrar_enfrentamientos_2024_2026([p], fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir):
             continue
         clave = pid or f"{p.get('fecha')}_{nom_a}_{nom_b}"
         if clave not in partidos_orientados_a:
@@ -1393,6 +1411,8 @@ def generar_cuadro_h2h_desde_analisis(
     buscar_en_red: bool | None = None,
     fuente_obj: Any = None,
     aviso: Any = None,
+    fecha_corte: str | None = None,
+    id_partido_excluir: str | None = None,
 ) -> dict[str, Any]:
     """
     Punto de entrada para `/mercados`:
@@ -1420,6 +1440,8 @@ def generar_cuadro_h2h_desde_analisis(
         fuente_obj=fuente_obj,
         buscar_en_red=buscar_en_red,
         aviso=avisar,
+        fecha_corte=fecha_corte,
+        id_partido_excluir=id_partido_excluir,
     )
 
     n_duelos = info_h2h["n_duelos"]
