@@ -1621,7 +1621,7 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             if resultado.get("cuadro_enviado"):
                 print(f"[BOT TELEGRAM] ✅ Cuadro Especialista enviado como tercera imagen "
                       f"({preparado['rutas'].get('cuadro')})")
-            elif resultado.get("motivo_cuadro") or preparado['rutas'].get('cuadro') is None:
+            elif (resultado.get("motivo_cuadro") or preparado['rutas'].get('cuadro') is None) and not preparado.get("abstenido"):
                 # El ticket ya llegó: se avisa de lo que falta, sin fingir un envío doble.
                 detalle = resultado.get("motivo_cuadro") or "no se pudo generar la imagen"
                 ruta_c = preparado['rutas'].get('cuadro') or "—"
@@ -1633,7 +1633,7 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             if resultado.get("cuadro_h2h_enviado"):
                 print(f"[BOT TELEGRAM] ✅ Cuadro H2H (2024–2026) enviado como lámina independiente "
                       f"({preparado['rutas'].get('cuadro_h2h')})")
-            elif resultado.get("estado_h2h_2024_2026") == "Sin enfrentamientos directos en 2024–2026":
+            elif resultado.get("estado_h2h_2024_2026") == "Sin enfrentamientos directos en 2024–2026" and not preparado.get("abstenido"):
                 print(f"[BOT TELEGRAM] ℹ️ {equipo_a} vs {equipo_b}: Sin enfrentamientos directos en 2024–2026")
                 enviar_seguro(bot, chat_id, "ℹ️ H2H (2024–2026): Sin enfrentamientos directos en 2024–2026.")
 

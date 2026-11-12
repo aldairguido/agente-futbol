@@ -28,6 +28,14 @@ registrada en `metricas_no_disponibles`. Nunca se inventan valores.
 """
 
 from __future__ import annotations
+try:
+    from resolvedor_entidades import (
+        DICCIONARIO_SELECCIONES_NACIONALES,
+        obtener_seleccion_nacional,
+        es_seleccion_nacional,
+    )
+except ImportError:
+    pass
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -1535,6 +1543,15 @@ def normalizar_nombre_club(nombre: str) -> str:
     liga_pref, sin_liga = extraer_liga_de_texto(str(nombre).strip())
     base = " ".join((sin_liga or str(nombre)).split()).strip()
 
+    # PASO #0 OBLIGATORIO: Selecciones Nacionales FIFA (Punto 46)
+    try:
+        from resolvedor_entidades import obtener_seleccion_nacional
+        sel = obtener_seleccion_nacional(base)
+        if sel:
+            return sel[0]  # Nombre oficial/canónico en FotMob (ej: "Türkiye", "Belgium", "Spain")
+    except Exception:
+        pass
+
     # PASO #1 OBLIGATORIO: Puente Bilingüe Flashscore -> FotMob (resolvedor_entidades)
     try:
         from resolvedor_entidades import resolver_equipo_individual, DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB, normalizar_texto
@@ -1981,6 +1998,13 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
     alias_raw: list[str] = []
     if canonico_n:
         alias_raw.append(canonico_n)
+    try:
+        from resolvedor_entidades import obtener_seleccion_nacional
+        sel_nac = obtener_seleccion_nacional(consulta_sin_liga or consulta)
+        if sel_nac:
+            alias_raw.extend(sel_nac[2])
+    except Exception:
+        pass
     for k in (consulta_n, canonico_n, str_nucleo_consulta, " ".join(_palabras_nucleo(consulta_n))):
         if k and k in ALIAS_EQUIPOS_HISPANOS:
             alias_raw.extend(ALIAS_EQUIPOS_HISPANOS[k])

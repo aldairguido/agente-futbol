@@ -189,7 +189,183 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
     "copa libertadores": "INT", "conmebol libertadores": "INT", "libertadores": "INT",
     "copa sudamericana": "INT", "conmebol sudamericana": "INT", "sudamericana": "INT",
     "concacaf": "INT", "concacaf champions cup": "INT", "afc champions league": "INT", "caf champions league": "INT",
+    # SELECCIONES NACIONALES / TORNEOS FIFA / UEFA / CONMEBOL / CONCACAF / AFC / CAF
+    "uefa nations league a": "INT", "uefa nations league b": "INT", "uefa nations league c": "INT", "uefa nations league d": "INT",
+    "uefa nations league": "INT", "nations league a": "INT", "nations league b": "INT", "nations league c": "INT", "nations league d": "INT",
+    "nations league": "INT", "liga de naciones": "INT",
+    "eurocopa": "INT", "uefa euro": "INT", "euro": "INT", "clasificacion eurocopa": "INT", "euro clasificacion": "INT",
+    "copa america": "INT", "copa américa": "INT",
+    "eliminatorias conmebol": "INT", "eliminatorias sudamericanas": "INT", "eliminatorias mundial": "INT", "eliminatorias": "INT", "clasificacion mundial": "INT",
+    "mundial": "INT", "copa mundial": "INT", "fifa world cup": "INT", "world cup": "INT",
+    "copa oro": "INT", "gold cup": "INT", "concacaf nations league": "INT",
+    "copa africa": "INT", "copa de africa": "INT", "africa cup of nations": "INT", "afcon": "INT",
+    "copa asiatica": "INT", "asian cup": "INT",
+    "amistosos internacionales": "INT", "international friendlies": "INT",
 }
+
+
+# ───────────────────────────────────────────────────────────────────────────────
+# CATÁLOGO UNIVERSAL DE SELECCIONES NACIONALES (PUNTO 46)
+# Mapeo: Nombre normalizado español -> (Nombre Canónico FotMob, Código ISO-3, Alias FotMob)
+# ───────────────────────────────────────────────────────────────────────────────
+DICCIONARIO_SELECCIONES_NACIONALES: Dict[str, Tuple[str, str, List[str]]] = {
+    # UEFA
+    "turquia": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey", "Turquía"]),
+    "turkiye": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey"]),
+    "turkey": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey"]),
+    "belgica": ("Belgium", "BEL", ["Belgium", "Bélgica"]),
+    "belgium": ("Belgium", "BEL", ["Belgium", "Bélgica"]),
+    "alemania": ("Germany", "DEU", ["Germany", "Alemania", "Deutschland"]),
+    "espana": ("Spain", "ESP", ["Spain", "España"]),
+    "francia": ("France", "FRA", ["France", "Francia"]),
+    "italia": ("Italy", "ITA", ["Italy", "Italia"]),
+    "inglaterra": ("England", "ENG", ["England", "Inglaterra"]),
+    "paises bajos": ("Netherlands", "NLD", ["Netherlands", "Holland", "Países Bajos", "Holanda"]),
+    "holanda": ("Netherlands", "NLD", ["Netherlands", "Holland", "Países Bajos"]),
+    "portugal": ("Portugal", "PRT", ["Portugal"]),
+    "croacia": ("Croatia", "HRV", ["Croatia", "Croacia", "Hrvatska"]),
+    "suiza": ("Switzerland", "CHE", ["Switzerland", "Suiza"]),
+    "dinamarca": ("Denmark", "DNK", ["Denmark", "Dinamarca"]),
+    "suecia": ("Sweden", "SWE", ["Sweden", "Suecia"]),
+    "noruega": ("Norway", "NOR", ["Norway", "Noruega"]),
+    "polonia": ("Poland", "POL", ["Poland", "Polonia"]),
+    "republica checa": ("Czechia", "CZE", ["Czechia", "Czech Republic", "República Checa", "Chequia"]),
+    "chequia": ("Czechia", "CZE", ["Czechia", "Czech Republic", "Chequia"]),
+    "escocia": ("Scotland", "SCO", ["Scotland", "Escocia"]),
+    "gales": ("Wales", "WAL", ["Wales", "Gales"]),
+    "irlanda": ("Republic of Ireland", "IRL", ["Republic of Ireland", "Ireland", "Irlanda"]),
+    "irlanda del norte": ("Northern Ireland", "NIR", ["Northern Ireland", "Irlanda del Norte"]),
+    "grecia": ("Greece", "GRC", ["Greece", "Grecia"]),
+    "serbia": ("Serbia", "SRB", ["Serbia"]),
+    "rumania": ("Romania", "ROU", ["Romania", "Rumanía", "Rumania"]),
+    "hungria": ("Hungary", "HUN", ["Hungary", "Hungría"]),
+    "austria": ("Austria", "AUT", ["Austria"]),
+    "ucrania": ("Ukraine", "UKR", ["Ukraine", "Ucrania"]),
+    "rusia": ("Russia", "RUS", ["Russia", "Rusia"]),
+    "eslovaquia": ("Slovakia", "SVK", ["Slovakia", "Eslovaquia"]),
+    "eslovenia": ("Slovenia", "SVN", ["Slovenia", "Eslovenia"]),
+    "finlandia": ("Finland", "FIN", ["Finland", "Finlandia"]),
+    "islandia": ("Iceland", "ISL", ["Iceland", "Islandia"]),
+    "bosnia": ("Bosnia and Herzegovina", "BIH", ["Bosnia and Herzegovina", "Bosnia-Herzegovina", "Bosnia y Herzegovina"]),
+    "bosnia y herzegovina": ("Bosnia and Herzegovina", "BIH", ["Bosnia and Herzegovina", "Bosnia-Herzegovina"]),
+    "macedonia del norte": ("North Macedonia", "MKD", ["North Macedonia", "Macedonia del Norte"]),
+    "georgia": ("Georgia", "GEO", ["Georgia"]),
+    "albania": ("Albania", "ALB", ["Albania"]),
+    "montenegro": ("Montenegro", "MNE", ["Montenegro"]),
+    "kosovo": ("Kosovo", "KOS", ["Kosovo"]),
+    "bielorrusia": ("Belarus", "BLR", ["Belarus", "Bielorrusia"]),
+    "luxemburgo": ("Luxembourg", "LUX", ["Luxembourg", "Luxemburgo"]),
+    "chipre": ("Cyprus", "CYP", ["Cyprus", "Chipre"]),
+    "estonia": ("Estonia", "EST", ["Estonia"]),
+    "letonia": ("Latvia", "LVA", ["Latvia", "Letonia"]),
+    "lituania": ("Lithuania", "LTU", ["Lithuania", "Lituania"]),
+    "moldavia": ("Moldova", "MDA", ["Moldova", "Moldavia"]),
+    "armenia": ("Armenia", "ARM", ["Armenia"]),
+    "azerbaiyan": ("Azerbaijan", "AZE", ["Azerbaijan", "Azerbaiyán"]),
+    "kazajistan": ("Kazakhstan", "KAZ", ["Kazakhstan", "Kazajistán"]),
+    "israel": ("Israel", "ISR", ["Israel"]),
+    "islas feroe": ("Faroe Islands", "FRO", ["Faroe Islands", "Islas Feroe"]),
+    "malta": ("Malta", "MLT", ["Malta"]),
+    "andorra": ("Andorra", "AND", ["Andorra"]),
+    "san marino": ("San Marino", "SMR", ["San Marino"]),
+    "gibraltar": ("Gibraltar", "GIB", ["Gibraltar"]),
+    "liechtenstein": ("Liechtenstein", "LIE", ["Liechtenstein"]),
+    # CONMEBOL
+    "argentina": ("Argentina", "ARG", ["Argentina"]),
+    "brasil": ("Brazil", "BRA", ["Brazil", "Brasil"]),
+    "uruguay": ("Uruguay", "URY", ["Uruguay"]),
+    "colombia": ("Colombia", "COL", ["Colombia"]),
+    "ecuador": ("Ecuador", "ECU", ["Ecuador"]),
+    "peru": ("Peru", "PER", ["Peru", "Perú"]),
+    "chile": ("Chile", "CHL", ["Chile"]),
+    "paraguay": ("Paraguay", "PRY", ["Paraguay"]),
+    "venezuela": ("Venezuela", "VEN", ["Venezuela"]),
+    "bolivia": ("Bolivia", "BOL", ["Bolivia"]),
+    # CONCACAF
+    "estados unidos": ("USA", "USA", ["USA", "United States", "Estados Unidos", "EE. UU."]),
+    "ee. uu.": ("USA", "USA", ["USA", "United States", "Estados Unidos"]),
+    "usa": ("USA", "USA", ["USA", "United States"]),
+    "mexico": ("Mexico", "MEX", ["Mexico", "México"]),
+    "canada": ("Canada", "CAN", ["Canada", "Canadá"]),
+    "panama": ("Panama", "PAN", ["Panama", "Panamá"]),
+    "costa rica": ("Costa Rica", "CRI", ["Costa Rica"]),
+    "jamaica": ("Jamaica", "JAM", ["Jamaica"]),
+    "honduras": ("Honduras", "HND", ["Honduras"]),
+    "el salvador": ("El Salvador", "SLV", ["El Salvador"]),
+    "guatemala": ("Guatemala", "GTM", ["Guatemala"]),
+    "trinidad y tobago": ("Trinidad and Tobago", "TTO", ["Trinidad and Tobago", "Trinidad y Tobago"]),
+    "haiti": ("Haiti", "HTI", ["Haiti", "Haití"]),
+    "curazao": ("Curacao", "CUW", ["Curacao", "Curaçao", "Curazao"]),
+    "surinam": ("Suriname", "SUR", ["Suriname", "Surinam"]),
+    # AFC / OFC
+    "japon": ("Japan", "JPN", ["Japan", "Japón"]),
+    "corea del sur": ("South Korea", "KOR", ["South Korea", "Korea Republic", "Corea del Sur"]),
+    "australia": ("Australia", "AUS", ["Australia"]),
+    "iran": ("Iran", "IRN", ["Iran", "IR Iran", "Irán"]),
+    "arabia saudi": ("Saudi Arabia", "SAU", ["Saudi Arabia", "Arabia Saudí", "Arabia Saudita"]),
+    "catar": ("Qatar", "QAT", ["Qatar", "Catar"]),
+    "irak": ("Iraq", "IRQ", ["Iraq", "Irak"]),
+    "uzbekistan": ("Uzbekistan", "UZB", ["Uzbekistan", "Uzbekistán"]),
+    "jordania": ("Jordan", "JOR", ["Jordan", "Jordania"]),
+    "emiratos arabes unidos": ("United Arab Emirates", "ARE", ["United Arab Emirates", "UAE", "Emiratos Árabes Unidos"]),
+    "china": ("China", "CHN", ["China", "China PR"]),
+    "tailandia": ("Thailand", "THA", ["Thailand", "Tailandia"]),
+    "vietnam": ("Vietnam", "VNM", ["Vietnam"]),
+    "indonesia": ("Indonesia", "IDN", ["Indonesia"]),
+    "nueva zelanda": ("New Zealand", "NZL", ["New Zealand", "Nueva Zelanda"]),
+    # CAF
+    "marruecos": ("Morocco", "MAR", ["Morocco", "Marruecos"]),
+    "senegal": ("Senegal", "SEN", ["Senegal"]),
+    "egipto": ("Egypt", "EGY", ["Egypt", "Egipto"]),
+    "nigeria": ("Nigeria", "NGA", ["Nigeria"]),
+    "argelia": ("Algeria", "DZA", ["Algeria", "Argelia"]),
+    "tunez": ("Tunisia", "TUN", ["Tunisia", "Túnez"]),
+    "costa de marfil": ("Ivory Coast", "CIV", ["Ivory Coast", "Côte d'Ivoire", "Cote d'Ivoire", "Costa de Marfil"]),
+    "camerun": ("Cameroon", "CMR", ["Cameroon", "Camerún"]),
+    "ghana": ("Ghana", "GHA", ["Ghana"]),
+    "mali": ("Mali", "MLI", ["Mali", "Malí"]),
+    "sudafrica": ("South Africa", "ZAF", ["South Africa", "Sudáfrica"]),
+    "rd congo": ("DR Congo", "COD", ["DR Congo", "Congo DR", "RD Congo"]),
+    "burkina faso": ("Burkina Faso", "BFA", ["Burkina Faso"]),
+    "cabo verde": ("Cape Verde", "CPV", ["Cape Verde", "Cabo Verde"]),
+    "guinea": ("Guinea", "GIN", ["Guinea"]),
+    "zambia": ("Zambia", "ZMB", ["Zambia"]),
+    "angola": ("Angola", "AGO", ["Angola"]),
+}
+
+_MAPA_CANONICO_SELECCIONES: Dict[str, Tuple[str, str, List[str]]] = {}
+for _k, _v in DICCIONARIO_SELECCIONES_NACIONALES.items():
+    _MAPA_CANONICO_SELECCIONES[_k] = _v
+    _nom_c = normalizar_texto(_v[0])
+    if _nom_c not in _MAPA_CANONICO_SELECCIONES:
+        _MAPA_CANONICO_SELECCIONES[_nom_c] = _v
+    for _al in _v[2]:
+        _al_n = normalizar_texto(_al)
+        if _al_n not in _MAPA_CANONICO_SELECCIONES:
+            _MAPA_CANONICO_SELECCIONES[_al_n] = _v
+
+
+def obtener_seleccion_nacional(nombre: str) -> Optional[Tuple[str, str, List[str]]]:
+    """
+    Determina si un nombre corresponde a una Selección Nacional FIFA.
+    Retorna `(nombre_canonico_fotmob, codigo_iso_3, alias_fotmob)` o `None`.
+    """
+    if not nombre:
+        return None
+    norm = normalizar_texto(nombre)
+    if norm in _MAPA_CANONICO_SELECCIONES:
+        return _MAPA_CANONICO_SELECCIONES[norm]
+    norm_limpio = re.sub(r"\b(?:seleccion|selección|national team|team|national)\b", " ", norm).strip()
+    norm_limpio = re.sub(r"\s+", " ", norm_limpio).strip()
+    if norm_limpio in _MAPA_CANONICO_SELECCIONES:
+        return _MAPA_CANONICO_SELECCIONES[norm_limpio]
+    return None
+
+
+def es_seleccion_nacional(nombre: str) -> bool:
+    """Verifica si el nombre corresponde a una selección nacional de fútbol."""
+    return obtener_seleccion_nacional(nombre) is not None
+
 
 
 # Diccionario de Exónimos, Hispanismos y Alias de Flashscore -> (Nombre Oficial FotMob, Código ISO-3)
@@ -948,7 +1124,7 @@ _RE_CANDIDATO_JUVENIL_O_FILIAL = re.compile(
 
 # Sufijos de fase/grupo que acompañan a las ligas en Flashscore (ej. "Primera Federación - Grupo 1", "Liga 1 - Clausura")
 _RE_SUFIJO_FASE_LIGA = re.compile(
-    r"^\s*[-–—]\s*(?:grupo\s+[a-z0-9]+|clausura|apertura|fase\s+[a-z0-9]+|etapa\s+[a-z0-9]+|zona\s+[a-z0-9]+|serie\s+[a-z0-9]+|playoffs?|championship\s+group|relegation\s+group|norte|sur|este|oeste)(?=\s+)",
+    r"^\s*[-–—]?\s*(?:grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|clausura|apertura|fase\s+[a-z0-9]+|etapa\s+[a-z0-9]+|zona\s+[a-z0-9]+|serie\s+[a-z0-9]+|playoffs?|championship\s+group|relegation\s+group|league\s+[a-d]|norte|sur|este|oeste)(?=\s+|$)",
     re.IGNORECASE,
 )
 
@@ -1179,6 +1355,10 @@ def _paises_posibles_para_club(nombre: str) -> set[str]:
     if calif.get("pais_iso"):
         paises.add(calif["pais_iso"])
 
+    sel = obtener_seleccion_nacional(nombre)
+    if sel:
+        paises.add(sel[1])
+
     for k in (norm, norm_sin_siglas):
         if k in CLUBES_HOMONIMOS:
             for _, iso in CLUBES_HOMONIMOS[k]:
@@ -1202,6 +1382,11 @@ def resolver_equipo_individual(
     limpio = (nombre_equipo or "").strip().strip('"').strip("'").strip()
     if not limpio:
         return "", pais_iso_contexto or ""
+
+    # REGLA DURA #0: Selecciones Nacionales FIFA (Inmunes a contaminación de país)
+    sel = obtener_seleccion_nacional(limpio)
+    if sel:
+        return sel[0], sel[1]
 
     norm = normalizar_texto(limpio)
     norm_sin_siglas = re.sub(r"\b(?:fc|cf|sc|ac|rcd|cd|ud|sd|sv|vfl|vfb|ca|club)\b", " ", norm)
@@ -1504,11 +1689,20 @@ def resolver(
     liga_norm = normalizar_texto(liga_str)
     es_fem, es_juv = detectar_categoria_desde_texto(f"{liga_str} {loc_str} {vis_str}")
 
-    es_internacional = (pais_iso_liga == "INT") or any(
-        k in liga_norm
-        for k in (
-            "champions", "europa league", "conference", "libertadores",
-            "sudamericana", "concacaf", "mundial", "international", "friendly", "amistoso"
+    sel_l = obtener_seleccion_nacional(loc_str)
+    sel_v = obtener_seleccion_nacional(vis_str)
+    es_duelo_selecciones = bool(sel_l or sel_v)
+
+    es_internacional = (
+        (pais_iso_liga == "INT")
+        or es_duelo_selecciones
+        or any(
+            k in liga_norm
+            for k in (
+                "champions", "europa league", "conference", "libertadores",
+                "sudamericana", "concacaf", "mundial", "international", "friendly", "amistoso",
+                "nations league", "eurocopa", "copa america", "copa américa", "eliminatorias", "gold cup"
+            )
         )
     )
     es_copa = any(
@@ -1537,7 +1731,7 @@ def resolver(
     criterio_desempate = ""
     pais_conjunto = ""
 
-    if not es_internacional:
+    if not es_internacional and not es_duelo_selecciones:
         if pais_iso_liga and pais_iso_liga != "INT":
             inter = cands_paises_l & cands_paises_v
             if inter and pais_iso_liga not in inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter:
@@ -1575,25 +1769,25 @@ def resolver(
         pais_local = iso_loc or pais_final
         pais_visita = iso_vis or pais_final
     else:
-        criterio_desempate = "cruce_internacional"
+        criterio_desempate = "duelo_selecciones_nacionales" if es_duelo_selecciones else "cruce_internacional"
         nom_loc, iso_loc = resolver_equipo_individual(loc_str, es_femenino=es_fem, es_juvenil=es_juv)
         nom_vis, iso_vis = resolver_equipo_individual(vis_str, es_femenino=es_fem, es_juvenil=es_juv)
-        pais_local = iso_loc or ""
-        pais_visita = iso_vis or ""
+        pais_local = iso_loc or (sel_l[1] if sel_l else "")
+        pais_visita = iso_vis or (sel_v[1] if sel_v else "")
         pais_final = "INT"
 
     # Verificar si la identidad está confirmada o no verificada
-    cand_l_known = bool((nom_loc, pais_local) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_loc) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_loc)
-    cand_v_known = bool((nom_vis, pais_visita) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_vis) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or iso_vis)
+    cand_l_known = bool((nom_loc, pais_local) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_loc) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or sel_l or iso_loc)
+    cand_v_known = bool((nom_vis, pais_visita) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_vis) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or sel_v or iso_vis)
 
     # Detección de homónimos desconocidos o candidatos ambiguos
     cands_l_paises = {c.get("pais_iso") or c.get("country") for c in (candidatos_local or []) if (c.get("pais_iso") or c.get("country"))}
     cands_v_paises = {c.get("pais_iso") or c.get("country") for c in (candidatos_visita or []) if (c.get("pais_iso") or c.get("country"))}
 
-    es_homonimo_ambiguo_l = bool(len(cands_l_paises) > 1 and not pais_iso_liga and not iso_calif_l and not pais_conjunto)
-    es_homonimo_ambiguo_v = bool(len(cands_v_paises) > 1 and not pais_iso_liga and not iso_calif_v and not pais_conjunto)
+    es_homonimo_ambiguo_l = bool(len(cands_l_paises) > 1 and not pais_iso_liga and not iso_calif_l and not pais_conjunto and not sel_l)
+    es_homonimo_ambiguo_v = bool(len(cands_v_paises) > 1 and not pais_iso_liga and not iso_calif_v and not pais_conjunto and not sel_v)
 
-    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis) or criterio_desempate == "sin_desempate_claro" or es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
+    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis) or (criterio_desempate == "sin_desempate_claro" and not es_duelo_selecciones) or es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
         identidad_verificada = False
         estado_identidad = "identidad_no_verificada"
         if es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
@@ -1711,7 +1905,11 @@ def validar_y_puntuar_candidato_fotmob(
             return -9999.0
 
     # 3. Filtro por Código de País (pais_iso) y Coherencia Nacional
-    iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
+    sel_buscada = obtener_seleccion_nacional(texto_buscado)
+    if sel_buscada:
+        iso_esperado = sel_buscada[1]
+    else:
+        iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
     cand_liga_id = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
     liga_cand_norm = normalizar_texto(liga_cand)
     if (cand_liga_id is not None and str(cand_liga_id) in ("8971", "8814", "268")) or (liga_cand_norm in ("serie c", "serie b", "serie a") and iso_esperado == "BRA"):
@@ -1761,17 +1959,22 @@ def validar_y_puntuar_candidato_fotmob(
                 return -9999.0
 
     # 4. Similitud con el nombre oficial traducido de FotMob
-    nom_oficial_esperado, iso_oficial = resolver_equipo_individual(
-        texto_buscado,
-        pais_iso_contexto=iso_esperado,
-        es_femenino=es_fem,
-        es_juvenil=es_juv,
-    )
+    if sel_buscada:
+        nom_oficial_esperado, iso_oficial = sel_buscada[0], sel_buscada[1]
+        aliases_sel_norm = {normalizar_texto(a) for a in sel_buscada[2]}
+    else:
+        nom_oficial_esperado, iso_oficial = resolver_equipo_individual(
+            texto_buscado,
+            pais_iso_contexto=iso_esperado,
+            es_femenino=es_fem,
+            es_juvenil=es_juv,
+        )
+        aliases_sel_norm = set()
     norm_oficial = normalizar_texto(nom_oficial_esperado)
     # Limpiar sufijos femeninos/juveniles para comparar la raíz del nombre del club
     norm_cand_raiz = re.sub(r"\s*\((?:w|women)\)\s*|\b(?:women|femenino|femenina|ladies)\b", "", norm_cand).strip()
 
-    if norm_cand == norm_oficial or norm_cand_raiz == norm_oficial:
+    if norm_cand == norm_oficial or norm_cand_raiz == norm_oficial or norm_cand in aliases_sel_norm or norm_cand_raiz in aliases_sel_norm:
         puntos += 120.0
     elif norm_oficial and (norm_oficial in norm_cand_raiz or norm_cand_raiz in norm_oficial):
         puntos += 85.0
@@ -1838,14 +2041,16 @@ def formatear_mensaje_entidades_verificadas(
     _, iso_eq_l = resolver_equipo_individual(nombre_local)
     _, iso_eq_v = resolver_equipo_individual(nombre_visita)
     iso_liga = normalizar_pais_iso(liga)
-    es_int = (iso_liga == "INT") or any(
+    sel_l = obtener_seleccion_nacional(nombre_local)
+    sel_v = obtener_seleccion_nacional(nombre_visita)
+    es_int = (iso_liga == "INT") or bool(sel_l or sel_v) or any(
         k in normalizar_texto(liga)
-        for k in ("champions", "europa league", "conference", "libertadores", "sudamericana", "concacaf", "mundial", "international")
+        for k in ("champions", "europa league", "conference", "libertadores", "sudamericana", "concacaf", "mundial", "international", "nations", "euro", "copa america", "eliminatorias")
     )
 
     if es_int:
-        iso_l = normalizar_pais_iso(pais_local) or iso_eq_l or "INT"
-        iso_v = normalizar_pais_iso(pais_visita) or iso_eq_v or "INT"
+        iso_l = normalizar_pais_iso(pais_local) or iso_eq_l or (sel_l[1] if sel_l else "INT")
+        iso_v = normalizar_pais_iso(pais_visita) or iso_eq_v or (sel_v[1] if sel_v else "INT")
     else:
         iso_l_norm = normalizar_pais_iso(pais_local)
         iso_v_norm = normalizar_pais_iso(pais_visita)
