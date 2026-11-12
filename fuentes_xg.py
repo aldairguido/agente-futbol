@@ -1262,6 +1262,10 @@ CATALOGO_LIGAS_PREFIJO: list[tuple[list[str], dict[str, Any]]] = [
         {"nombre": "Brasileirão Série B", "pais": "brasil", "ids_liga": [8814, 268], "keywords_liga": ["serie b", "brasileirao"]},
     ),
     (
+        ["brasileirao serie c", "serie c de brasil", "serie c brasil"],
+        {"nombre": "Brasileirão Série C", "pais": "brasil", "ids_liga": [8971], "keywords_liga": ["serie c", "brasileirao serie c"]},
+    ),
+    (
         ["liga betplay dimayor", "liga betplay", "primera a de colombia", "primera a colombia", "liga de colombia", "liga colombiana"],
         {"nombre": "Liga BetPlay", "pais": "colombia", "ids_liga": [274], "keywords_liga": ["primera a", "liga betplay", "colombia"]},
     ),
@@ -2054,10 +2058,14 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             r_lname_raw if r_lname else None,
             ccode=ccode_r,
         ) or (norm(rival_meta.get("pais") or "") if norm(rival_meta.get("pais") or "") != "int" else "")
-        c_pais = _pais_de_liga(
-            candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
-            ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
-        )
+        cand_lid = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
+        if (cand_lid is not None and str(cand_lid) in ("8971", "8814", "268")) or (c_lname in ("serie c", "serie b", "serie a") and (r_pais == "brasil" or str(ccode_r or "").upper() == "BRA")):
+            c_pais = "brasil"
+        else:
+            c_pais = _pais_de_liga(
+                candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
+                ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
+            )
         es_duelo_nacional = bool(r_pais and r_pais not in ("europa", "sudamerica", "internacional"))
         if r_pais and c_pais:
             if r_pais == c_pais:
@@ -2877,11 +2885,27 @@ class FuenteFotMob(FuenteXG):
             es_fem_eq = bool(meta_rival["es_femenino"])
         if meta_rival and "es_juvenil" in meta_rival:
             es_juv_eq = bool(meta_rival["es_juvenil"])
-        pais_iso_eq = (
-            normalizar_pais_iso(elegido.get("ccode") or elegido.get("country") or elegido.get("leagueName"))
-            or normalizar_pais_iso((meta_rival or {}).get("pais_iso") or (meta_rival or {}).get("pais") or (meta_rival or {}).get("liga"))
-            or "INT"
+        lid_cand = elegido.get("leagueId") or elegido.get("id_liga")
+        try:
+            lid_cand_int = int(lid_cand) if lid_cand is not None else 0
+        except (ValueError, TypeError):
+            lid_cand_int = 0
+
+        pais_iso_pref = normalizar_pais_iso(
+            (liga_pref.get("pais_iso") if isinstance(liga_pref, dict) else "")
+            or (meta_rival or {}).get("pais_iso")
+            or (meta_rival or {}).get("pais")
         )
+
+        if lid_cand_int in (8971, 8814, 268) or (pais_iso_pref == "BRA" and normalizar_texto(str(elegido.get("leagueName") or "")) in ("serie c", "serie b", "serie a")):
+            pais_iso_eq = "BRA"
+        else:
+            pais_iso_eq = (
+                normalizar_pais_iso(elegido.get("ccode") or elegido.get("country"))
+                or (pais_iso_pref if pais_iso_pref and pais_iso_pref != "INT" else "")
+                or normalizar_pais_iso(elegido.get("leagueName"))
+                or "INT"
+            )
         tid_str = str(elegido.get("id"))
         equipo = {
             "id": tid_str,
@@ -4031,10 +4055,10 @@ METRICAS_CONTEO_ADITIVAS: frozenset[str] = frozenset({
     "tarjetas_amarillas", "tarjetas_rojas",
     "pases_total", "pases_totales", "pases_completados",
     "pases_largos", "pases_largos_completados",
-    "pases_tercio_final", "pases_tercio_final_completados", "pases_tercio_final_pct",
+    "pases_tercio_final", "pases_tercio_final_completados",
     "centros", "centros_completados",
     "pases_clave", "saques_banda", "saques_de_banda",
-    "faltas", "entradas", "entradas_ganadas", "entradas_pct",
+    "faltas", "entradas", "entradas_ganadas",
     "duelos_ganados", "despejes", "intercepciones", "bloqueos", "recuperaciones",
     "errores_remate", "errores_gol",
     "paradas", "goles_encajados", "saques_puerta", "saques_de_puerta",
@@ -4158,20 +4182,27 @@ def _resolver_ecuaciones_periodo(
             _marcar_est(propio, "xg")
         elif rt_raw is not None and rt_raw == 0.0 and goles_eq is not None and gf_propio is not None and gf_propio > 0:
             # 2f. Protección en FT cuando un partido tuvo goles pero remates_totales == 0 reportado:
-            gf_val = float(gf_propio)
-            gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
-            if propio.get("xg") is None:
-                propio["xg"] = float(round(gf_val, 2))
-                _marcar_est(propio, "xg")
-            if propio.get("xgot") is None:
-                propio["xgot"] = float(round(gf_val, 2))
-                _marcar_est(propio, "xgot")
-            if propio.get("xgot_enfrentados") is None:
-                propio["xgot_enfrentados"] = float(round(gc_val, 2))
-                _marcar_est(propio, "xgot_enfrentados")
-            if propio.get("goles_evitados") is None:
-                propio["goles_evitados"] = 0.0
-                _marcar_est(propio, "goles_evitados")
+            # Si ambos equipos tienen remates == 0 o None, es un partido sin estadísticas del proveedor (ej. Nautico 1-0 Botafogo SP).
+            # Prohibido inyectar 1.00 sintético: todas las 45 métricas quedan como sin_dato (None),
+            # conservando únicamente el marcador oficial FT para el Cuadro B.
+            rt_ajeno_check = ajeno.get("remates_totales") or ajeno.get("remates") or 0.0
+            if float(rt_ajeno_check or 0.0) <= 0.001:
+                pass  # Partido sin estadísticas: no inyectar métricas sintéticas
+            else:
+                gf_val = float(gf_propio)
+                gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
+                if propio.get("xg") is None:
+                    propio["xg"] = float(round(gf_val, 2))
+                    _marcar_est(propio, "xg")
+                if propio.get("xgot") is None:
+                    propio["xgot"] = float(round(gf_val, 2))
+                    _marcar_est(propio, "xgot")
+                if propio.get("xgot_enfrentados") is None:
+                    propio["xgot_enfrentados"] = float(round(gc_val, 2))
+                    _marcar_est(propio, "xgot_enfrentados")
+                if propio.get("goles_evitados") is None:
+                    propio["goles_evitados"] = 0.0
+                    _marcar_est(propio, "goles_evitados")
 
         if rp_propio > 0 and (propio.get("xgot") is None or propio.get("xgot") <= 0.001):
             gf_val = float(gf_propio if gf_propio is not None else 0.0)
@@ -4293,9 +4324,7 @@ def _resolver_ecuaciones_periodo(
         xg_val = d.get("xg")
         s_d = estimados_eq if d is eq else estimados_riv
         if xg_val is not None:
-            if d.get("xg_sin_penalti") is None:
-                d["xg_sin_penalti"] = xg_val
-                _marcar_est(d, "xg_sin_penalti")
+            # Prohibido copiar xg en xg_sin_penalti o xg_juego_abierto sin desglose independiente
             if d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is not None:
                 d["xg_juego_abierto"] = round(max(0.0, xg_val - d["xg_balon_parado"]), 2)
                 if "xg" in s_d or "xg_balon_parado" in s_d:
@@ -4304,11 +4333,6 @@ def _resolver_ecuaciones_periodo(
                 d["xg_balon_parado"] = round(max(0.0, xg_val - d["xg_juego_abierto"]), 2)
                 if "xg" in s_d or "xg_juego_abierto" in s_d:
                     _marcar_est(d, "xg_balon_parado")
-            elif d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is None:
-                d["xg_juego_abierto"] = xg_val
-                d["xg_balon_parado"] = 0.0
-                _marcar_est(d, "xg_juego_abierto")
-                _marcar_est(d, "xg_balon_parado")
 
         # 3g. Goles evitados = xgot_enfrentados - goles_encajados
         xgot_enf = d.get("xgot_enfrentados")

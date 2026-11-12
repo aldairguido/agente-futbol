@@ -1554,6 +1554,10 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             equipo_a, equipo_b, limite=limite, umbral=umbral, progreso=progreso, liga=liga)
         analisis = preparado["analisis"]
 
+        if preparado.get("partido_ya_jugado"):
+            enviar_seguro(bot, chat_id, preparado.get("analisis_texto_3_parrafos") or "⚠️ Partido ya jugado, usa /evaluar")
+            return
+
         # ── SNAPSHOT INMUTABLE, ANTES DE ENVIAR ────────────────────────────
         # Guarda TODAS las selecciones estimables (también las inferiores al
         # umbral) para poder evaluar el modelo completo, y marca aparte las

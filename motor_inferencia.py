@@ -148,6 +148,19 @@ def _extraer_goles_item(
             es_loc_1t = str(item.get("condicion") or "casa").lower() in ("casa", "local", "l")
             gf_1t = g1l if es_loc_1t else g1v
             gc_1t = g1v if es_loc_1t else g1l
+        elif isinstance(item.get("periodos"), dict) and "1T" in item["periodos"] and "2T" in item["periodos"]:
+            from auditoria_historica import reconstruir_marcador_mitades_partido
+            cond_m = str(item.get("condicion") or "casa").lower()
+            es_loc_m = cond_m in ("casa", "local", "l")
+            lado_l_m = "equipo" if es_loc_m else "rival"
+            lado_v_m = "rival" if es_loc_m else "equipo"
+            gl1_m, gv1_m, gl2_m, gv2_m, ok_m, _ = reconstruir_marcador_mitades_partido(item, lado_l_m, lado_v_m)
+            if ok_m:
+                gf_1t = gl1_m if es_loc_m else gv1_m
+                gc_1t = gv1_m if es_loc_m else gl1_m
+            else:
+                gf_1t = None
+                gc_1t = None
         else:
             m1t = item.get("marcador_1t") if isinstance(item.get("marcador_1t"), dict) else {}
             if m1t.get("equipo") is not None and m1t.get("rival") is not None:
@@ -311,14 +324,14 @@ def calcular_cuadro_b_tendencias(
                 if gf_1t > 0 and gc_1t == 0:
                     primero_en_marcar += 1
 
-            # Ganador del 1T: exclusivamente cuando existe marcador 1T verificado (o 0-0 FT)
+            # Ganador del 1T: exclusivamente cuando existe marcador 1T verificado (suma estricta 1T+2T==FT)
+            # Partidos con mitades sin_dato quedan estrictamente excluidos del cálculo
             if gf_1t is not None and gc_1t is not None:
                 n_con_1t += 1
                 if gf_1t > gc_1t:
                     ganador_1t += 1
-            elif gf == 0 and gc == 0:
-                n_con_1t += 1
             elif isinstance(item, str) and ((gf > gc and gf >= 2) or (gf > gc and _idx % 2 == 0)):
+                # Heurística exclusiva para fixtures de texto plano en tests unitarios
                 n_con_1t += 1
                 ganador_1t += 1
 
@@ -843,7 +856,9 @@ def aplicar_reglas_matchup_55(
         )
 
     # 10. Regla de Goles Tardíos (Patrón #35)
-    if _pf(patrones_local, "P35_Peso_Goles_Tardios", 0.22) >= 0.25 or _pf(patrones_visita, "P35_Peso_Goles_Tardios", 0.22) >= 0.25:
+    p35_l_val = patrones_local.get("P35_Peso_Goles_Tardios") if isinstance(patrones_local, dict) else None
+    p35_v_val = patrones_visita.get("P35_Peso_Goles_Tardios") if isinstance(patrones_visita, dict) else None
+    if (p35_l_val is not None and float(p35_l_val) >= 0.25) or (p35_v_val is not None and float(p35_v_val) >= 0.25):
         alertas.append(
             f"Patrón #35 Activado: Alta concentración de goles en el tramo final 76'-90'."
         )
@@ -938,6 +953,25 @@ def generar_reporte_xai_telegram(
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
 
+    if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
+        n_ev_l_tel = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_l_tel = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+
+    if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
+        n_ev_v_tel = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_v_tel = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+
+    k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel) if (n_ev_l_tel > 0 and n_ev_v_tel > 0) else max(n_ev_l_tel, n_ev_v_tel)
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+
+    if k_eval_cron_tel < k_min_cron_tel:
+        txt_p35_tel = f"sin dato (cobertura de minutos insuficiente en Cuadro C: {k_eval_cron_tel}/15 partidos)"
+    else:
+        txt_p35_tel = f"En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles."
+
     def _fmt_p(d: Dict[str, Any], k: str, mult: float = 1.0, dec: int = 2, suf: str = "") -> str:
         v = d.get(k)
         if v is None:
@@ -966,7 +1000,7 @@ def generar_reporte_xai_telegram(
         "",
         "*3. El Factor Tiempo: Fatiga y Punch (1T vs 2T y Timeline 15 min)*",
         f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {_fmt_p(patrones_loc, 'P26_Poder_Cierre_2T', 100.0, 1, '%')} de su xG en la 2da mitad, mientras {nombre_visita} genera el {_fmt_p(patrones_vis, 'P26_Poder_Cierre_2T', 100.0, 1, '%')}.",
-        f"• *Patrón #35 - Franja Crítica (76'-90'):* En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles.",
+        f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}",
         f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {_fmt_p(patrones_loc, 'P31_Precision_Bajo_Fatiga')} ({nombre_local}) vs {_fmt_p(patrones_vis, 'P31_Precision_Bajo_Fatiga')} ({nombre_visita}).",
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
@@ -1155,33 +1189,23 @@ def generar_veredicto_tactico_partido(
     fal_l = float(patrones_loc.get("faltas") or 11.0)
     fal_v = float(patrones_vis.get("faltas") or 11.5)
     am_tot = float(patrones_loc.get("amarillas", patrones_loc.get("tarjetas_amarillas", 1.8)) or 1.8) + float(patrones_vis.get("amarillas", patrones_vis.get("tarjetas_amarillas", 1.9)) or 1.9)
-    if hay_asedio_verif:
-        mkt_tarjetas = "+3.5 Tarjetas (FT)"
-        prob_tarjetas = 76.0
-    else:
-        mkt_tarjetas = "-4.5 Tarjetas (FT)" if am_tot < 4.35 else "+3.5 Tarjetas (FT)"
-        prob_tarjetas = 81.0 if am_tot < 4.35 else 76.0
+    # 3. Ritmo y Tarjetas: exclusivamente desde mercado validado en Top 5 / Sección 1
+    mkt_tarjetas = None
+    prob_tarjetas = 0.0
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
             if "tarj" in et_i.lower():
-                if hay_asedio_verif and ("-" in et_i or "menos" in et_i.lower()):
-                    continue
                 mkt_tarjetas = et_i
                 prob_tarjetas = float(item.get("probabilidad", 0.80)) * 100.0
                 break
-    titulo_ritmo = (
-        "Fricción táctica intensa (Tarjetas)"
-        if (hay_asedio_verif or not ("-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower()))
-        else "Partido limpio (Pocas tarjetas)"
-    )
 
-    # 4. Segunda mitad (2T)
+    # 4. Segunda mitad (2T): exclusivamente desde mercado validado en Top 5 / Sección 1
     p26_raw = pat_fav.get("P26_Poder_Cierre_2T")
     p26_fav = float(p26_raw) if p26_raw is not None else None
     xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
-    mkt_2t = "Goles 2T: +0.5 Goles" if xg_2t_comb < 1.35 else "Goles 2T: +1.5 Goles"
-    prob_2t = 78.0 if xg_2t_comb < 1.35 else 71.5
+    mkt_2t = None
+    prob_2t = 0.0
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
@@ -1202,12 +1226,29 @@ def generar_veredicto_tactico_partido(
         if p_fav_max >= 0.50
         else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     )
-    c1 = (
-        f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
-        f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
-        f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). El Ticket protege con '{jugada_1_nombre}' al "
-        f"{jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
-    )
+    es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
+    es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
+    if es_under:
+        c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
+        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        c1 = (
+            f"{c1_tit} Las métricas ofensivas proyectan contención (Attack {atk_fav:.1f} vs {atk_riv:.1f} de {eq_riv}), "
+            f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+        )
+    elif es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap")):
+        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        c1 = (
+            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
+            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
+            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
+        )
+    else:
+        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        c1 = (
+            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
+            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
+            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
+        )
 
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
         n_ev_l = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
@@ -1235,23 +1276,47 @@ def generar_veredicto_tactico_partido(
             f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
         )
 
-    c3 = (
-        f"3. {titulo_ritmo}: El agente destaca '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
-        f"{eq_control} monopoliza el balón ({pos_control:.1f}% de posesión, Pressing {press_ctrl:.1f}) y {riv_control} "
-        f"se repliega en bloque ({fal_l:.1f} vs {fal_v:.1f} faltas/partido)."
-    )
-    txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
-    if k_eval_ver < k_min_cron:
-        c4 = (
-            f"4. Dinámica de la segunda mitad: El modelo proyecta '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-            f"proyectado en 2T y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
+    if mkt_tarjetas is None:
+        titulo_ritmo = "Disciplina y fricción táctica"
+        c3 = (
+            f"3. {titulo_ritmo}: Sin líneas de tarjetas validadas >= 70% en el Ticket. "
+            f"{eq_control} registra {pos_control:.1f}% de posesión [15P general] (Pressing {press_ctrl:.1f}), "
+            f"frente a {riv_control} con una fricción moderada de {fal_l:.1f} vs {fal_v:.1f} faltas [15P general] "
+            f"y {am_tot:.1f} tarjetas combinadas esperadas."
         )
     else:
-        c4 = (
-            f"4. La segunda mitad tendrá goles: El modelo respalda '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-            f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
-            f"({flujo_76_90} goles combinados), es una selección con total respaldo estadístico."
+        titulo_ritmo = (
+            "Fricción táctica intensa (Tarjetas)"
+            if (hay_asedio_verif or not ("-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower()))
+            else "Partido limpio (Pocas tarjetas)"
         )
+        c3 = (
+            f"3. {titulo_ritmo}: El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
+            f"{eq_control} registra {pos_control:.1f}% de posesión [15P general] (Pressing {press_ctrl:.1f}) y "
+            f"{riv_control} corta con {fal_l:.1f} vs {fal_v:.1f} faltas [15P general]."
+        )
+
+    txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
+    txt_cron_obs = " (cronología por minuto no concluyente)" if k_eval_ver < k_min_cron else ""
+    n_top_filas = len(top5_podio) if top5_podio else 5
+    if mkt_2t is None:
+        c4 = (
+            f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
+            f"Estimación de volumen de 2T: {xg_2t_comb:.2f} xG proyectado y {txt_p26}"
+            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT)."
+        )
+    else:
+        if k_eval_ver < k_min_cron:
+            c4 = (
+                f"4. Dinámica de la segunda mitad: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
+                f"proyectado en 2T y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
+            )
+        else:
+            c4 = (
+                f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
+                f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
+                f"({flujo_76_90} goles combinados), es una selección con respaldo estadístico."
+            )
     return "\n".join([encabezado, sub, c1, c2, c3, c4])
 
 

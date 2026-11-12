@@ -724,7 +724,7 @@ def redactar_analisis_3_parrafos(
     )
     parrafo_1 = (
         f"📊 1. Lectura del Modelo General (15 Partidos Oficiales): "
-        f"Según la Red Neuronal Recursiva entrenada con los últimos 15 partidos oficiales de cada club, "
+        f"Según el modelo de factores con pesos fijos, sin entrenamiento, sobre los últimos 15 partidos oficiales de cada club, "
         f"{dominador}. En producción ofensiva se esperan en promedio {lam_tot:.2f} goles totales "
         f"(λ {eq_l}: {lam_l:.2f} vs λ {eq_v}: {lam_v:.2f}), marcando {tendencia_goles_gen}, "
         f"un {p_btts * 100:.1f}% de probabilidad en Ambos Anotan y teniendo al {info['marcador_modal']} "
@@ -914,9 +914,13 @@ def generar_bloque_narrativo_xai_desde_analisis(
         P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
 
         probs_1x2 = _extraer_probabilidades_red_general(analisis)
-        p_loc_adj, p_emp_adj, p_vis_adj, alertas = aplicar_reglas_matchup_55(
+        # Sincronización estricta C1: 1X2 en Telegram idéntico a motor.matriz_ft
+        _, _, _, alertas = aplicar_reglas_matchup_55(
             P_L, P_V, probs_1x2["p_local"], probs_1x2["p_empate"], probs_1x2["p_visitante"], eq_l, eq_v
         )
+        p_loc_adj = probs_1x2["p_local"]
+        p_emp_adj = probs_1x2["p_empate"]
+        p_vis_adj = probs_1x2["p_visitante"]
 
         doc_local = doc_local or getattr(analisis, "doc_local", None) or getattr(motor, "doc_local", None)
         doc_visitante = doc_visitante or getattr(analisis, "doc_visitante", None) or getattr(motor, "doc_visitante", None)

@@ -96,7 +96,7 @@ NEUTRALES: Dict[str, float] = {
     "pases_largos_pct": 45.0, "pases_tercio_final_pct": 55.0, "cruces_pct": 22.0,
     "xa_equipo": 0.88, "saques_banda": 20.0, "faltas": 11.5, "entradas_pct": 14.0,
     "duelos_ganados": 48.0, "duelos_suelo_pct": 50.0, "duelos_aereos_pct": 50.0,
-    "despejes": 18.0, "intercepciones": 8.0, "bloqueos": 2.5, "recuperaciones": 48.0,
+    "despejes": 18.0, "intercepciones": 8.0, "bloqueos": 3.5, "recuperaciones": 48.0,
     "errores_remate": 0.2, "errores_gol": 0.15, "paradas": 2.8, "goles_evitados": 0.0,
     "xgot_enfrentado": 1.25, "saques_puerta": 5.0,
 }
@@ -275,8 +275,17 @@ def _valor_metrica(partido: Dict[str, Any], clave: str) -> Optional[float]:
 
     Es la lectura directa de `periodos[corte]["filas"]`; no se reconstruye desde
     medias ni se interpola desde los goles.
+    Si el partido es de Flashscore y la clave carece de cobertura (serie constante en 0),
+    devuelve None (sin_dato) en lugar de inyectar un 0.0 engañoso.
     """
     fuente = _partido_fuente(partido)
+    fuente_partido = str(partido.get("fuente") or partido.get("proveedor") or fuente.get("fuente") or "").strip().lower()
+    es_flashscore = "flashscore" in fuente_partido or bool(partido.get("id_flashscore") and not partido.get("id_fotmob"))
+    METRICAS_NO_CUBIERTAS_FLASHSCORE = {
+        "grandes_ocasiones_falladas", "xg_balon_parado",
+        "duelos_suelo_pct", "duelos_aereos_pct", "bloqueos", "recuperaciones"
+    }
+
     periodos = fuente.get("periodos") or {}
     for corte in ("FT", "1T", "2T"):
         bloque = periodos.get(corte) or {}
@@ -284,6 +293,8 @@ def _valor_metrica(partido: Dict[str, Any], clave: str) -> Optional[float]:
             if isinstance(fila, dict) and fila.get("clave") == clave:
                 valor = fila.get("equipo")
                 if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+                    if es_flashscore and clave in METRICAS_NO_CUBIERTAS_FLASHSCORE and valor == 0:
+                        return None
                     return float(valor)
                 return None
     return None
@@ -293,11 +304,20 @@ def _valor_metrica_periodo(partido: Dict[str, Any], clave: str, corte: str,
                            bando: str = "equipo") -> Optional[float]:
     """Valor real de una métrica en un periodo concreto ('1T'/'2T'/'FT') y bando ('equipo'/'rival')."""
     fuente = _partido_fuente(partido)
+    fuente_partido = str(partido.get("fuente") or partido.get("proveedor") or fuente.get("fuente") or "").strip().lower()
+    es_flashscore = "flashscore" in fuente_partido or bool(partido.get("id_flashscore") and not partido.get("id_fotmob"))
+    METRICAS_NO_CUBIERTAS_FLASHSCORE = {
+        "grandes_ocasiones_falladas", "xg_balon_parado",
+        "duelos_suelo_pct", "duelos_aereos_pct", "bloqueos", "recuperaciones"
+    }
+
     bloque = (fuente.get("periodos") or {}).get(corte) or {}
     for fila in bloque.get("filas") or []:
         if isinstance(fila, dict) and fila.get("clave") == clave:
             valor = fila.get(bando)
             if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+                if es_flashscore and clave in METRICAS_NO_CUBIERTAS_FLASHSCORE and valor == 0:
+                    return None
                 return float(valor)
             return None
     return None
@@ -1152,35 +1172,78 @@ def componentes_lambda_efectivo(
         "errores_remate_rival": round(errores_remate_rival, 4),
     }
 
-def z_posesion_progresiva_suma_cero(m_a: Dict[str, float], m_b: Dict[str, float]) -> float:
+def z_posesion_progresiva_suma_cero(
+    m_a: Dict[str, Any],
+    m_b: Dict[str, Any],
+) -> Tuple[float, float]:
     """
     Normalización ADVERSARIAL DE SUMA CERO (un partido = un solo balón = 100% posesión):
       posesion_esperada_A = pos_A / (pos_A + pos_B) * 100
     y reparto relativo frente a frente de pases_total, pases_tercio_final_pct y
-    toques_area_rival. El resultado es ANTISIMÉTRICO: z(A, B) = -z(B, A), por lo que
-    jamás pueden recibir ambos equipos bono positivo de Posesión Progresiva.
+    toques_area_rival. El resultado es ANTISIMÉTRICO: z(A, B) = -z(B, A).
+    Omite insumos no disponibles (None) con contribución 0.0 respecto al centro
+    y devuelve la tupla (z_pos, fraccion_disponible) para escalar F1.
     """
-    def par(k: str, neutro: float) -> Tuple[float, float]:
-        a = max(0.0, float(m_a.get(k, neutro) or neutro))
-        b = max(0.0, float(m_b.get(k, neutro) or neutro))
-        return a, b
-
     def cuota(a: float, b: float) -> float:
         return a / (a + b) if (a + b) > 1e-9 else 0.5
 
-    pos_a, pos_b = par("posesion_pct", 50.0)
-    pos_esp_a = cuota(pos_a, pos_b) * 100.0
-    toq_a, toq_b = par("toques_area_rival", 22.0)
-    ter_a, ter_b = par("pases_tercio_final_pct", 68.0)
-    pas_a, pas_b = par("pases_total", 420.0)
-    rec_a, rec_b = par("recuperaciones", 45.0)
-    return (
-        (pos_esp_a - 50.0) / 15.0 * 0.40
-        + (cuota(toq_a, toq_b) - 0.5) / 0.10 * 0.35
-        + (cuota(ter_a, ter_b) - 0.5) / 0.08 * 0.25
-        + (cuota(pas_a, pas_b) - 0.5) / 0.12 * 0.10
-        - (rec_b - rec_a) / 15.0 * 0.15
-    )
+    terminos: List[float] = []
+    n_disp = 0
+    n_tot = 5
+
+    # 1. posesion_pct (centro 50.0)
+    v_a = m_a.get("posesion_pct")
+    v_b = m_b.get("posesion_pct")
+    if v_a is not None and v_b is not None:
+        pos_a, pos_b = max(0.0, float(v_a)), max(0.0, float(v_b))
+        pos_esp_a = cuota(pos_a, pos_b) * 100.0
+        terminos.append((pos_esp_a - 50.0) / 15.0 * 0.40)
+        n_disp += 1
+    else:
+        terminos.append(0.0)
+
+    # 2. toques_area_rival (centro cuota 0.5)
+    v_a = m_a.get("toques_area_rival")
+    v_b = m_b.get("toques_area_rival")
+    if v_a is not None and v_b is not None:
+        toq_a, toq_b = max(0.0, float(v_a)), max(0.0, float(v_b))
+        terminos.append((cuota(toq_a, toq_b) - 0.5) / 0.10 * 0.35)
+        n_disp += 1
+    else:
+        terminos.append(0.0)
+
+    # 3. pases_tercio_final_pct (centro cuota 0.5)
+    v_a = m_a.get("pases_tercio_final_pct")
+    v_b = m_b.get("pases_tercio_final_pct")
+    if v_a is not None and v_b is not None:
+        ter_a, ter_b = max(0.0, float(v_a)), max(0.0, float(v_b))
+        terminos.append((cuota(ter_a, ter_b) - 0.5) / 0.08 * 0.25)
+        n_disp += 1
+    else:
+        terminos.append(0.0)
+
+    # 4. pases_total (centro cuota 0.5)
+    v_a = m_a.get("pases_total")
+    v_b = m_b.get("pases_total")
+    if v_a is not None and v_b is not None:
+        pas_a, pas_b = max(0.0, float(v_a)), max(0.0, float(v_b))
+        terminos.append((cuota(pas_a, pas_b) - 0.5) / 0.12 * 0.10)
+        n_disp += 1
+    else:
+        terminos.append(0.0)
+
+    # 5. recuperaciones (centro diferencia 0)
+    v_a = m_a.get("recuperaciones")
+    v_b = m_b.get("recuperaciones")
+    if v_a is not None and v_b is not None:
+        rec_a, rec_b = max(0.0, float(v_a)), max(0.0, float(v_b))
+        terminos.append(-(rec_b - rec_a) / 15.0 * 0.15)
+        n_disp += 1
+    else:
+        terminos.append(0.0)
+
+    frac_disp = float(n_disp / n_tot) if n_tot > 0 else 0.0
+    return float(sum(terminos)), frac_disp
 
 
 def calcular_5_factores_latentes_desde_estados(
@@ -1195,47 +1258,134 @@ def calcular_5_factores_latentes_desde_estados(
       F3: Calidad de Finalización / Letalidad
       F4: Vulnerabilidad de la Portería Rival
       F5: Fragilidad y Regalos Defensivos del Rival
+    Omite términos no observados (None) con contribución 0.0 respecto al centro
+    y escala el peso de cada factor por la fracción de insumos disponibles (n_disp / n_tot).
     Devuelve los factores como impacto porcentual (+/- X.X%).
     """
-    def v(est: Dict[str, Dict[str, Any]], k: str) -> float:
-        return float(est.get(k, {}).get("h_reciente", 0.0) or 0.0)
+    def v_opt(est: Dict[str, Dict[str, Any]], k: str) -> Optional[float]:
+        cell = est.get(k, {})
+        if cell.get("sin_dato"):
+            return None
+        val = cell.get("h_reciente")
+        return float(val) if val is not None else None
 
     # F1 — Posesión Progresiva (ADVERSARIAL DE SUMA CERO: un solo balón)
-    z_pos = z_posesion_progresiva_suma_cero(
-        {k: v(estados_propio, k) for k in ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")},
-        {k: v(estados_rival, k) for k in ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")},
+    claves_f1 = ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")
+    z_pos, frac_f1 = z_posesion_progresiva_suma_cero(
+        {k: v_opt(estados_propio, k) for k in claves_f1},
+        {k: v_opt(estados_rival, k) for k in claves_f1},
     )
-    f1 = math.tanh(1.5 * z_pos) * 5.0
+    f1 = math.tanh(1.5 * z_pos) * 5.0 * frac_f1
 
     # F2 — Creación Ofensiva (volumen acotado a 3.5%)
-    z_creac = (
-        (v(estados_propio, "xg") - 1.25) / 0.40 * 0.45
-        + (v(estados_propio, "remates_totales") - 12.0) / 4.0 * 0.25
-        + (v(estados_propio, "grandes_ocasiones") - 1.5) / 0.8 * 0.30
-        - (v(estados_rival, "bloqueos") - 3.5) / 1.5 * 0.15
-    )
-    f2 = math.tanh(1.5 * z_creac) * 3.5
+    t_f2: List[float] = []
+    disp_f2 = 0
+    xg_p = v_opt(estados_propio, "xg")
+    if xg_p is not None:
+        t_f2.append((xg_p - 1.25) / 0.40 * 0.45)
+        disp_f2 += 1
+    else:
+        t_f2.append(0.0)
+
+    rem_tot_p = v_opt(estados_propio, "remates_totales")
+    if rem_tot_p is not None:
+        t_f2.append((rem_tot_p - 12.0) / 4.0 * 0.25)
+        disp_f2 += 1
+    else:
+        t_f2.append(0.0)
+
+    g_oc_p = v_opt(estados_propio, "grandes_ocasiones")
+    if g_oc_p is not None:
+        t_f2.append((g_oc_p - 1.5) / 0.8 * 0.30)
+        disp_f2 += 1
+    else:
+        t_f2.append(0.0)
+
+    bloq_r = v_opt(estados_rival, "bloqueos")
+    if bloq_r is not None:
+        t_f2.append(-(bloq_r - 3.5) / 1.5 * 0.15)
+        disp_f2 += 1
+    else:
+        t_f2.append(0.0)
+
+    frac_f2 = disp_f2 / 4.0 if disp_f2 > 0 else 0.0
+    f2 = math.tanh(1.5 * sum(t_f2)) * 3.5 * frac_f2
 
     # F3 — Finalización / Letalidad (xGOT / xG y efectividad a puerta aumentado a 6.5%)
-    eff_xg = (v(estados_propio, "xgot") - v(estados_propio, "xg")) / 0.35
-    rem_tot = max(1.0, v(estados_propio, "remates_totales"))
-    eff_puerta = ((v(estados_propio, "remates_puerta") / rem_tot) - 0.33) / 0.10
-    z_fin = 0.55 * eff_xg + 0.45 * eff_puerta
-    f3 = math.tanh(1.5 * z_fin) * 6.5
+    t_f3: List[float] = []
+    disp_f3 = 0
+    xgot_p = v_opt(estados_propio, "xgot")
+    if xgot_p is not None and xg_p is not None:
+        eff_xg = (xgot_p - xg_p) / 0.35
+        t_f3.append(0.55 * eff_xg)
+        disp_f3 += 1
+    else:
+        t_f3.append(0.0)
+
+    rem_pue_p = v_opt(estados_propio, "remates_puerta")
+    if rem_pue_p is not None and rem_tot_p is not None and rem_tot_p > 0:
+        eff_puerta = ((rem_pue_p / max(1.0, rem_tot_p)) - 0.33) / 0.10
+        t_f3.append(0.45 * eff_puerta)
+        disp_f3 += 1
+    else:
+        t_f3.append(0.0)
+
+    frac_f3 = disp_f3 / 2.0 if disp_f3 > 0 else 0.0
+    f3 = math.tanh(1.5 * sum(t_f3)) * 6.5 * frac_f3
 
     # F4 — Portería Rival (goles evitados y paradas aumentado a 6.0%)
-    g_evit = v(estados_rival, "goles_evitados")
-    paradas_riv = (v(estados_rival, "paradas") - 2.8) / 1.2
-    z_port = -g_evit * 1.8 - 0.25 * paradas_riv + (v(estados_rival, "xgot_enfrentado") - 1.25) / 0.40 * 0.30
-    f4 = math.tanh(1.5 * z_port) * 6.0
+    t_f4: List[float] = []
+    disp_f4 = 0
+    g_evit = v_opt(estados_rival, "goles_evitados")
+    if g_evit is not None:
+        t_f4.append(-g_evit * 1.8)
+        disp_f4 += 1
+    else:
+        t_f4.append(0.0)
+
+    paradas_riv = v_opt(estados_rival, "paradas")
+    if paradas_riv is not None:
+        t_f4.append(-0.25 * ((paradas_riv - 2.8) / 1.2))
+        disp_f4 += 1
+    else:
+        t_f4.append(0.0)
+
+    xgot_enf_r = v_opt(estados_rival, "xgot_enfrentado")
+    if xgot_enf_r is not None:
+        t_f4.append((xgot_enf_r - 1.25) / 0.40 * 0.30)
+        disp_f4 += 1
+    else:
+        t_f4.append(0.0)
+
+    frac_f4 = disp_f4 / 3.0 if disp_f4 > 0 else 0.0
+    f4 = math.tanh(1.5 * sum(t_f4)) * 6.0 * frac_f4
 
     # F5 — Fragilidad Rival
-    z_frag = (
-        v(estados_rival, "errores_gol") * 1.8
-        + v(estados_rival, "errores_remate") * 0.8
-        + v(estados_rival, "tarjetas_rojas") * 1.2
-    )
-    f5 = math.tanh(1.5 * z_frag) * 3.5
+    t_f5: List[float] = []
+    disp_f5 = 0
+    err_gol_r = v_opt(estados_rival, "errores_gol")
+    if err_gol_r is not None:
+        t_f5.append(err_gol_r * 1.8)
+        disp_f5 += 1
+    else:
+        t_f5.append(0.0)
+
+    err_rem_r = v_opt(estados_rival, "errores_remate")
+    if err_rem_r is not None:
+        t_f5.append(err_rem_r * 0.8)
+        disp_f5 += 1
+    else:
+        t_f5.append(0.0)
+
+    tarj_roj_r = v_opt(estados_rival, "tarjetas_rojas")
+    if tarj_roj_r is not None:
+        t_f5.append(tarj_roj_r * 1.2)
+        disp_f5 += 1
+    else:
+        t_f5.append(0.0)
+
+    frac_f5 = disp_f5 / 3.0 if disp_f5 > 0 else 0.0
+    f5 = math.tanh(1.5 * sum(t_f5)) * 3.5 * frac_f5
 
     return {
         "F_posesion_progresiva": round(f1, 1),
@@ -1331,11 +1481,14 @@ def calcular_doble_adn_con_shrinkage(
             pesos = np.linspace(0.8, 1.2, len(vals)) * np.array(creds)
             pesos /= np.sum(pesos)
             media_cond = float(np.sum(np.array(vals) * pesos))
+            h_val = float(estados_lstm_15.get(clave, {}).get("h_reciente", NEUTRALES.get(clave, 0.0)) or NEUTRALES.get(clave, 0.0))
+            mu[clave] = round(w_cond * media_cond + (1.0 - w_cond) * h_val, 2)
         else:
-            media_cond = float(NEUTRALES.get(clave, 0.0))
-
-        h_val = float(estados_lstm_15.get(clave, {}).get("h_reciente", NEUTRALES.get(clave, 0.0)) or NEUTRALES.get(clave, 0.0))
-        mu[clave] = round(w_cond * media_cond + (1.0 - w_cond) * h_val, 2)
+            if partidos_cronologicos and all(_valor_metrica(p, clave) is None for p in partidos_cronologicos):
+                mu[clave] = None
+            else:
+                h_val = float(estados_lstm_15.get(clave, {}).get("h_reciente", NEUTRALES.get(clave, 0.0)) or NEUTRALES.get(clave, 0.0))
+                mu[clave] = round(h_val, 2)
 
     # Goles a favor y en contra
     gfs = []
@@ -1399,43 +1552,83 @@ def calcular_los_6_cruces_tacticos(
     # ── CRUCE #1: Asfixia vs. Espacio en Mediocampo (F1 - Posesión Progresiva) ──
     # Normalización ADVERSARIAL DE SUMA CERO: un solo balón. PosProg_V = -PosProg_L.
     claves_f1 = ("posesion_pct", "toques_area_rival", "pases_tercio_final_pct", "pases_total", "recuperaciones")
-    z_pos_L = z_posesion_progresiva_suma_cero(
-        {k: mu_L_casa.get(k, NEUTRALES.get(k, 0.0)) for k in claves_f1},
-        {k: mu_V_fuera.get(k, NEUTRALES.get(k, 0.0)) for k in claves_f1},
+    z_pos_L, frac_f1 = z_posesion_progresiva_suma_cero(
+        {k: mu_L_casa.get(k) for k in claves_f1},
+        {k: mu_V_fuera.get(k) for k in claves_f1},
     )
-    f1_L = round(math.tanh(1.5 * z_pos_L) * 5.0, 1)
+    f1_L = round(math.tanh(1.5 * z_pos_L) * 5.0 * frac_f1, 1)
     f1_V = round(-f1_L, 1)
 
-    if mu_L_casa.get("posesion_pct", 50.0) >= 55.0 and mu_V_fuera.get("intercepciones", 8.0) >= 11.0 and mu_V_fuera.get("recuperaciones", 48.0) >= 48.0:
+    if (
+        mu_L_casa.get("posesion_pct") is not None and float(mu_L_casa.get("posesion_pct", 50.0)) >= 55.0
+        and mu_V_fuera.get("intercepciones") is not None and float(mu_V_fuera.get("intercepciones", 8.0)) >= 11.0
+        and mu_V_fuera.get("recuperaciones") is not None and float(mu_V_fuera.get("recuperaciones", 48.0)) >= 48.0
+    ):
         alertas.append("Atasco en Mediocampo: Alta posesión del Local en casa pero el Rival acumula intercepciones y recuperaciones de visita.")
 
     # ── CRUCE #2: Creación vs. Muro o Fragilidad del Portero Rival (F2 vs. F4) ──
-    rem_pue_L = max(0.5, mu_L_casa.get("remates_puerta", 4.2))
-    rem_pue_V = max(0.5, mu_V_fuera.get("remates_puerta", 4.2))
+    rem_pue_L = max(0.5, float(mu_L_casa.get("remates_puerta") or 4.2))
+    rem_pue_V = max(0.5, float(mu_V_fuera.get("remates_puerta") or 4.2))
 
-    ajuste_port_L = clip(-mu_V_fuera.get("goles_evitados", 0.0) * (rem_pue_L / 5.0), -0.35, 0.45)
-    ajuste_port_V = clip(-mu_L_casa.get("goles_evitados", 0.0) * (rem_pue_V / 5.0), -0.35, 0.45)
+    g_evit_v_raw = mu_V_fuera.get("goles_evitados")
+    g_evit_l_raw = mu_L_casa.get("goles_evitados")
+    ajuste_port_L = clip(-float(g_evit_v_raw or 0.0) * (rem_pue_L / 5.0), -0.35, 0.45) if g_evit_v_raw is not None else 0.0
+    ajuste_port_V = clip(-float(g_evit_l_raw or 0.0) * (rem_pue_V / 5.0), -0.35, 0.45) if g_evit_l_raw is not None else 0.0
 
-    if mu_V_fuera.get("goles_evitados", 0.0) > 0.15:
+    if g_evit_v_raw is not None and float(g_evit_v_raw) > 0.15:
         alertas.append("Muro del Portero Rival: El arquero visitante salva goles por encima de xGOT (+EV defensivo fuera).")
-    elif mu_V_fuera.get("goles_evitados", 0.0) < -0.15:
+    elif g_evit_v_raw is not None and float(g_evit_v_raw) < -0.15:
         alertas.append("Fragilidad en Portería Rival: El arquero visitante concede goles por debajo del xGOT enfrentado.")
 
-    z_creac_L = (
-        (mu_L_casa.get("xg", 1.35) - 1.25) / 0.40 * 0.45
-        + (mu_L_casa.get("remates_totales", 12.0) - 12.0) / 4.0 * 0.25
-        + (mu_L_casa.get("grandes_ocasiones", 2.2) - 1.5) / 0.8 * 0.30
-        - (mu_V_fuera.get("bloqueos", 2.5) - 3.5) / 1.5 * 0.15
-    )
-    f2_L = round(math.tanh(1.5 * z_creac_L) * 3.5, 1)
+    t_f2_L: List[float] = []
+    disp_f2_L = 0
+    if mu_L_casa.get("xg") is not None:
+        t_f2_L.append((float(mu_L_casa["xg"]) - 1.25) / 0.40 * 0.45)
+        disp_f2_L += 1
+    else:
+        t_f2_L.append(0.0)
+    if mu_L_casa.get("remates_totales") is not None:
+        t_f2_L.append((float(mu_L_casa["remates_totales"]) - 12.0) / 4.0 * 0.25)
+        disp_f2_L += 1
+    else:
+        t_f2_L.append(0.0)
+    if mu_L_casa.get("grandes_ocasiones") is not None:
+        t_f2_L.append((float(mu_L_casa["grandes_ocasiones"]) - 1.5) / 0.8 * 0.30)
+        disp_f2_L += 1
+    else:
+        t_f2_L.append(0.0)
+    if mu_V_fuera.get("bloqueos") is not None:
+        t_f2_L.append(-(float(mu_V_fuera["bloqueos"]) - 3.5) / 1.5 * 0.15)
+        disp_f2_L += 1
+    else:
+        t_f2_L.append(0.0)
+    frac_f2_L = disp_f2_L / 4.0 if disp_f2_L > 0 else 0.0
+    f2_L = round(math.tanh(1.5 * sum(t_f2_L)) * 3.5 * frac_f2_L, 1)
 
-    z_creac_V = (
-        (mu_V_fuera.get("xg", 1.35) - 1.25) / 0.40 * 0.45
-        + (mu_V_fuera.get("remates_totales", 12.0) - 12.0) / 4.0 * 0.25
-        + (mu_V_fuera.get("grandes_ocasiones", 2.2) - 1.5) / 0.8 * 0.30
-        - (mu_L_casa.get("bloqueos", 2.5) - 3.5) / 1.5 * 0.15
-    )
-    f2_V = round(math.tanh(1.5 * z_creac_V) * 3.5, 1)
+    t_f2_V: List[float] = []
+    disp_f2_V = 0
+    if mu_V_fuera.get("xg") is not None:
+        t_f2_V.append((float(mu_V_fuera["xg"]) - 1.25) / 0.40 * 0.45)
+        disp_f2_V += 1
+    else:
+        t_f2_V.append(0.0)
+    if mu_V_fuera.get("remates_totales") is not None:
+        t_f2_V.append((float(mu_V_fuera["remates_totales"]) - 12.0) / 4.0 * 0.25)
+        disp_f2_V += 1
+    else:
+        t_f2_V.append(0.0)
+    if mu_V_fuera.get("grandes_ocasiones") is not None:
+        t_f2_V.append((float(mu_V_fuera["grandes_ocasiones"]) - 1.5) / 0.8 * 0.30)
+        disp_f2_V += 1
+    else:
+        t_f2_V.append(0.0)
+    if mu_L_casa.get("bloqueos") is not None:
+        t_f2_V.append(-(float(mu_L_casa["bloqueos"]) - 3.5) / 1.5 * 0.15)
+        disp_f2_V += 1
+    else:
+        t_f2_V.append(0.0)
+    frac_f2_V = disp_f2_V / 4.0 if disp_f2_V > 0 else 0.0
+    f2_V = round(math.tanh(1.5 * sum(t_f2_V)) * 3.5 * frac_f2_V, 1)
 
     # Creación: normalización suma cero relativa (no pueden recibir ambos bono positivo)
     if f2_L > 0 and f2_V > 0:
@@ -1443,118 +1636,200 @@ def calcular_los_6_cruces_tacticos(
         f2_L = round(f2_L - comun_c, 1)
         f2_V = round(f2_V - comun_c, 1)
 
-    xgot_enf_V = float(mu_V_fuera.get("xgot_enfrentado", 1.25))
-    g_evit_V = float(mu_V_fuera.get("goles_evitados", 0.0))
-    paradas_V = float(mu_V_fuera.get("paradas", 2.8))
-
-    if xgot_enf_V >= 1.50:
-        # Asedio constante sobre la portería rival: PortRiv y FragRiv deben ser positivos
-        z_port_L = max(0.20, (xgot_enf_V - 1.25) / 0.40 * 0.70 - max(0.0, g_evit_V) * 0.25)
+    t_f4_L: List[float] = []
+    disp_f4_L = 0
+    if mu_V_fuera.get("goles_evitados") is not None:
+        t_f4_L.append(-float(mu_V_fuera["goles_evitados"]) * 1.8)
+        disp_f4_L += 1
     else:
-        z_port_L = -g_evit_V * 1.8 - 0.20 * ((paradas_V - 2.8) / 1.2) + (xgot_enf_V - 1.25) / 0.40 * 0.40
-
-    f4_L = round(math.tanh(1.5 * z_port_L) * 6.0, 1)
-    if xgot_enf_V >= 1.50:
+        t_f4_L.append(0.0)
+    if mu_V_fuera.get("paradas") is not None:
+        t_f4_L.append(-0.20 * ((float(mu_V_fuera["paradas"]) - 2.8) / 1.2))
+        disp_f4_L += 1
+    else:
+        t_f4_L.append(0.0)
+    if mu_V_fuera.get("xgot_enfrentado") is not None:
+        xgot_enf_V = float(mu_V_fuera["xgot_enfrentado"])
+        if xgot_enf_V >= 1.50:
+            t_f4_L.append(max(0.20, (xgot_enf_V - 1.25) / 0.40 * 0.70 - max(0.0, float(mu_V_fuera.get("goles_evitados") or 0.0)) * 0.25))
+        else:
+            t_f4_L.append((xgot_enf_V - 1.25) / 0.40 * 0.40)
+        disp_f4_L += 1
+    else:
+        t_f4_L.append(0.0)
+    frac_f4_L = disp_f4_L / 3.0 if disp_f4_L > 0 else 0.0
+    f4_L = round(math.tanh(1.5 * sum(t_f4_L)) * 6.0 * frac_f4_L, 1)
+    if mu_V_fuera.get("xgot_enfrentado") is not None and float(mu_V_fuera["xgot_enfrentado"]) >= 1.50 and f4_L > 0:
         f4_L = max(1.0, f4_L)
 
-    xgot_enf_L = float(mu_L_casa.get("xgot_enfrentado", 1.25))
-    g_evit_L = float(mu_L_casa.get("goles_evitados", 0.0))
-    paradas_L = float(mu_L_casa.get("paradas", 2.8))
-
-    if xgot_enf_L >= 1.50:
-        z_port_V = max(0.20, (xgot_enf_L - 1.25) / 0.40 * 0.70 - max(0.0, g_evit_L) * 0.25)
+    t_f4_V: List[float] = []
+    disp_f4_V = 0
+    if mu_L_casa.get("goles_evitados") is not None:
+        t_f4_V.append(-float(mu_L_casa["goles_evitados"]) * 1.8)
+        disp_f4_V += 1
     else:
-        z_port_V = -g_evit_L * 1.8 - 0.20 * ((paradas_L - 2.8) / 1.2) + (xgot_enf_L - 1.25) / 0.40 * 0.40
-
-    f4_V = round(math.tanh(1.5 * z_port_V) * 6.0, 1)
-    if xgot_enf_L >= 1.50:
+        t_f4_V.append(0.0)
+    if mu_L_casa.get("paradas") is not None:
+        t_f4_V.append(-0.20 * ((float(mu_L_casa["paradas"]) - 2.8) / 1.2))
+        disp_f4_V += 1
+    else:
+        t_f4_V.append(0.0)
+    if mu_L_casa.get("xgot_enfrentado") is not None:
+        xgot_enf_L = float(mu_L_casa["xgot_enfrentado"])
+        if xgot_enf_L >= 1.50:
+            t_f4_V.append(max(0.20, (xgot_enf_L - 1.25) / 0.40 * 0.70 - max(0.0, float(mu_L_casa.get("goles_evitados") or 0.0)) * 0.25))
+        else:
+            t_f4_V.append((xgot_enf_L - 1.25) / 0.40 * 0.40)
+        disp_f4_V += 1
+    else:
+        t_f4_V.append(0.0)
+    frac_f4_V = disp_f4_V / 3.0 if disp_f4_V > 0 else 0.0
+    f4_V = round(math.tanh(1.5 * sum(t_f4_V)) * 6.0 * frac_f4_V, 1)
+    if mu_L_casa.get("xgot_enfrentado") is not None and float(mu_L_casa["xgot_enfrentado"]) >= 1.50 and f4_V > 0:
         f4_V = max(1.0, f4_V)
 
     # ── CRUCE #3: Puntería Clínica vs. Maldición del Delantero (F3 - Finalización xGOT 6.5%) ──
-    tiros_por_gol_L = mu_L_casa.get("remates_puerta", 4.2) / max(1.0, mu_L_casa.get("goles_favor", 1.35))
-    tiros_por_gol_V = mu_V_fuera.get("remates_puerta", 4.2) / max(1.0, mu_V_fuera.get("goles_favor", 1.35))
+    t_f3_L: List[float] = []
+    disp_f3_L = 0
+    if mu_L_casa.get("xgot") is not None and mu_L_casa.get("xg") is not None:
+        t_f3_L.append(0.55 * (float(mu_L_casa["xgot"]) - float(mu_L_casa["xg"])) / 0.35)
+        disp_f3_L += 1
+    else:
+        t_f3_L.append(0.0)
+    if mu_L_casa.get("remates_puerta") is not None and mu_L_casa.get("remates_totales") is not None and float(mu_L_casa["remates_totales"]) > 0:
+        eff_pue_L = ((float(mu_L_casa["remates_puerta"]) / max(1.0, float(mu_L_casa["remates_totales"]))) - 0.33) / 0.10
+        t_f3_L.append(0.45 * eff_pue_L)
+        disp_f3_L += 1
+    else:
+        t_f3_L.append(0.0)
+    frac_f3_L = disp_f3_L / 2.0 if disp_f3_L > 0 else 0.0
+    f3_L = round(math.tanh(1.5 * sum(t_f3_L)) * 6.5 * frac_f3_L, 1)
 
-    eff_xg_L = (mu_L_casa.get("xgot", 1.35) - mu_L_casa.get("xg", 1.35)) / 0.35
-    rem_tot_L = max(1.0, mu_L_casa.get("remates_totales", 12.0))
-    eff_pue_L = ((mu_L_casa.get("remates_puerta", 4.2) / rem_tot_L) - 0.33) / 0.10
-    z_fin_L = 0.55 * eff_xg_L + 0.45 * eff_pue_L
-    f3_L = round(math.tanh(1.5 * z_fin_L) * 6.5, 1)
+    t_f3_V: List[float] = []
+    disp_f3_V = 0
+    if mu_V_fuera.get("xgot") is not None and mu_V_fuera.get("xg") is not None:
+        t_f3_V.append(0.55 * (float(mu_V_fuera["xgot"]) - float(mu_V_fuera["xg"])) / 0.35)
+        disp_f3_V += 1
+    else:
+        t_f3_V.append(0.0)
+    if mu_V_fuera.get("remates_puerta") is not None and mu_V_fuera.get("remates_totales") is not None and float(mu_V_fuera["remates_totales"]) > 0:
+        eff_pue_V = ((float(mu_V_fuera["remates_puerta"]) / max(1.0, float(mu_V_fuera["remates_totales"]))) - 0.33) / 0.10
+        t_f3_V.append(0.45 * eff_pue_V)
+        disp_f3_V += 1
+    else:
+        t_f3_V.append(0.0)
+    frac_f3_V = disp_f3_V / 2.0 if disp_f3_V > 0 else 0.0
+    f3_V = round(math.tanh(1.5 * sum(t_f3_V)) * 6.5 * frac_f3_V, 1)
 
-    eff_xg_V = (mu_V_fuera.get("xgot", 1.35) - mu_V_fuera.get("xg", 1.35)) / 0.35
-    rem_tot_V = max(1.0, mu_V_fuera.get("remates_totales", 12.0))
-    eff_pue_V = ((mu_V_fuera.get("remates_puerta", 4.2) / rem_tot_V) - 0.33) / 0.10
-    z_fin_V = 0.55 * eff_xg_V + 0.45 * eff_pue_V
-    f3_V = round(math.tanh(1.5 * z_fin_V) * 6.5, 1)
+    if mu_L_casa.get("remates_puerta") is not None and mu_L_casa.get("goles_favor") is not None:
+        tiros_por_gol_L = float(mu_L_casa["remates_puerta"]) / max(1.0, float(mu_L_casa["goles_favor"]))
+        if tiros_por_gol_L <= 3.5 and mu_L_casa.get("xgot") is not None and mu_L_casa.get("xg") is not None and mu_L_casa["xgot"] > mu_L_casa["xg"]:
+            alertas.append("Puntería Clínica del Local: Alta efectividad de remate en casa (<= 3.5 tiros a puerta por gol).")
 
-    if tiros_por_gol_L <= 3.5 and mu_L_casa.get("xgot", 1.35) > mu_L_casa.get("xg", 1.35):
-        alertas.append("Puntería Clínica del Local: Alta efectividad de remate en casa (<= 3.5 tiros a puerta por gol).")
-
-    if tiros_por_gol_V >= 5.0 and mu_V_fuera.get("grandes_ocasiones_falladas", 0.0) >= 2.0:
-        alertas.append("Maldición del Delantero Visitante: Baja efectividad fuera de casa (>= 5.0 tiros por gol y ocasiones falladas).")
+    if mu_V_fuera.get("remates_puerta") is not None and mu_V_fuera.get("goles_favor") is not None:
+        tiros_por_gol_V = float(mu_V_fuera["remates_puerta"]) / max(1.0, float(mu_V_fuera["goles_favor"]))
+        if tiros_por_gol_V >= 5.0 and mu_V_fuera.get("grandes_ocasiones_falladas") is not None and mu_V_fuera["grandes_ocasiones_falladas"] >= 2.0:
+            alertas.append("Maldición del Delantero Visitante: Baja efectividad fuera de casa (>= 5.0 tiros por gol y ocasiones falladas).")
 
     # ── CRUCE #4: Asedio por Bandas, Juego Aéreo y Proyección de Córneres ──
-    centros_L = mu_L_casa.get("centros", mu_L_casa.get("cruces_pct", 20.0))
+    centros_L = float(mu_L_casa.get("centros") or mu_L_casa.get("cruces_pct") or 20.0)
     asedio_bandas = bool(
-        mu_L_casa.get("corners", 5.0) >= 7.5
+        float(mu_L_casa.get("corners") or 5.0) >= 7.5
         and centros_L >= 20.0
-        and (mu_V_fuera.get("despejes", 18.0) >= 22.0 or mu_V_fuera.get("duelos_aereos_pct", 50.0) < 48.0)
+        and (float(mu_V_fuera.get("despejes") or 18.0) >= 22.0 or float(mu_V_fuera.get("duelos_aereos_pct") or 50.0) < 48.0)
     )
     if asedio_bandas:
         alertas.append("Asedio por Bandas: Local genera >= 7.5 córneres y centros masivos; rival se encierra despejando fuera.")
 
     # ── CRUCE #5: Presión, Frustración Táctica y Balón Parado Peligroso (Disciplina) ──
     defensa_kamikaze = bool(
-        mu_V_fuera.get("faltas", 11.5) >= 13.5
-        and mu_V_fuera.get("tarjetas_amarillas", 1.8) >= 2.4
+        float(mu_V_fuera.get("faltas") or 11.5) >= 13.5
+        and float(mu_V_fuera.get("tarjetas_amarillas") or 1.8) >= 2.4
     )
     if defensa_kamikaze:
         alertas.append("Defensa Kamikaze / Tarjeta Temprana: Rival comete faltas reiteradas (>= 13.5) y tarjetas fuera de casa.")
 
     # ── CRUCE #6: Regalo por Errores Defensivos Condicionado (F5) ──
     regalo_err_L = clip(
-        0.45 * mu_V_fuera.get("errores_gol", 0.15)
-        + 0.15 * mu_V_fuera.get("errores_remate", 0.20)
-        + 0.25 * mu_V_fuera.get("tarjetas_rojas", 0.10),
+        0.45 * float(mu_V_fuera.get("errores_gol") or 0.15)
+        + 0.15 * float(mu_V_fuera.get("errores_remate") or 0.20)
+        + 0.25 * float(mu_V_fuera.get("tarjetas_rojas") or 0.10),
         0.0, 0.35
     )
     regalo_err_V = clip(
-        0.45 * mu_L_casa.get("errores_gol", 0.15)
-        + 0.15 * mu_L_casa.get("errores_remate", 0.20)
-        + 0.25 * mu_L_casa.get("tarjetas_rojas", 0.10),
+        0.45 * float(mu_L_casa.get("errores_gol") or 0.15)
+        + 0.15 * float(mu_L_casa.get("errores_remate") or 0.20)
+        + 0.25 * float(mu_L_casa.get("tarjetas_rojas") or 0.10),
         0.0, 0.35
     )
 
     # ── CRUCE #6: Fragilidad Rival Condicionada (F5) ──
     # Para el atacante Local, el rival es el Visitante (V) defendiendo fuera:
     mc_V = (perfil_visita or {}).get("metricas_clave", {})
-    xgotc_visita = float(mu_V_fuera.get("xgot_enfrentado") or mc_V.get("xgot_contra") or 1.25)
+    xgotc_visita = mu_V_fuera.get("xgot_enfrentado") or mc_V.get("xgot_contra")
     defensa_V = float((rV or {}).get("Final_Defense_Strength") or (perfil_visita or {}).get("ratings_0_100", {}).get("Final_Defense_Strength") or 50.0)
 
-    z_frag_L = (
-        (xgotc_visita - 1.25) / 0.35 * 0.70
-        + (50.0 - defensa_V) / 10.0 * 0.30
-        + mu_V_fuera.get("errores_gol", 0.15) * 1.5
-        + mu_V_fuera.get("errores_remate", 0.20) * 0.6
-        + mu_V_fuera.get("tarjetas_rojas", 0.10) * 1.0
-    )
-    f5_L = round(math.tanh(1.5 * z_frag_L) * 6.0, 1)
-    if xgotc_visita >= 1.50 or defensa_V <= 48.0:
+    t_f5_L: List[float] = []
+    disp_f5_L = 0
+    if xgotc_visita is not None:
+        t_f5_L.append((float(xgotc_visita) - 1.25) / 0.35 * 0.70)
+        disp_f5_L += 1
+    else:
+        t_f5_L.append(0.0)
+    t_f5_L.append((50.0 - defensa_V) / 10.0 * 0.30)
+    disp_f5_L += 1
+    if mu_V_fuera.get("errores_gol") is not None:
+        t_f5_L.append(float(mu_V_fuera["errores_gol"]) * 1.5)
+        disp_f5_L += 1
+    else:
+        t_f5_L.append(0.0)
+    if mu_V_fuera.get("errores_remate") is not None:
+        t_f5_L.append(float(mu_V_fuera["errores_remate"]) * 0.6)
+        disp_f5_L += 1
+    else:
+        t_f5_L.append(0.0)
+    if mu_V_fuera.get("tarjetas_rojas") is not None:
+        t_f5_L.append(float(mu_V_fuera["tarjetas_rojas"]) * 1.0)
+        disp_f5_L += 1
+    else:
+        t_f5_L.append(0.0)
+    frac_f5_L = disp_f5_L / 5.0 if disp_f5_L > 0 else 0.0
+    f5_L = round(math.tanh(1.5 * sum(t_f5_L)) * 6.0 * frac_f5_L, 1)
+    if (xgotc_visita is not None and float(xgotc_visita) >= 1.50) or defensa_V <= 48.0:
         f5_L = max(4.0, f5_L)
 
     # Para el atacante Visitante, el rival es el Local (L) defendiendo en casa:
     mc_L = (perfil_local or {}).get("metricas_clave", {})
-    xgotc_local = float(mu_L_casa.get("xgot_enfrentado") or mc_L.get("xgot_contra") or 1.25)
+    xgotc_local = mu_L_casa.get("xgot_enfrentado") or mc_L.get("xgot_contra")
     defensa_L = float((rL or {}).get("Final_Defense_Strength") or (perfil_local or {}).get("ratings_0_100", {}).get("Final_Defense_Strength") or 50.0)
 
-    z_frag_V = (
-        (xgotc_local - 1.25) / 0.35 * 0.70
-        + (50.0 - defensa_L) / 10.0 * 0.30
-        + mu_L_casa.get("errores_gol", 0.15) * 1.5
-        + mu_L_casa.get("errores_remate", 0.20) * 0.6
-        + mu_L_casa.get("tarjetas_rojas", 0.10) * 1.0
-    )
-    f5_V = round(math.tanh(1.5 * z_frag_V) * 6.0, 1)
-    if xgotc_local <= 1.20 or defensa_L >= 56.0:
+    t_f5_V: List[float] = []
+    disp_f5_V = 0
+    if xgotc_local is not None:
+        t_f5_V.append((float(xgotc_local) - 1.25) / 0.35 * 0.70)
+        disp_f5_V += 1
+    else:
+        t_f5_V.append(0.0)
+    t_f5_V.append((50.0 - defensa_L) / 10.0 * 0.30)
+    disp_f5_V += 1
+    if mu_L_casa.get("errores_gol") is not None:
+        t_f5_V.append(float(mu_L_casa["errores_gol"]) * 1.5)
+        disp_f5_V += 1
+    else:
+        t_f5_V.append(0.0)
+    if mu_L_casa.get("errores_remate") is not None:
+        t_f5_V.append(float(mu_L_casa["errores_remate"]) * 0.6)
+        disp_f5_V += 1
+    else:
+        t_f5_V.append(0.0)
+    if mu_L_casa.get("tarjetas_rojas") is not None:
+        t_f5_V.append(float(mu_L_casa["tarjetas_rojas"]) * 1.0)
+        disp_f5_V += 1
+    else:
+        t_f5_V.append(0.0)
+    frac_f5_V = disp_f5_V / 5.0 if disp_f5_V > 0 else 0.0
+    f5_V = round(math.tanh(1.5 * sum(t_f5_V)) * 6.0 * frac_f5_V, 1)
+    if (xgotc_local is not None and float(xgotc_local) <= 1.20) or defensa_L >= 56.0:
         f5_V = min(-1.5, f5_V)
 
     return {
@@ -1727,9 +2002,12 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     # Si un equipo de liga menor (ej. Ferencváros en Hungría 0.65) enfrenta a un club de élite (ej. Milan 1.00):
     # Sus números defensivos domésticos se descuentan severamente para reflejar el salto competitivo.
     if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
-        mu_L_casa["goles_contra"] = round(mu_L_casa.get("goles_contra", 1.1) / ratio_tier_L, 2)
-        mu_L_casa["xgot_enfrentado"] = round(mu_L_casa.get("xgot_enfrentado", 1.25) / ratio_tier_L, 2)
-        mu_L_casa["goles_evitados"] = round(mu_L_casa.get("goles_evitados", 0.0) * ratio_tier_L - 0.35 * (1.0 - ratio_tier_L), 3)
+        if mu_L_casa.get("goles_contra") is not None:
+            mu_L_casa["goles_contra"] = round(mu_L_casa["goles_contra"] / ratio_tier_L, 2)
+        if mu_L_casa.get("xgot_enfrentado") is not None:
+            mu_L_casa["xgot_enfrentado"] = round(mu_L_casa["xgot_enfrentado"] / ratio_tier_L, 2)
+        if mu_L_casa.get("goles_evitados") is not None:
+            mu_L_casa["goles_evitados"] = round(mu_L_casa["goles_evitados"] * ratio_tier_L - 0.35 * (1.0 - ratio_tier_L), 3)
         if "goles_contra" in estados_L:
             estados_L["goles_contra"]["h_reciente"] = float(estados_L["goles_contra"]["h_reciente"]) / ratio_tier_L
         if "xgot_enfrentado" in estados_L:
@@ -1739,9 +2017,12 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_L_casa["goles_contra"]), 1)
 
     if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
-        mu_V_fuera["goles_contra"] = round(mu_V_fuera.get("goles_contra", 1.3) / ratio_tier_V, 2)
-        mu_V_fuera["xgot_enfrentado"] = round(mu_V_fuera.get("xgot_enfrentado", 1.25) / ratio_tier_V, 2)
-        mu_V_fuera["goles_evitados"] = round(mu_V_fuera.get("goles_evitados", 0.0) * ratio_tier_V - 0.35 * (1.0 - ratio_tier_V), 3)
+        if mu_V_fuera.get("goles_contra") is not None:
+            mu_V_fuera["goles_contra"] = round(mu_V_fuera["goles_contra"] / ratio_tier_V, 2)
+        if mu_V_fuera.get("xgot_enfrentado") is not None:
+            mu_V_fuera["xgot_enfrentado"] = round(mu_V_fuera["xgot_enfrentado"] / ratio_tier_V, 2)
+        if mu_V_fuera.get("goles_evitados") is not None:
+            mu_V_fuera["goles_evitados"] = round(mu_V_fuera["goles_evitados"] * ratio_tier_V - 0.35 * (1.0 - ratio_tier_V), 3)
         if "goles_contra" in estados_V:
             estados_V["goles_contra"]["h_reciente"] = float(estados_V["goles_contra"]["h_reciente"]) / ratio_tier_V
         if "xgot_enfrentado" in estados_V:

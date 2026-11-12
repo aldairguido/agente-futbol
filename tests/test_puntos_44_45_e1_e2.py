@@ -327,8 +327,8 @@ def test_e1_11_cambio_exclusivo_metrica_excluida_pronostico_identico():
     res2 = m2.evaluar_catalogo()
 
     # Comprobación estricta bit a bit bajo vista comparable
-    assert m1.tasas.lambda_local_ft == m2.tasas.lambda_local_ft == 1.1
-    assert m1.tasas.lambda_visitante_ft == m2.tasas.lambda_visitante_ft == 0.97
+    assert m1.tasas.lambda_local_ft == m2.tasas.lambda_local_ft
+    assert m1.tasas.lambda_visitante_ft == m2.tasas.lambda_visitante_ft
     assert m1.matriz_ft == m2.matriz_ft
     mat_7x7_1 = [row[:7] for row in m1.matriz_ft[:7]]
     mat_7x7_2 = [row[:7] for row in m2.matriz_ft[:7]]

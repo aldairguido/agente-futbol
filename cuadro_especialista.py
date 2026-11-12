@@ -1182,9 +1182,11 @@ def _generar_lecturas_doble_adn(
     aereo_L = float(mu_l.get("duelos_aereos_pct", ml.get("duelos_aereos_pct", 51.0)))
     aereo_V = float(mu_v.get("duelos_aereos_pct", mv.get("duelos_aereos_pct", 49.0)))
 
-    # 1. Control y Asedio (Casa vs Visita)
+    # 1. Control y Asedio (Casa vs Visita) con etiquetado explícito de muestra
+    n_casa_l = perfil_local.get("n_partidos_cond", 8)
+    n_fuera_v = perfil_vis.get("n_partidos_cond", 6)
     v1 = (
-        f"Control y Asedio ({cond_l} vs {cond_v}): {eq_L} registra {pos_L:.1f}% pos., "
+        f"Control y Asedio ([{cond_l} N={n_casa_l}] vs [{cond_v} N={n_fuera_v}]): {eq_L} registra {pos_L:.1f}% pos., "
         f"{toq_L:.1f} toques en área y {cor_L:.1f} córn. frente a {eq_V} con {pos_V:.1f}% pos., "
         f"{toq_V:.1f} toques, {cor_V:.1f} córn. y {desp_V:.1f} despejes."
     )
@@ -1194,11 +1196,23 @@ def _generar_lecturas_doble_adn(
         f"portero {gev_L:+.2f} GEv) vs {eq_V} con {gf_V:.2f} G ({xg_tab_V:.2f} xG / {xgot_tab_V:.2f} xGOT, "
         f"portero {gev_V:+.2f} GEv y {gc_V:.2f} Gc)."
     )
-    # 3. Disciplina y Balón Parado
-    v3 = (
-        f"Disciplina y Juego Aéreo: Duelos aéreos {aereo_L:.1f}% ({eq_L}) vs {aereo_V:.1f}% ({eq_V}) · "
-        f"Fricción táctica de {fal_L:.1f} vs {fal_V:.1f} faltas y {desp_L:.1f} vs {desp_V:.1f} despejes."
+    # 3. Disciplina y Balón Parado (Puntos 1.2 y 1.7: sin 50.0% sintético y con base [15P general])
+    tiene_duelos_obs = bool(
+        mu_l.get("duelos_aereos_pct") is not None
+        and mu_v.get("duelos_aereos_pct") is not None
+        and float(mu_l.get("duelos_aereos_pct") or 0.0) > 0.001
+        and float(mu_v.get("duelos_aereos_pct") or 0.0) > 0.001
     )
+    if tiene_duelos_obs:
+        v3 = (
+            f"Disciplina y Juego Aéreo: Duelos aéreos {aereo_L:.1f}% ({eq_L}) vs {aereo_V:.1f}% ({eq_V}) · "
+            f"Fricción táctica de {fal_L:.1f} vs {fal_V:.1f} faltas [15P general] y {desp_L:.1f} vs {desp_V:.1f} despejes."
+        )
+    else:
+        v3 = (
+            f"Disciplina y Fricción Táctica: Fricción táctica de {fal_L:.1f} ({eq_L}) vs {fal_V:.1f} ({eq_V}) faltas [15P general] "
+            f"y {desp_L:.1f} vs {desp_V:.1f} despejes (sin cobertura de duelos aéreos en esta competición)."
+        )
     return [v1, v2, v3]
 
 
@@ -1705,8 +1719,8 @@ def generar_cuadro_visual_partido(
     )
 
     # Ponderación por Coeficiente de Liga (tier_coef) cuando no hubo salto de división interno
-    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L)
-    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V)
+    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L, competicion_str=competicion)
+    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V, competicion_str=competicion)
     if tier_L != tier_V and tier_L_int == tier_V_int:
         tier_menor = min(tier_L, tier_V)
         tier_mayor = max(tier_L, tier_V)
@@ -1727,14 +1741,21 @@ def generar_cuadro_visual_partido(
     atq_V = 0.50 * gf_V + 0.50 * xg_V
     def_L = 0.50 * gc_L + 0.50 * xgotc_L
 
-    lam_plano_L = round((atq_L + def_V) / 2.0, 2)
-    lam_plano_V = round((atq_V + def_L) / 2.0, 2)
+    if res_red_precalculado and res_red_precalculado.get("lambda_base_local"):
+        lam_plano_L = float(res_red_precalculado["lambda_base_local"])
+        lam_plano_V = float(res_red_precalculado["lambda_base_visita"])
+    else:
+        lam_plano_L = round((atq_L + def_V) / 2.0, 2)
+        lam_plano_V = round((atq_V + def_L) / 2.0, 2)
 
     if res_red_precalculado and res_red_precalculado.get("aplicado"):
         res_red = res_red_precalculado
-        lam_local = float(res_red["lambda_local_recursivo"])
-        lam_vis = float(res_red["lambda_visita_recursivo"])
-        matriz_prob = matriz_red_para_dibujar(res_red)
+        lam_local = float(res_red.get("lambda_local_final", res_red["lambda_local_recursivo"]))
+        lam_vis = float(res_red.get("lambda_visita_final", res_red["lambda_visita_recursivo"]))
+        if matriz_prob and len(matriz_prob) > 0 and sum(sum(r) for r in matriz_prob) > 0.5:
+            pass
+        elif "matriz_prob" in res_red:
+            matriz_prob = matriz_red_para_dibujar(res_red)
     else:
         res_red = red_neuronal.ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             perfil_local,
@@ -1769,11 +1790,32 @@ def generar_cuadro_visual_partido(
 
     n_partidos_L = max(15, perfil_local.get("n_partidos", 15))
     n_partidos_V = max(15, perfil_vis.get("n_partidos", 15))
+    # Punto 1.3: Conteo honesto de partidos con detalle estadístico completo (excluyendo partidos sin Opta como Nautico 1-0 Botafogo SP)
+    def _contar_detalle_partidos(pts_lista):
+        cnt = 0
+        for p_item in pts_lista or []:
+            if isinstance(p_item, dict):
+                rt_val = p_item.get("remates_totales") or p_item.get("remates")
+                if rt_val is None:
+                    filas_ft_c = {f.get("clave"): f for f in ((p_item.get("periodos") or {}).get("FT") or {}).get("filas") or []}
+                    rt_val = (filas_ft_c.get("remates_totales") or {}).get("equipo")
+                if rt_val is not None and float(rt_val) > 0.001:
+                    cnt += 1
+                elif p_item.get("xg") and float(p_item.get("xg")) > 0 and float(p_item.get("xg")) != 1.0:
+                    cnt += 1
+        return cnt or len(pts_lista or [])
+    n_det_L = _contar_detalle_partidos(partidos_l_red)
+    n_det_V = _contar_detalle_partidos(partidos_v_red)
+    if n_det_L < 15 or n_det_V < 15:
+        txt_muestra_cabecera = f"Muestra: {n_det_L} vs {n_det_V} con detalle"
+    else:
+        txt_muestra_cabecera = f"Muestra: {n_partidos_L} vs {n_partidos_V} partidos"
+
     fig.text(
         0.05, 0.938,
         f"Goles Esperados Red Recursiva (λ): {lam_local:.2f} – {lam_vis:.2f}   ·   "
         f"(antes λ plano: {lam_plano_L:.2f} – {lam_plano_V:.2f})   ·   "
-        f"Muestra: {n_partidos_L} vs {n_partidos_V} partidos"
+        f"{txt_muestra_cabecera}"
         f"{f'   ·   {fecha_str}' if fecha_str else ''}",
         fontsize=10.2, fontweight="bold", color="#1E293B", family="sans-serif"
     )
@@ -1795,6 +1837,28 @@ def generar_cuadro_visual_partido(
     ]
     cond_l = perfil_local.get("condicion") or "casa"
     cond_v = perfil_vis.get("condicion") or "fuera"
+
+    # Sincronización estricta: consumir Doble ADN condicional (mu_local_casa / mu_visita_fuera)
+    mu_l_c = res_red.get("mu_local_casa") if isinstance(res_red, dict) else None
+    mu_v_c = res_red.get("mu_visita_fuera") if isinstance(res_red, dict) else None
+    if mu_l_c and isinstance(mu_l_c, dict) and mu_l_c.get("xg") is not None:
+        perfil_local['metricas_clave']['xg_favor'] = round(float(mu_l_c['xg']), 2)
+        if mu_l_c.get("xgot") is not None:
+            perfil_local['metricas_clave']['xgot_favor'] = round(float(mu_l_c['xgot']), 2)
+    if mu_v_c and isinstance(mu_v_c, dict) and mu_v_c.get("xg") is not None:
+        perfil_vis['metricas_clave']['xg_favor'] = round(float(mu_v_c['xg']), 2)
+        if mu_v_c.get("xgot") is not None:
+            perfil_vis['metricas_clave']['xgot_favor'] = round(float(mu_v_c['xgot']), 2)
+
+    if isinstance(res_red, dict) and res_red.get("gf_local_base") is not None:
+        gf_L = float(res_red.get("gf_local_base", gf_L))
+        xg_L = float(res_red.get("xg_local_base", xg_L))
+        gc_V = float(res_red.get("gc_visita_base", gc_V))
+        xgotc_V = float(res_red.get("xgotc_visita_base", xgotc_V))
+        gf_V = float(res_red.get("gf_visita_base", gf_V))
+        xg_V = float(res_red.get("xg_visita_base", xg_V))
+        gc_L = float(res_red.get("gc_local_base", gc_L))
+        xgotc_L = float(res_red.get("xgotc_local_base", xgotc_L))
 
     # Reconciliación estricta: la tabla superior y el desglose de mitades deben ser 100% coherentes
     if mitades_local and "1T" in mitades_local and "2T" in mitades_local:
@@ -2135,7 +2199,9 @@ def generar_cuadro_visual_partido(
 
     rect_banner_top5 = FancyBboxPatch((0.0, 0.84), 1.0, 0.16, boxstyle="round,pad=0.01", facecolor="#E3F2FD", edgecolor="#1A6BA8", lw=1.2, transform=ax_top5.transAxes)
     ax_top5.add_patch(rect_banner_top5)
-    ax_top5.text(0.02, 0.93, "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)", fontsize=9.2, fontweight="bold", color="#131D31", transform=ax_top5.transAxes)
+    n_top5_cnt = len(top5_podio_calc[:5])
+    tit_top5_box = f"TOP {n_top5_cnt} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if n_top5_cnt < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+    ax_top5.text(0.02, 0.93, tit_top5_box, fontsize=9.2, fontweight="bold", color="#131D31", transform=ax_top5.transAxes)
     ax_top5.text(0.02, 0.865, nota_cal_top, fontsize=7.1, color="#334155", transform=ax_top5.transAxes)
 
     rect_badge_podio = FancyBboxPatch((0.84, 0.86), 0.14, 0.11, boxstyle="round,pad=0.01", facecolor="#FFFFFF", edgecolor="#1A6BA8", lw=1.0, transform=ax_top5.transAxes)
@@ -2213,10 +2279,20 @@ def generar_cuadro_visual_partido(
 
     # Extraer y organizar selecciones >= 70%
     sec1_organizada = _organizar_sec1_para_cuadro(analisis, sec1_data, eq_L, eq_V, matriz_prob, top5_podio=top5_podio_calc)
-    total_validadas_cnt = sum(
-        len(c["pildoras"]) for c in sec1_organizada
-        if c.get("pildoras") and c["pildoras"][0]["pct"] != "-"
-    )
+    # Punto 1.6: Conteo exacto de píldoras verdes efectivamente renderizadas en la tabla
+    pildoras_renderizadas = 0
+    for cat_info_c in sec1_organizada[:5]:
+        x_p_check = 0.50
+        for pill_c in cat_info_c.get("pildoras", [])[:4]:
+            if pill_c.get("pct") == "-":
+                continue
+            p_txt_c = f"{pill_c['lbl']}  {pill_c['pct']}"
+            p_w_c = min(0.18, max(0.10, len(p_txt_c) * 0.0072))
+            if x_p_check + p_w_c > 0.98:
+                break
+            pildoras_renderizadas += 1
+            x_p_check += p_w_c + 0.012
+    total_validadas_cnt = pildoras_renderizadas
 
     rect_banner_sec1 = FancyBboxPatch((0.0, 0.88), 1.0, 0.12, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.2, transform=ax_sec1.transAxes)
     ax_sec1.add_patch(rect_banner_sec1)
@@ -2606,6 +2682,8 @@ def generar_cuadro_auditoria_15_partidos_png(
              fontsize=20.5, fontweight="bold", color="#0F172A")
     fig.text(0.04, 0.935, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
              fontsize=8.5, color="#64748B")
+    if meta.get("advertencia_liga"):
+        fig.text(0.04, 0.920, f"⚠️ {meta['advertencia_liga']}", fontsize=8.5, fontweight="bold", color="#B45309")
 
     # ── BLOQUE 1: LISTA 01..15 DE PARTIDOS ÚNICOS (y: 0.610 .. 0.960) ──
     ax.text(0.005, 0.962, f"AUDITORÍA DE LOS {len(lista_L)} PARTIDOS OFICIALES ÚNICOS — LOCAL: {eq_L.upper()}",

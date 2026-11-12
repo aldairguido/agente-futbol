@@ -325,11 +325,43 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                     cond_l = str(p.get("condicion", "")).lower()
                 if nombre_v in k or k in nombre_v:
                     cond_v = str(p.get("condicion", "")).lower()
+
+            m_l = pl.get("marcador") or {}
+            m_v = pv.get("marcador") or {}
+            g_l = None
+            g_v = None
+            if cond_l == "casa":
+                g_l = pl.get("goles_favor") if pl.get("goles_favor") is not None else m_l.get("equipo")
+                g_v = pl.get("goles_contra") if pl.get("goles_contra") is not None else m_l.get("rival")
+            elif cond_l == "fuera":
+                g_v = pl.get("goles_favor") if pl.get("goles_favor") is not None else m_l.get("equipo")
+                g_l = pl.get("goles_contra") if pl.get("goles_contra") is not None else m_l.get("rival")
+            elif cond_v == "casa":
+                g_v = pv.get("goles_favor") if pv.get("goles_favor") is not None else m_v.get("equipo")
+                g_l = pv.get("goles_contra") if pv.get("goles_contra") is not None else m_v.get("rival")
+            elif cond_v == "fuera":
+                g_l = pv.get("goles_favor") if pv.get("goles_favor") is not None else m_v.get("equipo")
+                g_v = pv.get("goles_contra") if pv.get("goles_contra") is not None else m_v.get("rival")
+            if (g_l is None or g_v is None) and m_l.get("texto") and "-" in str(m_l.get("texto")):
+                parts = str(m_l["texto"]).split("-")
+                try:
+                    g_l, g_v = int(parts[0].strip()), int(parts[1].strip())
+                except Exception:
+                    pass
+
+            res_txt = f"{equipo_local} {g_l} - {g_v} {equipo_visitante}" if (g_l is not None and g_v is not None) else (m_l.get("texto") or "Finalizado")
+            fecha_jug = pl.get("fecha") or pv.get("fecha")
+
             return {
                 "id_partido": pid,
+                "partido_ya_jugado": True,
+                "resultado_partido": res_txt,
+                "goles_local": g_l,
+                "goles_visitante": g_v,
+                "fecha_jugado": fecha_jug,
                 "fecha_partido": info_analisis["etiqueta_fecha"],
                 "etiqueta_fecha": info_analisis["etiqueta_fecha"],
-                "fecha_ultimo_h2h": pl.get("fecha") or pv.get("fecha"),
+                "fecha_ultimo_h2h": fecha_jug,
                 "zona_horaria": "America/Lima",
                 "es_fecha_analisis": True,
                 "partido_activo": False,
@@ -337,7 +369,7 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                 "competicion": pl.get("torneo") or pv.get("torneo"),
                 "condicion_local": cond_l,
                 "condicion_visitante": cond_v,
-                "evidencia_condicion": "condición por enfrentamiento previo registrado (sin partido futuro en calendario)",
+                "evidencia_condicion": "condición por enfrentamiento previo registrado (partido ya jugado)",
                 "sin_partido_proximo": True,
             }
 
@@ -561,6 +593,20 @@ def resolver_enfrentamiento(
     elif isinstance(liga_final, str) and liga_final.strip():
         if res_puente.es_copa or not contexto.get("competicion"):
             contexto["competicion"] = liga_final.strip()
+
+    # Detección y advertencia visible de liga discrepante (A3/B2)
+    liga_decl_raw = (nombre_liga_txt or (liga_final.get("nombre") if isinstance(liga_final, dict) else str(liga_final or ""))).strip()
+    torneos_reales = [str(p.get("torneo") or "").strip() for p in (doc_a.get("partidos") or []) if p.get("torneo")]
+    liga_partidos = torneos_reales[0] if torneos_reales else ""
+    liga_det_raw = str(liga_partidos or (doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
+    from fuentes_xg import _sin_acentos
+    def _n_lg(t: str) -> str:
+        s = _sin_acentos(t).lower().replace("brasileirao", "").replace("campeonato", "").replace("de", "").replace(" ", "")
+        return s
+    if liga_decl_raw and liga_det_raw and _n_lg(liga_decl_raw) != _n_lg(liga_det_raw):
+        adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
+        avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
+        contexto["advertencia_liga"] = adv_liga
 
     avisar(f"condición: {nombre_a}={contexto.get('condicion_local')} · "
            f"{nombre_b}={contexto.get('condicion_visitante')} "
@@ -1510,6 +1556,8 @@ def renderizar_ticket_mercados_png(
         meta_parts = []
         if competicion:
             meta_parts.append(f"Competición: {competicion}")
+        if meta.get("advertencia_liga"):
+            meta_parts.append(f"⚠️ {meta['advertencia_liga']}")
         if fecha:
             meta_parts.append(f"Fecha: {fecha}")
         meta_parts.append("Modelo: Poisson bivariado con contracción bayesiana")
@@ -1534,7 +1582,8 @@ def renderizar_ticket_mercados_png(
             C_PODIO_TXT = (19, 29, 49)          # #131D31
             d.rounded_rectangle([PAD_X, y_c, PAD_X + ANCHO_TABLA, y_c + alto_banner],
                                 radius=6, fill=C_PODIO_BG, outline=C_PODIO_BORDER, width=1)
-            d.text((PAD_X + 16, y_c + 8), "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)", font=f_banner_tit, fill=C_PODIO_TXT)
+            tit_podio_hdr = f"TOP {len(top5_podio)} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if len(top5_podio) < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+            d.text((PAD_X + 16, y_c + 8), tit_podio_hdr, font=f_banner_tit, fill=C_PODIO_TXT)
             cnt_podio_txt = f"Top {len(top5_podio)} Selección Élite"
             cw_p = _get_w(cnt_podio_txt, f_banner_cnt) + 18
             cx_p = PAD_X + ANCHO_TABLA - 14 - cw_p
@@ -1698,7 +1747,8 @@ def renderizar_ticket_mercados_png(
             return y
 
         # 2. Sección 1: Alta Probabilidad
-        cnt1_txt = f"{len(mantiene_raw)} opciones validadas"
+        total_pills_sec1 = sum(len(f.get("pildoras", [])) for cat in sec1_data for f in cat.get("filas", []))
+        cnt1_txt = f"{total_pills_sec1} opciones validadas"
         y_c = _dibujar_seccion(
             y_inicio=y_c,
             titulo_sec="SECCIÓN 1: ALTA PROBABILIDAD",
@@ -1717,7 +1767,8 @@ def renderizar_ticket_mercados_png(
         # 3. Sección 2: Sensibles a los Supuestos
         if sec2_data:
             y_c += gap_seccion
-            cnt2_txt = f"{len(sensibles_raw)} opciones sensibles"
+            total_pills_sec2 = sum(len(f.get("pildoras", [])) for cat in sec2_data for f in cat.get("filas", []))
+            cnt2_txt = f"{total_pills_sec2} opciones sensibles"
             y_c = _dibujar_seccion(
                 y_inicio=y_c,
                 titulo_sec="SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (70% - 75%)",
@@ -1933,6 +1984,87 @@ def preparar_analisis(
 
     ctx = contexto["contexto"]
 
+    # ── Bloque A2: Si el partido objetivo ya se jugó o su hora de inicio ya pasó,
+    # /mercados NO genera pronóstico prepartido: responde "partido ya jugado, usa /evaluar" y muestra el resultado.
+    if ctx.get("partido_ya_jugado"):
+        eq_l = contexto["equipo_local"]
+        eq_v = contexto["equipo_visitante"]
+        f_jug = ctx.get("fecha_jugado") or ctx.get("fecha_partido") or ""
+        res_txt = ctx.get("resultado_partido")
+        if not res_txt or res_txt == "Finalizado":
+            g_l = ctx.get("goles_local")
+            g_v = ctx.get("goles_visitante")
+            if g_l is not None and g_v is not None:
+                res_txt = f"{eq_l} {g_l} - {g_v} {eq_v}"
+            else:
+                res_txt = f"{eq_l} vs {eq_v}"
+
+        texto_partido_jugado = (
+            f"⚠️ Partido ya jugado, usa /evaluar\n"
+            f"Resultado: {res_txt} ({f_jug} · Finalizado)"
+        )
+        meta_jugado = {
+            "equipo_local": eq_l,
+            "equipo_visitante": eq_v,
+            "competicion": ctx.get("competicion", "Competición oficial"),
+            "fecha_partido": f_jug,
+            "generado_en": _ahora(),
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "bloqueado_por_cobertura": False,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "resultado_partido": res_txt,
+            "fuente": "Filtro prepartido (A2)",
+            "red_neuronal": {"aplicado": False, "motivo": "Partido ya jugado"},
+        }
+        class _TasasZeroA2:
+            lambda_local_ft = 0.0
+            lambda_visitante_ft = 0.0
+            lambda_local_1t = 0.0
+            lambda_visitante_1t = 0.0
+            lambda_local_2t = 0.0
+            lambda_visitante_2t = 0.0
+            procedencia_tiempos = "partido_ya_jugado"
+
+        class _MotorZeroA2:
+            tasas = _TasasZeroA2()
+            residual_ft = 0.0
+            matriz_ft = []
+            muestras = {
+                "local_general": type("M", (), {"partidos_general": []})(),
+                "visitante_general": type("M", (), {"partidos_general": []})(),
+                "local_cond": type("M", (), {"partidos_condicion": []})(),
+                "visitante_cond": type("M", (), {"partidos_condicion": []})(),
+            }
+
+        analisis_jugado = type("AnalisisPartidoJugadoObj", (), {
+            "metadatos": meta_jugado,
+            "parametros": params,
+            "motor": _MotorZeroA2(),
+            "selecciones_filtradas": [],
+            "mercados": [],
+            "informe": texto_partido_jugado,
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "grupos": {"mantiene": [], "sensible": []},
+        })()
+        return {
+            "analisis": analisis_jugado,
+            "id_trabajo": "partido_ya_jugado",
+            "rutas": {},
+            "contexto": contexto,
+            "abstenido": True,
+            "partido_ya_jugado": True,
+            "estado_cobertura": "partido_ya_jugado",
+            "motivo_abstencion": "partido_ya_jugado",
+            "decision_cobertura": {},
+            "analisis_texto_3_parrafos": texto_partido_jugado,
+            "ruta_imagen": None,
+        }
+
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
     from decision_cobertura import evaluar_decision_cobertura
     doc_l_eval = dict(contexto["doc_local"])
@@ -2071,10 +2203,13 @@ def preparar_analisis(
         condicion_local=ctx.get("condicion_local"),
         condicion_visitante=ctx.get("condicion_visitante"),
         parametros=params, aviso=progreso,
+        id_partido_excluir=ctx.get("id_partido"),
     )
 
     analisis.doc_local = contexto.get("doc_local")
     analisis.doc_visitante = contexto.get("doc_visitante")
+    if ctx.get("advertencia_liga"):
+        analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
 
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
     analisis.metadatos["estado_cobertura"] = decision_cob.estado
@@ -2230,7 +2365,9 @@ def preparar_analisis(
         info_h2h_2024_2026 = h2h_puro_mod.generar_cuadro_h2h_desde_analisis(
             analisis, contexto["doc_local"], contexto["doc_visitante"],
             destino=destino_cuadro_h2h, peso_roja=h2h_puro_mod.PESO_PARTIDO_CON_ROJA,
-            aviso=progreso)
+            aviso=progreso,
+            fecha_corte=ctx.get("fecha_partido"),
+            id_partido_excluir=ctx.get("id_partido"))
         ruta_cuadro_h2h = info_h2h_2024_2026.get("ruta")
         if ruta_cuadro_h2h:
             rutas["cuadro_h2h"] = ruta_cuadro_h2h
@@ -2445,10 +2582,14 @@ def enviar_analisis(
         eq_v = ctx.get("equipo_visitante") or "Visitante"
         analisis_obj = preparado.get("analisis")
         umbral_val = getattr(getattr(analisis_obj, "parametros", None), "umbral", 0.70)
+        meta_an = dict(getattr(analisis_obj, "metadatos", {}) or {})
+        adv_l_an = meta_an.get("advertencia_liga") or ctx.get("advertencia_liga")
         if preparado.get("abstenido"):
             caption = f"🚨 {eq_l} vs {eq_v} | Pronóstico Abstenido ({preparado.get('estado_cobertura', 'cobertura_insuficiente')})"
         else:
             caption = f"🎯 {eq_l} vs {eq_v} | Umbral >{umbral_val:.0%}"
+        if adv_l_an:
+            caption += f" | ⚠️ {adv_l_an}"
 
         marcar_estado(id_trabajo, "envio_en_curso", {"tipo": "foto", "ruta": ruta_imagen})
         try:
@@ -2464,7 +2605,8 @@ def enviar_analisis(
                 )
                 if texto_sender is not None:
                     try:
-                        encabezado_3p = f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
+                        adv_txt = f"⚠️ {adv_l_an}\n\n" if adv_l_an else ""
+                        encabezado_3p = adv_txt + f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
                         for parte_3p in partir_mensaje(encabezado_3p + texto_3p):
                             res_txt_3p = texto_sender(parte_3p, chat_id=chat_id)
                             if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:

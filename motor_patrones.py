@@ -544,9 +544,12 @@ def calcular_55_patrones_equipo(
         tot_rec = max(1, sum(int(v.get("recibidos", 0)) for v in tl.values() if isinstance(v, dict)))
         prop_ult_15 = float(tl["76_90"].get("anotados", 0)) / tot_anot
         prop_rec_0_15 = float(tl.get("00_15", {}).get("recibidos", 0)) / tot_rec
-    else:
-        prop_ult_15 = float(tl.get("prop_anotados_76_90", 0.26))
+    elif "prop_anotados_76_90" in tl and tl.get("prop_anotados_76_90") is not None:
+        prop_ult_15 = float(tl["prop_anotados_76_90"])
         prop_rec_0_15 = float(tl.get("prop_recibidos_00_15", 0.12))
+    else:
+        prop_ult_15 = None
+        prop_rec_0_15 = None
 
     p: Dict[str, Any] = {}
 
@@ -565,7 +568,11 @@ def calcular_55_patrones_equipo(
         p["P03_Calidad_xGOT_vs_xG"] = None
     p["P04_Eficiencia_npxG"] = round(npxg / max(1.0, rem_tot), 4) if (rem_tot > 0 and xg_obs is not None) else None
     p["P05_Conversion_Real"] = round(goles / rem_pue, 4)
-    p["P06_Desperdicio_Ocasiones"] = round(g_oc_fall / g_oc, 4)
+    g_oc_fall_obs = _val_opt(m, "grandes_ocasiones_falladas")
+    if g_oc_fall_obs is not None and g_oc > 0:
+        p["P06_Desperdicio_Ocasiones"] = round(g_oc_fall_obs / g_oc, 4)
+    else:
+        p["P06_Desperdicio_Ocasiones"] = None
     p["P07_Precision_Disparo"] = round(rem_pue / max(1.0, rem_tot), 4) if rem_tot > 0 else None
     p["P08_Tiros_Bloqueados_Ratio"] = round(rem_bloq / max(1.0, rem_tot), 4) if rem_tot > 0 else None
     p["P09_Dependencia_Balon_Parado"] = round(xg_bp / max(0.05, xg), 4) if xg > 0 else None
@@ -598,8 +605,8 @@ def calcular_55_patrones_equipo(
     p["P32_Intensidad_Remates_2T"] = round(rem_tot_2t / rem_tot_1t, 4)
     p["P33_Desesperacion_2T"] = round(rem_fue_2t / rem_area_2t, 4)
     p["P34_Asedio_Corners_2T"] = round(corners_2t / corners_1t, 4)
-    p["P35_Peso_Goles_Tardios"] = round(prop_ult_15, 4)
-    p["P36_Vulnerabilidad_Temprana"] = round(prop_rec_0_15, 4)
+    p["P35_Peso_Goles_Tardios"] = round(prop_ult_15, 4) if prop_ult_15 is not None else None
+    p["P36_Vulnerabilidad_Temprana"] = round(prop_rec_0_15, 4) if prop_rec_0_15 is not None else None
 
     # D. ASEDIO Y CONTEXTO (P37 - P48)
     # P37_Peligro_por_Corner: solo evaluable si existe xG exclusivo de córneres (`xg_corners`);
@@ -665,8 +672,12 @@ def calcular_55_patrones_matchup(
         if p01_v is not None else None
     )
 
-    pL["P50_Choque_Portero_Rival"] = round(pL["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pV["P13_Portero_Goles_Evitados"]), 4)
-    pV["P50_Choque_Portero_Rival"] = round(pV["P06_Desperdicio_Ocasiones"] * max(0.15, 1.0 + pL["P13_Portero_Goles_Evitados"]), 4)
+    p06_l = pL.get("P06_Desperdicio_Ocasiones")
+    p06_v = pV.get("P06_Desperdicio_Ocasiones")
+    p13_l = pL.get("P13_Portero_Goles_Evitados") or 0.0
+    p13_v = pV.get("P13_Portero_Goles_Evitados") or 0.0
+    pL["P50_Choque_Portero_Rival"] = round(float(p06_l) * max(0.15, 1.0 + p13_v), 4) if p06_l is not None else None
+    pV["P50_Choque_Portero_Rival"] = round(float(p06_v) * max(0.15, 1.0 + p13_l), 4) if p06_v is not None else None
 
     p26_l = pL.get("P26_Poder_Cierre_2T")
     p26_v = pV.get("P26_Poder_Cierre_2T")
