@@ -378,3 +378,72 @@ class TestPunto46SeleccionesNacionales:
             assert aud.get("identidad_verificada") is True
             assert (aud.get("equipo") or {}).get("nombre") == "Turquía"
             assert len(aud.get("partidos", [])) == 15
+
+    def test_renderizado_completo_turquia_vs_belgica_sin_nameerror_p_u35_pct(self) -> None:
+        """
+        Punto 48: Verifica que el flujo de renderizado del Ticket y Cuadros Especialistas
+        (PNG 1 y PNG 2) para selecciones (Turqu?a vs B?lgica) no lance NameError: name 'p_u35_pct'
+        ni ning?n error por variables de mercado indefinidas o nulos en m?tricas.
+        """
+        import tempfile
+        import os
+        from motor_mercados import clusters_marcador, analizar
+        from servicio_mercados import renderizar_ticket_mercados_png
+        import cuadro_especialista as ce
+        from test_motor_mercados import doc_sintetico
+
+        # 1. Test directo de clusters_marcador en la rama donde p_u35_pct >= 75.0 y p_fav_val < 55.0
+        # Matriz 6x6 concentrada en marcadores bajos (0-0, 0-1, 1-0, 1-1, etc.) donde la suma <= 3 goles supera el 75%
+        matriz_bajos = [[0.0] * 6 for _ in range(6)]
+        matriz_bajos[0][0] = 0.15
+        matriz_bajos[1][0] = 0.15
+        matriz_bajos[0][1] = 0.15
+        matriz_bajos[1][1] = 0.20
+        matriz_bajos[2][0] = 0.08
+        matriz_bajos[0][2] = 0.08
+        matriz_bajos[2][1] = 0.05
+        matriz_bajos[1][2] = 0.05
+        matriz_bajos[2][2] = 0.04
+        matriz_bajos[3][0] = 0.02
+        matriz_bajos[0][3] = 0.02
+        # Resto distribuido
+        matriz_bajos[3][3] = 0.01
+
+        res_clusters = clusters_marcador(matriz_bajos, "Turqu?a", "B?lgica")
+        assert "jugada_optima" in res_clusters
+        jugada_opt = res_clusters["jugada_optima"]
+        assert "Menos de" in jugada_opt or "1x2" in jugada_opt or "Doble Oportunidad" in jugada_opt
+        assert "None" not in jugada_opt
+
+        # 2. Test E2E de renderizado completo de Turqu?a vs B?lgica con los 3 artefactos visuales
+        doc_turquia = doc_sintetico("Turqu?a", [("casa", 1, 0), ("fuera", 2, 1)] * 8, xg=[(1.5, 0.8)] * 16)
+        doc_belgica = doc_sintetico("B?lgica", [("fuera", 1, 1), ("casa", 2, 0)] * 8, xg=[(1.2, 1.1)] * 16)
+        doc_turquia["equipo"]["pais_iso"] = "TUR"
+        doc_belgica["equipo"]["pais_iso"] = "BEL"
+        doc_turquia["identidad_verificada"] = True
+        doc_belgica["identidad_verificada"] = True
+
+        an = analizar(doc_turquia, doc_belgica, "Turqu?a", "B?lgica")
+        assert an is not None
+
+        with tempfile.TemporaryDirectory() as td:
+            p_ticket = os.path.join(td, "ticket_turquia_belgica.png")
+            p_cuadro1 = os.path.join(td, "cuadro_turquia_belgica.png")
+            p_cuadro2 = os.path.join(td, "auditoria15p_turquia_belgica.png")
+
+            # Ticket PNG
+            renderizar_ticket_mercados_png(an, destino=p_ticket)
+            assert os.path.exists(p_ticket), "El PNG del Ticket debe haberse generado"
+            assert os.path.getsize(p_ticket) > 1000, "El Ticket PNG debe tener contenido"
+
+            # Cuadro Especialista PNG (PNG 1)
+            r1 = ce.generar_cuadro_desde_analisis(an, doc_turquia, doc_belgica, destino=p_cuadro1)
+            assert r1 is not None, "generar_cuadro_desde_analisis debe retornar la ruta del PNG"
+            assert os.path.exists(p_cuadro1), "El PNG del Cuadro Especialista debe haberse generado"
+            assert os.path.getsize(p_cuadro1) > 5000, "El Cuadro PNG 1 debe tener contenido"
+
+            # Cuadro Auditor?a 15P PNG (PNG 2)
+            r2 = ce.generar_cuadro_auditoria_15_partidos_png(an, doc_turquia, doc_belgica, destino=p_cuadro2)
+            assert r2 is not None, "generar_cuadro_auditoria_15_partidos_png debe retornar la ruta del PNG"
+            assert os.path.exists(p_cuadro2), "El PNG de Auditor?a 15P debe haberse generado"
+            assert os.path.getsize(p_cuadro2) > 5000, "El Cuadro PNG 2 debe tener contenido"

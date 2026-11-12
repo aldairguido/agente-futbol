@@ -1157,30 +1157,39 @@ def _generar_lecturas_doble_adn(
     alimentadas directamente por el Doble ADN (Local en Casa vs Visita Fuera) y los 6 Cruces,
     usando exactamente el mismo xG y xGOT mostrados en la tabla superior.
     """
-    ml = perfil_local.get("metricas_clave", {})
-    mv = perfil_vis.get("metricas_clave", {})
-    xg_tab_L = float(ml.get("xg_favor", xg_L))
-    xgot_tab_L = float(ml.get("xgot_favor", xg_tab_L))
-    xg_tab_V = float(mv.get("xg_favor", xg_V))
-    xgot_tab_V = float(mv.get("xgot_favor", xg_tab_V))
+    ml = perfil_local.get("metricas_clave", {}) or {}
+    mv = perfil_vis.get("metricas_clave", {}) or {}
+    xg_tab_L = float(ml["xg_favor"]) if ml.get("xg_favor") is not None else float(xg_L)
+    xgot_tab_L = float(ml["xgot_favor"]) if ml.get("xgot_favor") is not None else float(xg_tab_L)
+    xg_tab_V = float(mv["xg_favor"]) if mv.get("xg_favor") is not None else float(xg_V)
+    xgot_tab_V = float(mv["xgot_favor"]) if mv.get("xgot_favor") is not None else float(xg_tab_V)
 
     mu_l = res_red.get("mu_local_casa") or {}
     mu_v = res_red.get("mu_visita_fuera") or {}
 
-    pos_L = float(mu_l.get("posesion_pct", ml.get("posesion_pct", 52.0)))
-    pos_V = float(mu_v.get("posesion_pct", mv.get("posesion_pct", 48.0)))
-    toq_L = float(mu_l.get("toques_area_rival", ml.get("toques_area_rival", 22.0)))
-    toq_V = float(mu_v.get("toques_area_rival", mv.get("toques_area_rival", 18.0)))
-    cor_L = float(mu_l.get("corners", ml.get("corners_favor", 5.2)))
-    cor_V = float(mu_v.get("corners", mv.get("corners_favor", 4.4)))
-    desp_L = float(mu_l.get("despejes", ml.get("despejes", 17.5)))
-    desp_V = float(mu_v.get("despejes", mv.get("despejes", 19.5)))
-    gev_L = float(mu_l.get("goles_evitados", ml.get("goles_evitados", 0.0)))
-    gev_V = float(mu_v.get("goles_evitados", mv.get("goles_evitados", 0.0)))
-    fal_L = float(mu_l.get("faltas", ml.get("faltas_cometidas", 11.5)))
-    fal_V = float(mu_v.get("faltas", mv.get("faltas_cometidas", 12.5)))
-    aereo_L = float(mu_l.get("duelos_aereos_pct", ml.get("duelos_aereos_pct", 51.0)))
-    aereo_V = float(mu_v.get("duelos_aereos_pct", mv.get("duelos_aereos_pct", 49.0)))
+    def _val(d1: dict, k1: str, d2: dict, k2: str, defval: float) -> float:
+        v = d1.get(k1)
+        if v is not None:
+            return float(v)
+        v2 = d2.get(k2)
+        if v2 is not None:
+            return float(v2)
+        return float(defval)
+
+    pos_L = _val(mu_l, "posesion_pct", ml, "posesion_pct", 52.0)
+    pos_V = _val(mu_v, "posesion_pct", mv, "posesion_pct", 48.0)
+    toq_L = _val(mu_l, "toques_area_rival", ml, "toques_area_rival", 22.0)
+    toq_V = _val(mu_v, "toques_area_rival", mv, "toques_area_rival", 18.0)
+    cor_L = _val(mu_l, "corners", ml, "corners_favor", 5.2)
+    cor_V = _val(mu_v, "corners", mv, "corners_favor", 4.4)
+    desp_L = _val(mu_l, "despejes", ml, "despejes", 17.5)
+    desp_V = _val(mu_v, "despejes", mv, "despejes", 19.5)
+    gev_L = _val(mu_l, "goles_evitados", ml, "goles_evitados", 0.0)
+    gev_V = _val(mu_v, "goles_evitados", mv, "goles_evitados", 0.0)
+    fal_L = _val(mu_l, "faltas", ml, "faltas_cometidas", 11.5)
+    fal_V = _val(mu_v, "faltas", mv, "faltas_cometidas", 12.5)
+    aereo_L = _val(mu_l, "duelos_aereos_pct", ml, "duelos_aereos_pct", 51.0)
+    aereo_V = _val(mu_v, "duelos_aereos_pct", mv, "duelos_aereos_pct", 49.0)
 
     # 1. Control y Asedio (Casa vs Visita) con etiquetado explícito de muestra
     n_casa_l = perfil_local.get("n_partidos_cond", 8)
@@ -1851,14 +1860,22 @@ def generar_cuadro_visual_partido(
             perfil_vis['metricas_clave']['xgot_favor'] = round(float(mu_v_c['xgot']), 2)
 
     if isinstance(res_red, dict) and res_red.get("gf_local_base") is not None:
-        gf_L = float(res_red.get("gf_local_base", gf_L))
-        xg_L = float(res_red.get("xg_local_base", xg_L))
-        gc_V = float(res_red.get("gc_visita_base", gc_V))
-        xgotc_V = float(res_red.get("xgotc_visita_base", xgotc_V))
-        gf_V = float(res_red.get("gf_visita_base", gf_V))
-        xg_V = float(res_red.get("xg_visita_base", xg_V))
-        gc_L = float(res_red.get("gc_local_base", gc_L))
-        xgotc_L = float(res_red.get("xgotc_local_base", xgotc_L))
+        if res_red.get("gf_local_base") is not None:
+            gf_L = float(res_red["gf_local_base"])
+        if res_red.get("xg_local_base") is not None:
+            xg_L = float(res_red["xg_local_base"])
+        if res_red.get("gc_visita_base") is not None:
+            gc_V = float(res_red["gc_visita_base"])
+        if res_red.get("xgotc_visita_base") is not None:
+            xgotc_V = float(res_red["xgotc_visita_base"])
+        if res_red.get("gf_visita_base") is not None:
+            gf_V = float(res_red["gf_visita_base"])
+        if res_red.get("xg_visita_base") is not None:
+            xg_V = float(res_red["xg_visita_base"])
+        if res_red.get("gc_local_base") is not None:
+            gc_L = float(res_red["gc_local_base"])
+        if res_red.get("xgotc_local_base") is not None:
+            xgotc_L = float(res_red["xgotc_local_base"])
 
     # Reconciliación estricta: la tabla superior y el desglose de mitades deben ser 100% coherentes
     if mitades_local and "1T" in mitades_local and "2T" in mitades_local:
@@ -2562,6 +2579,7 @@ def generar_cuadro_desde_analisis(
             g = getattr(analisis, "grupos", {})
             sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
         sec1_filtrada_usar = sels_raw
+        top5_podio = []
         try:
             from servicio_mercados import obtener_top5_y_seccion1_filtrados
             top5_calc, sec1_mantiene, cnt_val = obtener_top5_y_seccion1_filtrados(analisis)

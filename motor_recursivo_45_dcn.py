@@ -2074,8 +2074,8 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
 
     # Detector de Cerrojo / Portería Imbatida (Hurdle Zero-Inflation)
     # Solo activo si λ_atacante < 1.22 Y defensa_rival >= 58.0 Y xgotc_rival <= 1.15
-    xgotc_riv_V = float(mu_V_fuera.get("xgot_enfrentado", 1.25))
-    xgotc_riv_L = float(mu_L_casa.get("xgot_enfrentado", 1.25))
+    xgotc_riv_V = float(mu_V_fuera.get("xgot_enfrentado") or 1.25)
+    xgotc_riv_L = float(mu_L_casa.get("xgot_enfrentado") or 1.25)
     cerrojo_L_activo, bonus_cerrojo_L = calcular_indice_bloqueo_cerrojo(
         xgot_atacante=xgot_L, xg_atacante=xg_L,
         goc_atacante=float(estados_L.get("grandes_ocasiones", {}).get("h_reciente", 2.2) or 2.2),

@@ -5322,10 +5322,19 @@ def clusters_marcador(
     top2_coords = [m[0] for m in plano_marcs[:2]]
     top3_coords = [m[0] for m in plano_marcs[:3]]
 
-    p_00_pct = prob_celda(0, 0) * 100.0
-    p_btts_pct = sum(prob_celda(i, j) for i in range(1, max_i) for j in range(1, max_j)) * 100.0
-    p_u25_pct = sum(prob_celda(i, j) for i in range(max_i) for j in range(max_j) if (i + j) <= 2) * 100.0
-    p_cerrados_pct = (prob_celda(0, 0) + prob_celda(1, 0) + prob_celda(0, 1) + prob_celda(1, 1)) * 100.0
+    max_celda = max(max(fila) for fila in matriz) if matriz and matriz[0] else 1.0
+    factor_escala = 100.0 if max_celda <= 1.0 else 1.0
+
+    p_00_pct = prob_celda(0, 0) * factor_escala
+    p_btts_pct = sum(prob_celda(i, j) for i in range(1, max_i) for j in range(1, max_j)) * factor_escala
+    p_u15_pct = sum(prob_celda(i, j) for i in range(max_i) for j in range(max_j) if (i + j) <= 1) * factor_escala
+    p_u25_pct = sum(prob_celda(i, j) for i in range(max_i) for j in range(max_j) if (i + j) <= 2) * factor_escala
+    p_u35_pct = sum(prob_celda(i, j) for i in range(max_i) for j in range(max_j) if (i + j) <= 3) * factor_escala
+    p_u45_pct = sum(prob_celda(i, j) for i in range(max_i) for j in range(max_j) if (i + j) <= 4) * factor_escala
+    p_o15_pct = max(0.0, 100.0 - p_u15_pct)
+    p_o25_pct = max(0.0, 100.0 - p_u25_pct)
+    p_o35_pct = max(0.0, 100.0 - p_u35_pct)
+    p_cerrados_pct = (prob_celda(0, 0) + prob_celda(1, 0) + prob_celda(0, 1) + prob_celda(1, 1)) * factor_escala
 
     if p_1 >= p_2:
         equipo_fav_nombre = nombre_local

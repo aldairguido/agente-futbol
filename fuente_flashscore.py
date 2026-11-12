@@ -29,6 +29,7 @@ declarado explícitamente como procedencia «derivado».
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from dataclasses import dataclass, field

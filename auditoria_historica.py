@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 import pytz
+from fuentes_xg import _pais_de_liga
 
 try:
     if hasattr(sys.stdout, "reconfigure"):

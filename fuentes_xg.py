@@ -33,9 +33,20 @@ try:
         DICCIONARIO_SELECCIONES_NACIONALES,
         obtener_seleccion_nacional,
         es_seleccion_nacional,
+        normalizar_texto,
     )
 except ImportError:
     pass
+
+if "normalizar_texto" not in globals():
+    def normalizar_texto(texto: str) -> str:
+        if not texto:
+            return ""
+        t = str(texto).strip().lower()
+        t = unicodedata.normalize("NFKD", t)
+        t = "".join(c for c in t if not unicodedata.combining(c))
+        t = re.sub(r"[^a-z0-9\s\.\-']", " ", t)
+        return re.sub(r"\s+", " ", t).strip()
 
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
