@@ -953,6 +953,25 @@ def generar_reporte_xai_telegram(
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
 
+    if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
+        n_ev_l_tel = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_l_tel = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+
+    if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
+        n_ev_v_tel = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+    else:
+        n_ev_v_tel = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+
+    k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel) if (n_ev_l_tel > 0 and n_ev_v_tel > 0) else max(n_ev_l_tel, n_ev_v_tel)
+    from decision_cobertura import cargar_umbrales_cobertura
+    k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+
+    if k_eval_cron_tel < k_min_cron_tel:
+        txt_p35_tel = f"sin dato (cobertura de minutos insuficiente en Cuadro C: {k_eval_cron_tel}/15 partidos)"
+    else:
+        txt_p35_tel = f"En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles."
+
     def _fmt_p(d: Dict[str, Any], k: str, mult: float = 1.0, dec: int = 2, suf: str = "") -> str:
         v = d.get(k)
         if v is None:
@@ -981,7 +1000,7 @@ def generar_reporte_xai_telegram(
         "",
         "*3. El Factor Tiempo: Fatiga y Punch (1T vs 2T y Timeline 15 min)*",
         f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {_fmt_p(patrones_loc, 'P26_Poder_Cierre_2T', 100.0, 1, '%')} de su xG en la 2da mitad, mientras {nombre_visita} genera el {_fmt_p(patrones_vis, 'P26_Poder_Cierre_2T', 100.0, 1, '%')}.",
-        f"• *Patrón #35 - Franja Crítica (76'-90'):* En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles.",
+        f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}",
         f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {_fmt_p(patrones_loc, 'P31_Precision_Bajo_Fatiga')} ({nombre_local}) vs {_fmt_p(patrones_vis, 'P31_Precision_Bajo_Fatiga')} ({nombre_visita}).",
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
@@ -1278,11 +1297,13 @@ def generar_veredicto_tactico_partido(
         )
 
     txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
+    txt_cron_obs = " (cronología por minuto no concluyente)" if k_eval_ver < k_min_cron else ""
+    n_top_filas = len(top5_podio) if top5_podio else 5
     if mkt_2t is None:
         c4 = (
-            f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top 5. "
-            f"La probabilidad Poisson de +1.5 Goles en 2T es 28.8% con λ_2T=1.065 y {txt_p26} "
-            f"(cronología por minuto no concluyente; el modelo prioriza líneas de goles totales FT)."
+            f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
+            f"Estimación de volumen de 2T: {xg_2t_comb:.2f} xG proyectado y {txt_p26}"
+            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT)."
         )
     else:
         if k_eval_ver < k_min_cron:

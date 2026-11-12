@@ -724,7 +724,7 @@ def redactar_analisis_3_parrafos(
     )
     parrafo_1 = (
         f"📊 1. Lectura del Modelo General (15 Partidos Oficiales): "
-        f"Según la Red Neuronal Recursiva entrenada con los últimos 15 partidos oficiales de cada club, "
+        f"Según el modelo de factores con pesos fijos, sin entrenamiento, sobre los últimos 15 partidos oficiales de cada club, "
         f"{dominador}. En producción ofensiva se esperan en promedio {lam_tot:.2f} goles totales "
         f"(λ {eq_l}: {lam_l:.2f} vs λ {eq_v}: {lam_v:.2f}), marcando {tendencia_goles_gen}, "
         f"un {p_btts * 100:.1f}% de probabilidad en Ambos Anotan y teniendo al {info['marcador_modal']} "

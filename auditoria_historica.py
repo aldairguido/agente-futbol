@@ -2020,14 +2020,33 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
         proc_ft = (p.get("procedencia") or {}).get("FT") or {}
         es_fm = (id_fm != "N/D" and bool(id_fm))
         es_fs = (id_fs != "N/D" and bool(id_fs) and bool(fs.get("pareado") or "flashscore" in str(p.get("fuente") or "").lower()))
-        tiene_datos_fs = "flashscore" in str(proc_ft).lower() or "flashscore" in str(p.get("fuente") or "").lower()
 
-        if es_fm and es_fs and tiene_datos_fs:
+        celdas_fs = 0
+        celdas_fm = 0
+        for per_k in ("FT", "1T", "2T"):
+            p_dict = (p.get("procedencia") or {}).get(per_k) or {}
+            for lado_k in ("equipo", "rival"):
+                d_lado = p_dict.get(lado_k) if isinstance(p_dict, dict) else {}
+                if isinstance(d_lado, dict):
+                    for v_src in d_lado.values():
+                        s_src = str(v_src).lower()
+                        if "flashscore" in s_src or s_src == "fs":
+                            celdas_fs += 1
+                        elif "fotmob" in s_src or s_src == "fm":
+                            celdas_fm += 1
+
+        if celdas_fs > 0 and celdas_fm > 0:
             fuente_txt = "FM+FS"
+        elif celdas_fs > 0 and celdas_fm == 0:
+            fuente_txt = "Flashscore"
+        elif celdas_fm > 0 and celdas_fs == 0:
+            fuente_txt = "FotMob (100% Opta)"
+        elif es_fm and not es_fs:
+            fuente_txt = "FotMob (100% Opta)"
         elif es_fs and not es_fm:
             fuente_txt = "Flashscore"
         elif es_fm:
-            fuente_txt = "FotMob"
+            fuente_txt = "FotMob (100% Opta)"
         elif es_fs:
             fuente_txt = "Flashscore"
         else:
@@ -2094,6 +2113,8 @@ def formatear_matriz_45_partido(
     id_fs = str(fs.get("id_flashscore") or "N/D")
 
     proc_ft = (partido.get("procedencia") or {}).get("FT") or {}
+    proc_1t = (partido.get("procedencia") or {}).get("1T") or {}
+    proc_2t = (partido.get("procedencia") or {}).get("2T") or {}
 
     lineas: list[str] = [
         "=" * 84,
@@ -2145,6 +2166,12 @@ def formatear_matriz_45_partido(
             # Fuente
             p_ft = (proc_ft.get("equipo", {}).get(clave)
                     or proc_ft.get("rival", {}).get(clave) or "")
+            p_1t_val = (proc_1t.get("equipo", {}).get(clave) or proc_1t.get("rival", {}).get(clave) or "")
+            p_2t_val = (proc_2t.get("equipo", {}).get(clave) or proc_2t.get("rival", {}).get(clave) or "")
+            src_str_row = f"{p_ft} {p_1t_val} {p_2t_val}".lower()
+            row_has_fs = ("flashscore" in src_str_row or " fs" in src_str_row)
+            row_has_fm = ("fotmob" in src_str_row or " fm" in src_str_row)
+
             todos_sin_dato = all(s == "sin_dato" for s in [str_l_ft, str_v_ft, str_l_1t, str_v_1t, str_l_2t, str_v_2t])
             if todos_sin_dato:
                 fuente_txt = "sin_dato"
@@ -2152,12 +2179,14 @@ def formatear_matriz_45_partido(
                 fuente_txt = "Est."
             elif id_fm == "N/D" or not id_fm:
                 fuente_txt = "Flashscore" if (id_fs != "N/D" and bool(id_fs)) else "sin_dato"
+            elif row_has_fs and row_has_fm:
+                fuente_txt = "FM+FS"
+            elif row_has_fs and not row_has_fm:
+                fuente_txt = "Flashscore"
+            elif row_has_fm and not row_has_fs:
+                fuente_txt = "FotMob"
             elif id_fs == "N/D" or not fs.get("pareado"):
                 fuente_txt = "FotMob"
-            elif "flashscore" in str(p_ft).lower() and ("fotmob" in str(p_ft).lower() or id_fm != "N/D"):
-                fuente_txt = "FM+FS"
-            elif "flashscore" in str(p_ft).lower():
-                fuente_txt = "Flashscore"
             else:
                 fuente_txt = "FotMob"
 

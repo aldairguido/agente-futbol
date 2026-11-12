@@ -1747,7 +1747,8 @@ def renderizar_ticket_mercados_png(
             return y
 
         # 2. Sección 1: Alta Probabilidad
-        cnt1_txt = f"{len(mantiene_raw)} opciones validadas"
+        total_pills_sec1 = sum(len(f.get("pildoras", [])) for cat in sec1_data for f in cat.get("filas", []))
+        cnt1_txt = f"{total_pills_sec1} opciones validadas"
         y_c = _dibujar_seccion(
             y_inicio=y_c,
             titulo_sec="SECCIÓN 1: ALTA PROBABILIDAD",
@@ -1766,7 +1767,8 @@ def renderizar_ticket_mercados_png(
         # 3. Sección 2: Sensibles a los Supuestos
         if sec2_data:
             y_c += gap_seccion
-            cnt2_txt = f"{len(sensibles_raw)} opciones sensibles"
+            total_pills_sec2 = sum(len(f.get("pildoras", [])) for cat in sec2_data for f in cat.get("filas", []))
+            cnt2_txt = f"{total_pills_sec2} opciones sensibles"
             y_c = _dibujar_seccion(
                 y_inicio=y_c,
                 titulo_sec="SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (70% - 75%)",

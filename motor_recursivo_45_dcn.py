@@ -96,7 +96,7 @@ NEUTRALES: Dict[str, float] = {
     "pases_largos_pct": 45.0, "pases_tercio_final_pct": 55.0, "cruces_pct": 22.0,
     "xa_equipo": 0.88, "saques_banda": 20.0, "faltas": 11.5, "entradas_pct": 14.0,
     "duelos_ganados": 48.0, "duelos_suelo_pct": 50.0, "duelos_aereos_pct": 50.0,
-    "despejes": 18.0, "intercepciones": 8.0, "bloqueos": 2.5, "recuperaciones": 48.0,
+    "despejes": 18.0, "intercepciones": 8.0, "bloqueos": 3.5, "recuperaciones": 48.0,
     "errores_remate": 0.2, "errores_gol": 0.15, "paradas": 2.8, "goles_evitados": 0.0,
     "xgot_enfrentado": 1.25, "saques_puerta": 5.0,
 }
