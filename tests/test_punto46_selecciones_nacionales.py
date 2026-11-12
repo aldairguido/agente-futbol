@@ -108,10 +108,10 @@ class TestPunto46SeleccionesNacionales:
     def test_variantes_ortograficas_y_exonomos(self) -> None:
         """Verifica resolución correcta de exónimos y variantes ortográficas."""
         pares_esperados = [
-            ("Turquía", ("Türkiye", "TUR")),
-            ("Turquia", ("Türkiye", "TUR")),
-            ("Turkey", ("Türkiye", "TUR")),
-            ("Türkiye", ("Türkiye", "TUR")),
+            ("Turquía", ("Turkey", "TUR")),
+            ("Turquia", ("Turkey", "TUR")),
+            ("Turkey", ("Turkey", "TUR")),
+            ("Türkiye", ("Turkey", "TUR")),
             ("Bélgica", ("Belgium", "BEL")),
             ("Belgica", ("Belgium", "BEL")),
             ("Belgium", ("Belgium", "BEL")),
@@ -143,7 +143,7 @@ class TestPunto46SeleccionesNacionales:
         """
         # Prueba directa en resolver_equipo_individual incluso si se pasa contexto erróneo
         nom_l, iso_l = resolver_equipo_individual("Turquía", pais_iso_contexto="BEL")
-        assert nom_l == "Türkiye"
+        assert nom_l == "Turkey"
         assert iso_l == "TUR"
 
         nom_v, iso_v = resolver_equipo_individual("Bélgica", pais_iso_contexto="TUR")
@@ -152,7 +152,7 @@ class TestPunto46SeleccionesNacionales:
 
         # Resolución conjunta completa
         res = resolver("UEFA Nations League A Grp. 1", "Turquía", "Bélgica")
-        assert res.equipo_local == "Türkiye"
+        assert res.equipo_local == "Turkey"
         assert res.pais_local == "TUR"
         assert res.equipo_visita == "Belgium"
         assert res.pais_visita == "BEL"
@@ -175,7 +175,9 @@ class TestPunto46SeleccionesNacionales:
     def test_parsear_comando_mercados_nations_league(self) -> None:
         """Verifica que el separador inteligente extraiga torneo de selecciones y equipos sin contaminación."""
         parsed = parsear_comando_mercados("/mercados UEFA Nations League A Grp. 1 Turquía vs Bélgica")
-        assert parsed["equipo_local"] == "Türkiye"
+        assert parsed["equipo_local"] == "Turkey"
+        assert parsed["nombre_busqueda_fotmob"] == "Turkey"
+        assert parsed["nombre_busqueda_flashscore"] == "Turquía"
         assert parsed["pais_local"] == "TUR"
         assert parsed["equipo_visita"] == "Belgium"
         assert parsed["pais_visita"] == "BEL"
@@ -256,3 +258,123 @@ class TestPunto46SeleccionesNacionales:
             mock_enviar_seguro(None, 123, f"ℹ️ El ticket se envió, pero el Cuadro Especialista no: {detalle}\nRuta esperada: {ruta_c}")
 
         assert len(mensajes_enviados) == 0, f"No debe emitirse advertencia de Cuadro Especialista en modo abstención: {mensajes_enviados}"
+
+    def test_busqueda_multialias_turquia_no_falla_con_turkiye(self) -> None:
+        """
+        Punto 47: Verifica que si FotMob devuelve vacío para 'Türkiye',
+        el buscador itera automáticamente a 'Turkey' y 'Turquía' y encuentra el equipo
+        sin lanzar RuntimeError.
+        """
+        from fuentes_xg import FuenteFotMob, variantes_de_busqueda
+
+        vars_t = variantes_de_busqueda("Türkiye")
+        assert "Turkey" in vars_t or "Turquía" in vars_t
+
+        fotmob = FuenteFotMob(verbose=False)
+        terminos_consultados = []
+
+        def mock_api(ruta: str, reintentos: int = 3):
+            # Extraer término consultado
+            import urllib.parse
+            parsed = urllib.parse.urlparse(ruta)
+            qs = urllib.parse.parse_qs(parsed.query)
+            term = qs.get("term", [""])[0]
+            terminos_consultados.append(term)
+            if term in ("Türkiye", "Turkiye"):
+                return []
+            if term in ("Turquía", "Turkey", "turquia"):
+                return [{
+                    "suggestions": [{
+                        "type": "team",
+                        "id": "6595",
+                        "name": "Turquía",
+                        "leagueName": "UEFA Nations League",
+                        "ccode": "TUR",
+                        "score": 999.0
+                    }]
+                }]
+            return []
+
+        fotmob._api = mock_api
+        eq = fotmob.resolver_equipo("Türkiye")
+
+        assert eq is not None, "Debe resolver a Turquía iterando por sus alias"
+        assert str(eq.get("id")) == "6595"
+        assert eq.get("nombre") == "Turquía"
+        assert any(t in ("Turquía", "Turkey") for t in terminos_consultados), f"Términos consultados: {terminos_consultados}"
+
+    def test_fallback_automatico_a_flashscore_cuando_fotmob_no_encuentra_equipo(self) -> None:
+        """
+        Punto 47: Simula que FotMob no encuentra un equipo (devuelve None o RuntimeError)
+        y verifica que auditar_equipo cae automáticamente a Flashscore usando el nombre
+        en español ('Turquía'), recupera el historial y NO lanza RuntimeError al usuario.
+        """
+        from auditoria_historica import auditar_equipo
+        from unittest.mock import MagicMock, patch
+        from fuentes_xg import PartidoFinalizado, ResultadoEscaneo, MatrizPartido, PeriodoPartido, CATALOGO_METRICAS
+
+        partidos_mock = [
+            PartidoFinalizado(
+                id_partido=f"fs_{i}",
+                fecha=f"2026-10-{i:02d}",
+                torneo="UEFA Nations League",
+                local="Turquía",
+                visitante=f"Rival_{i}",
+                goles_local=1,
+                goles_visitante=0,
+                es_local_el_equipo=True,
+            ) for i in range(1, 16)
+        ]
+
+        # Simular que FotMob falla
+        mock_fotmob = MagicMock()
+        mock_fotmob.nombre = "fotmob"
+        mock_fotmob.resolver_equipo.return_value = None
+
+        def mock_matriz_partido(p, eq):
+            m = MatrizPartido(
+                id_partido=p.id_partido,
+                torneo=p.torneo,
+                fecha=p.fecha,
+                equipo=str(eq.get("nombre")),
+                rival=(p.visitante if p.es_local_el_equipo else p.local),
+                condicion="casa" if p.es_local_el_equipo else "fuera",
+                goles_equipo=p.goles_local if p.es_local_el_equipo else p.goles_visitante,
+                goles_rival=p.goles_visitante if p.es_local_el_equipo else p.goles_local,
+            )
+            filas = [{"clave": d.clave, "metrica": d.etiqueta, "categoria": d.categoria, "equipo": 1.0, "rival": 0.0} for d in CATALOGO_METRICAS]
+            m.periodos["FT"] = PeriodoPartido("FT", filas, [])
+            m.periodos["1T"] = PeriodoPartido("1T", filas, [])
+            m.periodos["2T"] = PeriodoPartido("2T", filas, [])
+            return m
+
+        # Simular que Flashscore sí encuentra por nombre en español
+        with patch("fuentes_xg.FuenteFlashscore") as MockFS:
+            inst_fs = MockFS.return_value
+            inst_fs.nombre = "flashscore"
+            inst_fs.resolver_equipo.side_effect = lambda nom, rival_contexto=None: {
+                "id": "fs_tur_123",
+                "nombre": "Turquía",
+                "liga": "UEFA Nations League",
+                "pais_iso": "TUR"
+            } if nom in ("Turquía", "Turquia") else None
+
+            inst_fs.escanear_oficiales.return_value = ResultadoEscaneo(
+                oficiales=partidos_mock,
+                amistosos_reservados=[],
+                paginas_escaneadas=1,
+                finalizados_totales=15,
+                amistosos_excluidos=0,
+                fuente_agotada=True,
+                motivo_parada="objetivo_cumplido"
+            )
+            inst_fs.matriz_partido.side_effect = mock_matriz_partido
+
+            # Ejecutar auditar_equipo pasando "Turkey"
+            aud = auditar_equipo("Turkey", limite=15, fuente_obj=mock_fotmob, headless=True)
+
+            assert aud is not None
+            assert aud.get("fuente") == "flashscore"
+            assert aud.get("identidad_verificada") is True
+            assert (aud.get("equipo") or {}).get("nombre") == "Turquía"
+            assert len(aud.get("partidos", [])) == 15

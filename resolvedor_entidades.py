@@ -210,9 +210,9 @@ CATALOGO_LIGAS_FLASHSCORE: Dict[str, str] = {
 # ───────────────────────────────────────────────────────────────────────────────
 DICCIONARIO_SELECCIONES_NACIONALES: Dict[str, Tuple[str, str, List[str]]] = {
     # UEFA
-    "turquia": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey", "Turquía"]),
-    "turkiye": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey"]),
-    "turkey": ("Türkiye", "TUR", ["Turkiye", "Türkiye", "Turkey"]),
+    "turquia": ("Turkey", "TUR", ["Turkey", "Turquía", "Turkiye", "Türkiye"]),
+    "turkiye": ("Turkey", "TUR", ["Turkey", "Turquía", "Turkiye", "Türkiye"]),
+    "turkey": ("Turkey", "TUR", ["Turkey", "Turquía", "Turkiye", "Türkiye"]),
     "belgica": ("Belgium", "BEL", ["Belgium", "Bélgica"]),
     "belgium": ("Belgium", "BEL", ["Belgium", "Bélgica"]),
     "alemania": ("Germany", "DEU", ["Germany", "Alemania", "Deutschland"]),
@@ -229,8 +229,8 @@ DICCIONARIO_SELECCIONES_NACIONALES: Dict[str, Tuple[str, str, List[str]]] = {
     "suecia": ("Sweden", "SWE", ["Sweden", "Suecia"]),
     "noruega": ("Norway", "NOR", ["Norway", "Noruega"]),
     "polonia": ("Poland", "POL", ["Poland", "Polonia"]),
-    "republica checa": ("Czechia", "CZE", ["Czechia", "Czech Republic", "República Checa", "Chequia"]),
-    "chequia": ("Czechia", "CZE", ["Czechia", "Czech Republic", "Chequia"]),
+    "republica checa": ("Czech Republic", "CZE", ["Czech Republic", "Czechia", "República Checa", "Chequia"]),
+    "chequia": ("Czech Republic", "CZE", ["Czech Republic", "Czechia", "Chequia", "República Checa"]),
     "escocia": ("Scotland", "SCO", ["Scotland", "Escocia"]),
     "gales": ("Wales", "WAL", ["Wales", "Gales"]),
     "irlanda": ("Republic of Ireland", "IRL", ["Republic of Ireland", "Ireland", "Irlanda"]),
@@ -365,6 +365,164 @@ def obtener_seleccion_nacional(nombre: str) -> Optional[Tuple[str, str, List[str
 def es_seleccion_nacional(nombre: str) -> bool:
     """Verifica si el nombre corresponde a una selección nacional de fútbol."""
     return obtener_seleccion_nacional(nombre) is not None
+
+
+# Catálogo canónico de nombres en español para selecciones nacionales (Flashscore ES)
+SELECCIONES_FLASHSCORE_ES: Dict[str, str] = {
+    # UEFA
+    "TUR": "Turquía",
+    "BEL": "Bélgica",
+    "DEU": "Alemania",
+    "ESP": "España",
+    "FRA": "Francia",
+    "ITA": "Italia",
+    "ENG": "Inglaterra",
+    "NLD": "Países Bajos",
+    "PRT": "Portugal",
+    "HRV": "Croacia",
+    "CHE": "Suiza",
+    "DNK": "Dinamarca",
+    "SWE": "Suecia",
+    "NOR": "Noruega",
+    "POL": "Polonia",
+    "CZE": "República Checa",
+    "SCO": "Escocia",
+    "WAL": "Gales",
+    "IRL": "Irlanda",
+    "NIR": "Irlanda del Norte",
+    "GRC": "Grecia",
+    "SRB": "Serbia",
+    "ROU": "Rumanía",
+    "HUN": "Hungría",
+    "AUT": "Austria",
+    "UKR": "Ucrania",
+    "RUS": "Rusia",
+    "SVK": "Eslovaquia",
+    "SVN": "Eslovenia",
+    "FIN": "Finlandia",
+    "ISL": "Islandia",
+    "BIH": "Bosnia y Herzegovina",
+    "MKD": "Macedonia del Norte",
+    "GEO": "Georgia",
+    "ALB": "Albania",
+    "MNE": "Montenegro",
+    "KOS": "Kosovo",
+    "BLR": "Bielorrusia",
+    "LUX": "Luxemburgo",
+    "CYP": "Chipre",
+    "EST": "Estonia",
+    "LVA": "Letonia",
+    "LTU": "Lituania",
+    "MDA": "Moldavia",
+    "ARM": "Armenia",
+    "AZE": "Azerbaiyán",
+    "KAZ": "Kazajistán",
+    "ISR": "Israel",
+    "FRO": "Islas Feroe",
+    "MLT": "Malta",
+    "AND": "Andorra",
+    "SMR": "San Marino",
+    "GIB": "Gibraltar",
+    "LIE": "Liechtenstein",
+    # CONMEBOL
+    "ARG": "Argentina",
+    "BRA": "Brasil",
+    "URY": "Uruguay",
+    "COL": "Colombia",
+    "ECU": "Ecuador",
+    "PER": "Perú",
+    "CHL": "Chile",
+    "PRY": "Paraguay",
+    "VEN": "Venezuela",
+    "BOL": "Bolivia",
+    # CONCACAF
+    "USA": "Estados Unidos",
+    "MEX": "México",
+    "CAN": "Canadá",
+    "PAN": "Panamá",
+    "CRI": "Costa Rica",
+    "JAM": "Jamaica",
+    "HND": "Honduras",
+    "SLV": "El Salvador",
+    "GTM": "Guatemala",
+    "TTO": "Trinidad y Tobago",
+    "HTI": "Haití",
+    "CUW": "Curazao",
+    "SUR": "Surinam",
+    # AFC / OFC
+    "JPN": "Japón",
+    "KOR": "Corea del Sur",
+    "AUS": "Australia",
+    "IRN": "Irán",
+    "SAU": "Arabia Saudí",
+    "QAT": "Catar",
+    "IRQ": "Irak",
+    "UZB": "Uzbekistán",
+    "JOR": "Jordania",
+    "ARE": "Emiratos Árabes Unidos",
+    "CHN": "China",
+    "THA": "Tailandia",
+    "VNM": "Vietnam",
+    "IDN": "Indonesia",
+    "NZL": "Nueva Zelanda",
+    # CAF
+    "MAR": "Marruecos",
+    "SEN": "Senegal",
+    "EGY": "Egipto",
+    "NGA": "Nigeria",
+    "DZA": "Argelia",
+    "TUN": "Túnez",
+    "CIV": "Costa de Marfil",
+    "CMR": "Camerún",
+    "GHA": "Ghana",
+    "MLI": "Malí",
+    "ZAF": "Sudáfrica",
+    "COD": "RD Congo",
+    "BFA": "Burkina Faso",
+    "CPV": "Cabo Verde",
+    "GIN": "Guinea",
+    "ZMB": "Zambia",
+    "AGO": "Angola",
+}
+
+
+def obtener_nombre_flashscore(nombre: str) -> str:
+    """
+    Devuelve el nombre oficial en español usado en Flashscore para selecciones
+    o clubes (ej. 'Turquía', 'Bélgica', 'Alemania', 'República Checa').
+    """
+    if not nombre or not str(nombre).strip():
+        return ""
+    nom_s = str(nombre).strip()
+    sel = obtener_seleccion_nacional(nom_s)
+    if sel:
+        iso = sel[1]
+        if iso in SELECCIONES_FLASHSCORE_ES:
+            return SELECCIONES_FLASHSCORE_ES[iso]
+        for al in sel[2]:
+            if al != sel[0]:
+                return al
+        return sel[0]
+    norm = normalizar_texto(nom_s)
+    for k_fs, (v_fot, _) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB.items():
+        if normalizar_texto(v_fot) == norm:
+            return k_fs.title()
+    return nom_s
+
+
+def obtener_nombre_fotmob(nombre: str) -> str:
+    """
+    Devuelve el nombre oficial en inglés estándar usado en FotMob (ej. 'Turkey',
+    'Belgium', 'Germany', 'Spain', 'Netherlands', 'Czech Republic').
+    """
+    if not nombre or not str(nombre).strip():
+        return ""
+    nom_s = str(nombre).strip()
+    sel = obtener_seleccion_nacional(nom_s)
+    if sel:
+        return sel[0]
+    nom_of, _ = resolver_equipo_individual(nom_s)
+    return nom_of or nom_s
 
 
 
@@ -1469,6 +1627,12 @@ class ResultadoResolucion(tuple):
         nivel_confianza: str = "alta",
         id_proveedor_local: Optional[str] = None,
         id_proveedor_visita: Optional[str] = None,
+        nombre_busqueda_fotmob: str = "",
+        nombre_busqueda_flashscore: str = "",
+        nombre_busqueda_fotmob_visita: str = "",
+        nombre_busqueda_flashscore_visita: str = "",
+        nombre_busqueda_fotmob_local: str = "",
+        nombre_busqueda_flashscore_local: str = "",
     ):
         inst = super().__new__(cls, (equipo_local, equipo_visita, pais_iso))
         inst.equipo_local = equipo_local
@@ -1492,6 +1656,18 @@ class ResultadoResolucion(tuple):
         inst.nivel_confianza = nivel_confianza
         inst.id_proveedor_local = id_proveedor_local
         inst.id_proveedor_visita = id_proveedor_visita
+
+        nom_fotmob_l = nombre_busqueda_fotmob or nombre_busqueda_fotmob_local or obtener_nombre_fotmob(equipo_local)
+        nom_flashscore_l = nombre_busqueda_flashscore or nombre_busqueda_flashscore_local or obtener_nombre_flashscore(equipo_local)
+        nom_fotmob_v = nombre_busqueda_fotmob_visita or obtener_nombre_fotmob(equipo_visita)
+        nom_flashscore_v = nombre_busqueda_flashscore_visita or obtener_nombre_flashscore(equipo_visita)
+
+        inst.nombre_busqueda_fotmob = nom_fotmob_l
+        inst.nombre_busqueda_fotmob_local = nom_fotmob_l
+        inst.nombre_busqueda_flashscore = nom_flashscore_l
+        inst.nombre_busqueda_flashscore_local = nom_flashscore_l
+        inst.nombre_busqueda_fotmob_visita = nom_fotmob_v
+        inst.nombre_busqueda_flashscore_visita = nom_flashscore_v
         return inst
 
     def __getitem__(self, item: Any) -> Any:
@@ -1522,6 +1698,12 @@ class ResultadoResolucion(tuple):
             "nivel_confianza": self.nivel_confianza,
             "id_proveedor_local": self.id_proveedor_local,
             "id_proveedor_visita": self.id_proveedor_visita,
+            "nombre_busqueda_fotmob": self.nombre_busqueda_fotmob,
+            "nombre_busqueda_flashscore": self.nombre_busqueda_flashscore,
+            "nombre_busqueda_fotmob_local": self.nombre_busqueda_fotmob_local,
+            "nombre_busqueda_flashscore_local": self.nombre_busqueda_flashscore_local,
+            "nombre_busqueda_fotmob_visita": self.nombre_busqueda_fotmob_visita,
+            "nombre_busqueda_flashscore_visita": self.nombre_busqueda_flashscore_visita,
         }
 
 
@@ -1554,6 +1736,12 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
             "nivel_confianza": "nula",
             "id_proveedor_local": None,
             "id_proveedor_visita": None,
+            "nombre_busqueda_fotmob": "",
+            "nombre_busqueda_flashscore": "",
+            "nombre_busqueda_fotmob_local": "",
+            "nombre_busqueda_flashscore_local": "",
+            "nombre_busqueda_fotmob_visita": "",
+            "nombre_busqueda_flashscore_visita": "",
         }
 
     # Limpiar comando inicial y parámetros opcionales (umbral, limite, borrador)
@@ -1630,6 +1818,12 @@ def parsear_comando_mercados(texto_comando: str) -> Dict[str, Any]:
         "nivel_confianza": res.nivel_confianza,
         "id_proveedor_local": res.id_proveedor_local,
         "id_proveedor_visita": res.id_proveedor_visita,
+        "nombre_busqueda_fotmob": res.nombre_busqueda_fotmob,
+        "nombre_busqueda_flashscore": res.nombre_busqueda_flashscore,
+        "nombre_busqueda_fotmob_local": res.nombre_busqueda_fotmob_local,
+        "nombre_busqueda_flashscore_local": res.nombre_busqueda_flashscore_local,
+        "nombre_busqueda_fotmob_visita": res.nombre_busqueda_fotmob_visita,
+        "nombre_busqueda_flashscore_visita": res.nombre_busqueda_flashscore_visita,
     }
 
 
@@ -1668,6 +1862,10 @@ def resolver(
             nivel_confianza=parsed.get("nivel_confianza", "alta"),
             id_proveedor_local=parsed.get("id_proveedor_local"),
             id_proveedor_visita=parsed.get("id_proveedor_visita"),
+            nombre_busqueda_fotmob=parsed.get("nombre_busqueda_fotmob", ""),
+            nombre_busqueda_flashscore=parsed.get("nombre_busqueda_flashscore", ""),
+            nombre_busqueda_fotmob_visita=parsed.get("nombre_busqueda_fotmob_visita", ""),
+            nombre_busqueda_flashscore_visita=parsed.get("nombre_busqueda_flashscore_visita", ""),
         )
 
     liga_str = (liga_o_comando or "").strip()
@@ -1833,6 +2031,10 @@ def resolver(
         nivel_confianza=nivel_confianza,
         id_proveedor_local=id_prov_l,
         id_proveedor_visita=id_prov_v,
+        nombre_busqueda_fotmob=obtener_nombre_fotmob(nom_loc),
+        nombre_busqueda_flashscore=obtener_nombre_flashscore(nom_loc),
+        nombre_busqueda_fotmob_visita=obtener_nombre_fotmob(nom_vis),
+        nombre_busqueda_flashscore_visita=obtener_nombre_flashscore(nom_vis),
     )
 
 
@@ -2037,20 +2239,30 @@ def formatear_mensaje_entidades_verificadas(
     Genera el mensaje oficial de verificación de entidades para Telegram:
     ✅ Entidades verificadas: 1. FC Köln [DEU] vs Bayer 04 Leverkusen [DEU] (Liga: Bundesliga).
     ✅ Entidades verificadas: Real Madrid [ESP] vs FC Bayern München [DEU] (Liga: Champions League).
+    ✅ Entidades verificadas: Turquía [TUR] vs Bélgica [BEL] (Liga: UEFA Nations League A Grp. 1).
     """
     _, iso_eq_l = resolver_equipo_individual(nombre_local)
     _, iso_eq_v = resolver_equipo_individual(nombre_visita)
     iso_liga = normalizar_pais_iso(liga)
     sel_l = obtener_seleccion_nacional(nombre_local)
     sel_v = obtener_seleccion_nacional(nombre_visita)
+    nom_disp_l = (obtener_nombre_flashscore(nombre_local) or nombre_local) if sel_l else nombre_local
+    nom_disp_v = (obtener_nombre_flashscore(nombre_visita) or nombre_visita) if sel_v else nombre_visita
+
     es_int = (iso_liga == "INT") or bool(sel_l or sel_v) or any(
         k in normalizar_texto(liga)
         for k in ("champions", "europa league", "conference", "libertadores", "sudamericana", "concacaf", "mundial", "international", "nations", "euro", "copa america", "eliminatorias")
     )
 
     if es_int:
-        iso_l = normalizar_pais_iso(pais_local) or iso_eq_l or (sel_l[1] if sel_l else "INT")
-        iso_v = normalizar_pais_iso(pais_visita) or iso_eq_v or (sel_v[1] if sel_v else "INT")
+        if sel_l:
+            iso_l = sel_l[1]
+        else:
+            iso_l = normalizar_pais_iso(pais_local) or iso_eq_l or "INT"
+        if sel_v:
+            iso_v = sel_v[1]
+        else:
+            iso_v = normalizar_pais_iso(pais_visita) or iso_eq_v or "INT"
     else:
         iso_l_norm = normalizar_pais_iso(pais_local)
         iso_v_norm = normalizar_pais_iso(pais_visita)
@@ -2068,5 +2280,5 @@ def formatear_mensaje_entidades_verificadas(
             or iso_eq_v
             or iso_l
         )
-    liga_txt = liga.strip() if liga and str(liga).strip() else "Oficial"
-    return f"✅ Entidades verificadas: {nombre_local} [{iso_l}] vs {nombre_visita} [{iso_v}] (Liga: {liga_txt})."
+    liga_txt = liga.strip() if liga and str(liga).strip() else ("Internacional / Oficial" if (sel_l or sel_v) else "Oficial")
+    return f"✅ Entidades verificadas: {nom_disp_l} [{iso_l}] vs {nom_disp_v} [{iso_v}] (Liga: {liga_txt})."

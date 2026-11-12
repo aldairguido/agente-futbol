@@ -1818,6 +1818,24 @@ def variantes_de_busqueda(nombre: str, maximo: int = 8) -> list[str]:
     if not limpio:
         return []
 
+    # PASO #0 OBLIGATORIO: Selecciones Nacionales FIFA (Punto 47)
+    try:
+        from resolvedor_entidades import obtener_seleccion_nacional
+        sel_nac = obtener_seleccion_nacional(limpio)
+        if sel_nac:
+            nom_canon_en, iso_code, aliases_sel = sel_nac
+            cola_sel = [nom_canon_en, limpio] + list(aliases_sel) + [_sin_acentos(limpio)]
+            salida_sel: list[str] = []
+            vistos_sel: set[str] = set()
+            for t in cola_sel:
+                t_str = str(t).strip()
+                if t_str and t_str.lower() not in vistos_sel:
+                    vistos_sel.add(t_str.lower())
+                    salida_sel.append(t_str)
+            return salida_sel[:maximo]
+    except Exception:
+        pass
+
     sin_ac = _sin_acentos(limpio)
     norm_clave = sin_ac.lower().strip()
     canonico = normalizar_nombre_club(limpio)
@@ -2793,6 +2811,20 @@ class FuenteFotMob(FuenteXG):
                             if not pide_no_senior and es_equipo_o_torneo_no_senior(sug.get("name"), sug.get("leagueName")):
                                 continue
                             # Regla dura anti-colisión Bayer != Bayern y país
+                            try:
+                                from resolvedor_entidades import validar_y_puntuar_candidato_fotmob
+                                pts_resolv = validar_y_puntuar_candidato_fotmob(
+                                    sug,
+                                    texto_buscado=consulta_efectiva,
+                                    texto_liga_o_contexto=str((meta_rival or {}).get("liga") or ""),
+                                    pais_iso_esperado=str((meta_rival or {}).get("pais_iso") or ""),
+                                    es_femenino_pedido=pide_no_senior if pide_no_senior else False,
+                                    es_juvenil_pedido=pide_no_senior if pide_no_senior else False,
+                                )
+                                if pts_resolv <= -9000:
+                                    continue
+                            except Exception:
+                                pass
                             if puntuar_candidato(sug, consulta_efectiva, rival_meta=meta_rival)[0] <= -9000:
                                 continue
                             encontrados.append(sug)
@@ -5083,8 +5115,11 @@ class FuenteFlashscore(FuenteXG):
         elif liga_pref:
             pais_esp = liga_pref.get("pais")
 
+        from resolvedor_entidades import obtener_nombre_flashscore
+        nom_fs = obtener_nombre_flashscore(consulta)
+
         variantes = []
-        for v in ([canonico, consulta] + variantes_de_busqueda(consulta)):
+        for v in ([nom_fs, canonico, consulta] + variantes_de_busqueda(consulta)):
             if v and v not in variantes:
                 variantes.append(v)
 

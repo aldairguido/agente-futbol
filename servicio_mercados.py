@@ -486,9 +486,31 @@ def resolver_enfrentamiento(
 
     avisar(f"resolviendo «{equipo_local}» vs «{equipo_visitante}»{etiqueta_liga}")
     from fuentes_xg import ejecutar_sync_seguro
-    doc_a, meta_a = ejecutar_sync_seguro(
-        cargar_o_crear_auditoria, equipo_local, rival=equipo_visitante, **kwargs
-    )
+    doc_a, meta_a = None, None
+    try:
+        doc_a, meta_a = ejecutar_sync_seguro(
+            cargar_o_crear_auditoria, equipo_local, rival=equipo_visitante, **kwargs
+        )
+    except (RuntimeError, LookupError, Exception) as err_a:
+        avisar(f"⚠️ Error cargando auditoría de local «{equipo_local}»: {err_a}")
+        nom_fs_l = getattr(res_puente, "nombre_busqueda_flashscore", "") or getattr(res_puente, "equipo_local", "")
+        if nom_fs_l and nom_fs_l != equipo_local:
+            try:
+                doc_a, meta_a = ejecutar_sync_seguro(
+                    cargar_o_crear_auditoria, nom_fs_l, rival=equipo_visitante, **kwargs
+                )
+            except Exception as err_a2:
+                avisar(f"⚠️ Fallback con nombre Flashscore local falló: {err_a2}")
+
+    if not doc_a:
+        doc_a = {
+            "equipo": {"nombre": equipo_local, "pais_iso": res_puente.pais_local or "UNK"},
+            "partidos": [],
+            "identidad_verificada": False,
+            "estado_identidad": "identidad_no_verificada",
+            "motivo_identidad": f"No se pudo obtener datos para «{equipo_local}»",
+        }
+        meta_a = {}
 
     # PASO #2 OBLIGATORIO: Resolución cruzada por tabla y calendario del rival (League-Peer & Fixture Graph Resolver)
     ctx_rival_para_b: dict[str, Any] = dict(doc_a.get("equipo") or {})
@@ -508,9 +530,31 @@ def resolver_enfrentamiento(
         if par_b.get("id"):
             ctx_rival_para_b.setdefault("pares_misma_liga", []).insert(0, par_b)
 
-    doc_b, meta_b = ejecutar_sync_seguro(
-        cargar_o_crear_auditoria, equipo_visitante, rival=ctx_rival_para_b or equipo_local, **kwargs
-    )
+    doc_b, meta_b = None, None
+    try:
+        doc_b, meta_b = ejecutar_sync_seguro(
+            cargar_o_crear_auditoria, equipo_visitante, rival=ctx_rival_para_b or equipo_local, **kwargs
+        )
+    except (RuntimeError, LookupError, Exception) as err_b:
+        avisar(f"⚠️ Error cargando auditoría de visita «{equipo_visitante}»: {err_b}")
+        nom_fs_v = getattr(res_puente, "nombre_busqueda_flashscore_visita", "") or getattr(res_puente, "equipo_visita", "")
+        if nom_fs_v and nom_fs_v != equipo_visitante:
+            try:
+                doc_b, meta_b = ejecutar_sync_seguro(
+                    cargar_o_crear_auditoria, nom_fs_v, rival=ctx_rival_para_b or equipo_local, **kwargs
+                )
+            except Exception as err_b2:
+                avisar(f"⚠️ Fallback con nombre Flashscore visita falló: {err_b2}")
+
+    if not doc_b:
+        doc_b = {
+            "equipo": {"nombre": equipo_visitante, "pais_iso": res_puente.pais_visita or "UNK"},
+            "partidos": [],
+            "identidad_verificada": False,
+            "estado_identidad": "identidad_no_verificada",
+            "motivo_identidad": f"No se pudo obtener datos para «{equipo_visitante}»",
+        }
+        meta_b = {}
 
     # PASO #3 OBLIGATORIO: Auditoría de coherencia de liga y rivales comunes antes de generar el ticket
     pais_iso_esperado = (
@@ -632,12 +676,23 @@ def resolver_enfrentamiento(
     motivo_identidad_final = res_puente.motivo_identidad
 
     if not identidad_verificada_final:
-        if (verificado_post_a and verificado_post_b) or (es_sel_a and es_sel_b):
+        if (verificado_post_a and verificado_post_b and n_partidos_a > 0 and n_partidos_b > 0) or (es_sel_a and es_sel_b and n_partidos_a > 0 and n_partidos_b > 0):
             identidad_verificada_final = True
             estado_identidad_final = "verificada"
             motivo_identidad_final = "Identidad verificada por catálogo de selecciones FIFA o descarga de historial oficial con ID verificable."
             contexto["identidad_verificada"] = True
             contexto["estado_identidad"] = "verificada"
+
+    # Si algún equipo falló fehacientemente o no tiene partidos suficientes
+    if doc_a.get("identidad_verificada") is False or doc_b.get("identidad_verificada") is False or n_partidos_a == 0 or n_partidos_b == 0:
+        identidad_verificada_final = False
+        estado_identidad_final = "identidad_no_verificada"
+        motivo_identidad_final = (
+            doc_a.get("motivo_identidad") or doc_b.get("motivo_identidad") or
+            f"Historial insuficiente: local con {n_partidos_a} partidos y visita con {n_partidos_b} partidos."
+        )
+        contexto["identidad_verificada"] = False
+        contexto["estado_identidad"] = "identidad_no_verificada"
 
     return {
         "equipo_local": nombre_a,
