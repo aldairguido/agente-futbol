@@ -1792,6 +1792,63 @@ LAS_45_METRICAS_OFICIALES: tuple[tuple[str, str, str, str], ...] = (
 )
 
 
+def reconstruir_marcador_mitades_partido(
+    partido: dict[str, Any],
+    lado_local: str,
+    lado_visita: str,
+) -> tuple[Optional[int], Optional[int], Optional[int], Optional[int], bool, str]:
+    """
+    Punto 1.1 (Auditoría Integral):
+    Reconstruye el marcador oficial de 1T y 2T vía métricas de portería observadas:
+      goles_recibidos(lado, p) = round(xgot_enfrentado(lado, p) - goles_evitados(lado, p))
+    (goles del Local en p = goles recibidos por Visita; goles de Visita en p = goles recibidos por Local).
+    Valida estrictamente 1T + 2T == FT para ambos bandos.
+    Devuelve (gl_1t, gv_1t, gl_2t, gv_2t, es_valido, etiqueta).
+    """
+    marcador = partido.get("marcador") or {}
+    ge = marcador.get("equipo") if marcador.get("equipo") is not None else partido.get("goles_equipo")
+    gr = marcador.get("rival") if marcador.get("rival") is not None else partido.get("goles_rival")
+    if lado_local == "equipo":
+        gl_ft = int(ge or 0)
+        gv_ft = int(gr or 0)
+    else:
+        gl_ft = int(gr or 0)
+        gv_ft = int(ge or 0)
+
+    per = partido.get("periodos") or {}
+    f_1t = {f["clave"]: f for f in (per.get("1T") or {}).get("filas", [])}
+    f_2t = {f["clave"]: f for f in (per.get("2T") or {}).get("filas", [])}
+
+    # 1T
+    xgot_v_1t = f_1t.get("xgot_enfrentado", {}).get(lado_visita)
+    gev_v_1t = f_1t.get("goles_evitados", {}).get(lado_visita)
+    xgot_l_1t = f_1t.get("xgot_enfrentado", {}).get(lado_local)
+    gev_l_1t = f_1t.get("goles_evitados", {}).get(lado_local)
+
+    # 2T
+    xgot_v_2t = f_2t.get("xgot_enfrentado", {}).get(lado_visita)
+    gev_v_2t = f_2t.get("goles_evitados", {}).get(lado_visita)
+    xgot_l_2t = f_2t.get("xgot_enfrentado", {}).get(lado_local)
+    gev_l_2t = f_2t.get("goles_evitados", {}).get(lado_local)
+
+    operands = [xgot_v_1t, gev_v_1t, xgot_l_1t, gev_l_1t, xgot_v_2t, gev_v_2t, xgot_l_2t, gev_l_2t]
+    if any(op is None for op in operands):
+        return None, None, None, None, False, "sin_dato"
+
+    gl_1t = int(round(xgot_v_1t - gev_v_1t))
+    gv_1t = int(round(xgot_l_1t - gev_l_1t))
+    gl_2t = int(round(xgot_v_2t - gev_v_2t))
+    gv_2t = int(round(xgot_l_2t - gev_l_2t))
+
+    if gl_1t < 0 or gv_1t < 0 or gl_2t < 0 or gv_2t < 0:
+        return None, None, None, None, False, "sin_dato"
+
+    if (gl_1t + gl_2t == gl_ft) and (gv_1t + gv_2t == gv_ft):
+        return gl_1t, gv_1t, gl_2t, gv_2t, True, "[derivado_aritmético]"
+    else:
+        return None, None, None, None, False, "sin_dato"
+
+
 def _formatear_valor_metrica_45(
     clave: str,
     valor: Any,
@@ -1800,7 +1857,23 @@ def _formatear_valor_metrica_45(
 ) -> str:
     """Formatea limpiamente un valor según la especificación de la métrica y formato compuesto c/t (pct%)."""
     if valor is None:
-        return "0"
+        return "sin_dato"
+
+    # Punto 1.2: Métricas sin cobertura que permanecen constantes en 0 -> sin_dato
+    METRICAS_SIN_COBERTURA_ESTANDAR = frozenset({
+        "grandes_ocasiones_falladas", "xg_balon_parado",
+        "duelos_suelo_pct", "duelos_aereos_pct", "bloqueos", "recuperaciones"
+    })
+    if clave in METRICAS_SIN_COBERTURA_ESTANDAR:
+        if valor == 0 or valor == 0.0 or str(valor).strip() in ("0", "0.0", "0.00"):
+            return "sin_dato"
+
+    # Punto 1.4: xg_juego_abierto y xg_sin_penalti como copias idénticas sin desglose -> sin_dato
+    if filas_map and clave in ("xg_juego_abierto", "xg_sin_penalti"):
+        xg_ft = filas_map.get("xg", {}).get(lado)
+        bp_ft = filas_map.get("xg_balon_parado", {}).get(lado)
+        if xg_ft is not None and valor == xg_ft and (bp_ft is None or bp_ft == 0.0 or bp_ft == "sin_dato"):
+            return "sin_dato"
 
     # Si se pasan las filas del periodo, verificar si es métrica compuesta con conteo + porcentaje
     if filas_map:
@@ -1808,30 +1881,29 @@ def _formatear_valor_metrica_45(
             comp = filas_map.get("pases_largos_completados", {}).get(lado)
             tot = filas_map.get("pases_largos", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
-                pct = int(round(float(valor))) if valor is not None else int(round(comp * 100.0 / tot))
+                pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "pases_tercio_final_pct":
             comp = filas_map.get("pases_tercio_final_completados", {}).get(lado)
             tot = filas_map.get("pases_tercio_final", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
-                pct = int(round(float(valor))) if valor is not None else int(round(comp * 100.0 / tot))
+                pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "cruces_pct":
             comp = filas_map.get("centros_completados", {}).get(lado)
             tot = filas_map.get("centros", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
-                pct = int(round(float(valor))) if valor is not None else int(round(comp * 100.0 / tot))
+                pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "entradas_pct":
             comp = filas_map.get("entradas_ganadas", {}).get(lado)
             tot = filas_map.get("entradas", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
-                pct_val = filas_map.get("entradas_ganadas_pct", {}).get(lado)
-                pct = int(round(pct_val)) if pct_val is not None else int(round(comp * 100.0 / tot))
+                pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "pases_ratio":
             comp = filas_map.get("pases_completados", {}).get(lado)
-            tot = filas_map.get("pases_total", {}).get(lado) or filas_map.get("pases_totales", {}).get(lado)
+            tot = filas_map.get("pases_totales", {}).get(lado) or filas_map.get("pases_total", {}).get(lado)
             pct = filas_map.get("pases_precision_pct", {}).get(lado) or filas_map.get("pases_pct", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
                 p_int = int(round(pct)) if pct is not None else int(round(comp * 100.0 / tot))
@@ -1842,7 +1914,7 @@ def _formatear_valor_metrica_45(
             comp = filas_map.get(k_comp, {}).get(lado)
             tot = filas_map.get(k_tot, {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
-                pct = int(round(float(valor))) if valor is not None else int(round(comp * 100.0 / tot))
+                pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
 
     if isinstance(valor, str):
@@ -1910,16 +1982,14 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
         f_1t = {f["clave"]: f for f in (pers.get("1T") or {}).get("filas", [])}
         f_2t = {f["clave"]: f for f in (pers.get("2T") or {}).get("filas", [])}
 
-        enc_eq_1t = f_1t.get("goles_encajados", {}).get("equipo")
-        enc_riv_1t = f_1t.get("goles_encajados", {}).get("rival")
-        if enc_eq_1t is not None and enc_riv_1t is not None:
-            gl_1t = int(round(enc_riv_1t if lado_l == "equipo" else enc_eq_1t))
-            gv_1t = int(round(enc_eq_1t if lado_l == "equipo" else enc_riv_1t))
+        # Desglose de goles en 1T y 2T vía reconstrucción matemática estricta
+        gl_1t_val, gv_1t_val, gl_2t_val, gv_2t_val, mitades_validas, _ = reconstruir_marcador_mitades_partido(p, lado_l, lado_v)
+        if mitades_validas:
+            str_1t = f"{gl_1t_val} - {gv_1t_val}"
+            str_2t = f"{gl_2t_val} - {gv_2t_val}"
         else:
-            gl_1t = 0
-            gv_1t = 0
-        gl_2t = max(0, gl - gl_1t)
-        gv_2t = max(0, gv - gv_1t)
+            str_1t = "sin_dato"
+            str_2t = "sin_dato"
 
         xg_l = f_ft.get("xg", {}).get(lado_l)
         xg_v = f_ft.get("xg", {}).get(lado_v)
@@ -1932,14 +2002,16 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
         id_fs = str(fs.get("id_flashscore") or "N/D")
 
         proc_ft = (p.get("procedencia") or {}).get("FT") or {}
-        if "flashscore" in str(proc_ft).lower() or fs.get("pareado"):
+        if id_fs == "N/D" or not fs.get("pareado"):
+            fuente_txt = "FotMob"
+        elif "flashscore" in str(proc_ft).lower():
             fuente_txt = "FM+FS"
         else:
             fuente_txt = "FotMob"
 
         lineas.append(
             f"| {idx:02d} | {fecha} | {torneo} | {nom_l} vs {nom_v} | "
-            f"{gl} - {gv} | {gl_1t} - {gv_1t} | {gl_2t} - {gv_2t} | "
+            f"{gl} - {gv} | {str_1t} | {str_2t} | "
             f"{str_xg} | {id_fm} | {id_fs} | {fuente_txt} |"
         )
     lineas.append("")
@@ -1984,24 +2056,12 @@ def formatear_matriz_45_partido(
     f_1t = {f["clave"]: f for f in (periodos.get("1T") or {}).get("filas", [])}
     f_2t = {f["clave"]: f for f in (periodos.get("2T") or {}).get("filas", [])}
 
-    # Desglose de goles en 1T y 2T (derivado de goles_encajados)
-    enc_eq_1t = f_1t.get("goles_encajados", {}).get("equipo")
-    enc_riv_1t = f_1t.get("goles_encajados", {}).get("rival")
-    if enc_eq_1t is not None and enc_riv_1t is not None:
-        gl_1t = int(round(enc_riv_1t if lado_local == "equipo" else enc_eq_1t))
-        gv_1t = int(round(enc_eq_1t if lado_local == "equipo" else enc_riv_1t))
+    # Desglose de goles en 1T y 2T vía reconstrucción matemática estricta
+    gl_1t, gv_1t, gl_2t, gv_2t, mitades_validas, tag_mitades = reconstruir_marcador_mitades_partido(partido, lado_local, lado_visita)
+    if mitades_validas:
+        mitades_str = f"1T: {gl_1t}-{gv_1t} | 2T: {gl_2t}-{gv_2t} {tag_mitades}"
     else:
-        gl_1t = 0
-        gv_1t = 0
-
-    enc_eq_2t = f_2t.get("goles_encajados", {}).get("equipo")
-    enc_riv_2t = f_2t.get("goles_encajados", {}).get("rival")
-    if enc_eq_2t is not None and enc_riv_2t is not None:
-        gl_2t = int(round(enc_riv_2t if lado_local == "equipo" else enc_eq_2t))
-        gv_2t = int(round(enc_eq_2t if lado_local == "equipo" else enc_riv_2t))
-    else:
-        gl_2t = max(0, gl - gl_1t)
-        gv_2t = max(0, gv - gv_1t)
+        mitades_str = "1T: sin_dato | 2T: sin_dato"
 
     torneo = str(partido.get("torneo") or nombre_torneo_defecto or "Oficial")
     fecha = str(partido.get("fecha") or "N/D")[:10]
@@ -2014,7 +2074,7 @@ def formatear_matriz_45_partido(
     lineas: list[str] = [
         "=" * 84,
         f"MATRIZ DE PARTIDO [{k}/{total_partidos}] · {torneo} · Fecha: {fecha}",
-        f"{nom_local} (Local) {gl} - {gv} {nom_visita} (Visita) | 1T: {gl_1t}-{gv_1t} | 2T: {gl_2t}-{gv_2t}",
+        f"{nom_local} (Local) {gl} - {gv} {nom_visita} (Visita) | {mitades_str}",
         f"IDs Verificables -> FotMob: {id_fm} | Flashscore: {id_fs}",
         "=" * 84,
     ]
@@ -2061,11 +2121,14 @@ def formatear_matriz_45_partido(
             # Fuente
             p_ft = (proc_ft.get("equipo", {}).get(clave)
                     or proc_ft.get("rival", {}).get(clave) or "")
-            if clave == "saques_puerta" and ("est" in str(p_ft).lower() or fila_ft.get("estimado")):
+            todos_sin_dato = all(s == "sin_dato" for s in [str_l_ft, str_v_ft, str_l_1t, str_v_1t, str_l_2t, str_v_2t])
+            if todos_sin_dato:
+                fuente_txt = "sin_dato"
+            elif clave == "saques_puerta" and ("est" in str(p_ft).lower() or fila_ft.get("estimado")):
                 fuente_txt = "Est."
+            elif id_fs == "N/D" or not fs.get("pareado"):
+                fuente_txt = "FotMob"
             elif "flashscore" in str(p_ft).lower():
-                fuente_txt = "FM+FS"
-            elif fs.get("pareado"):
                 fuente_txt = "FM+FS"
             else:
                 fuente_txt = "FotMob"

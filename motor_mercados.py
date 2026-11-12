@@ -2305,8 +2305,8 @@ class MotorMercados:
             p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
             if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
                 factor_bloqueo *= 0.90
-            # Acotar factor_bloqueo total entre [0.86, 1.15] para evitar colapso de medias observadas
-            factor_bloqueo = max(0.86, min(1.15, factor_bloqueo))
+            # Punto 1.8: Tope protector de recorte a mu de córneres (máx 10% sin validación cronológica)
+            factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))
             base = base * factor_bloqueo
         except Exception:
             pass
@@ -5343,23 +5343,27 @@ def clusters_marcador(
     # Cálculo exacto de probabilidad de Menos de 1.5 Goles en 1T vía distribución Poisson
     p_u15_1t = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
 
-    # 1. Determinar SIEMPRE primero la mejor jugada de Resultado / Doble Oportunidad
+    # 1. Determinar la mejor jugada validada (sincronizada con regla de calibración y Doble ADN)
+    # Punto 1.6: En duelos parejos o con recorte alto donde 1X se degrada por baja frecuencia observada,
+    # se priorizan las líneas de goles con respaldo cuantitativo
     if p_fav_val >= 62.0 and p_00_pct < 8.5 and diff_lam_est >= 0.40:
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
+    elif is_11_or_00_top3 and p_u25_pct >= 55.0:
+        jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
+    elif p_u35_pct >= 75.0 and (p_fav_val < 55.0):
+        jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
     elif p_dc_val >= 66.0:
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
     elif p_btts_no_pct >= 55.0:
         jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
-    elif (44.0 <= p_fav_val < 62.0) or is_11_or_00_top3:
-        jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
     elif p_u25_pct >= 62.0 and p_cerrados_pct >= 50.0:
-        jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%) o 1er Tiempo : Empate"
+        jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
     else:
-        jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
+        jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
 
-    # 2. Solo si la probabilidad real Poisson de -1.5 en 1T es >= 68.0% (lam_1t_comb <= 1.08),
-    # anexarla al lado con ' | ' sin borrar la jugada principal
-    if p_u15_1t >= 68.0 and lam_1t_comb <= 1.08:
+    # 2. Mitades 1T: solo anexar si hay validación y lam_1t_comb bajo, sin forzar si 1T carece de calibración
+    # En Londrina vs Nautico las mitades no fueron validadas cronológicamente
+    if patron_diesel_1t and p_u15_1t >= 75.0 and lam_1t_comb <= 0.95:
         jugada_optima_txt += f" | 1ra Mitad : Menos de 1.5 Goles ({p_u15_1t:.1f}%)"
 
     if asedio_bandas:

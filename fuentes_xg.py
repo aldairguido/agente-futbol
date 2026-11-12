@@ -4031,10 +4031,10 @@ METRICAS_CONTEO_ADITIVAS: frozenset[str] = frozenset({
     "tarjetas_amarillas", "tarjetas_rojas",
     "pases_total", "pases_totales", "pases_completados",
     "pases_largos", "pases_largos_completados",
-    "pases_tercio_final", "pases_tercio_final_completados", "pases_tercio_final_pct",
+    "pases_tercio_final", "pases_tercio_final_completados",
     "centros", "centros_completados",
     "pases_clave", "saques_banda", "saques_de_banda",
-    "faltas", "entradas", "entradas_ganadas", "entradas_pct",
+    "faltas", "entradas", "entradas_ganadas",
     "duelos_ganados", "despejes", "intercepciones", "bloqueos", "recuperaciones",
     "errores_remate", "errores_gol",
     "paradas", "goles_encajados", "saques_puerta", "saques_de_puerta",
@@ -4158,20 +4158,27 @@ def _resolver_ecuaciones_periodo(
             _marcar_est(propio, "xg")
         elif rt_raw is not None and rt_raw == 0.0 and goles_eq is not None and gf_propio is not None and gf_propio > 0:
             # 2f. Protección en FT cuando un partido tuvo goles pero remates_totales == 0 reportado:
-            gf_val = float(gf_propio)
-            gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
-            if propio.get("xg") is None:
-                propio["xg"] = float(round(gf_val, 2))
-                _marcar_est(propio, "xg")
-            if propio.get("xgot") is None:
-                propio["xgot"] = float(round(gf_val, 2))
-                _marcar_est(propio, "xgot")
-            if propio.get("xgot_enfrentados") is None:
-                propio["xgot_enfrentados"] = float(round(gc_val, 2))
-                _marcar_est(propio, "xgot_enfrentados")
-            if propio.get("goles_evitados") is None:
-                propio["goles_evitados"] = 0.0
-                _marcar_est(propio, "goles_evitados")
+            # Si ambos equipos tienen remates == 0 o None, es un partido sin estadísticas del proveedor (ej. Nautico 1-0 Botafogo SP).
+            # Prohibido inyectar 1.00 sintético: todas las 45 métricas quedan como sin_dato (None),
+            # conservando únicamente el marcador oficial FT para el Cuadro B.
+            rt_ajeno_check = ajeno.get("remates_totales") or ajeno.get("remates") or 0.0
+            if float(rt_ajeno_check or 0.0) <= 0.001:
+                pass  # Partido sin estadísticas: no inyectar métricas sintéticas
+            else:
+                gf_val = float(gf_propio)
+                gc_val = float(ajeno.get("goles") if ajeno.get("goles") is not None else (propio.get("goles_encajados") or 0.0))
+                if propio.get("xg") is None:
+                    propio["xg"] = float(round(gf_val, 2))
+                    _marcar_est(propio, "xg")
+                if propio.get("xgot") is None:
+                    propio["xgot"] = float(round(gf_val, 2))
+                    _marcar_est(propio, "xgot")
+                if propio.get("xgot_enfrentados") is None:
+                    propio["xgot_enfrentados"] = float(round(gc_val, 2))
+                    _marcar_est(propio, "xgot_enfrentados")
+                if propio.get("goles_evitados") is None:
+                    propio["goles_evitados"] = 0.0
+                    _marcar_est(propio, "goles_evitados")
 
         if rp_propio > 0 and (propio.get("xgot") is None or propio.get("xgot") <= 0.001):
             gf_val = float(gf_propio if gf_propio is not None else 0.0)
@@ -4293,9 +4300,7 @@ def _resolver_ecuaciones_periodo(
         xg_val = d.get("xg")
         s_d = estimados_eq if d is eq else estimados_riv
         if xg_val is not None:
-            if d.get("xg_sin_penalti") is None:
-                d["xg_sin_penalti"] = xg_val
-                _marcar_est(d, "xg_sin_penalti")
+            # Prohibido copiar xg en xg_sin_penalti o xg_juego_abierto sin desglose independiente
             if d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is not None:
                 d["xg_juego_abierto"] = round(max(0.0, xg_val - d["xg_balon_parado"]), 2)
                 if "xg" in s_d or "xg_balon_parado" in s_d:
@@ -4304,11 +4309,6 @@ def _resolver_ecuaciones_periodo(
                 d["xg_balon_parado"] = round(max(0.0, xg_val - d["xg_juego_abierto"]), 2)
                 if "xg" in s_d or "xg_juego_abierto" in s_d:
                     _marcar_est(d, "xg_balon_parado")
-            elif d.get("xg_juego_abierto") is None and d.get("xg_balon_parado") is None:
-                d["xg_juego_abierto"] = xg_val
-                d["xg_balon_parado"] = 0.0
-                _marcar_est(d, "xg_juego_abierto")
-                _marcar_est(d, "xg_balon_parado")
 
         # 3g. Goles evitados = xgot_enfrentados - goles_encajados
         xgot_enf = d.get("xgot_enfrentados")
