@@ -2706,7 +2706,19 @@ def generar_cuadro_auditoria_15_partidos_png(
     fig.text(0.04, 0.935, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
              fontsize=8.5, color="#64748B")
     if meta.get("advertencia_liga"):
-        fig.text(0.04, 0.920, f"⚠️ {meta['advertencia_liga']}", fontsize=8.5, fontweight="bold", color="#B45309")
+        mostrar_adv = True
+        try:
+            from servicio_mercados import son_ligas_equivalentes
+            adv_str = str(meta["advertencia_liga"])
+            partes_adv = adv_str.split("|")
+            p_decl = partes_adv[0].replace("Declarada:", "").strip() if len(partes_adv) > 0 else ""
+            p_det = partes_adv[1].replace("Detectada:", "").strip() if len(partes_adv) > 1 else ""
+            if son_ligas_equivalentes(p_decl, p_det):
+                mostrar_adv = False
+        except Exception:
+            pass
+        if mostrar_adv:
+            fig.text(0.04, 0.920, f"⚠️ {meta['advertencia_liga']}", fontsize=8.5, fontweight="bold", color="#B45309")
 
     # ── BLOQUE 1: LISTA 01..15 DE PARTIDOS ÚNICOS (y: 0.610 .. 0.960) ──
     ax.text(0.005, 0.962, f"AUDITORÍA DE LOS {len(lista_L)} PARTIDOS OFICIALES ÚNICOS — LOCAL: {eq_L.upper()}",
@@ -2892,9 +2904,9 @@ def generar_cuadro_auditoria_15_partidos_png(
                 ratings_L_v = construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
                 ratings_V_v = construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
             from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_v, _, _ = obtener_top5_y_seccion1_filtrados(analisis)
+            top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
         except Exception:
-            pass
+            sec1_v = None
 
         texto_veredicto = generar_veredicto_tactico_partido(
             nombre_local=eq_L,
@@ -2909,6 +2921,7 @@ def generar_cuadro_auditoria_15_partidos_png(
             ratings_loc=ratings_L_v,
             ratings_vis=ratings_V_v,
             top5_podio=top5_v,
+            selecciones_sec1=sec1_v,
             para_canvas=True,
         )
         lineas_ver = [ln.strip() for ln in texto_veredicto.splitlines() if ln.strip()]

@@ -402,6 +402,63 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
     }
 
 
+def son_ligas_equivalentes(liga_decl: str, liga_det: str) -> bool:
+    """
+    Determina si la competición declarada y la detectada corresponden al mismo torneo
+    o a la misma familia continental de selecciones (Punto 50).
+    Por ejemplo, UEFA Nations League == Europe == Eurocopa == Eliminatorias UEFA.
+    """
+    if not liga_decl or not liga_det:
+        return True
+    from fuentes_xg import _sin_acentos
+    s_decl = _sin_acentos(str(liga_decl)).lower().strip()
+    s_det = _sin_acentos(str(liga_det)).lower().strip()
+    if s_decl == s_det:
+        return True
+
+    def _raiz(t: str) -> str:
+        s = _sin_acentos(str(t)).lower().strip()
+        s = re.sub(r'[^a-z0-9]', '', s)
+        s = s.replace("brasileirao", "brasileir").replace("brasileiro", "brasileir")
+        s = s.replace("campeonato", "")
+        return s
+
+    r1 = _raiz(s_decl)
+    r2 = _raiz(s_det)
+    if not r1 or not r2:
+        return True
+    if r1 == r2 or r1 in r2 or r2 in r1:
+        return True
+
+    # Familias continentales de selecciones (UEFA, CONMEBOL, CONCACAF, CAF, AFC, FIFA)
+    familias = [
+        # UEFA
+        {"uefa", "nations", "uefanationsleague", "euro", "eurocopa", "uefaeuro", "eliminatoriasuefa", "worldcupqualuefa", "worldcupqualificationuefa", "europe", "europa"},
+        # CONMEBOL
+        {"conmebol", "copaamerica", "eliminatoriasconmebol", "eliminatoriassudamericanas", "southamerica", "sudamerica"},
+        # CONCACAF
+        {"concacaf", "concacafnationsleague", "copaoro", "goldcup", "northcentralamerica", "northamerica"},
+        # CAF
+        {"caf", "copaafrica", "africa", "africancupofnations"},
+        # AFC
+        {"afc", "copaasiatica", "asiancup", "asia"},
+        # FIFA World Cup
+        {"worldcup", "copadelmundo", "mundial", "fifaworldcup", "world"},
+    ]
+    toks_decl = {w for w in re.split(r"[\s\-_./()\[\]:]+", s_decl) if w}
+    toks_det = {w for w in re.split(r"[\s\-_./()\[\]:]+", s_det) if w}
+    toks_decl.add(r1)
+    toks_det.add(r2)
+
+    for fam in familias:
+        decl_in_fam = any(m in toks_decl or any(m in t for t in toks_decl) for m in fam)
+        det_in_fam = any(m in toks_det or any(m in t for t in toks_det) for m in fam)
+        if decl_in_fam and det_in_fam:
+            return True
+
+    return False
+
+
 def resolver_enfrentamiento(
     texto_o_equipo_a: str,
     equipo_b: str | None = None,
@@ -649,11 +706,7 @@ def resolver_enfrentamiento(
     torneos_reales = [str(p.get("torneo") or "").strip() for p in (doc_a.get("partidos") or []) if p.get("torneo")]
     liga_partidos = torneos_reales[0] if torneos_reales else ""
     liga_det_raw = str(liga_partidos or (doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
-    from fuentes_xg import _sin_acentos
-    def _n_lg(t: str) -> str:
-        s = _sin_acentos(t).lower().replace("brasileirao", "").replace("campeonato", "").replace("de", "").replace(" ", "")
-        return s
-    if liga_decl_raw and liga_det_raw and _n_lg(liga_decl_raw) != _n_lg(liga_det_raw):
+    if liga_decl_raw and liga_det_raw and not son_ligas_equivalentes(liga_decl_raw, liga_det_raw):
         adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
         avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
         contexto["advertencia_liga"] = adv_liga
@@ -952,7 +1005,12 @@ def obtener_top5_y_seccion1_filtrados(
             return False
         if bloquear_tarjetas and cat_s == "TARJETAS":
             return False
-        return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
+            ev_s = str(_val(s, "evento") or "").lower()
+            et_s = str(_val(s, "etiqueta") or "").lower()
+            if "under" in ev_s or "menos" in et_s or "-" in et_s:
+                return False
+        return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
     sels_validas = [
         s for s in sels_raw
@@ -1333,7 +1391,7 @@ def renderizar_ticket_mercados_png(
     X_COL3 = PAD_X + W_COL1 + W_COL2
     X_LIMIT_PILLS = X_COL3 + W_COL3 - 10
 
-    def _organizar_bloque(lista_sels: list[Any]) -> list[dict[str, Any]]:
+    def _organizar_bloque(lista_sels: list[Any], es_seccion_1: bool = False) -> list[dict[str, Any]]:
         agrupado: dict[str, dict[str, list[Any]]] = {c: {} for c in ORDEN_CATEGORIAS}
         for s in lista_sels:
             cat, amb = _clasificar_categoria_ambito(s)
@@ -1343,6 +1401,30 @@ def renderizar_ticket_mercados_png(
         for cat in ORDEN_CATEGORIAS:
             ambs_dict = agrupado.get(cat, {})
             if not ambs_dict:
+                if cat == "TARJETAS" and es_seccion_1:
+                    lbl_sin = "Sin líneas validadas >= 70%"
+                    w_lbl = _get_w(lbl_sin, f_pill_lbl)
+                    pill_w = 8 + w_lbl + 8
+                    pildora_sin = {
+                        "lbl": lbl_sin,
+                        "pct": "",
+                        "prob": 0.0,
+                        "w": pill_w,
+                        "w_lbl": w_lbl,
+                        "w_pct": 0,
+                        "sin_lineas": True,
+                    }
+                    filas_cat = [{
+                        "ambito": "Tiempo Completo (FT)",
+                        "pildoras": [pildora_sin],
+                        "lineas_pills": [[pildora_sin]],
+                        "alto": 38,
+                    }]
+                    res_cats.append({
+                        "categoria": cat,
+                        "filas": filas_cat,
+                        "alto_total": 38,
+                    })
                 continue
 
             filas_cat: list[dict[str, Any]] = []
@@ -1455,7 +1537,12 @@ def renderizar_ticket_mercados_png(
                 return False
             if bloquear_tarjetas and cat_s == "TARJETAS":
                 return False
-            return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+            if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
+                ev_s = str(_val(s, "evento") or "").lower()
+                et_s = str(_val(s, "etiqueta") or "").lower()
+                if "under" in ev_s or "menos" in et_s or "-" in et_s:
+                    return False
+            return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
         sels_validas = [
             s for s in sels_raw
@@ -1544,8 +1631,8 @@ def renderizar_ticket_mercados_png(
                     })
                     break
 
-        sec1_data = _organizar_bloque(mantiene_raw)
-        sec2_data = _organizar_bloque(sensibles_raw)
+        sec1_data = _organizar_bloque(mantiene_raw, es_seccion_1=True)
+        sec2_data = _organizar_bloque(sensibles_raw, es_seccion_1=False)
 
         clusters_info = getattr(motor, "clusters", None)
         if not clusters_info and hasattr(analisis, "matriz_ft"):
@@ -1645,7 +1732,12 @@ def renderizar_ticket_mercados_png(
         if competicion:
             meta_parts.append(f"Competición: {competicion}")
         if meta.get("advertencia_liga"):
-            meta_parts.append(f"⚠️ {meta['advertencia_liga']}")
+            adv_str = str(meta["advertencia_liga"])
+            partes_adv = adv_str.split("|")
+            p_decl = partes_adv[0].replace("Declarada:", "").strip() if len(partes_adv) > 0 else ""
+            p_det = partes_adv[1].replace("Detectada:", "").strip() if len(partes_adv) > 1 else ""
+            if not son_ligas_equivalentes(p_decl, p_det):
+                meta_parts.append(f"⚠️ {meta['advertencia_liga']}")
         if fecha:
             meta_parts.append(f"Fecha: {fecha}")
         meta_parts.append("Modelo: Poisson bivariado con contracción bayesiana")
@@ -1808,10 +1900,15 @@ def renderizar_ticket_mercados_png(
                         cur_px = X_COL3 + 12
                         for p in p_line:
                             pw = p["w"]
-                            d.rounded_rectangle([cur_px, y_p, cur_px + pw, y_p + 24],
-                                                radius=5, fill=c_pill_bg, outline=c_pill_border, width=1)
-                            d.text((cur_px + 8, y_p + 4), p["lbl"], font=f_pill_lbl, fill=C_TXT_DARK)
-                            d.text((cur_px + 8 + p["w_lbl"] + 5, y_p + 4), p["pct"], font=f_pill_pct, fill=c_pill_pct)
+                            if p.get("sin_lineas"):
+                                d.rounded_rectangle([cur_px, y_p, cur_px + pw, y_p + 24],
+                                                    radius=5, fill=(241, 245, 249), outline=(203, 213, 225), width=1)
+                                d.text((cur_px + 8, y_p + 4), p["lbl"], font=f_pill_lbl, fill=(100, 116, 139))
+                            else:
+                                d.rounded_rectangle([cur_px, y_p, cur_px + pw, y_p + 24],
+                                                    radius=5, fill=c_pill_bg, outline=c_pill_border, width=1)
+                                d.text((cur_px + 8, y_p + 4), p["lbl"], font=f_pill_lbl, fill=C_TXT_DARK)
+                                d.text((cur_px + 8 + p["w_lbl"] + 5, y_p + 4), p["pct"], font=f_pill_pct, fill=c_pill_pct)
                             cur_px += pw + 6
 
                     d.line([X_COL2, y_curr_fila + f_h, PAD_X + ANCHO_TABLA, y_curr_fila + f_h], fill=C_BORDER, width=1)

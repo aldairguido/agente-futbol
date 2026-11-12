@@ -901,6 +901,7 @@ def generar_reporte_xai_telegram(
     ratings_loc: Optional[Dict[str, Any]] = None,
     ratings_vis: Optional[Dict[str, Any]] = None,
     top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec1: Optional[List[Any]] = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -1032,6 +1033,7 @@ def generar_reporte_xai_telegram(
         ratings_loc=ratings_loc,
         ratings_vis=ratings_vis,
         top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
     )
     if veredicto_4:
         lineas.append("")
@@ -1053,6 +1055,7 @@ def generar_veredicto_tactico_partido(
     ratings_loc: Optional[Dict[str, Any]] = None,
     ratings_vis: Optional[Dict[str, Any]] = None,
     top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec1: Optional[List[Any]] = None,
     para_canvas: bool = False,
 ) -> str:
     """
@@ -1200,9 +1203,18 @@ def generar_veredicto_tactico_partido(
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
-            if "tarj" in et_i.lower():
+            if "tarj" in et_i.lower() or "amarill" in et_i.lower():
                 mkt_tarjetas = et_i
                 prob_tarjetas = float(item.get("probabilidad", 0.80)) * 100.0
+                break
+    if mkt_tarjetas is None and selecciones_sec1:
+        for item in selecciones_sec1:
+            et_i = str(item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", ""))
+            m_i = str(item.get("mercado") if isinstance(item, dict) else getattr(item, "mercado", "")).lower()
+            p_val = float(item.get("probabilidad") if isinstance(item, dict) else getattr(item, "probabilidad", 0.0) or 0.0)
+            if ("tarj" in et_i.lower() or "tarj" in m_i or "amarill" in et_i.lower()) and p_val >= 0.70:
+                mkt_tarjetas = et_i
+                prob_tarjetas = p_val * 100.0 if p_val <= 1.0 else p_val
                 break
 
     # 4. Segunda mitad (2T): exclusivamente desde mercado validado en Top 5 / Sección 1
@@ -1226,8 +1238,17 @@ def generar_veredicto_tactico_partido(
     )
     sub = "Si tuvieras que apostar hoy con este Ticket, estas son las 4 conclusiones irrefutables:"
     p_fav_max = max(p_loc, p_vis)
+    try:
+        from resolvedor_entidades import obtener_seleccion_nacional
+    except Exception:
+        obtener_seleccion_nacional = None
+    es_sel_fav = bool(
+        probs.get("es_seleccion")
+        or (obtener_seleccion_nacional and (obtener_seleccion_nacional(eq_fav) is not None or obtener_seleccion_nacional(eq_riv) is not None))
+    )
+    art_fav = "" if es_sel_fav else "El "
     c1_tit = (
-        f"1. El {eq_fav} va a ganar (o mínimo empatar):"
+        f"1. {art_fav}{eq_fav} va a ganar (o mínimo empatar):"
         if p_fav_max >= 0.50
         else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     )
@@ -1469,6 +1490,7 @@ def generar_informe_narrativo_xai(
     ratings_local: Optional[Dict[str, Any]] = None,
     ratings_visita: Optional[Dict[str, Any]] = None,
     top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec1: Optional[List[Any]] = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -1489,4 +1511,5 @@ def generar_informe_narrativo_xai(
         ratings_loc=ratings_local,
         ratings_vis=ratings_visita,
         top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
     )

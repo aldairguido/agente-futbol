@@ -1562,6 +1562,14 @@ class MotorMercados:
             mult_sinc_l = max(0.68, min(1.28, ratio_55_l * f_racha_l * f_ctx_l))
             mult_sinc_v = max(0.68, min(1.28, ratio_55_v * f_racha_v * f_ctx_v))
 
+            # Punto 50 (Ítem 3): Si la red recursiva ya descontó a un equipo (lam_red < lam_base),
+            # el factor multiplicativo post-red no puede recortar más de un -10% adicional
+            # (mult_sinc >= 0.90) y respeta un piso acumulado de >= 0.72 * lam_base.
+            if lam_l_red < lam_l and not (es_vivo and roja_l):
+                mult_sinc_l = max(0.90, mult_sinc_l)
+            if lam_v_red < lam_v and not (es_vivo and roja_v):
+                mult_sinc_v = max(0.90, mult_sinc_v)
+
             # Ajuste d) Factor "Matagigantes" (Bloque Bajo Letal - ej. Forest 3-1 Man City):
             # Si el local tiene baja posesión proyectada (< 36%) frente a un favorito visitante pero alta puntería (P07 >= 0.38 o P05 >= 0.30 con P55 >= 0.45), reducir -20% el λ del favorito visitante.
             mu_l_c = resultado.get("mu_local_casa") or {}
@@ -1589,6 +1597,10 @@ class MotorMercados:
 
             lam_l_nuevo = lam_l_red * mult_sinc_l
             lam_v_nuevo = lam_v_red * mult_sinc_v
+            if lam_l_red < lam_l and not (es_vivo and roja_l):
+                lam_l_nuevo = max(lam_l_nuevo, round(lam_l * 0.72, 2))
+            if lam_v_red < lam_v and not (es_vivo and roja_v):
+                lam_v_nuevo = max(lam_v_nuevo, round(lam_v * 0.72, 2))
 
             # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
@@ -2457,11 +2469,12 @@ class MotorMercados:
                 nota="Faltan tarjetas o la competición carece de cobertura oficial (mu < 0.5 o >30% sin registro).")
         dist = {k: p for k, p in enumerate(distribucion_conteo(mu_amarillas))}
         sels: list[Seleccion] = []
+        vetar_under = getattr(self, "hay_tension_asedio_tarjetas", False)
         for linea in LINEAS_AMARILLAS:
             sels.append(self._sel(idm, nombre, f"amarillas_over_{linea}",
                                   f"más de {linea} tarjetas amarillas", "FT", None, linea,
                                   prob_over(dist, linea)))
-            if linea > 0.5:
+            if linea > 0.5 and not vetar_under:
                 sels.append(self._sel(idm, nombre, f"amarillas_under_{linea}",
                                       f"menos de {linea} tarjetas amarillas", "FT", None, linea,
                                       prob_under(dist, linea)))
@@ -2498,20 +2511,32 @@ class MotorMercados:
                                     self.p.w_condicion, k_credibilidad)
             if propia is not None:
                 partes.append(propia)
-        if not partes:
+
+        xai = getattr(self, "xai_factores", None) or {}
+        rec = getattr(self, "recursivo", None) or {}
+        mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
+        mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
+        am_l = _safe_float(mu_l.get("amarillas", mu_l.get("tarjetas_amarillas")), None)
+        am_v = _safe_float(mu_v.get("amarillas", mu_v.get("tarjetas_amarillas")), None)
+
+        if tipo == "amarillas" and am_l is not None and am_v is not None and (am_l + am_v) >= 1.0:
+            base_tarj = float(am_l + am_v)
+        elif len(partes) >= 2:
+            base_tarj = sum(partes)
+        elif len(partes) == 1:
+            base_tarj = partes[0] * 2.0
+        elif not partes:
             return None
-        base_tarj = sum(partes)
+        else:
+            base_tarj = 3.8
+
         if tipo == "amarillas":
             try:
-                xai = getattr(self, "xai_factores", None) or {}
-                rec = getattr(self, "recursivo", None) or {}
-                mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
-                mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
-                am_l = float(mu_l.get("amarillas", partes[0] if partes else 2.0) or 2.0)
-                am_v = float(mu_v.get("amarillas", partes[-1] if partes else 2.0) or 2.0)
+                am_l_val = am_l if am_l is not None else (partes[0] if partes else 1.9)
+                am_v_val = am_v if am_v is not None else (partes[-1] if len(partes) > 1 else am_l_val)
                 fal_l = max(5.0, float(mu_l.get("faltas", 11.5) or 11.5))
                 fal_v = max(5.0, float(mu_v.get("faltas", 12.0) or 12.0))
-                ratio_agresividad = ((am_l / fal_l) + (am_v / fal_v)) / 2.0
+                ratio_agresividad = ((am_l_val / fal_l) + (am_v_val / fal_v)) / 2.0
                 # Ratio medio ~0.18; modulador suave entre 0.88 y 1.15 (P43_Agresividad_Defensiva)
                 mod_agr = max(0.88, min(1.15, 0.82 + ratio_agresividad))
                 base_tarj *= mod_agr
@@ -2520,7 +2545,6 @@ class MotorMercados:
                 mult_arb = float(ctx_av.get("mult_tarjetas", 1.0) or 1.0)
                 base_tarj *= mult_arb
                 # Ajuste e) Límite de Tarjetas por Monopolio de Posesión (> 68% o |lam_l - lam_v| >= 0.75):
-                # Si la posesión proyectada del favorito supera el 68% (ej. Man City ~65-72%), reducir lambda_tarjetas un -15%.
                 pos_l = float(mu_l.get("posesion_pct", 50.0) or 50.0)
                 pos_v = float(mu_v.get("posesion_pct", 50.0) or 50.0)
                 pos_tot = max(1.0, pos_l + pos_v)
@@ -2530,6 +2554,19 @@ class MotorMercados:
                 self.monopolio_posesion_tarjetas = bool(pos_max_proy >= 68.0 or abs(lam_l - lam_v) >= 0.75)
                 if self.monopolio_posesion_tarjetas:
                     base_tarj *= 0.85
+
+                # Veto de tarjetas under por asedio o tensión verificado (Punto 50)
+                toq_l = float(mu_l.get("toques_area_rival", 0.0) or 0.0)
+                toq_v = float(mu_v.get("toques_area_rival", 0.0) or 0.0)
+                comp_nombre = str(getattr(self.p, "competicion", "") or "")
+                from motor_patrones import detectar_contexto_competicion
+                es_copa_playoff = bool(detectar_contexto_competicion(comp_nombre).get("es_copa_o_playoff", False))
+                self.hay_tension_asedio_tarjetas = bool(
+                    pos_max_proy >= 57.0
+                    or (pos_l >= 55.0 and toq_l >= 22.0)
+                    or (pos_v >= 55.0 and toq_v >= 22.0)
+                    or es_copa_playoff
+                )
             except Exception:
                 pass
         return base_tarj
@@ -3595,6 +3632,7 @@ def es_seleccion_competitiva_ticket(
     eq_l: str = "Local",
     eq_v: str = "Visitante",
     p_1x2: tuple[float, float, float] | None = None,
+    motor: Any = None,
 ) -> bool:
     """
     Sección 8.4 (Auditoría 30/10/2026):
@@ -3656,6 +3694,8 @@ def es_seleccion_competitiva_ticket(
             return False
         lin_f = float(lin)
         # Tarjetas Totales FT: solo +2.5 a +5.5 y -4.5 a -6.5 (prohibido +0.5 Tarj., -7.5, -8.5)
+        if es_under and (getattr(motor, "hay_tension_asedio_tarjetas", False) or getattr(motor, "asedio_verificado_top", False)):
+            return False
         if es_over:
             return 2.5 <= lin_f <= 5.5
         if es_under:
@@ -4717,8 +4757,16 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return f"Respaldo ADN: Cruce Estudio 1T [pases_control_1T {pases_ctrl:.0f} ⊗ bloqueos_1T {bloq_1t:.1f}] · λ 1T {lam_1t_comb:.2f} g."
             elif per == "2T" or es_diesel:
                 xg_2t = (xg2_l + xg2_v) if (xg2_l + xg2_v) > 0 else (lam_l + lam_v) * 0.58
-                duelos_2t = round(_muf(mu_v, "duelos_suelo_pct", 50.0) * 0.92, 1)
-                return f"Respaldo ADN: Cruce Ritmo 2T [xg_2T {xg_2t:.2f} ⊗ caida_duelos_2T_rival {duelos_2t:.1f}%] · Aceleración ofensiva diésel en 2T."
+                tiene_duelos = bool(mu_v.get("duelos_suelo_pct") is not None or mu_l.get("duelos_suelo_pct") is not None or pat_v_top.get("duelos_suelo_pct") is not None)
+                if tiene_duelos:
+                    duelos_2t = round(_muf(mu_v, "duelos_suelo_pct", 50.0) * 0.92, 1)
+                    return f"Respaldo ADN: Cruce Ritmo 2T [xg_2T {xg_2t:.2f} ⊗ caida_duelos_2T_rival {duelos_2t:.1f}%] · Aceleración ofensiva diésel en 2T."
+                else:
+                    tiros_2t = round(float(pat_l_top.get("remates_totales_2t") or pat_l_top.get("tiros_2t") or (_muf(mu_l, "remates_totales", 12.0) * 0.55)) +
+                                     float(pat_v_top.get("remates_totales_2t") or pat_v_top.get("tiros_2t") or (_muf(mu_v, "remates_totales", 10.0) * 0.55)), 1)
+                    sot_2t = round(float(pat_l_top.get("remates_puerta_2t") or (_muf(mu_l, "remates_puerta", 4.5) * 0.55)) +
+                                   float(pat_v_top.get("remates_puerta_2t") or (_muf(mu_v, "remates_puerta", 3.5) * 0.55)), 1)
+                    return f"Respaldo ADN: Cruce Ritmo 2T [xg_2T {xg_2t:.2f} @ tiros_2T {tiros_2t:.1f} · remates_puerta_2T {sot_2t:.1f}] · Aceleración ofensiva diésel en 2T."
             elif eq == eq_l:
                 xgot_eq = _muf(mu_l, "xgot", xg_l)
                 gev_riv = _muf(mu_v, "goles_evitados", 0.0)
@@ -4744,9 +4792,17 @@ def seleccionar_top_5_jugadas_recomendadas(
             centros = cruces_l * 0.65 + cruces_v * 0.55
             desp_riv = _muf(mu_v, "despejes", 18.0) + _muf(mu_l, "despejes", 18.0)
             rem_box = _muf(mu_l, "remates_dentro_area", 7.5) + _muf(mu_v, "remates_dentro_area", 6.5)
-            bloq_riv = _muf(mu_v, "bloqueos", 2.5) + _muf(mu_l, "bloqueos", 2.5)
-            indice = round(((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0)), 2)
-            return f"Respaldo ADN: Cruce [centros_totales {centros:.0f} ⊗ despejes_rival {desp_riv:.0f}] + [remates_dentro_area {rem_box:.0f} ⊗ bloqueos_rival {bloq_riv:.1f}] (Índice {indice:.2f})."
+            tiene_bloqueos = bool(mu_l.get("bloqueos") is not None or mu_v.get("bloqueos") is not None or pat_l_top.get("bloqueos") is not None or pat_v_top.get("bloqueos") is not None)
+            if tiene_bloqueos:
+                bloq_riv = _muf(mu_v, "bloqueos", 2.5) + _muf(mu_l, "bloqueos", 2.5)
+                indice = round(((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0)), 2)
+                return f"Respaldo ADN: Cruce [centros_totales {centros:.0f} ⊗ despejes_rival {desp_riv:.0f}] + [remates_dentro_area {rem_box:.0f} ⊗ bloqueos_rival {bloq_riv:.1f}] (Índice {indice:.2f})."
+            else:
+                rech_l = _muf(mu_l, "remates_bloqueados", _muf(mu_l, "remates_rechazados", 2.8))
+                rech_v = _muf(mu_v, "remates_bloqueados", _muf(mu_v, "remates_rechazados", 2.8))
+                rech_riv = rech_l + rech_v
+                indice = round(((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (rech_riv / 5.6)), 2)
+                return f"Respaldo ADN: Cruce [centros_totales {centros:.0f} ⊗ despejes_rival {desp_riv:.0f}] + [remates_dentro_area {rem_box:.0f} ⊗ remates_rechazados_rival {rech_riv:.1f}] (Índice {indice:.2f})."
 
         # Slot 5
         ev = str(_v(s, "evento") or "").lower()

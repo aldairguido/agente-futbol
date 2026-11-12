@@ -1007,6 +1007,19 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     elif (en_crisis_visita or attack_rating_visita < 35.0) and defense_rating_local >= 30.0:
         lam_v = min(lam_v, techo_atk_bajo)
 
+    # Punto 50 (Ítem 3): Tope contra doble penalización acumulada (45-DCN + [EN CRISIS])
+    # Cuando lambda_red < lambda_base (la red ya descontó la racha/jerarquía),
+    # el factor multiplicativo post-red no puede recortar más de un -10% adicional
+    # (lambda_final >= 0.90 * lambda_red), respetando un piso acumulado de
+    # lambda_final >= 0.72 * lambda_base (salvo expulsión en vivo).
+    if lam_red_local < lam_base_local:
+        piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
+        lam_l = max(lam_l, piso_l)
+
+    if lam_red_visita < lam_base_visita:
+        piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
+        lam_v = max(lam_v, piso_v)
+
     # ── Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating ──
     delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
     delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
@@ -1063,6 +1076,15 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         lam_v = min(lam_v, 0.60)
     if defense_rating_local >= 60.0 and lam_v > 2.05:
         lam_v = 1.95 + (lam_v - 1.95) * 0.40
+
+    # Re-asegurar piso contra doble penalización post-recorte dual
+    if lam_red_local < lam_base_local:
+        piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
+        lam_l = max(lam_l, piso_l)
+
+    if lam_red_visita < lam_base_visita:
+        piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
+        lam_v = max(lam_v, piso_v)
 
     lam_l = round(max(0.25, min(4.20, lam_l)), 2)
     lam_v = round(max(0.25, min(4.20, lam_v)), 2)

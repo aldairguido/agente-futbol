@@ -941,6 +941,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
         ratings_L_v = None
         ratings_V_v = None
         top5_v = None
+        sec1_v = None
         try:
             import cuadro_especialista as _ce
             if motor is not None and getattr(motor, "muestras", None):
@@ -949,15 +950,16 @@ def generar_bloque_narrativo_xai_desde_analisis(
                 ratings_L_v = _ce.construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
                 ratings_V_v = _ce.construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
             from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_v, _, _ = obtener_top5_y_seccion1_filtrados(analisis)
+            top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
         except Exception:
-            pass
+            sec1_v = None
 
         return generar_informe_narrativo_xai(
             eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V,
             ratings_local=ratings_L_v,
             ratings_visita=ratings_V_v,
             top5_podio=top5_v,
+            selecciones_sec1=sec1_v,
         )
     except Exception:
         return ""
