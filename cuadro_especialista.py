@@ -2657,6 +2657,8 @@ def generar_cuadro_auditoria_15_partidos_png(
              fontsize=20.5, fontweight="bold", color="#0F172A")
     fig.text(0.04, 0.935, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
              fontsize=8.5, color="#64748B")
+    if meta.get("advertencia_liga"):
+        fig.text(0.04, 0.920, f"⚠️ {meta['advertencia_liga']}", fontsize=8.5, fontweight="bold", color="#B45309")
 
     # ── BLOQUE 1: LISTA 01..15 DE PARTIDOS ÚNICOS (y: 0.610 .. 0.960) ──
     ax.text(0.005, 0.962, f"AUDITORÍA DE LOS {len(lista_L)} PARTIDOS OFICIALES ÚNICOS — LOCAL: {eq_L.upper()}",

@@ -594,9 +594,11 @@ def resolver_enfrentamiento(
         if res_puente.es_copa or not contexto.get("competicion"):
             contexto["competicion"] = liga_final.strip()
 
-    # Detección y advertencia visible de liga discrepante (A3)
+    # Detección y advertencia visible de liga discrepante (A3/B2)
     liga_decl_raw = (nombre_liga_txt or (liga_final.get("nombre") if isinstance(liga_final, dict) else str(liga_final or ""))).strip()
-    liga_det_raw = str((doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
+    torneos_reales = [str(p.get("torneo") or "").strip() for p in (doc_a.get("partidos") or []) if p.get("torneo")]
+    liga_partidos = torneos_reales[0] if torneos_reales else ""
+    liga_det_raw = str(liga_partidos or (doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
     from fuentes_xg import _sin_acentos
     def _n_lg(t: str) -> str:
         s = _sin_acentos(t).lower().replace("brasileirao", "").replace("campeonato", "").replace("de", "").replace(" ", "")
@@ -2204,6 +2206,8 @@ def preparar_analisis(
 
     analisis.doc_local = contexto.get("doc_local")
     analisis.doc_visitante = contexto.get("doc_visitante")
+    if ctx.get("advertencia_liga"):
+        analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
 
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
     analisis.metadatos["estado_cobertura"] = decision_cob.estado
@@ -2576,10 +2580,14 @@ def enviar_analisis(
         eq_v = ctx.get("equipo_visitante") or "Visitante"
         analisis_obj = preparado.get("analisis")
         umbral_val = getattr(getattr(analisis_obj, "parametros", None), "umbral", 0.70)
+        meta_an = dict(getattr(analisis_obj, "metadatos", {}) or {})
+        adv_l_an = meta_an.get("advertencia_liga") or ctx.get("advertencia_liga")
         if preparado.get("abstenido"):
             caption = f"🚨 {eq_l} vs {eq_v} | Pronóstico Abstenido ({preparado.get('estado_cobertura', 'cobertura_insuficiente')})"
         else:
             caption = f"🎯 {eq_l} vs {eq_v} | Umbral >{umbral_val:.0%}"
+        if adv_l_an:
+            caption += f" | ⚠️ {adv_l_an}"
 
         marcar_estado(id_trabajo, "envio_en_curso", {"tipo": "foto", "ruta": ruta_imagen})
         try:
@@ -2595,7 +2603,8 @@ def enviar_analisis(
                 )
                 if texto_sender is not None:
                     try:
-                        encabezado_3p = f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
+                        adv_txt = f"⚠️ {adv_l_an}\n\n" if adv_l_an else ""
+                        encabezado_3p = adv_txt + f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
                         for parte_3p in partir_mensaje(encabezado_3p + texto_3p):
                             res_txt_3p = texto_sender(parte_3p, chat_id=chat_id)
                             if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:
