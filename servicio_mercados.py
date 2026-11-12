@@ -612,6 +612,33 @@ def resolver_enfrentamiento(
            f"{nombre_b}={contexto.get('condicion_visitante')} "
            f"({contexto.get('evidencia_condicion')})")
 
+    # Sincronización post-descarga de identidad verificada:
+    # Si res_puente no verificó identidad o si los documentos demuestran identidad fehaciente
+    # (por coincidir con el catálogo de selecciones FIFA o por contar con >= 15 partidos e ID de proveedor):
+    from resolvedor_entidades import obtener_seleccion_nacional
+    id_prov_a = (doc_a.get("equipo") or {}).get("id") or (meta_a or {}).get("id_equipo")
+    id_prov_b = (doc_b.get("equipo") or {}).get("id") or (meta_b or {}).get("id_equipo")
+    n_partidos_a = len(doc_a.get("partidos") or [])
+    n_partidos_b = len(doc_b.get("partidos") or [])
+
+    es_sel_a = bool(obtener_seleccion_nacional(nombre_a) or obtener_seleccion_nacional(equipo_local))
+    es_sel_b = bool(obtener_seleccion_nacional(nombre_b) or obtener_seleccion_nacional(equipo_visitante))
+
+    verificado_post_a = bool(es_sel_a or (id_prov_a and n_partidos_a >= 15))
+    verificado_post_b = bool(es_sel_b or (id_prov_b and n_partidos_b >= 15))
+
+    estado_identidad_final = res_puente.estado_identidad
+    identidad_verificada_final = res_puente.identidad_verificada
+    motivo_identidad_final = res_puente.motivo_identidad
+
+    if not identidad_verificada_final:
+        if (verificado_post_a and verificado_post_b) or (es_sel_a and es_sel_b):
+            identidad_verificada_final = True
+            estado_identidad_final = "verificada"
+            motivo_identidad_final = "Identidad verificada por catálogo de selecciones FIFA o descarga de historial oficial con ID verificable."
+            contexto["identidad_verificada"] = True
+            contexto["estado_identidad"] = "verificada"
+
     return {
         "equipo_local": nombre_a,
         "equipo_visitante": nombre_b,
@@ -621,9 +648,9 @@ def resolver_enfrentamiento(
         "meta_visitante": meta_b,
         "contexto": contexto,
         "liga_solicitada": liga_final,
-        "estado_identidad": res_puente.estado_identidad,
-        "motivo_identidad": res_puente.motivo_identidad,
-        "identidad_verificada": res_puente.identidad_verificada,
+        "estado_identidad": estado_identidad_final,
+        "motivo_identidad": motivo_identidad_final,
+        "identidad_verificada": identidad_verificada_final,
         "criterio_desempate": res_puente.criterio_desempate,
         "nivel_confianza": res_puente.nivel_confianza,
         "ambiguedad_condicion": (contexto.get("condicion_local") is None
@@ -2070,8 +2097,21 @@ def preparar_analisis(
     doc_l_eval = dict(contexto["doc_local"])
     doc_v_eval = dict(contexto["doc_visitante"])
     if not contexto.get("identidad_verificada", True) or contexto.get("estado_identidad") == "identidad_no_verificada":
-        doc_l_eval["estado_identidad"] = "identidad_no_verificada"
-        doc_l_eval["identidad_verificada"] = False
+        from resolvedor_entidades import obtener_seleccion_nacional
+        nom_l = (doc_l_eval.get("equipo") or {}).get("nombre") or contexto["equipo_local"]
+        nom_v = (doc_v_eval.get("equipo") or {}).get("nombre") or contexto["equipo_visitante"]
+        id_l = (doc_l_eval.get("equipo") or {}).get("id")
+        id_v = (doc_v_eval.get("equipo") or {}).get("id")
+        n_l = len(doc_l_eval.get("partidos") or [])
+        n_v = len(doc_v_eval.get("partidos") or [])
+        if (obtener_seleccion_nacional(nom_l) and obtener_seleccion_nacional(nom_v)) or (id_l and id_v and n_l >= 15 and n_v >= 15):
+            doc_l_eval["estado_identidad"] = "verificada"
+            doc_l_eval["identidad_verificada"] = True
+            doc_v_eval["estado_identidad"] = "verificada"
+            doc_v_eval["identidad_verificada"] = True
+        else:
+            doc_l_eval["estado_identidad"] = "identidad_no_verificada"
+            doc_l_eval["identidad_verificada"] = False
 
     decision_cob = evaluar_decision_cobertura(doc_l_eval, doc_v_eval)
 

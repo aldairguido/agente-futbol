@@ -130,7 +130,29 @@ def _extraer_metadatos_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     estado_identidad = doc.get("estado_identidad") or doc.get("estado") or "verificado"
     if doc.get("identidad_verificada") is False:
-        estado_identidad = "identidad_no_verificada"
+        # Verificar si la identidad queda demostrada por ser selección FIFA o por descarga completa con ID
+        es_sel = False
+        try:
+            from resolvedor_entidades import obtener_seleccion_nacional
+            es_sel = bool(obtener_seleccion_nacional(nombre))
+        except Exception:
+            pass
+        id_prov = (doc.get("equipo") or {}).get("id") or doc.get("id_proveedor")
+        partidos_temp = doc.get("partidos") or []
+        n_ofic_temp = resumen.get("partidos_oficiales_localizados")
+        if n_ofic_temp is None:
+            n_ofic_temp = len(partidos_temp)
+        if es_sel or (id_prov and n_ofic_temp >= 15):
+            estado_identidad = "verificado"
+        else:
+            estado_identidad = "identidad_no_verificada"
+    else:
+        try:
+            from resolvedor_entidades import obtener_seleccion_nacional
+            if obtener_seleccion_nacional(nombre):
+                estado_identidad = "verificado"
+        except Exception:
+            pass
 
     partidos = doc.get("partidos") or []
     n_oficiales = resumen.get("partidos_oficiales_localizados")
