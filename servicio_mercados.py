@@ -562,6 +562,18 @@ def resolver_enfrentamiento(
         if res_puente.es_copa or not contexto.get("competicion"):
             contexto["competicion"] = liga_final.strip()
 
+    # Detección y advertencia visible de liga discrepante (A3)
+    liga_decl_raw = (nombre_liga_txt or (liga_final.get("nombre") if isinstance(liga_final, dict) else str(liga_final or ""))).strip()
+    liga_det_raw = str((doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
+    from fuentes_xg import _sin_acentos
+    def _n_lg(t: str) -> str:
+        s = _sin_acentos(t).lower().replace("brasileirao", "").replace("campeonato", "").replace("de", "").replace(" ", "")
+        return s
+    if liga_decl_raw and liga_det_raw and _n_lg(liga_decl_raw) != _n_lg(liga_det_raw):
+        adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
+        avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
+        contexto["advertencia_liga"] = adv_liga
+
     avisar(f"condición: {nombre_a}={contexto.get('condicion_local')} · "
            f"{nombre_b}={contexto.get('condicion_visitante')} "
            f"({contexto.get('evidencia_condicion')})")
@@ -1510,6 +1522,8 @@ def renderizar_ticket_mercados_png(
         meta_parts = []
         if competicion:
             meta_parts.append(f"Competición: {competicion}")
+        if meta.get("advertencia_liga"):
+            meta_parts.append(f"⚠️ {meta['advertencia_liga']}")
         if fecha:
             meta_parts.append(f"Fecha: {fecha}")
         meta_parts.append("Modelo: Poisson bivariado con contracción bayesiana")
@@ -1534,7 +1548,8 @@ def renderizar_ticket_mercados_png(
             C_PODIO_TXT = (19, 29, 49)          # #131D31
             d.rounded_rectangle([PAD_X, y_c, PAD_X + ANCHO_TABLA, y_c + alto_banner],
                                 radius=6, fill=C_PODIO_BG, outline=C_PODIO_BORDER, width=1)
-            d.text((PAD_X + 16, y_c + 8), "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)", font=f_banner_tit, fill=C_PODIO_TXT)
+            tit_podio_hdr = f"TOP {len(top5_podio)} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if len(top5_podio) < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+            d.text((PAD_X + 16, y_c + 8), tit_podio_hdr, font=f_banner_tit, fill=C_PODIO_TXT)
             cnt_podio_txt = f"Top {len(top5_podio)} Selección Élite"
             cw_p = _get_w(cnt_podio_txt, f_banner_cnt) + 18
             cx_p = PAD_X + ANCHO_TABLA - 14 - cw_p

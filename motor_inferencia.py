@@ -1207,16 +1207,29 @@ def generar_veredicto_tactico_partido(
         if p_fav_max >= 0.50
         else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     )
+    es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
-    if es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap")):
+    if es_under:
+        c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
         accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        c1 = (
+            f"{c1_tit} Las métricas ofensivas proyectan contención (Attack {atk_fav:.1f} vs {atk_riv:.1f} de {eq_riv}), "
+            f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+        )
+    elif es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap")):
+        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        c1 = (
+            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
+            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
+            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
+        )
     else:
         accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
-    c1 = (
-        f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
-        f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
-        f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
-    )
+        c1 = (
+            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
+            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
+            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
+        )
 
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
         n_ev_l = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))

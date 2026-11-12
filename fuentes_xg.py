@@ -1262,7 +1262,7 @@ CATALOGO_LIGAS_PREFIJO: list[tuple[list[str], dict[str, Any]]] = [
         {"nombre": "Brasileirão Série B", "pais": "brasil", "ids_liga": [8814, 268], "keywords_liga": ["serie b", "brasileirao"]},
     ),
     (
-        ["brasileirao serie c", "serie c de brasil", "serie c brasil", "serie c"],
+        ["brasileirao serie c", "serie c de brasil", "serie c brasil"],
         {"nombre": "Brasileirão Série C", "pais": "brasil", "ids_liga": [8971], "keywords_liga": ["serie c", "brasileirao serie c"]},
     ),
     (
@@ -2058,10 +2058,14 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             r_lname_raw if r_lname else None,
             ccode=ccode_r,
         ) or (norm(rival_meta.get("pais") or "") if norm(rival_meta.get("pais") or "") != "int" else "")
-        c_pais = _pais_de_liga(
-            candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
-            ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
-        )
+        cand_lid = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
+        if (cand_lid is not None and str(cand_lid) in ("8971", "8814", "268")) or (c_lname in ("serie c", "serie b", "serie a") and (r_pais == "brasil" or str(ccode_r or "").upper() == "BRA")):
+            c_pais = "brasil"
+        else:
+            c_pais = _pais_de_liga(
+                candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
+                ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
+            )
         es_duelo_nacional = bool(r_pais and r_pais not in ("europa", "sudamerica", "internacional"))
         if r_pais and c_pais:
             if r_pais == c_pais:
@@ -2881,11 +2885,27 @@ class FuenteFotMob(FuenteXG):
             es_fem_eq = bool(meta_rival["es_femenino"])
         if meta_rival and "es_juvenil" in meta_rival:
             es_juv_eq = bool(meta_rival["es_juvenil"])
-        pais_iso_eq = (
-            normalizar_pais_iso(elegido.get("ccode") or elegido.get("country") or elegido.get("leagueName"))
-            or normalizar_pais_iso((meta_rival or {}).get("pais_iso") or (meta_rival or {}).get("pais") or (meta_rival or {}).get("liga"))
-            or "INT"
+        lid_cand = elegido.get("leagueId") or elegido.get("id_liga")
+        try:
+            lid_cand_int = int(lid_cand) if lid_cand is not None else 0
+        except (ValueError, TypeError):
+            lid_cand_int = 0
+
+        pais_iso_pref = normalizar_pais_iso(
+            (liga_pref.get("pais_iso") if isinstance(liga_pref, dict) else "")
+            or (meta_rival or {}).get("pais_iso")
+            or (meta_rival or {}).get("pais")
         )
+
+        if lid_cand_int in (8971, 8814, 268) or (pais_iso_pref == "BRA" and normalizar_texto(str(elegido.get("leagueName") or "")) in ("serie c", "serie b", "serie a")):
+            pais_iso_eq = "BRA"
+        else:
+            pais_iso_eq = (
+                normalizar_pais_iso(elegido.get("ccode") or elegido.get("country"))
+                or (pais_iso_pref if pais_iso_pref and pais_iso_pref != "INT" else "")
+                or normalizar_pais_iso(elegido.get("leagueName"))
+                or "INT"
+            )
         tid_str = str(elegido.get("id"))
         equipo = {
             "id": tid_str,

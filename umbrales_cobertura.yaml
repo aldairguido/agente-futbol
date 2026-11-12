@@ -38,3 +38,7 @@ umbrales:
 
   # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0
   techo_lambda_ataque_bajo: 1.10  # regla operativa, sin validación cronológica
+
+  # Regla 23 / Patrón 26: Umbral de poder de cierre en 2T (sesgo diésel)
+  # Aísla el cuartil superior (P75 = 0.6041) de equipos con aceleración extrema en 2T
+  umbral_p26_cierre_2t: 0.51  # regla operativa, sin validación cronológica

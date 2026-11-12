@@ -1712,7 +1712,12 @@ def validar_y_puntuar_candidato_fotmob(
 
     # 3. Filtro por Código de País (pais_iso) y Coherencia Nacional
     iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
-    iso_cand = normalizar_pais_iso(ccode_cand) or normalizar_pais_iso(liga_cand)
+    cand_liga_id = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
+    liga_cand_norm = normalizar_texto(liga_cand)
+    if (cand_liga_id is not None and str(cand_liga_id) in ("8971", "8814", "268")) or (liga_cand_norm in ("serie c", "serie b", "serie a") and iso_esperado == "BRA"):
+        iso_cand = "BRA"
+    else:
+        iso_cand = normalizar_pais_iso(ccode_cand) or normalizar_pais_iso(liga_cand)
     # También inferir país del candidato si coincide con un club o liga de otro país conocido
     liga_cand_low = normalizar_texto(liga_cand)
     if not iso_cand:

@@ -1404,10 +1404,21 @@ class MotorMercados:
                 partidos_v_red, {}, cond_v, perfil_v_gen, tier_rival=tier_L_int, factor_uefa=fu_V,
             )
 
-            atq_L_cond = 0.50 * mu_l_cond.get('goles_favor', atq_L) + 0.50 * mu_l_cond.get('xg', atq_L)
-            def_V_cond = 0.50 * mu_v_cond.get('goles_contra', def_V) + 0.50 * mu_v_cond.get('xgot_enfrentado', def_V)
-            atq_V_cond = 0.50 * mu_v_cond.get('goles_favor', atq_V) + 0.50 * mu_v_cond.get('xg', atq_V)
-            def_L_cond = 0.50 * mu_l_cond.get('goles_contra', def_L) + 0.50 * mu_l_cond.get('xgot_enfrentado', def_L)
+            xg_l_c = mu_l_cond.get('xg')
+            gf_l_c = mu_l_cond.get('goles_favor')
+            atq_L_cond = 0.50 * (gf_l_c if gf_l_c is not None else atq_L) + 0.50 * (xg_l_c if xg_l_c is not None else atq_L)
+
+            gc_v_c = mu_v_cond.get('goles_contra')
+            xgot_v_c = mu_v_cond.get('xgot_enfrentado')
+            def_V_cond = 0.50 * (gc_v_c if gc_v_c is not None else def_V) + 0.50 * (xgot_v_c if xgot_v_c is not None else def_V)
+
+            gf_v_c = mu_v_cond.get('goles_favor')
+            xg_v_c = mu_v_cond.get('xg')
+            atq_V_cond = 0.50 * (gf_v_c if gf_v_c is not None else atq_V) + 0.50 * (xg_v_c if xg_v_c is not None else atq_V)
+
+            gc_l_c = mu_l_cond.get('goles_contra')
+            xgot_l_c = mu_l_cond.get('xgot_enfrentado')
+            def_L_cond = 0.50 * (gc_l_c if gc_l_c is not None else def_L) + 0.50 * (xgot_l_c if xgot_l_c is not None else def_L)
 
             # Ponderación por Coeficiente de Liga (tier_coef) solo si no hubo ya ajuste ΔTier de división
             if tier_L != tier_V and tier_L_int == tier_V_int:
@@ -3506,15 +3517,25 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     mu_v = xai.get("mu_visita_fuera") or (getattr(motor, "recursivo", {}) or {}).get("mu_visita_fuera") or {}
 
     if mu_l and mu_v:
+        def _fmt_m(d: dict, k: str, def_val: float, fmt: str = ".1f", suf: str = "") -> str:
+            v = d.get(k)
+            if v is None:
+                v = def_val
+            try:
+                val = float(v)
+                return f"{val:{fmt}}{suf}"
+            except (ValueError, TypeError):
+                return f"{def_val:{fmt}}{suf}"
+
         lineas.extend([
             "🧬 ADN del Enfrentamiento (Local en Casa vs. Rival de Visita):",
-            f"▸ Posesión: {loc.get('nombre', 'Local')} {mu_l.get('posesion_pct', 50.0):.1f}%  vs  {vis.get('nombre', 'Visitante')} {mu_v.get('posesion_pct', 50.0):.1f}%",
-            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{mu_l.get('goles_favor', 1.3):.2f} G / {mu_l.get('xg', 1.3):.2f} xG]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('goles_favor', 1.2):.2f} G / {mu_v.get('xg', 1.2):.2f} xG]",
-            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{mu_l.get('goles_contra', 1.2):.2f} Gc / {mu_l.get('xgot_enfrentado', 1.2):.2f} xGOTc]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('goles_contra', 1.3):.2f} Gc / {mu_v.get('xgot_enfrentado', 1.3):.2f} xGOTc]",
-            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{mu_l.get('remates_totales', 12.0):.1f} / {mu_l.get('remates_puerta', 4.0):.1f}]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('remates_totales', 11.0):.1f} / {mu_v.get('remates_puerta', 3.5):.1f}]",
-            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{mu_l.get('toques_area_rival', 22.0):.1f} / {mu_l.get('corners', 5.0):.1f}]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('toques_area_rival', 18.0):.1f} / {mu_v.get('corners', 4.5):.1f}]",
-            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{mu_l.get('despejes', 18.0):.1f} / {mu_l.get('duelos_aereos_pct', 50.0):.1f}%]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('despejes', 20.0):.1f} / {mu_v.get('duelos_aereos_pct', 48.0):.1f}%]",
-            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{mu_l.get('faltas', 11.0):.1f} F / {mu_l.get('goles_evitados', 0.0):+.2f} GEv]  vs  {vis.get('nombre', 'Visitante')} [{mu_v.get('faltas', 13.0):.1f} F / {mu_v.get('goles_evitados', 0.0):+.2f} GEv]",
+            f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%')}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%')}",
+            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_favor', 1.3, '.2f')} G / {_fmt_m(mu_l, 'xg', 1.3, '.2f')} xG]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_favor', 1.2, '.2f')} G / {_fmt_m(mu_v, 'xg', 1.2, '.2f')} xG]",
+            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f')} Gc / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f')} xGOTc]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f')} Gc / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f')} xGOTc]",
+            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f')} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f')} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f')}]",
+            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f')} / {_fmt_m(mu_l, 'corners', 5.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f')} / {_fmt_m(mu_v, 'corners', 4.5, '.1f')}]",
+            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'despejes', 18.0, '.1f')} / {_fmt_m(mu_l, 'duelos_aereos_pct', 50.0, '.1f', '%')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'despejes', 20.0, '.1f')} / {_fmt_m(mu_v, 'duelos_aereos_pct', 48.0, '.1f', '%')}]",
+            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'faltas', 11.0, '.1f')} F / {_fmt_m(mu_l, 'goles_evitados', 0.0, '+.2f')} GEv]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'faltas', 13.0, '.1f')} F / {_fmt_m(mu_v, 'goles_evitados', 0.0, '+.2f')} GEv]",
         ])
 
     # 2. Patrones Detectados por la Red (XAI)
@@ -4440,12 +4461,16 @@ def seleccionar_top_5_jugadas_recomendadas(
             )
             for s in candidatas
         )
+        from decision_cobertura import cargar_umbrales_cobertura
+        u_cob_p26 = cargar_umbrales_cobertura()
+        umbral_p26_val = float(u_cob_p26.get("umbral_p26_cierre_2t", 0.60))
+
         if (
             not tiene_2t_05
             and not sin_mitades_goles
             and not desactivar_prioridad_2t_copa
             and prom_p26 is not None
-            and prom_p26 >= 0.51
+            and prom_p26 >= umbral_p26_val
         ):
             lam_2t_c = ((t2_l or 0.65) + (t2_v or 0.55)) if (t2_l is not None) else max(0.85, 0.56 * (lam_l + lam_v))
             p_2t_05 = round(1.0 - math.exp(-lam_2t_c), 4)
@@ -4467,13 +4492,15 @@ def seleccionar_top_5_jugadas_recomendadas(
     p01_v_raw = pat_v_top.get("P01_xG_por_Remate")
     p01_l_t = float(p01_l_raw) if p01_l_raw is not None else None
     p01_v_t = float(p01_v_raw) if p01_v_raw is not None else None
-    p06_l_t = float(pat_l_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
-    p06_v_t = float(pat_v_top.get("P06_Desperdicio_Ocasiones", 0.40) or 0.40)
+    p06_l_raw = pat_l_top.get("P06_Desperdicio_Ocasiones")
+    p06_v_raw = pat_v_top.get("P06_Desperdicio_Ocasiones")
+    p06_l_t = float(p06_l_raw) if p06_l_raw is not None else None
+    p06_v_t = float(p06_v_raw) if p06_v_raw is not None else None
     p14_l_t = float(pat_l_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
     p14_v_t = float(pat_v_top.get("P14_Portero_Tasa_Paradas", 0.68) or 0.68)
     posesion_esteril_vs_portero = (
-        (((p01_l_t is not None and p01_l_t < 0.11) or p06_l_t >= 0.55) and p14_v_t >= 0.70)
-        or (((p01_v_t is not None and p01_v_t < 0.11) or p06_v_t >= 0.55) and p14_l_t >= 0.70)
+        (((p01_l_t is not None and p01_l_t < 0.11) or (p06_l_t is not None and p06_l_t >= 0.55)) and p14_v_t >= 0.70)
+        or (((p01_v_t is not None and p01_v_t < 0.11) or (p06_v_t is not None and p06_v_t >= 0.55)) and p14_l_t >= 0.70)
     )
     if posesion_esteril_vs_portero:
         def _es_over_ft_15_25(s: Any) -> bool:
@@ -4618,89 +4645,95 @@ def seleccionar_top_5_jugadas_recomendadas(
         return f"Goles Totales ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
 
     def _respaldo_xai(s: Any, slot: int) -> str:
+        def _muf(d: Any, k: str, def_val: float) -> float:
+            if not isinstance(d, dict):
+                return float(def_val)
+            v = d.get(k)
+            return float(v) if v is not None else float(def_val)
+
         per = str(_v(s, "periodo") or "FT").strip().upper()
         eq_raw = _v(s, "equipo", None)
         eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
         lin = _v(s, "linea", None)
         ev = str(_v(s, "evento") or "").lower()
-        gf_l = float(mu_l.get("goles_favor", lam_l))
-        xg_l = float(mu_l.get("xg", lam_l))
-        gf_v = float(mu_v.get("goles_favor", lam_v))
-        xg_v = float(mu_v.get("xg", lam_v))
-        gc_l = float(mu_l.get("goles_contra", 1.1))
-        gc_v = float(mu_v.get("goles_contra", 1.3))
-        toq_l = float(mu_l.get("toques_area_rival", 22.0))
-        toq_v = float(mu_v.get("toques_area_rival", 18.0))
-        cor_l = float(mu_l.get("corners", 5.2))
-        cor_v = float(mu_v.get("corners", 4.4))
-        fal_l = float(mu_l.get("faltas", 11.5))
-        fal_v = float(mu_v.get("faltas", 12.5))
+        gf_l = _muf(mu_l, "goles_favor", lam_l)
+        xg_l = _muf(mu_l, "xg", lam_l)
+        gf_v = _muf(mu_v, "goles_favor", lam_v)
+        xg_v = _muf(mu_v, "xg", lam_v)
+        gc_l = _muf(mu_l, "goles_contra", 1.1)
+        gc_v = _muf(mu_v, "goles_contra", 1.3)
+        toq_l = _muf(mu_l, "toques_area_rival", 22.0)
+        toq_v = _muf(mu_v, "toques_area_rival", 18.0)
+        cor_l = _muf(mu_l, "corners", 5.2)
+        cor_v = _muf(mu_v, "corners", 4.4)
+        fal_l = _muf(mu_l, "faltas", 11.5)
+        fal_v = _muf(mu_v, "faltas", 12.5)
 
         if slot == 1:
             if lam_l >= lam_v:
-                xgot_fav = float(mu_l.get("xgot", xg_l))
-                gev_riv = float(mu_v.get("goles_evitados", 0.0))
+                xgot_fav = _muf(mu_l, "xgot", xg_l)
+                gev_riv = _muf(mu_v, "goles_evitados", 0.0)
                 toq_fav = toq_l
-                desp_riv = float(mu_v.get("despejes", 18.0))
+                desp_riv = _muf(mu_v, "despejes", 18.0)
             else:
-                xgot_fav = float(mu_v.get("xgot", xg_v))
-                gev_riv = float(mu_l.get("goles_evitados", 0.0))
+                xgot_fav = _muf(mu_v, "xgot", xg_v)
+                gev_riv = _muf(mu_l, "goles_evitados", 0.0)
                 toq_fav = toq_v
-                desp_riv = float(mu_l.get("despejes", 18.0))
+                desp_riv = _muf(mu_l, "despejes", 18.0)
             return f"Respaldo ADN: Cruce Letalidad [xgot_favor {xgot_fav:.2f} ⊗ goles_evitados_rival {gev_riv:+.2f}] · Cruce Asedio [toques_area_rival {toq_fav:.0f} ⊗ despejes_rival {desp_riv:.0f}]."
 
         if slot == 2:
-            xgot_tot = float(mu_l.get("xgot", xg_l)) + float(mu_v.get("xgot", xg_v))
-            gev_tot = float(mu_l.get("goles_evitados", 0.0)) + float(mu_v.get("goles_evitados", 0.0))
+            xgot_tot = _muf(mu_l, "xgot", xg_l) + _muf(mu_v, "xgot", xg_v)
+            gev_tot = _muf(mu_l, "goles_evitados", 0.0) + _muf(mu_v, "goles_evitados", 0.0)
             toq_tot = toq_l + toq_v
-            desp_tot = float(mu_l.get("despejes", 18.0)) + float(mu_v.get("despejes", 18.0))
+            desp_tot = _muf(mu_l, "despejes", 18.0) + _muf(mu_v, "despejes", 18.0)
             return f"Respaldo ADN: Cruce Letalidad [xgot {xgot_tot:.2f} ⊗ gev_rivales {gev_tot:+.2f}] · Cruce Asedio [toques_área {toq_tot:.0f} ⊗ despejes {desp_tot:.0f}] · λ={lam_l + lam_v:.2f}."
 
         if slot == 3:
             if per == "1T" or (patron_diesel_1t and per == "1T"):
-                pases_ctrl = (float(mu_l.get("pases_total", 420.0)) + float(mu_v.get("pases_total", 380.0))) * 0.48
-                bloq_1t = (float(mu_l.get("bloqueos", 2.5)) + float(mu_v.get("bloqueos", 2.5))) * 0.45
+                pases_ctrl = (_muf(mu_l, "pases_total", 420.0) + _muf(mu_v, "pases_total", 380.0)) * 0.48
+                bloq_1t = (_muf(mu_l, "bloqueos", 2.5) + _muf(mu_v, "bloqueos", 2.5)) * 0.45
                 return f"Respaldo ADN: Cruce Estudio 1T [pases_control_1T {pases_ctrl:.0f} ⊗ bloqueos_1T {bloq_1t:.1f}] · λ 1T {lam_1t_comb:.2f} g."
             elif per == "2T" or es_diesel:
                 xg_2t = (xg2_l + xg2_v) if (xg2_l + xg2_v) > 0 else (lam_l + lam_v) * 0.58
-                duelos_2t = round(float(mu_v.get("duelos_suelo_pct", 50.0)) * 0.92, 1)
+                duelos_2t = round(_muf(mu_v, "duelos_suelo_pct", 50.0) * 0.92, 1)
                 return f"Respaldo ADN: Cruce Ritmo 2T [xg_2T {xg_2t:.2f} ⊗ caida_duelos_2T_rival {duelos_2t:.1f}%] · Aceleración ofensiva diésel en 2T."
             elif eq == eq_l:
-                xgot_eq = float(mu_l.get("xgot", xg_l))
-                gev_riv = float(mu_v.get("goles_evitados", 0.0))
+                xgot_eq = _muf(mu_l, "xgot", xg_l)
+                gev_riv = _muf(mu_v, "goles_evitados", 0.0)
                 toq_eq = toq_l
-                desp_riv = float(mu_v.get("despejes", 18.0))
+                desp_riv = _muf(mu_v, "despejes", 18.0)
                 return f"Respaldo ADN: Cruce Letalidad [xgot_favor {xgot_eq:.2f} ⊗ goles_evitados_rival {gev_riv:+.2f}] · Cruce Asedio [toques_area_rival {toq_eq:.0f} ⊗ despejes_rival {desp_riv:.0f}]."
             elif eq == eq_v:
-                xgot_eq = float(mu_v.get("xgot", xg_v))
-                gev_riv = float(mu_l.get("goles_evitados", 0.0))
+                xgot_eq = _muf(mu_v, "xgot", xg_v)
+                gev_riv = _muf(mu_l, "goles_evitados", 0.0)
                 toq_eq = toq_v
-                desp_riv = float(mu_l.get("despejes", 18.0))
+                desp_riv = _muf(mu_l, "despejes", 18.0)
                 return f"Respaldo ADN: Cruce Letalidad [xgot_favor {xgot_eq:.2f} ⊗ goles_evitados_rival {gev_riv:+.2f}] · Cruce Asedio [toques_area_rival {toq_eq:.0f} ⊗ despejes_rival {desp_riv:.0f}]."
             else:
-                xgot_eq = float(mu_l.get("xgot", xg_l))
-                gev_riv = float(mu_v.get("goles_evitados", 0.0))
+                xgot_eq = _muf(mu_l, "xgot", xg_l)
+                gev_riv = _muf(mu_v, "goles_evitados", 0.0)
                 toq_eq = toq_l
-                desp_riv = float(mu_v.get("despejes", 18.0))
+                desp_riv = _muf(mu_v, "despejes", 18.0)
                 return f"Respaldo ADN: Cruce Letalidad [xgot_favor {xgot_eq:.2f} ⊗ goles_evitados_rival {gev_riv:+.2f}] · Cruce Asedio [toques_area_rival {toq_eq:.0f} ⊗ despejes_rival {desp_riv:.0f}]."
 
         if slot == 4:
-            cruces_l = float(mu_l.get("cruces_pct", 22.0))
-            cruces_v = float(mu_v.get("cruces_pct", 20.0))
+            cruces_l = _muf(mu_l, "cruces_pct", 22.0)
+            cruces_v = _muf(mu_v, "cruces_pct", 20.0)
             centros = cruces_l * 0.65 + cruces_v * 0.55
-            desp_riv = float(mu_v.get("despejes", 18.0)) + float(mu_l.get("despejes", 18.0))
-            rem_box = float(mu_l.get("remates_dentro_area", 7.5)) + float(mu_v.get("remates_dentro_area", 6.5))
-            bloq_riv = float(mu_v.get("bloqueos", 2.5)) + float(mu_l.get("bloqueos", 2.5))
+            desp_riv = _muf(mu_v, "despejes", 18.0) + _muf(mu_l, "despejes", 18.0)
+            rem_box = _muf(mu_l, "remates_dentro_area", 7.5) + _muf(mu_v, "remates_dentro_area", 6.5)
+            bloq_riv = _muf(mu_v, "bloqueos", 2.5) + _muf(mu_l, "bloqueos", 2.5)
             indice = round(((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0)), 2)
             return f"Respaldo ADN: Cruce [centros_totales {centros:.0f} ⊗ despejes_rival {desp_riv:.0f}] + [remates_dentro_area {rem_box:.0f} ⊗ bloqueos_rival {bloq_riv:.1f}] (Índice {indice:.2f})."
 
         # Slot 5
         ev = str(_v(s, "evento") or "").lower()
         if "ambos_marcan" in ev or "btts" in ev:
-            xgot_l = float(mu_l.get("xgot", xg_l))
-            xgot_v = float(mu_v.get("xgot", xg_v))
-            gev_l = float(mu_l.get("goles_evitados", 0.0))
-            gev_v = float(mu_v.get("goles_evitados", 0.0))
+            xgot_l = _muf(mu_l, "xgot", xg_l)
+            xgot_v = _muf(mu_v, "xgot", xg_v)
+            gev_l = _muf(mu_l, "goles_evitados", 0.0)
+            gev_v = _muf(mu_v, "goles_evitados", 0.0)
             return f"Respaldo ADN: Cruce BTTS [xgot_L {xgot_l:.2f} ⊗ gev_V {gev_v:+.2f}] + [xgot_V {xgot_v:.2f} ⊗ gev_L {gev_l:+.2f}] · λ {lam_l:.2f} vs {lam_v:.2f}."
         faltas = fal_l + fal_v
         duelos = (float(mu_l.get("duelos_suelo_pct", 50.0)) + float(mu_v.get("duelos_suelo_pct", 50.0))) / 2.0
@@ -4729,7 +4762,8 @@ def seleccionar_top_5_jugadas_recomendadas(
 
         # Punto 23b y 8.4: Si está prohibido 1T +0.5 y no está desactivada la prioridad en copa baja, impulsar Goles 2T: +0.5 Goles o [Equipo] -1.5/-2.5 Goles (FT) en Slot 3
         if prohibir_1t_over_05 and sl == 3:
-            if per == "2T" and not desactivar_prioridad_2t_copa and (prom_p26 is not None and prom_p26 >= 0.51) and (ev == "gol_2t" or (lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower()))):
+            u_p26_lim = float(cargar_umbrales_cobertura().get("umbral_p26_cierre_2t", 0.60))
+            if per == "2T" and not desactivar_prioridad_2t_copa and (prom_p26 is not None and prom_p26 >= u_p26_lim) and (ev == "gol_2t" or (lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower()))):
                 est_bonus += 1.25
             elif per == "FT" and _v(s, "equipo") and lin is not None and float(lin) in (1.5, 2.5) and ("under" in ev or "menos" in str(_v(s, "etiqueta", "")).lower()):
                 est_bonus += 0.90

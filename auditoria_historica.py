@@ -2018,12 +2018,20 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
         id_fs = str(fs.get("id_flashscore") or "N/D")
 
         proc_ft = (p.get("procedencia") or {}).get("FT") or {}
-        if id_fs == "N/D" or not fs.get("pareado"):
-            fuente_txt = "FotMob"
-        elif "flashscore" in str(proc_ft).lower():
+        es_fm = (id_fm != "N/D" and bool(id_fm))
+        es_fs = (id_fs != "N/D" and bool(id_fs) and bool(fs.get("pareado") or "flashscore" in str(p.get("fuente") or "").lower()))
+        tiene_datos_fs = "flashscore" in str(proc_ft).lower() or "flashscore" in str(p.get("fuente") or "").lower()
+
+        if es_fm and es_fs and tiene_datos_fs:
             fuente_txt = "FM+FS"
-        else:
+        elif es_fs and not es_fm:
+            fuente_txt = "Flashscore"
+        elif es_fm:
             fuente_txt = "FotMob"
+        elif es_fs:
+            fuente_txt = "Flashscore"
+        else:
+            fuente_txt = "N/D"
 
         lineas.append(
             f"| {idx:02d} | {fecha} | {torneo} | {nom_l} vs {nom_v} | "
@@ -2142,10 +2150,14 @@ def formatear_matriz_45_partido(
                 fuente_txt = "sin_dato"
             elif clave == "saques_puerta" and ("est" in str(p_ft).lower() or fila_ft.get("estimado")):
                 fuente_txt = "Est."
+            elif id_fm == "N/D" or not id_fm:
+                fuente_txt = "Flashscore" if (id_fs != "N/D" and bool(id_fs)) else "sin_dato"
             elif id_fs == "N/D" or not fs.get("pareado"):
                 fuente_txt = "FotMob"
-            elif "flashscore" in str(p_ft).lower():
+            elif "flashscore" in str(p_ft).lower() and ("fotmob" in str(p_ft).lower() or id_fm != "N/D"):
                 fuente_txt = "FM+FS"
+            elif "flashscore" in str(p_ft).lower():
+                fuente_txt = "Flashscore"
             else:
                 fuente_txt = "FotMob"
 
