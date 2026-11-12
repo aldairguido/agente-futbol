@@ -14,6 +14,11 @@ Evalúa la cobertura de insumos y determina el estado oficial del cruce:
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import os
 import re
 from dataclasses import dataclass, field

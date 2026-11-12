@@ -1,3 +1,8 @@
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 """
 agente_futbol/informe.py
 Genera el informe final en Markdown que recibe el usuario.
@@ -342,7 +347,7 @@ def _seccion_tickets_vip(tickets: dict) -> list[str]:
         for s in simples:
             p_real = s.get("probabilidad_real_estimada") or s.get("h2h_ratio_pct", "N/D")
             p_real_str = f"{p_real:.1%}" if isinstance(p_real, float) else str(p_real)
-            c_num = float(s.get("cuota", 0.0) or 0.0)
+            c_num = _safe_float(s.get("cuota"), 0.0)
             p_impl_str = f"{(1.0 / c_num):.1%}" if c_num > 1.0 else "N/D"
 
             lineas.append(f"#### 💎 {s['id_ticket']}: {s['partido']} — {s['seleccion']}")
@@ -886,7 +891,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
                     if isinstance(m_dict, dict):
                         for k, nodo in m_dict.items():
                             if isinstance(nodo, dict) and not nodo.get("sin_dato"):
-                                d[k] = float(nodo.get("promedio", 0.0) or 0.0)
+                                d[k] = _safe_float(nodo.get("promedio"), 0.0)
                 except Exception:
                     pass
             bloques = getattr(motor, "bloques", {}) if motor else {}

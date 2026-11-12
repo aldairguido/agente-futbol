@@ -1,4 +1,9 @@
 from __future__ import annotations
+
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
 import re
 import unicodedata
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -1088,12 +1093,12 @@ def generar_veredicto_tactico_partido(
     # 1. Favorito, Attack Rating y Jugada #1
     r_fav = ratings_loc if es_fav_local else ratings_vis
     r_riv = ratings_vis if es_fav_local else ratings_loc
-    atk_fav = float((r_fav or {}).get("Final_Attack_Strength", 0.0) or 0.0)
-    atk_riv = float((r_riv or {}).get("Final_Attack_Strength", 0.0) or 0.0)
+    atk_fav = _safe_float((r_fav or {}).get("Final_Attack_Strength"), 0.0)
+    atk_riv = _safe_float((r_riv or {}).get("Final_Attack_Strength"), 0.0)
     if atk_fav <= 0.1:
-        atk_fav = round(min(96.0, max(45.0, float(pat_fav.get("xg", 1.45)) * 34.0 + float(pat_fav.get("remates_puerta", 4.5)) * 4.2)), 1)
+        atk_fav = round(min(96.0, max(45.0, _safe_float(pat_fav.get("xg"), 1.45) * 34.0 + _safe_float(pat_fav.get("remates_puerta"), 4.5) * 4.2)), 1)
     if atk_riv <= 0.1:
-        atk_riv = round(min(96.0, max(42.0, float(pat_riv.get("xg", 1.10)) * 34.0 + float(pat_riv.get("remates_puerta", 3.5)) * 4.2)), 1)
+        atk_riv = round(min(96.0, max(42.0, _safe_float(pat_riv.get("xg"), 1.10) * 34.0 + _safe_float(pat_riv.get("remates_puerta"), 3.5) * 4.2)), 1)
 
     vic_fav = _cnt_b(cb_fav, "victorias")
     inv_fav = _cnt_b(cb_fav, "sin_derrotas")
@@ -1106,8 +1111,8 @@ def generar_veredicto_tactico_partido(
     if top5_podio and len(top5_podio) > 0:
         j1 = top5_podio[0]
         jugada_1_nombre = str(j1.get("etiqueta") or jugada_1_nombre)
-        jugada_1_prob = float(j1.get("probabilidad", jugada_1_prob / 100.0)) * 100.0
-        p_dc_base = float(j1.get("prob_base_poisson", p_dc_base))
+        jugada_1_prob = _safe_float(j1.get("probabilidad"), jugada_1_prob / 100.0) * 100.0
+        p_dc_base = _safe_float(j1.get("prob_base_poisson"), p_dc_base)
 
     # 2. Franja crítica en Cuadro C (Timeline de 15 min)
     pares_franjas = [

@@ -447,3 +447,90 @@ class TestPunto46SeleccionesNacionales:
             assert r2 is not None, "generar_cuadro_auditoria_15_partidos_png debe retornar la ruta del PNG"
             assert os.path.exists(p_cuadro2), "El PNG de Auditor?a 15P debe haberse generado"
             assert os.path.getsize(p_cuadro2) > 5000, "El Cuadro PNG 2 debe tener contenido"
+    def test_tortura_none_values_en_diccionarios_turquia_vs_belgica(self) -> None:
+        """
+        Punto 49: Prueba de tortura con None incondicional en diccionarios de metricas,
+        factores latentes, patrones 55 y configuraciones de mercado.
+        Verifica que clusters_marcador, seleccion Top 5, renderizado de Ticket PNG,
+        Cuadros Especialistas (PNG 1 y PNG 2) y reporte Telegram se ejecuten sin lanzar
+        TypeError: float() argument must be a string or a real number, not 'NoneType'.
+        """
+        import tempfile
+        import os
+        from motor_mercados import clusters_marcador, analizar
+        from servicio_mercados import (
+            renderizar_ticket_mercados_png,
+            obtener_top5_y_seccion1_filtrados,
+            generar_reporte_xai_telegram,
+        )
+        import cuadro_especialista as ce
+        from test_motor_mercados import doc_sintetico
+
+        doc_turquia = doc_sintetico("Turquía", [("casa", 1, 0), ("fuera", 2, 1)] * 8, xg=[(1.5, 0.8)] * 16)
+        doc_belgica = doc_sintetico("Bélgica", [("fuera", 1, 1), ("casa", 2, 0)] * 8, xg=[(1.2, 1.1)] * 16)
+        doc_turquia["equipo"]["pais_iso"] = "TUR"
+        doc_belgica["equipo"]["pais_iso"] = "BEL"
+        doc_turquia["identidad_verificada"] = True
+        doc_belgica["identidad_verificada"] = True
+
+        # Inyectar None masivamente en partidos y metricas de ambos equipos
+        claves_opcionales = [
+            "duelos_aereos_pct", "duelos_suelo_pct", "bloqueos", "recuperaciones",
+            "xg_balon_parado", "grandes_ocasiones_falladas", "xg_juego_abierto",
+            "pases_entre_lineas", "entradas_pct", "cruces_pct", "remates_dentro_area",
+            "xgot_contra", "xgot", "P37", "P54_Asedio_Corners_Matchup",
+            "P07_Precision_Disparo", "cuota", "intercepciones", "despejes"
+        ]
+        for doc in (doc_turquia, doc_belgica):
+            for p in doc.get("partidos", []):
+                for periodo in ("FT", "1T", "2T"):
+                    if periodo in p and isinstance(p[periodo], dict):
+                        for k in claves_opcionales:
+                            p[periodo][k] = None
+
+        an = analizar(doc_turquia, doc_belgica, "Turquía", "Bélgica")
+        assert an is not None
+
+        # Inyectar None en medias y factores del objeto motor recursivo
+        if hasattr(an, "motor") and hasattr(an.motor, "recursivo") and isinstance(an.motor.recursivo, dict):
+            for mu_key in ("mu_local_casa", "mu_visita_fuera"):
+                mu = an.motor.recursivo.get(mu_key)
+                if isinstance(mu, dict):
+                    for k in claves_opcionales:
+                        mu[k] = None
+
+        # 1. Clusters de marcador con None en info_cruces
+        info_cruces = an.motor.recursivo.get("cruces_tacticos") if hasattr(an, "motor") else None
+        res_clusters = clusters_marcador(an.motor.matriz_ft, "Turquía", "Bélgica", info_cruces=info_cruces)
+        assert res_clusters is not None
+        assert "jugada_optima" in res_clusters
+
+        # 2. Filtrado de Top 5 y Seccion 1
+        top5, sec1, cnt = obtener_top5_y_seccion1_filtrados(an)
+        assert isinstance(top5, list)
+        assert isinstance(sec1, list)
+
+        # 3. Reporte Telegram XAI
+        reporte_tg = generar_reporte_xai_telegram(an)
+        assert isinstance(reporte_tg, str)
+        assert len(reporte_tg) > 50
+
+        # 4. Renderizado completo de los 3 PNG
+        with tempfile.TemporaryDirectory() as td:
+            p_ticket = os.path.join(td, "ticket_turquia_belgica_none.png")
+            p_cuadro1 = os.path.join(td, "cuadro_turquia_belgica_none.png")
+            p_cuadro2 = os.path.join(td, "auditoria15p_turquia_belgica_none.png")
+
+            renderizar_ticket_mercados_png(an, destino=p_ticket)
+            assert os.path.exists(p_ticket)
+            assert os.path.getsize(p_ticket) > 1000
+
+            r1 = ce.generar_cuadro_desde_analisis(an, doc_turquia, doc_belgica, destino=p_cuadro1)
+            assert r1 is not None
+            assert os.path.exists(p_cuadro1)
+            assert os.path.getsize(p_cuadro1) > 5000
+
+            r2 = ce.generar_cuadro_auditoria_15_partidos_png(an, doc_turquia, doc_belgica, destino=p_cuadro2)
+            assert r2 is not None
+            assert os.path.exists(p_cuadro2)
+            assert os.path.getsize(p_cuadro2) > 5000

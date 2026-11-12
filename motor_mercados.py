@@ -46,6 +46,11 @@ estimaciones con supuestos declarados, no garantías.
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import json
 import re
 import math
@@ -1549,10 +1554,10 @@ class MotorMercados:
             ratio_55_l = max(0.82, min(1.22, (p1_55 / p1_o) ** 0.45))
             ratio_55_v = max(0.82, min(1.22, (p2_55 / p2_o) ** 0.45))
             # Ponderar suavemente factor de racha 60/40 (crisis -10%, racha +8%) + regresión a la media por sobre-rendimiento (>1.30 -> *0.90)
-            f_racha_l = (1.0 + (float(racha_l.get("factor_lambda", 1.0)) - 1.0) * 0.50) * float(racha_l.get("factor_regresion_media", 1.0))
-            f_racha_v = (1.0 + (float(racha_v.get("factor_lambda", 1.0)) - 1.0) * 0.50) * float(racha_v.get("factor_regresion_media", 1.0))
-            f_ctx_l = float(ctx_av.get("mult_lambda_local", 1.0))
-            f_ctx_v = float(ctx_av.get("mult_lambda_visita", 1.0))
+            f_racha_l = (1.0 + (_safe_float(racha_l.get("factor_lambda"), 1.0) - 1.0) * 0.50) * _safe_float(racha_l.get("factor_regresion_media"), 1.0)
+            f_racha_v = (1.0 + (_safe_float(racha_v.get("factor_lambda"), 1.0) - 1.0) * 0.50) * _safe_float(racha_v.get("factor_regresion_media"), 1.0)
+            f_ctx_l = _safe_float(ctx_av.get("mult_lambda_local"), 1.0)
+            f_ctx_v = _safe_float(ctx_av.get("mult_lambda_visita"), 1.0)
 
             mult_sinc_l = max(0.68, min(1.28, ratio_55_l * f_racha_l * f_ctx_l))
             mult_sinc_v = max(0.68, min(1.28, ratio_55_v * f_racha_v * f_ctx_v))
@@ -1565,9 +1570,9 @@ class MotorMercados:
             pos_v_raw = float(mu_v_f.get("posesion_pct", 50.0) or 50.0)
             pos_sum = max(1.0, pos_l_raw + pos_v_raw)
             pos_proy_l = (pos_l_raw / pos_sum) * 100.0
-            p07_l = float(pat_l.get("P07_Precision_Disparo", 0.32))
-            p05_l = float(pat_l.get("P05_Conversion_Real", 0.25))
-            p55_l = float(pat_l.get("P55_Contraataque_Letal", 0.30))
+            p07_l = _safe_float(pat_l.get("P07_Precision_Disparo"), 0.32)
+            p05_l = _safe_float(pat_l.get("P05_Conversion_Real"), 0.25)
+            p55_l = _safe_float(pat_l.get("P55_Contraataque_Letal"), 0.30)
             if pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45)):
                 mult_sinc_v *= 0.80
                 al_mg = f"⚠️ ALERTA MATAGIGANTES ({self.nombre_local}): Bloque bajo local ({pos_proy_l:.1f}% pos.) con alta letalidad al contragolpe (precisión {p07_l*100:.0f}%) -> -20% λ rival."
@@ -4752,9 +4757,9 @@ def seleccionar_top_5_jugadas_recomendadas(
             gev_v = _muf(mu_v, "goles_evitados", 0.0)
             return f"Respaldo ADN: Cruce BTTS [xgot_L {xgot_l:.2f} ⊗ gev_V {gev_v:+.2f}] + [xgot_V {xgot_v:.2f} ⊗ gev_L {gev_l:+.2f}] · λ {lam_l:.2f} vs {lam_v:.2f}."
         faltas = fal_l + fal_v
-        duelos = (float(mu_l.get("duelos_suelo_pct", 50.0)) + float(mu_v.get("duelos_suelo_pct", 50.0))) / 2.0
-        lineas = float(mu_v.get("pases_entre_lineas", 24.0)) + float(mu_l.get("pases_entre_lineas", 22.0))
-        entradas_fall = max(1.5, round(((100.0 - float(mu_l.get("entradas_pct", 14.0))) * 0.08 + (100.0 - float(mu_v.get("entradas_pct", 14.0))) * 0.08), 1))
+        duelos = (_safe_float(mu_l.get("duelos_suelo_pct"), 50.0) + _safe_float(mu_v.get("duelos_suelo_pct"), 50.0)) / 2.0
+        lineas = _safe_float(mu_v.get("pases_entre_lineas"), 24.0) + _safe_float(mu_l.get("pases_entre_lineas"), 22.0)
+        entradas_fall = max(1.5, round(((100.0 - _safe_float(mu_l.get("entradas_pct"), 14.0)) * 0.08 + (100.0 - _safe_float(mu_v.get("entradas_pct"), 14.0)) * 0.08), 1))
         return f"Respaldo ADN: Cruce [faltas_cometidas {faltas:.1f} ⊗ duelos_suelo {duelos:.1f}%] + [pases_entre_lineas_rival {lineas:.0f} ⊗ entradas_falladas {entradas_fall:.1f}]."
 
     def _puntaje_podio(s: Any) -> float:
@@ -4816,11 +4821,11 @@ def seleccionar_top_5_jugadas_recomendadas(
 
         # Córneres (Slot 4): Si índice >= 1.10 impulsar +Córneres; si pocos bloqueos (< 2.2) impulsar -Córneres
         if sl == 4:
-            cruces_l = float(mu_l.get("cruces_pct", 22.0))
-            cruces_v = float(mu_v.get("cruces_pct", 20.0))
+            cruces_l = _safe_float(mu_l.get("cruces_pct"), 22.0)
+            cruces_v = _safe_float(mu_v.get("cruces_pct"), 20.0)
             centros = cruces_l * 0.65 + cruces_v * 0.55
-            rem_box = float(mu_l.get("remates_dentro_area", 7.5)) + float(mu_v.get("remates_dentro_area", 6.5))
-            bloq_riv = float(mu_v.get("bloqueos", 2.5)) + float(mu_l.get("bloqueos", 2.5))
+            rem_box = _safe_float(mu_l.get("remates_dentro_area"), 7.5) + _safe_float(mu_v.get("remates_dentro_area"), 6.5)
+            bloq_riv = _safe_float(mu_v.get("bloqueos"), 2.5) + _safe_float(mu_l.get("bloqueos"), 2.5)
             ind_c = ((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0))
             es_over = ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower())
             if ind_c >= 1.10 and es_over and (0.70 <= p <= 0.88):

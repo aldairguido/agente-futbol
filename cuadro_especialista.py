@@ -41,6 +41,11 @@ Garantías de honestidad (coherentes con el resto del proyecto)
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import os
 from datetime import datetime
 try:
@@ -808,12 +813,12 @@ def matriz_red_para_dibujar(res_red: dict[str, Any]) -> list[list[float]]:
     filas, columnas = matriz.shape
     iguales = (
         filas == columnas
-        and abs(float(res_red.get("lambda_local_recursivo", 0.0))
-                - float(res_red.get("lambda_visita_recursivo", 0.0))) < 1e-12
-        and abs(float(res_red.get("tasa_sequia_local", 0.0))
-                - float(res_red.get("tasa_sequia_visita", 0.0))) < 1e-12
-        and abs(float(res_red.get("tasa_explosion_3mas_local", 0.0))
-                - float(res_red.get("tasa_explosion_3mas_visita", 0.0))) < 1e-12
+        and abs(_safe_float(res_red.get("lambda_local_recursivo"), 0.0)
+                - _safe_float(res_red.get("lambda_visita_recursivo"), 0.0)) < 1e-12
+        and abs(_safe_float(res_red.get("tasa_sequia_local"), 0.0)
+                - _safe_float(res_red.get("tasa_sequia_visita"), 0.0)) < 1e-12
+        and abs(_safe_float(res_red.get("tasa_explosion_3mas_local"), 0.0)
+                - _safe_float(res_red.get("tasa_explosion_3mas_visita"), 0.0)) < 1e-12
     )
     if iguales:
         matriz = 0.5 * (matriz + matriz.T)
@@ -1010,10 +1015,10 @@ def _metricas_ponderadas_condicion(
     from motor_recursivo_45_dcn import obtener_tier_liga, peso_credibilidad_partido, es_sede_neutral
 
     m = perfil.get("metricas_clave", {})
-    gf_gen = float(m.get("goles_favor", 1.30))
-    xg_gen = float(m.get("xg_favor", 1.25))
-    gc_gen = float(m.get("goles_contra", 1.25))
-    xgotc_gen = float(m.get("xgot_contra", 1.25))
+    gf_gen = _safe_float(m.get("goles_favor"), 1.30)
+    xg_gen = _safe_float(m.get("xg_favor"), 1.25)
+    gc_gen = _safe_float(m.get("goles_contra"), 1.25)
+    xgotc_gen = _safe_float(m.get("xgot_contra"), 1.25)
 
     pts = [p for p in (partidos_cronologicos or []) if isinstance(p, dict)]
 

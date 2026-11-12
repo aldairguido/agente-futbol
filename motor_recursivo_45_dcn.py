@@ -39,6 +39,11 @@ Se conserva el bucle recursivo hasta convergencia de entropía y el Monte Carlo 
 """
 
 from __future__ import annotations
+
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
 import math
 import unicodedata
 from pathlib import Path
@@ -586,7 +591,7 @@ def reescalar_factores_a_delta(
 
     vals = []
     for k in claves:
-        v = float(factores.get(k, 0.0))
+        v = _safe_float(factores.get(k), 0.0)
         piso = max(-12.0, pisos_dict.get(k, -12.0))
         techo = min(15.0, techos_dict.get(k, 15.0))
         vals.append(round(float(np.clip(v, piso, techo)), 1))
@@ -823,8 +828,8 @@ def extraer_series_reales_15_partidos(
     for idx_p, p in enumerate(ordenados):
         gf, gc = _goles_equipo(p)
         if gf is None or gc is None:
-            gf = float(m.get("goles_favor", m.get("goles_favor_est", 1.30)))
-            gc = float(m.get("goles_contra", m.get("goles_contra_real", 1.25)))
+            gf = _safe_float(m.get("goles_favor", m.get("goles_favor_est")), 1.30)
+            gc = _safe_float(m.get("goles_contra", m.get("goles_contra_real")), 1.25)
         torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
         if es_copa_nacional(torneo_p) and (gf - gc) >= 4:
             gf = min(float(gf), 2.2)
@@ -1072,7 +1077,7 @@ def patrones_tacticos_desde_estados(
     asfixia = clip((v("toques_area_rival") / 22.0) * 0.60 + (pos / 50.0) * 0.40, 0.25, 2.20)
 
     acciones = (v("recuperaciones") + v("intercepciones") + v("entradas_pct"))
-    presion = clip((acciones / 70.0) * (float(ratings.get("Pressing_Intensity_Score", 50.0)) / 45.0),
+    presion = clip((acciones / 70.0) * (_safe_float(ratings.get("Pressing_Intensity_Score"), 50.0) / 45.0),
                    0.20, 2.20)
 
     fragilidad = clip((v("xgot_enfrentado") / 1.25) * 0.60

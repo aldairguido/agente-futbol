@@ -237,6 +237,19 @@ def solo_autorizado(func):
     return wrapper
 
 
+def _formatear_diagnostico_excepcion(e: Exception) -> str:
+    """Extrae el último frame del traceback para diagnóstico preciso [archivo.py:linea]."""
+    try:
+        import traceback
+        import os
+        if e.__traceback__:
+            tb_last = traceback.extract_tb(e.__traceback__)[-1]
+            return f" [{os.path.basename(tb_last.filename)}:{tb_last.lineno}]"
+    except Exception:
+        pass
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # MANEJADORES DE COMANDOS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -981,9 +994,10 @@ def _hilo_ejecutar_auditoria_cruce(chat_id: int | str, eq_local: str, eq_visita:
         print(f"[BOT TELEGRAM] ✅ Auditoría {n_tot_real} matrices ({nom_l} vs {nom_v}) despachada en {n_archivos_a} parte(s): {ruta_md}")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en auditoría de 30 matrices: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en auditoría de 30 matrices{diag}: {e}")
         try:
-            enviar_seguro(bot, chat_id, f"❌ *La auditoría de 30 matrices falló:*\n`{type(e).__name__}: {e}`")
+            enviar_seguro(bot, chat_id, f"❌ *La auditoría de 30 matrices falló{diag}:*\n`{type(e).__name__}: {e}`")
         except Exception:
             pass
     finally:
@@ -1083,9 +1097,10 @@ def _hilo_ejecutar_auditoria_h2h(chat_id: int | str, eq_a: str, eq_b: str,
         print(f"[BOT TELEGRAM] ✅ Auditoría H2H ({nom_a} vs {nom_b}, {n_duelos} matrices) despachada: {ruta_md}")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en auditoría H2H: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en auditoría H2H{diag}: {e}")
         try:
-            enviar_seguro(bot, chat_id, f"❌ *La auditoría H2H falló:*\n`{type(e).__name__}: {e}`")
+            enviar_seguro(bot, chat_id, f"❌ *La auditoría H2H falló{diag}:*\n`{type(e).__name__}: {e}`")
         except Exception:
             pass
     finally:
@@ -1190,10 +1205,11 @@ def _hilo_ejecutar_auditoria(chat_id: int | str, equipo: str, limite: int,
         print(f"[BOT TELEGRAM] ✅ Auditoría de {equipo} despachada. Archivos: {rutas}")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en la auditoría histórica: {type(e).__name__}: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en la auditoría histórica{diag}: {type(e).__name__}: {e}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ *La auditoría de «{equipo}» falló:*\n`{type(e).__name__}: {e}`")
+                          f"❌ *La auditoría de «{equipo}» falló{diag}:*\n`{type(e).__name__}: {e}`")
         except Exception:
             pass
     finally:
@@ -1387,10 +1403,11 @@ def _hilo_ejecutar_h2h(chat_id: int | str, equipo_a: str, equipo_b: str, limite:
         print(f"[BOT TELEGRAM] ✅ H2H despachado: {analisis['rutas']}")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en el H2H: {type(e).__name__}: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en el H2H{diag}: {type(e).__name__}: {e}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ *El enfrentamiento «{equipo_a} vs {equipo_b}» falló:*\n"
+                          f"❌ *El enfrentamiento «{equipo_a} vs {equipo_b}» falló{diag}:*\n"
                           f"`{type(e).__name__}: {e}`")
         except Exception:
             pass
@@ -1638,10 +1655,11 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 enviar_seguro(bot, chat_id, "ℹ️ H2H (2024–2026): Sin enfrentamientos directos en 2024–2026.")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en el análisis de mercados: {type(e).__name__}: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en el análisis de mercados{diag}: {type(e).__name__}: {e}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ El análisis de «{equipo_a} vs {equipo_b}» falló:\n"
+                          f"❌ El análisis de «{equipo_a} vs {equipo_b}» falló{diag}:\n"
                           f"{type(e).__name__}: {e}")
         except Exception:
             pass
@@ -1773,10 +1791,11 @@ def _hilo_ejecutar_evaluacion(chat_id, borrador: bool,
                   f"{resultado.get('imagenes_enviadas')} imagen(es))")
 
     except Exception as e:
-        print(f"[BOT TELEGRAM] ❌ Error en la evaluación: {type(e).__name__}: {e}")
+        diag = _formatear_diagnostico_excepcion(e)
+        print(f"[BOT TELEGRAM] ❌ Error en la evaluación{diag}: {type(e).__name__}: {e}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ La evaluación falló:\n{type(e).__name__}: {e}")
+                          f"❌ La evaluación falló{diag}:\n{type(e).__name__}: {e}")
         except Exception:
             pass
 

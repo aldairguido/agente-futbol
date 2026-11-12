@@ -1,4 +1,9 @@
 from __future__ import annotations
+
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
 from typing import Any, Dict, List, Optional, Tuple
 import math
 import numpy as np
@@ -647,9 +652,9 @@ def calcular_55_patrones_equipo(
     p["corners"] = round(corners, 2)
     p["tarjetas_amarillas"] = round(amarillas, 2)
     if info_racha is not None:
-        p["factor_racha_lambda"] = float(info_racha.get("factor_lambda", 1.0))
-        p["victorias_ult5"] = float(info_racha.get("victorias_ult5", 0))
-        p["derrotas_ult5"] = float(info_racha.get("derrotas_ult5", 0))
+        p["factor_racha_lambda"] = _safe_float(info_racha.get("factor_lambda"), 1.0)
+        p["victorias_ult5"] = _safe_float(info_racha.get("victorias_ult5"), 0)
+        p["derrotas_ult5"] = _safe_float(info_racha.get("derrotas_ult5"), 0)
     return p
 
 
@@ -907,11 +912,11 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     rL = ratings_local or {}
     rV = ratings_visita or {}
 
-    attack_rating_local = float(rL.get("Final_Attack_Strength", rL.get("attack", rL.get("Attack_Rating", 50.0))) or 50.0)
-    attack_rating_visita = float(rV.get("Final_Attack_Strength", rV.get("attack", rV.get("Attack_Rating", 50.0))) or 50.0)
-    defense_rating_local = float(rL.get("Final_Defense_Strength", rL.get("defense", rL.get("Defense_Rating", 50.0))) or 50.0)
-    defense_rating_visita = float(rV.get("Final_Defense_Strength", rV.get("defense", rV.get("Defense_Rating", 50.0))) or 50.0)
-    pressing_rating_visita = float(rV.get("Pressing_Intensity_Score", rV.get("pressing", rV.get("Pressing_Rating", 50.0))) or 50.0)
+    attack_rating_local = _safe_float(rL.get("Final_Attack_Strength", rL.get("attack", rL.get("Attack_Rating"))), 50.0)
+    attack_rating_visita = _safe_float(rV.get("Final_Attack_Strength", rV.get("attack", rV.get("Attack_Rating"))), 50.0)
+    defense_rating_local = _safe_float(rL.get("Final_Defense_Strength", rL.get("defense", rL.get("Defense_Rating"))), 50.0)
+    defense_rating_visita = _safe_float(rV.get("Final_Defense_Strength", rV.get("defense", rV.get("Defense_Rating"))), 50.0)
+    pressing_rating_visita = _safe_float(rV.get("Pressing_Intensity_Score", rV.get("pressing", rV.get("Pressing_Rating"))), 50.0)
 
     lam_b_l = max(0.10, float(lam_base_local))
     lam_b_v = max(0.10, float(lam_base_visita))

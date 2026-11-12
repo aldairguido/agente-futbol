@@ -18,6 +18,11 @@ Responsabilidades:
 """
 
 from __future__ import annotations
+
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
 import re
 from typing import Any
 
@@ -120,7 +125,7 @@ def _obtener_probabilidad_estimada(p: dict) -> float:
             return float(prob)
     if p.get("h2h_ratio") and float(p["h2h_ratio"]) > 0:
         return float(p["h2h_ratio"])
-    cuota = float(p.get("cuota", 0.0) or 0.0)
+    cuota = _safe_float(p.get("cuota"), 0.0)
     if cuota > 1.0:
         return min(0.92, round((1.0 / cuota) + 0.04, 4))
     return 0.50
@@ -162,7 +167,7 @@ class GestorTickets:
             ]
 
             for c in candidatos_verdes:
-                cuota = float(c.get("cuota", 0.0) or 0.0)
+                cuota = _safe_float(c.get("cuota"), 0.0)
                 h2h_ratio = _extraer_ratio_h2h(c)
                 conflicto = bool(
                     c.get("conflicto_analitico")

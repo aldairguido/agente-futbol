@@ -31,6 +31,11 @@ inventan valores.
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import argparse
 import csv
 import json

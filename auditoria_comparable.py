@@ -8,6 +8,11 @@ y Prohibición de Ejecutar Modelos sobre Subconjuntos Rellenados (Secciones 3 y 
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import copy
 import os
 import re

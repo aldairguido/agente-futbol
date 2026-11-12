@@ -22,6 +22,11 @@ Un fallo de Telegram NO pierde el análisis ni obliga a recalcular estadísticas
 
 from __future__ import annotations
 
+from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
+
+float = _SafeFloat
+int = _SafeInt
+
 import hashlib
 import json
 import os
@@ -985,7 +990,7 @@ def obtener_top5_y_seccion1_filtrados(
                     "periodo": "FT",
                     "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
                     "linea": None,
-                    "probabilidad": float(item_t5.get("probabilidad", 0.72)),
+                    "probabilidad": _safe_float(item_t5.get("probabilidad"), 0.72),
                     "estado": "mantiene",
                 })
                 break
@@ -1704,7 +1709,7 @@ def renderizar_ticket_mercados_png(
                 if ev_raw is not None and stk_raw is not None:
                     badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · EV {float(ev_raw):+.1f}% · Stake: {float(stk_raw):.1f}%)")
                 else:
-                    c_min = float(item.get("cuota_minima", 1.05 / max(0.01, float(item.get("probabilidad", 0.70)))) or 1.25)
+                    c_min = _safe_float(item.get("cuota_minima"), 1.05 / max(0.01, _safe_float(item.get("probabilidad"), 0.70)))
                     badge_p_txt = str(item.get("badge_completo") or f"{pct_str} ({est_str} · Cuota Mín: {c_min:.2f})")
                 bw_p = _get_w(badge_p_txt, f_pill_pct) + 20
                 bx_p = PAD_X + ANCHO_TABLA - 14 - bw_p
@@ -3072,3 +3077,16 @@ def rotar_informes_antiguos(dias_max: int = 14, max_mb: float = 120.0) -> dict[s
                 pass
 
     return {"eliminados": eliminados, "bytes_liberados": bytes_liberados}
+
+
+def generar_reporte_xai_telegram(
+    analisis: Any,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+) -> str:
+    """Genera el bloque narrativo XAI de análisis para Telegram."""
+    from informe import generar_bloque_narrativo_xai_desde_analisis
+    return generar_bloque_narrativo_xai_desde_analisis(
+        analisis, doc_local=doc_local, doc_visitante=doc_visitante
+    )
+
