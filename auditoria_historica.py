@@ -664,26 +664,67 @@ def _auditar_equipo_interno(
         fuente_primaria_abierta = fuente_obj
 
         try:
-            equipo = fuente_obj.resolver_equipo(nombre_equipo, rival_contexto=rival)
-        except TypeError:
-            equipo = fuente_obj.resolver_equipo(nombre_equipo)
+            try:
+                equipo = fuente_obj.resolver_equipo(nombre_equipo, rival_contexto=rival)
+            except TypeError:
+                equipo = fuente_obj.resolver_equipo(nombre_equipo)
+        except Exception as err_res:
+            avisar(f"⚠️ Error al resolver «{nombre_equipo}» en {getattr(fuente_obj, 'nombre', 'fuente')}: {err_res}")
+            equipo = None
+
         if not equipo and getattr(fuente_obj, "nombre", "") == "fotmob":
             avisar(f"⚠️ «{nombre_equipo}» no encontrado en FotMob; activando fallback automático a Flashscore…")
             try:
                 from fuentes_xg import FuenteFlashscore
+                from resolvedor_entidades import obtener_nombre_flashscore, obtener_seleccion_nacional
                 fs_fallback = FuenteFlashscore(ctx_compartido=getattr(fuente_obj, "ctx", None), verbose=False)
                 fs_fallback.abrir()
-                equipo_fs = fs_fallback.resolver_equipo(nombre_equipo, rival_contexto=rival)
+
+                nom_fs_primario = obtener_nombre_flashscore(nombre_equipo) or nombre_equipo
+                sel_fs = obtener_seleccion_nacional(nombre_equipo)
+                candidatos_nombres_fs = [nom_fs_primario, nombre_equipo]
+                if sel_fs:
+                    candidatos_nombres_fs.extend(sel_fs[2])
+
+                vistos_fs = set()
+                equipo_fs = None
+                for term_fs in candidatos_nombres_fs:
+                    t_clean = str(term_fs).strip()
+                    if not t_clean or t_clean.lower() in vistos_fs:
+                        continue
+                    vistos_fs.add(t_clean.lower())
+                    try:
+                        equipo_fs = fs_fallback.resolver_equipo(t_clean, rival_contexto=rival)
+                    except TypeError:
+                        equipo_fs = fs_fallback.resolver_equipo(t_clean)
+                    except Exception:
+                        equipo_fs = None
+                    if equipo_fs:
+                        break
+
                 if equipo_fs:
                     fuente_obj = fs_fallback
                     auditoria["fuente"] = "flashscore"
+                    auditoria["proveedor"] = "flashscore"
+                    auditoria["identidad_verificada"] = True
                     equipo = equipo_fs
             except Exception as err_fs:
                 avisar(f"⚠️ Fallback Flashscore: {err_fs}")
+
         if not equipo:
-            raise RuntimeError(
-                f"No se encontró ningún equipo llamado «{nombre_equipo}» en {fuente_obj.nombre}."
-            )
+            auditoria["equipo"] = {
+                "id": None,
+                "nombre": nombre_equipo,
+                "liga": "",
+                "pais_iso": "UNK",
+            }
+            auditoria["identidad_verificada"] = False
+            auditoria["estado_identidad"] = "identidad_no_verificada"
+            auditoria["motivo_identidad"] = f"No se encontró ningún equipo llamado «{nombre_equipo}» ni en FotMob ni en Flashscore tras probar todos sus alias."
+            auditoria["partidos"] = []
+            auditoria["advertencias"].append(auditoria["motivo_identidad"])
+            return auditoria
+
         auditoria["equipo"] = equipo
         avisar(f"equipo: {equipo.get('nombre')} ({equipo.get('liga') or 'liga desconocida'})")
 
@@ -697,14 +738,39 @@ def _auditar_equipo_interno(
             avisar(f"⚠️ {equipo.get('nombre')} sin historial en FotMob; consultando Flashscore en cascada…")
             try:
                 from fuentes_xg import FuenteFlashscore
+                from resolvedor_entidades import obtener_nombre_flashscore, obtener_seleccion_nacional
                 fs_fallback = FuenteFlashscore(ctx_compartido=getattr(fuente_obj, "ctx", None), verbose=False)
                 fs_fallback.abrir()
-                eq_fs = fs_fallback.resolver_equipo(equipo.get("nombre") or nombre_equipo, rival_contexto=rival)
+
+                nom_fs_p = obtener_nombre_flashscore(equipo.get("nombre") or nombre_equipo) or (equipo.get("nombre") or nombre_equipo)
+                sel_fs2 = obtener_seleccion_nacional(equipo.get("nombre") or nombre_equipo)
+                cands_fs2 = [nom_fs_p, equipo.get("nombre") or nombre_equipo]
+                if sel_fs2:
+                    cands_fs2.extend(sel_fs2[2])
+
+                eq_fs = None
+                vistos_fs2 = set()
+                for t_fs in cands_fs2:
+                    t_c = str(t_fs).strip()
+                    if not t_c or t_c.lower() in vistos_fs2:
+                        continue
+                    vistos_fs2.add(t_c.lower())
+                    try:
+                        eq_fs = fs_fallback.resolver_equipo(t_c, rival_contexto=rival)
+                    except TypeError:
+                        eq_fs = fs_fallback.resolver_equipo(t_c)
+                    except Exception:
+                        eq_fs = None
+                    if eq_fs:
+                        break
+
                 if eq_fs:
                     esc_fs = fs_fallback.escanear_oficiales(eq_fs, objetivo=objetivo_datos, incluir_amistosos=incluir_amistosos)
                     if esc_fs.oficiales:
                         fuente_obj = fs_fallback
                         auditoria["fuente"] = "flashscore"
+                        auditoria["proveedor"] = "flashscore"
+                        auditoria["identidad_verificada"] = True
                         equipo = eq_fs
                         auditoria["equipo"] = eq_fs
                         escaneo = esc_fs
@@ -729,10 +795,15 @@ def _auditar_equipo_interno(
                f"{escaneo.paginas_escaneadas} página(s) de calendario)")
 
         if not escaneo.oficiales and not escaneo.amistosos_reservados:
-            raise RuntimeError(
+            auditoria["identidad_verificada"] = False
+            auditoria["estado_identidad"] = "identidad_no_verificada"
+            auditoria["motivo_identidad"] = (
                 f"{equipo.get('nombre')} no tiene partidos finalizados en la ventana de historial "
                 f"de {fuente_obj.nombre}. Detalle: {escaneo.motivo_parada or 'sin historial'}"
             )
+            auditoria["partidos"] = []
+            auditoria["advertencias"].append(auditoria["motivo_identidad"])
+            return auditoria
 
         # ── Fase 1: extracción de partidos OFICIALES con compensación ───────
         # Un partido sin datos NO se cuenta ni se incluye en `auditoria["partidos"]`,
