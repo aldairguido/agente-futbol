@@ -1446,6 +1446,18 @@ class MotorMercados:
                 n_simulaciones_mc=int(getattr(self.p, "mc_simulaciones", 100_000)),
                 sede_neutral_local=sede_neutral_L,
             )
+            resultado["atq_local_base"] = atq_L_cond
+            resultado["def_visita_base"] = def_V_cond
+            resultado["atq_visita_base"] = atq_V_cond
+            resultado["def_local_base"] = def_L_cond
+            resultado["gf_local_base"] = gf_l_c
+            resultado["xg_local_base"] = xg_l_c
+            resultado["gc_visita_base"] = gc_v_c
+            resultado["xgotc_visita_base"] = xgot_v_c
+            resultado["gf_visita_base"] = gf_v_c
+            resultado["xg_visita_base"] = xg_v_c
+            resultado["gc_local_base"] = gc_l_c
+            resultado["xgotc_local_base"] = xgot_l_c
         except Exception as e:                      # nunca tumba el análisis
             self.recursivo = {
                 "aplicado": False,
@@ -1656,29 +1668,32 @@ class MotorMercados:
                             ct["factores_visita"] = fv_new
                 except Exception:
                     pass
-                # Re-ponderar matriz conjunta con las nuevas marginales Poisson y normalizar a 1.0000
+                # Re-ponderar matriz conjunta con las nuevas marginales Poisson (Sinkhorn / RAS exacto)
                 import numpy as _np
                 M_arr = _np.asarray(mat_base_red, dtype=float)
                 R_m, C_m = M_arr.shape
-                p_i_old = M_arr.sum(axis=1)
                 p_i_new = _np.array([poisson_pmf(i, lam_l_red) for i in range(R_m)], dtype=float)
                 if p_i_new.sum() > 0:
                     p_i_new /= p_i_new.sum()
-                for i in range(R_m):
-                    if p_i_old[i] > 1e-12:
-                        M_arr[i, :] *= (0.55 * (p_i_new[i] / p_i_old[i]) + 0.45)
-                p_j_old = M_arr.sum(axis=0)
                 p_j_new = _np.array([poisson_pmf(j, lam_v_red) for j in range(C_m)], dtype=float)
                 if p_j_new.sum() > 0:
                     p_j_new /= p_j_new.sum()
-                for j in range(C_m):
-                    if p_j_old[j] > 1e-12:
-                        M_arr[:, j] *= (0.55 * (p_j_new[j] / p_j_old[j]) + 0.45)
+
+                # Iterative Proportional Fitting (RAS / Sinkhorn) para reproducir marginales Poisson exactas
+                for _ in range(25):
+                    r_sums = M_arr.sum(axis=1)
+                    r_sums[r_sums == 0] = 1.0
+                    M_arr *= (p_i_new / r_sums)[:, None]
+                    c_sums = M_arr.sum(axis=0)
+                    c_sums[c_sums == 0] = 1.0
+                    M_arr *= (p_j_new / c_sums)[None, :]
+
                 if M_arr.sum() > 0:
                     M_arr /= M_arr.sum()
                 mat_base_red = M_arr.tolist()
                 resultado["matriz_probabilidades"] = mat_base_red
                 resultado["matriz_marcadores"] = mat_base_red
+                resultado["matriz_prob"] = mat_base_red
         except Exception:
             mat_base_red = ce.matriz_red_para_dibujar(resultado)
 
@@ -4935,6 +4950,10 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if i > float(lin_k)))
             if ev_k == f"visitante_over_{lin_k}":
                 return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if j > float(lin_k)))
+            if ev_k in (f"local_under_{lin_k}", f"local_menos_{lin_k}") or (ev_k.startswith("local_under") and abs(float(lin_k) - float(ev_k.split("_")[-1])) < 1e-4):
+                return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if i < float(lin_k)))
+            if ev_k in (f"visitante_under_{lin_k}", f"visitante_menos_{lin_k}") or (ev_k.startswith("visitante_under") and abs(float(lin_k) - float(ev_k.split("_")[-1])) < 1e-4):
+                return float(sum(mat[i][j] for i in range(R_m) for j in range(C_m) if j < float(lin_k)))
         return float(p_fallback)
 
     # Calibración global de Top #1 para la nota explicativa

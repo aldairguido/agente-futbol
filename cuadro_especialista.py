@@ -1719,8 +1719,8 @@ def generar_cuadro_visual_partido(
     )
 
     # Ponderación por Coeficiente de Liga (tier_coef) cuando no hubo salto de división interno
-    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L)
-    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V)
+    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L, competicion_str=competicion)
+    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V, competicion_str=competicion)
     if tier_L != tier_V and tier_L_int == tier_V_int:
         tier_menor = min(tier_L, tier_V)
         tier_mayor = max(tier_L, tier_V)
@@ -1750,9 +1750,12 @@ def generar_cuadro_visual_partido(
 
     if res_red_precalculado and res_red_precalculado.get("aplicado"):
         res_red = res_red_precalculado
-        lam_local = float(res_red["lambda_local_recursivo"])
-        lam_vis = float(res_red["lambda_visita_recursivo"])
-        matriz_prob = matriz_red_para_dibujar(res_red)
+        lam_local = float(res_red.get("lambda_local_final", res_red["lambda_local_recursivo"]))
+        lam_vis = float(res_red.get("lambda_visita_final", res_red["lambda_visita_recursivo"]))
+        if matriz_prob and len(matriz_prob) > 0 and sum(sum(r) for r in matriz_prob) > 0.5:
+            pass
+        elif "matriz_prob" in res_red:
+            matriz_prob = matriz_red_para_dibujar(res_red)
     else:
         res_red = red_neuronal.ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             perfil_local,
@@ -1834,6 +1837,28 @@ def generar_cuadro_visual_partido(
     ]
     cond_l = perfil_local.get("condicion") or "casa"
     cond_v = perfil_vis.get("condicion") or "fuera"
+
+    # Sincronización estricta: consumir Doble ADN condicional (mu_local_casa / mu_visita_fuera)
+    mu_l_c = res_red.get("mu_local_casa") if isinstance(res_red, dict) else None
+    mu_v_c = res_red.get("mu_visita_fuera") if isinstance(res_red, dict) else None
+    if mu_l_c and isinstance(mu_l_c, dict) and mu_l_c.get("xg") is not None:
+        perfil_local['metricas_clave']['xg_favor'] = round(float(mu_l_c['xg']), 2)
+        if mu_l_c.get("xgot") is not None:
+            perfil_local['metricas_clave']['xgot_favor'] = round(float(mu_l_c['xgot']), 2)
+    if mu_v_c and isinstance(mu_v_c, dict) and mu_v_c.get("xg") is not None:
+        perfil_vis['metricas_clave']['xg_favor'] = round(float(mu_v_c['xg']), 2)
+        if mu_v_c.get("xgot") is not None:
+            perfil_vis['metricas_clave']['xgot_favor'] = round(float(mu_v_c['xgot']), 2)
+
+    if isinstance(res_red, dict) and res_red.get("gf_local_base") is not None:
+        gf_L = float(res_red.get("gf_local_base", gf_L))
+        xg_L = float(res_red.get("xg_local_base", xg_L))
+        gc_V = float(res_red.get("gc_visita_base", gc_V))
+        xgotc_V = float(res_red.get("xgotc_visita_base", xgotc_V))
+        gf_V = float(res_red.get("gf_visita_base", gf_V))
+        xg_V = float(res_red.get("xg_visita_base", xg_V))
+        gc_L = float(res_red.get("gc_local_base", gc_L))
+        xgotc_L = float(res_red.get("xgotc_local_base", xgotc_L))
 
     # Reconciliación estricta: la tabla superior y el desglose de mitades deben ser 100% coherentes
     if mitades_local and "1T" in mitades_local and "2T" in mitades_local:
