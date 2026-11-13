@@ -4693,6 +4693,126 @@ def calcular_ev_y_stake_calibrado(
     }
 
 
+def _obtener_micropatrones_motor(motor: Any, eq_l: str = "Local", eq_v: str = "Visitante") -> dict[str, Any]:
+    if motor is None:
+        return {}
+    mp = getattr(motor, "micropatrones_combinatorios", None)
+    if isinstance(mp, dict) and mp:
+        return mp
+    rec = getattr(motor, "recursivo", None)
+    if isinstance(rec, dict) and isinstance(rec.get("micropatrones_combinatorios"), dict) and rec.get("micropatrones_combinatorios"):
+        return rec["micropatrones_combinatorios"]
+    xai = getattr(motor, "xai_factores", None)
+    if isinstance(xai, dict) and isinstance(xai.get("micropatrones_combinatorios"), dict) and xai.get("micropatrones_combinatorios"):
+        return xai["micropatrones_combinatorios"]
+    dl = getattr(motor, "doc_local", None)
+    dv = getattr(motor, "doc_visitante", None)
+    if isinstance(dl, dict) and isinstance(dv, dict) and (dl.get("partidos") or dv.get("partidos")):
+        try:
+            from motor_patrones import evaluar_micropatrones_combinatorios
+            mp_calc = evaluar_micropatrones_combinatorios(dl, dv, eq_l=eq_l, eq_v=eq_v)
+            try:
+                setattr(motor, "micropatrones_combinatorios", mp_calc)
+            except Exception:
+                pass
+            return mp_calc
+        except Exception:
+            return {}
+    return {}
+
+
+def _clasificar_tokens_micropatron(s: Any, eq_l: str = "Local", eq_v: str = "Visitante") -> set[str]:
+    def _val_m(o: Any, k: str, d: Any = None) -> Any:
+        return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+
+    m = str(_val_m(s, "mercado") or "").lower()
+    ev = str(_val_m(s, "evento") or "").lower().strip()
+    et = str(_val_m(s, "etiqueta") or "").lower()
+    per = str(_val_m(s, "periodo") or "FT").strip().upper()
+    lin = _val_m(s, "linea", None)
+    eq_obj = str(_val_m(s, "equipo") or "").lower()
+    eq_v_l = str(eq_v or "").lower().strip()
+    eq_l_l = str(eq_l or "").lower().strip()
+
+    tokens: set[str] = set()
+    es_corner = ("corner" in m or "córner" in m or "esquina" in m or "corner" in ev or "córn" in et or "corn" in et)
+    es_tarj = ("tarjeta" in m or "amarilla" in m or "tarjeta" in ev or "amarilla" in ev or "tarj" in et)
+    es_over = ("over" in ev or "mas " in et or "más " in et or "mas de" in et or "más de" in et or "al_menos" in ev or ": +" in et)
+    es_under = ("under" in ev or "menos" in et or ": -" in et)
+
+    lin_f = None
+    if lin is not None:
+        try:
+            lin_f = float(lin)
+        except Exception:
+            lin_f = None
+    if lin_f is None:
+        for suf in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5"):
+            if suf in ev or suf in et:
+                try:
+                    lin_f = float(suf)
+                    break
+                except Exception:
+                    pass
+
+    if ev in ("x2", "dc_x2") or ev.endswith("_x2") or ("x2" in et and ("empate" in et or (eq_v_l and eq_v_l in et))):
+        tokens.add("doble_oportunidad:x2")
+    if ev in ("1x", "dc_1x") or ev.endswith("_1x"):
+        tokens.add("doble_oportunidad:1x")
+    if ev in ("2", "visitante_gana") or (eq_v_l and f"{eq_v_l} gana" in et and "sin empate" not in et):
+        tokens.add("1x2:visita")
+
+    if es_corner:
+        es_vis_c = ("visitante" in ev) or (bool(eq_v_l) and (eq_v_l in eq_obj or eq_v_l in m or eq_v_l in et))
+        es_loc_c = ("local" in ev) or (bool(eq_l_l) and (eq_l_l in eq_obj or eq_l_l in m or eq_l_l in et))
+        if es_vis_c and es_over and lin_f is not None:
+            tokens.add(f"corners_visita:over_{lin_f:g}")
+            if lin_f >= 3.5:
+                tokens.add("corners_visita:over_3.5_o_mas")
+        elif not es_vis_c and not es_loc_c and not eq_obj:
+            if es_under and lin_f is not None:
+                tokens.add(f"total_corners:under_{lin_f:g}")
+            elif es_over and lin_f is not None:
+                tokens.add(f"total_corners:over_{lin_f:g}")
+    elif not es_tarj:
+        es_eq_esp = ("local_" in ev or "visitante_" in ev or bool(eq_obj))
+        if not es_eq_esp and lin_f is not None:
+            pref = "total_goles" if per == "FT" else f"goles_{per.lower()}"
+            if es_over:
+                tokens.add(f"{pref}:over_{lin_f:g}")
+            elif es_under:
+                tokens.add(f"{pref}:under_{lin_f:g}")
+        elif per == "2T" and ("local" in ev or (eq_l_l and eq_l_l in (eq_obj + " " + et))) and (es_over or "gol_2t" in ev):
+            tokens.add("equipo_local_2t:over_0.5")
+
+    return tokens
+
+
+def es_seleccion_vetada_por_micropatrones(
+    s: Any,
+    motor: Any = None,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    mp_comb: dict[str, Any] | None = None,
+) -> tuple[bool, bool, list[str]]:
+    """
+    Evalúa si una selección queda vetada o respaldada por los micropatrones combinatorios
+    activos (Fase 6 + Fase 7 Gatekeeper). Devuelve (vetada, apoyada, codigos_activos).
+    """
+    mp = mp_comb if isinstance(mp_comb, dict) else _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
+    if not isinstance(mp, dict) or not mp.get("activos"):
+        return False, False, []
+    cods = [str(c) for c in (mp.get("codigos_activos") or [])]
+    contra = {str(x) for x in (mp.get("senales_contra") or [])}
+    favor = {str(x) for x in (mp.get("senales_favor") or [])}
+    if "corners_visita:over_3.5" in contra:
+        contra.add("corners_visita:over_3.5_o_mas")
+    toks = _clasificar_tokens_micropatron(s, eq_l=eq_l, eq_v=eq_v)
+    vetada = bool(toks & contra)
+    apoyada = bool((not vetada) and (toks & favor))
+    return vetada, apoyada, cods
+
+
 def seleccionar_top_5_jugadas_recomendadas(
     selecciones: list[Any],
     motor: Any = None,
@@ -5546,6 +5666,39 @@ def seleccionar_top_5_jugadas_recomendadas(
         entradas_fall = max(1.5, round(((100.0 - _safe_float(mu_l.get("entradas_pct"), 14.0)) * 0.08 + (100.0 - _safe_float(mu_v.get("entradas_pct"), 14.0)) * 0.08), 1))
         return f"Respaldo ADN: Cruce [faltas_cometidas {faltas:.1f} ⊗ duelos_suelo {duelos:.1f}%] + [pases_entre_lineas_rival {lineas:.0f} ⊗ entradas_falladas {entradas_fall:.1f}]."
 
+    mp_comb_top = _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
+    cods_mp_top = set(mp_comb_top.get("codigos_activos") or []) if isinstance(mp_comb_top, dict) else set()
+    try:
+        _umb_gk = cargar_umbrales_cobertura() or {}
+    except Exception:
+        _umb_gk = {}
+    _w_mod_gk = float(_umb_gk.get("peso_prob_modelo_gatekeeper", 0.60))
+    _w_emp_gk = float(_umb_gk.get("peso_tasa_empirica_gatekeeper", 0.40))
+    _w_tot_gk = max(1e-6, _w_mod_gk + _w_emp_gk)
+    _w_mod_gk /= _w_tot_gk
+    _w_emp_gk /= _w_tot_gk
+    _u_promo_emp = float(_umb_gk.get("umbral_promocion_empirica_top5", 0.85))
+    _hay_docs_emp = bool(isinstance(doc_l_m, dict) and doc_l_m.get("partidos") and isinstance(doc_v_m, dict) and doc_v_m.get("partidos"))
+
+    def _info_gatekeeper_sel(s: Any) -> dict[str, Any]:
+        p_val = float(_v(s, "probabilidad", 0.0) or 0.0)
+        f_obs_val = None
+        if _hay_docs_emp:
+            try:
+                f_obs_val = calcular_frecuencia_observada(s, doc_l_m, doc_v_m, eq_l, eq_v)
+            except Exception:
+                f_obs_val = None
+        vetada_mp, apoyada_mp, _ = es_seleccion_vetada_por_micropatrones(
+            s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb_top,
+        )
+        score_gk = (_w_mod_gk * p_val + _w_emp_gk * float(f_obs_val)) if f_obs_val is not None else p_val
+        return {
+            "f_obs": round(float(f_obs_val), 4) if f_obs_val is not None else None,
+            "score_gk": round(float(score_gk), 4),
+            "vetada_mp": vetada_mp,
+            "apoyada_mp": apoyada_mp,
+        }
+
     def _puntaje_podio(s: Any) -> float:
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
         est_bonus = 0.06 if _v(s, "estado") == "mantiene" else 0.0
@@ -5557,6 +5710,17 @@ def seleccionar_top_5_jugadas_recomendadas(
         # Prohibir "12 (Sin Empate)" como líder (Punto 6)
         if _es_dc_12(s):
             return -5.0
+
+        gk_info = _info_gatekeeper_sel(s)
+        if gk_info["vetada_mp"]:
+            return -99.0
+        f_obs_s = gk_info["f_obs"]
+        score_gk_s = float(gk_info["score_gk"])
+        est_bonus += (score_gk_s - p) * 1.50
+        if f_obs_s is not None and f_obs_s >= _u_promo_emp:
+            est_bonus += 0.35
+        if gk_info["apoyada_mp"]:
+            est_bonus += 0.45
 
         # Punto 12: Coherencia entre Marcador Exacto (1-0, 0-1, 0-0) y Jugada Principal
         if es_duelo_cerrado or posesion_esteril_vs_portero:
@@ -5592,18 +5756,18 @@ def seleccionar_top_5_jugadas_recomendadas(
             elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and (prom_p26 is not None and prom_p26 >= 0.52):
                 est_bonus += 5.0
 
-        # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad
+        # Si es Resultado / DC (Slot 1), ponderar por score compuesto Gatekeeper sin monopolio ciego
         if sl == 1:
             if 0.70 <= p <= 0.92:
-                return 4.0 - abs(p - 0.82) + est_bonus
+                return (2.20 + 1.50 * score_gk_s) - abs(p - 0.82) + est_bonus
             elif p > 0.92:
-                return 2.5 + est_bonus
+                return 2.0 + est_bonus
 
         # Si Ambos Anotan: No >= 50%, máxima prioridad en Slot 5
         if "btts_no" in ev and p_btts_no_pct >= 50.0:
             return 3.0 + (p_btts_no_pct / 100.0)
 
-        # Córneres (Slot 4): Si índice >= 1.10 impulsar +Córneres; si pocos bloqueos (< 2.2) impulsar -Córneres
+        # Córneres (Slot 4): respetar freno MP02 antes de impulsar +Córneres por índice de centros
         if sl == 4:
             cruces_l = _safe_float(mu_l.get("cruces_pct"), 22.0)
             cruces_v = _safe_float(mu_v.get("cruces_pct"), 20.0)
@@ -5612,7 +5776,10 @@ def seleccionar_top_5_jugadas_recomendadas(
             bloq_riv = _safe_float(mu_v.get("bloqueos"), 2.5) + _safe_float(mu_l.get("bloqueos"), 2.5)
             ind_c = ((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0))
             es_over = ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower())
-            if ind_c >= 1.10 and es_over and (0.70 <= p <= 0.88):
+            if "MP02_FRENO_CORNERS_VISITA" in cods_mp_top:
+                if not es_over and not _v(s, "equipo") and (0.70 <= p <= 0.88):
+                    return 2.55 - abs(p - 0.81) + est_bonus
+            elif ind_c >= 1.10 and es_over and (0.70 <= p <= 0.88):
                 return 3.0 + (ind_c / 2.0) + est_bonus
             elif bloq_riv < 2.2 and not es_over and (0.70 <= p <= 0.88):
                 return 3.0 + (2.5 - bloq_riv) + est_bonus
@@ -5630,8 +5797,12 @@ def seleccionar_top_5_jugadas_recomendadas(
         else:
             return 0.5 - abs(p - 0.80) + est_bonus
 
-    # Filtro final Regla 1.7 tras sincronizaciones e inyecciones 2T: ninguna selección sin +EV real puede entrar con cuota justa < 1.25
-    candidatas = [s for s in candidatas if not _es_linea_trivial_top5(s)]
+    # Filtro final Regla 1.7 + vetos explícitos de micropatrones combinatorios (Fase 7 Gatekeeper)
+    candidatas = [
+        s for s in candidatas
+        if not _es_linea_trivial_top5(s)
+        and not es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb_top)[0]
+    ]
 
     por_slot: dict[int, list[Any]] = {1: [], 2: [], 3: [], 4: [], 5: []}
     for s in candidatas:
@@ -5703,6 +5874,13 @@ def seleccionar_top_5_jugadas_recomendadas(
                 n_corners += 1
             if sl_cand == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 n_tarjetas += 1
+
+    # Ordenar el Top 5 por score compuesto Gatekeeper real (sin forzar Slot 1 en Puesto #1 si otro mercado lo supera)
+    if elegidas:
+        elegidas.sort(key=lambda item: _puntaje_podio(item[1]), reverse=True)
+        if _es_dc_12(elegidas[0][1]) and any(not _es_dc_12(it[1]) for it in elegidas[1:]):
+            primero_valido = next(i for i, it in enumerate(elegidas) if not _es_dc_12(it[1]))
+            elegidas.insert(0, elegidas.pop(primero_valido))
 
     podio: list[dict[str, Any]] = []
     nombres_slot = {
@@ -5823,7 +6001,11 @@ def seleccionar_top_5_jugadas_recomendadas(
                 badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
                 etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
 
+        gk_s = _info_gatekeeper_sel(s)
         podio.append({
+            "score_gatekeeper": gk_s["score_gk"],
+            "frecuencia_observada": gk_s["f_obs"],
+            "respaldo_micropatron": bool(gk_s["apoyada_mp"]),
             "rank": idx,
             "slot": actual_slot,
             "categoria_podio": nombres_slot.get(actual_slot, "MERCADO"),

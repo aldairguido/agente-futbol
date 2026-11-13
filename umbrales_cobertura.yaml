@@ -51,6 +51,11 @@ umbrales:
 
   # Fase 5 (Entrega 2): anclaje torneo actual y tope anti doble-conteo
   techo_ajuste_red_dcn_pct: 18.0  # regla operativa, sin validación cronológica
+  peso_prob_modelo_gatekeeper: 0.60  # regla operativa, sin validación cronológica
+  peso_tasa_empirica_gatekeeper: 0.40  # regla operativa, sin validación cronológica
+  umbral_promocion_empirica_top5: 0.85  # regla operativa, sin validación cronológica
+  min_corners_visita_freno: 3.0  # regla operativa, sin validación cronológica
+  max_corners_concedidos_local_freno: 5.0  # regla operativa, sin validación cronológica
   peso_torneo_actual_coef: 0.70  # regla operativa, sin validación cronológica
   peso_promedio_15p_coef: 0.30  # regla operativa, sin validación cronológica
   ratio_coef_shared_min: 0.90  # regla operativa, sin validación cronológica

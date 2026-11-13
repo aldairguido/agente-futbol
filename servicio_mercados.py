@@ -1196,6 +1196,9 @@ def obtener_top5_y_seccion1_filtrados(
             et_s = str(_val(s, "etiqueta") or "").lower()
             if "under" in ev_s or "menos" in et_s or "-" in et_s:
                 return False
+        from motor_mercados import es_seleccion_vetada_por_micropatrones
+        if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
+            return False
         return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
     sels_validas = [
@@ -1731,6 +1734,9 @@ def renderizar_ticket_mercados_png(
                 et_s = str(_val(s, "etiqueta") or "").lower()
                 if "under" in ev_s or "menos" in et_s or "-" in et_s:
                     return False
+            from motor_mercados import es_seleccion_vetada_por_micropatrones
+            if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
+                return False
             return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
         sels_validas = [
