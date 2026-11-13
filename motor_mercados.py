@@ -4509,6 +4509,96 @@ def filtrar_top_opciones_ticket(
     return competitivas_ord[:max_opciones]
 
 
+def calcular_ev_y_stake_calibrado(
+    mercado: str,
+    prob_bruta: float,
+    cuota_real: float | None = None,
+    equipo: str | None = None,
+    min_stake: float = 0.012,
+) -> dict[str, Any]:
+    """
+    Calcula EV_bruto, EV_calibrado y Quarter-Kelly usando la probabilidad calibrada
+    empíricamente de `agente_consciente` (`evaluar_familia_conciencia_cached`).
+    Cuando la familia está `bajo vigilancia`, fuerza stake cero (`0.0`).
+    """
+    prob_b = max(0.001, min(0.999, float(prob_bruta or 0.0)))
+    cal_info: dict[str, Any] = {}
+    try:
+        from agente_consciente import evaluar_familia_conciencia_cached
+        eq_norm = str(equipo) if equipo and str(equipo) not in ("None", "Total") else None
+        cal_info = evaluar_familia_conciencia_cached(
+            str(mercado or ""),
+            equipo=eq_norm,
+            prob_bruta=prob_b,
+        ) or {}
+    except Exception:
+        cal_info = {}
+
+    p_cal_raw = cal_info.get("prob_calibrada")
+    bajo_vig = bool(cal_info.get("bajo_vigilancia", False))
+    p_cal = max(0.001, min(0.999, float(p_cal_raw))) if p_cal_raw is not None else prob_b
+
+    cuota_justa = round(1.0 / max(0.01, prob_b), 2)
+    cuota_minima = round(1.05 / max(0.01, prob_b), 2)
+    cuota_justa_cal = round(1.0 / max(0.01, p_cal), 2)
+    cuota_minima_cal = round(1.05 / max(0.01, p_cal), 2)
+
+    ev_bruto: float | None = None
+    ev_bruto_pct: float | None = None
+    ev_calibrado: float | None = None
+    ev_calibrado_pct: float | None = None
+    stake_sugerido: float | None = None
+    stake_pct: float | None = None
+    estado_stake = "sin_stake_bajo_vigilancia" if bajo_vig else "sin_cuota_real"
+
+    try:
+        if cuota_real is not None and float(cuota_real) > 1.01:
+            c_val = float(cuota_real)
+            ev_bruto = round((prob_b * c_val) - 1.0, 4)
+            ev_bruto_pct = round(ev_bruto * 100.0, 1)
+            ev_calibrado = round((p_cal * c_val) - 1.0, 4)
+            ev_calibrado_pct = round(ev_calibrado * 100.0, 1)
+            if bajo_vig:
+                stake_sugerido = 0.0
+                stake_pct = 0.0
+                estado_stake = "sin_stake_bajo_vigilancia"
+            elif ev_calibrado > 0:
+                b_kelly = max(0.05, c_val - 1.0)
+                q_kelly = 1.0 - p_cal
+                f_quarter = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
+                stake_sugerido = round(max(min_stake, min(0.08, f_quarter)), 4)
+                stake_pct = round(stake_sugerido * 100.0, 1)
+                estado_stake = "activo"
+            else:
+                stake_sugerido = 0.0
+                stake_pct = 0.0
+                estado_stake = "sin_valor_calibrado"
+    except Exception:
+        pass
+
+    return {
+        "prob_bruta": prob_b,
+        "prob_calibrada": p_cal_raw if p_cal_raw is not None else round(p_cal, 4),
+        "bajo_vigilancia": bajo_vig,
+        "familia_conciencia": cal_info.get("familia"),
+        "brecha_conciencia_pp": cal_info.get("brecha_pp"),
+        "origen_calibracion": cal_info.get("origen_calibracion"),
+        "cuota_justa": cuota_justa,
+        "cuota_minima": cuota_minima,
+        "cuota_justa_calibrada": cuota_justa_cal,
+        "cuota_minima_calibrada": cuota_minima_cal,
+        "ev_bruto": ev_bruto,
+        "ev_bruto_pct": ev_bruto_pct,
+        "ev_calibrado": ev_calibrado,
+        "ev_calibrado_pct": ev_calibrado_pct,
+        "ev": ev_calibrado,
+        "ev_pct": ev_calibrado_pct,
+        "stake_sugerido": stake_sugerido,
+        "stake_pct": stake_pct,
+        "estado_stake": estado_stake,
+    }
+
+
 def seleccionar_top_5_jugadas_recomendadas(
     selecciones: list[Any],
     motor: Any = None,
@@ -4683,15 +4773,21 @@ def seleccionar_top_5_jugadas_recomendadas(
         if not tiene_desvio_excesivo_calibracion(s, doc_l_m, doc_v_m, eq_l, eq_v)[0]
     ]
 
-    # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
+    # ── Puntos 10 y 20 + Bloque 4.1: Filtro +EV Calibrado con Cuota Real ──
     candidatas_filtradas_ev: list[Any] = []
     for s in candidatas:
         prob_s = float(_v(s, "probabilidad", 0.0) or 0.0)
         try:
             cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
             if cuota_r is not None and float(cuota_r) > 1.01:
-                ev_calc = (prob_s * float(cuota_r)) - 1.0
-                if ev_calc < 0.03:
+                ev_info_f = calcular_ev_y_stake_calibrado(
+                    str(_v(s, "mercado") or ""),
+                    prob_s,
+                    float(cuota_r),
+                    equipo=str(_v(s, "equipo") or "") or None,
+                )
+                ev_cal_f = ev_info_f.get("ev_calibrado")
+                if ev_cal_f is not None and float(ev_cal_f) < 0.03:
                     continue
         except Exception:
             pass
@@ -5588,52 +5684,50 @@ def seleccionar_top_5_jugadas_recomendadas(
         pass
         cuota_minima = round(1.05 / max(0.05, prob), 2)
 
-        # Cálculo de EV% y Stake Kelly Fraccional (25%) garantizado EXCLUSIVAMENTE con cuota real de mercado
-        cuota_justa = round(1.0 / max(0.01, prob), 2)
-        cuota_minima = round(1.05 / max(0.01, prob), 2)
-        ev_valor: float | None = None
-        stake_sugerido: float | None = None
-        ev_pct: float | None = None
-        stake_pct: float | None = None
-
-        try:
-            cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
-            if cuota_r is not None and float(cuota_r) > 1.01:
-                c_val = float(cuota_r)
-                ev_calc = round((prob * c_val) - 1.0, 4)
-                if ev_calc > 0:
-                    ev_valor = ev_calc
-                    ev_pct = round(ev_calc * 100.0, 1)
-                    b_kelly = max(0.05, c_val - 1.0)
-                    q_kelly = 1.0 - prob
-                    stake_sugerido = round(max(0.012, min(0.08, (((b_kelly * prob) - q_kelly) / b_kelly) * 0.25)), 4)
-                    stake_pct = round(stake_sugerido * 100.0, 1)
-        except Exception:
-            pass
-
-        cal_info_p: dict[str, Any] = {}
-        try:
-            from agente_consciente import evaluar_familia_conciencia_cached
-            eq_p = _v(s, "equipo", None)
-            cal_info_p = evaluar_familia_conciencia_cached(
-                str(_v(s, "mercado") or ""),
-                equipo=str(eq_p) if eq_p and str(eq_p) not in ("None", "Total") else None,
-                prob_bruta=prob,
-            )
-        except Exception:
-            cal_info_p = {}
-        p_cal_item = cal_info_p.get("prob_calibrada")
-        bajo_vig_item = bool(cal_info_p.get("bajo_vigilancia", False))
+        # Cálculo de EV_bruto, EV_calibrado y Quarter-Kelly desde prob_calibrada (stake=0 si bajo vigilancia)
+        cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
+        eq_p = _v(s, "equipo", None)
+        ev_info = calcular_ev_y_stake_calibrado(
+            str(_v(s, "mercado") or ""),
+            prob,
+            float(cuota_r) if cuota_r is not None else None,
+            equipo=str(eq_p) if eq_p and str(eq_p) not in ("None", "Total") else None,
+        )
+        cuota_justa = ev_info["cuota_justa"]
+        cuota_minima = ev_info["cuota_minima"]
+        cuota_justa_cal = ev_info["cuota_justa_calibrada"]
+        cuota_minima_cal = ev_info["cuota_minima_calibrada"]
+        p_cal_item = ev_info["prob_calibrada"]
+        bajo_vig_item = bool(ev_info["bajo_vigilancia"])
+        ev_bruto_val = ev_info["ev_bruto"]
+        ev_bruto_pct = ev_info["ev_bruto_pct"]
+        ev_cal_val = ev_info["ev_calibrado"]
+        ev_cal_pct = ev_info["ev_calibrado_pct"]
+        ev_pct = ev_info["ev_pct"]
+        stake_sugerido = ev_info["stake_sugerido"]
+        stake_pct = ev_info["stake_pct"]
+        estado_stake = ev_info["estado_stake"]
         cal_badge_str = f" · Cal {float(p_cal_item) * 100.0:.1f}%" if (bajo_vig_item and p_cal_item is not None) else ""
 
         estado_raw = str(_v(s, "estado") or "mantiene")
         est_badge = "SÓLIDA" if estado_raw == "mantiene" else "SENSIBLE"
-        if ev_pct is not None and stake_pct is not None:
-            badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)"
+        if ev_cal_pct is not None and stake_pct is not None:
+            stk_badge = "Stake: 0.0% (bajo vigilancia)" if bajo_vig_item else f"Stake: {stake_pct:.1f}%"
+            badge_completo = (
+                f"{prob * 100.0:.1f}%{cal_badge_str} "
+                f"({est_badge} · EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}% · {stk_badge})"
+            )
+            etiqueta_valor_str = (
+                f"{prob * 100.0:.1f}%{cal_badge_str} "
+                f"(EV cal {ev_cal_pct:+.1f}% | EV bruto {ev_bruto_pct:+.1f}% | Cuota Mín cal: {cuota_minima_cal:.2f} | {stk_badge})"
+            )
         else:
-            badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
+            if bajo_vig_item:
+                badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima_cal:.2f} cal · Sin stake: vigilancia)"
+                etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa cal: {cuota_justa_cal:.2f} | Cuota Mín cal: {cuota_minima_cal:.2f} | Sin stake: bajo vigilancia)"
+            else:
+                badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
+                etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
 
         podio.append({
             "rank": idx,
@@ -5645,17 +5739,26 @@ def seleccionar_top_5_jugadas_recomendadas(
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
             "prob_calibrada": p_cal_item,
             "prob_calibrada_pct": f"{float(p_cal_item) * 100.0:.1f}%" if p_cal_item is not None else None,
-            "familia_conciencia": cal_info_p.get("familia"),
-            "brecha_conciencia_pp": cal_info_p.get("brecha_pp"),
+            "familia_conciencia": ev_info["familia_conciencia"],
+            "brecha_conciencia_pp": ev_info["brecha_conciencia_pp"],
+            "origen_calibracion": ev_info["origen_calibracion"],
             "bajo_vigilancia": bajo_vig_item,
             "prob_base_poisson": round(prob_base_p * 100.0, 1),
             "prob_ajustada_ticket": round(prob * 100.0, 1),
             "cuota_justa": cuota_justa,
             "cuota_minima": cuota_minima,
+            "cuota_justa_calibrada": cuota_justa_cal,
+            "cuota_minima_calibrada": cuota_minima_cal,
             "stake_sugerido": stake_sugerido,
             "stake_sugerido_pct": stake_pct,
-            "ev": round(ev_pct / 100.0, 4) if ev_pct is not None else None,
-            "ev_pct": ev_pct,
+            "stake_pct": stake_pct,
+            "estado_stake": estado_stake,
+            "ev_bruto": ev_bruto_val,
+            "ev_bruto_pct": ev_bruto_pct,
+            "ev_calibrado": ev_cal_val,
+            "ev_calibrado_pct": ev_cal_pct,
+            "ev": ev_cal_val,
+            "ev_pct": ev_cal_pct,
             "badge_completo": badge_completo,
             "nota_calibracion": nota_calibracion_str,
             "etiqueta_valor": etiqueta_valor_str,

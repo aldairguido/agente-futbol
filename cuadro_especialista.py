@@ -2214,9 +2214,12 @@ def generar_cuadro_visual_partido(
             pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · EV {float(ev_p):+.1f}% · Stake: {float(stk_p):.1f}%)")
         else:
             pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · Cuota Mín: {c_min:.2f})")
-        rect_pill = FancyBboxPatch((0.708, y_f - 0.105), 0.280, 0.09, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_top5.transAxes)
+        _fsize_pill = 6.3 if len(pill_txt) > 42 else 7.3
+        _px0_pill = 0.630 if len(pill_txt) > 42 else 0.708
+        _pw_pill = 0.358 if len(pill_txt) > 42 else 0.280
+        rect_pill = FancyBboxPatch((_px0_pill, y_f - 0.105), _pw_pill, 0.09, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_top5.transAxes)
         ax_top5.add_patch(rect_pill)
-        ax_top5.text(0.848, y_f - 0.06, pill_txt, ha="center", va="center", fontsize=7.3, fontweight="bold", color="#1B5E20", transform=ax_top5.transAxes)
+        ax_top5.text(_px0_pill + _pw_pill * 0.5, y_f - 0.06, pill_txt, ha="center", va="center", fontsize=_fsize_pill, fontweight="bold", color="#1B5E20", transform=ax_top5.transAxes)
 
     # Sub-bloque intermedio de gs[2]: 4 ALERTAS PRINCIPALES ACTIVADAS DEL MOTOR DE 55 PATRONES
     ax_alertas55 = fig.add_subplot(gs_bot[1])

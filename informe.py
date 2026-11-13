@@ -499,57 +499,93 @@ def construir_filas_ticket_valor(
     c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
             if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
 
+    from motor_mercados import calcular_ev_y_stake_calibrado
+
     definiciones = [
-        (f"1 — Victoria {eq_l}", info["p_local"], c_loc),
-        ("X — Empate", info["p_empate"], c_emp),
-        (f"2 — Victoria {eq_v}", info["p_visitante"], c_vis),
-        (f"1X — {eq_l} o Empate", info["p_1x"], c_1x),
-        (f"X2 — Empate o {eq_v}", info["p_x2"], c_x2),
-        (f"12 — {eq_l} o {eq_v}", info["p_12"], c_12),
+        (f"1 — Victoria {eq_l}", "Ganador del partido", info["p_local"], c_loc),
+        ("X — Empate", "Ganador del partido", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", "Ganador del partido", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", "Doble oportunidad", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", "Doble oportunidad", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", info["p_12"], c_12),
     ]
 
     filas: list[dict[str, Any]] = []
-    for nombre_mkt, prob_bot, cuota_fs in definiciones:
+    for nombre_mkt, mkt_canon, prob_bot, cuota_fs in definiciones:
         prob_f = max(0.001, min(0.999, float(prob_bot or 0.0)))
-        cuota_justa = round(1.0 / prob_f, 2)
-        cuota_minima = round(1.05 * cuota_justa, 2)
-        b_min = max(0.01, cuota_minima - 1.0)
-        f_star_min = max(0.0, (prob_f * cuota_minima - 1.0) / b_min)
-        stake_kelly_min_pct = round(0.25 * f_star_min * 100.0, 1)
-
         cuota_fs_val = round(float(cuota_fs), 2) if isinstance(cuota_fs, (int, float)) and cuota_fs > 1.0 else None
+        ev_info = calcular_ev_y_stake_calibrado(mkt_canon, prob_f, cuota_fs_val, min_stake=0.0)
+
+        p_cal_f = float(ev_info["prob_calibrada"]) if ev_info["prob_calibrada"] is not None else prob_f
+        bajo_vig_f = bool(ev_info["bajo_vigilancia"])
+        cuota_justa = ev_info["cuota_justa"]
+        cuota_justa_cal = ev_info["cuota_justa_calibrada"]
+        cuota_minima = ev_info["cuota_minima"]
+        cuota_minima_cal = ev_info["cuota_minima_calibrada"]
+        b_min = max(0.01, cuota_minima_cal - 1.0)
+        f_star_min = max(0.0, (p_cal_f * cuota_minima_cal - 1.0) / b_min)
+        stake_kelly_min_pct = 0.0 if bajo_vig_f else round(0.25 * f_star_min * 100.0, 1)
 
         if cuota_fs_val is not None:
-            ev_pct = round(((prob_f * cuota_fs_val) - 1.0) * 100.0, 2)
-            tiene_valor = bool(cuota_fs_val > cuota_justa)
-            b_fs = max(0.01, cuota_fs_val - 1.0)
-            f_star = max(0.0, (prob_f * cuota_fs_val - 1.0) / b_fs)
-            stake_kelly_pct = round(0.25 * f_star * 100.0, 1) if tiene_valor else 0.0
+            ev_bruto_pct = ev_info["ev_bruto_pct"]
+            ev_cal_pct = ev_info["ev_calibrado_pct"]
+            ev_pct = ev_cal_pct
+            tiene_valor = bool(ev_cal_pct is not None and ev_cal_pct > 0)
+            stake_kelly_pct = float(ev_info["stake_pct"] or 0.0)
 
-            if tiene_valor and ev_pct >= 5.0 and prob_f >= 0.45:
-                recomendacion = f"VALOR ALTO (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+            if bajo_vig_f:
+                recomendacion = (
+                    f"VIGILANCIA (EV cal {ev_cal_pct:+.1f}% | bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake: 0.0%{alerta_drop}"
+                )
+            elif tiene_valor and ev_cal_pct >= 5.0 and p_cal_f >= 0.45:
+                recomendacion = (
+                    f"VALOR ALTO (EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+                )
             elif tiene_valor:
-                recomendacion = f"VALOR (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+                recomendacion = (
+                    f"VALOR (EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+                )
             else:
-                recomendacion = f"SIN VALOR (Cuota <= Justa){alerta_drop}"
+                recomendacion = (
+                    f"SIN VALOR CAL (EV cal {ev_cal_pct:+.1f}% | bruto {ev_bruto_pct:+.1f}%){alerta_drop}"
+                )
         else:
+            ev_bruto_pct = None
+            ev_cal_pct = None
             ev_pct = None
             tiene_valor = False
-            recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
+            stake_kelly_pct = 0.0 if bajo_vig_f else None
+            if bajo_vig_f:
+                recomendacion = f"Cuota Mín cal: {cuota_minima_cal:.2f} (Sin stake: bajo vigilancia){alerta_drop}"
+            else:
+                recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
 
         filas.append({
             "mercado": nombre_mkt,
             "prob_bot": prob_f,
             "prob_bot_str": f"{prob_f * 100.0:.1f}%",
+            "prob_calibrada": p_cal_f,
+            "prob_calibrada_str": f"{p_cal_f * 100.0:.1f}%",
+            "bajo_vigilancia": bajo_vig_f,
             "cuota_justa": cuota_justa,
             "cuota_justa_str": f"{cuota_justa:.2f}",
+            "cuota_justa_calibrada": cuota_justa_cal,
             "cuota_minima": cuota_minima,
             "cuota_minima_str": f"{cuota_minima:.2f}",
+            "cuota_minima_calibrada": cuota_minima_cal,
             "cuota_flashscore": cuota_fs_val,
             "cuota_flashscore_str": f"{cuota_fs_val:.2f}" if cuota_fs_val is not None else "N/D",
+            "ev_bruto_pct": ev_bruto_pct,
+            "ev_calibrado_pct": ev_cal_pct,
             "ev_pct": ev_pct,
-            "ev_str": (f"+{ev_pct:.1f}%" if ev_pct is not None and ev_pct > 0
-                       else (f"{ev_pct:.1f}%" if ev_pct is not None else "N/D")),
+            "ev_str": (f"+{ev_pct:.1f}% (bruto {ev_bruto_pct:+.1f}%)" if ev_pct is not None and ev_pct > 0
+                       else (f"{ev_pct:.1f}% (bruto {ev_bruto_pct:+.1f}%)" if ev_pct is not None else "N/D")),
+            "stake_sugerido": (round(float(stake_kelly_pct) / 100.0, 4) if stake_kelly_pct is not None else None),
+            "stake_pct": stake_kelly_pct,
+            "estado_stake": ev_info["estado_stake"],
             "tiene_valor": tiene_valor,
             "recomendacion": recomendacion,
         })
