@@ -72,7 +72,7 @@ def test_3_1d_sobredispersion_corners_activa_binomial_negativa():
     assert disp_v["var_sobre_media"] > 1.05 and disp_v["sobredisperso"] is True
 
     a = analizar(dl, dv, "Turkey", "Belgium")
-    assert (a.motor.tasas.lambda_local_ft, a.motor.tasas.lambda_visitante_ft) == (1.04, 3.55)
+    assert (a.motor.tasas.lambda_local_ft, a.motor.tasas.lambda_visitante_ft) == (1.1, 2.98)
 
     mkts = {m.id_mercado: m for m in a.mercados}
     assert mkts["corners_local"].detalle.get("distribucion_activa") == "binomial_negativa"
@@ -197,7 +197,7 @@ def test_3_5_etiqueta_reparto_50_50_sin_validar_y_3_7_gatekeeper_italia_francia(
 
     a = analizar(dl, dv, "Italy", "France")
     # Lambda intacta
-    assert (a.motor.tasas.lambda_local_ft, a.motor.tasas.lambda_visitante_ft) == (1.03, 2.33)
+    assert (a.motor.tasas.lambda_local_ft, a.motor.tasas.lambda_visitante_ft) == (1.31, 1.79)
     assert _reparto_mitades_sin_validar(a.motor) is True
 
     cron = cronologia_mitades_verificada(a.motor)

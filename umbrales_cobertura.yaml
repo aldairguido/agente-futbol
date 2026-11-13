@@ -48,3 +48,10 @@ umbrales:
 
   # Bloque 3 (3.3): Brecha histórica máxima permitida (pp) en /conciencia para entrar al Top 5
   max_brecha_familia_top5_pp: -10.0  # regla operativa, sin validación cronológica
+
+  # Fase 5 (Entrega 2): anclaje torneo actual y tope anti doble-conteo
+  techo_ajuste_red_dcn_pct: 18.0  # regla operativa, sin validación cronológica
+  peso_torneo_actual_coef: 0.70  # regla operativa, sin validación cronológica
+  peso_promedio_15p_coef: 0.30  # regla operativa, sin validación cronológica
+  ratio_coef_shared_min: 0.90  # regla operativa, sin validación cronológica
+  ratio_coef_shared_max: 1.10  # regla operativa, sin validación cronológica

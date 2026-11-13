@@ -36,9 +36,9 @@ FIXTURES_LN = json.loads((ROOT / "tests" / "fixtures" / "londrina_nautico_fixtur
 
 def test_traza_lambda_ordenada_y_continua_sin_cambiar_lambdas():
     casos = [
-        ("turkey_belgium", FIXTURES_R5["docs"]["turkey"], FIXTURES_R5["docs"]["belgium"], (1.04, 3.55)),
-        ("italy_france", FIXTURES_R5["docs"]["italy"], FIXTURES_R5["docs"]["france"], (1.03, 2.33)),
-        ("londrina_nautico", FIXTURES_LN["londrina"], FIXTURES_LN["nautico"], (1.14, 0.85)),
+        ("turkey_belgium", FIXTURES_R5["docs"]["turkey"], FIXTURES_R5["docs"]["belgium"], (1.1, 2.98)),
+        ("italy_france", FIXTURES_R5["docs"]["italy"], FIXTURES_R5["docs"]["france"], (1.31, 1.79)),
+        ("londrina_nautico", FIXTURES_LN["londrina"], FIXTURES_LN["nautico"], (1.14, 0.86)),
     ]
     for nombre, dl, dv, esperado in casos:
         a = analizar(dl, dv, dl["equipo"]["nombre"], dv["equipo"]["nombre"])
@@ -63,16 +63,32 @@ def test_traza_lambda_ordenada_y_continua_sin_cambiar_lambdas():
 
 
 def test_italy_france_explica_coef_liga_y_baja_italia_francia():
+    # Fase 5: Italia y Francia comparten UEFA Nations League A -> coef anclado [0.90, 1.10], sin penalización inter-liga ficticia
     dl = FIXTURES_R5["docs"]["italy"]
     dv = FIXTURES_R5["docs"]["france"]
-    a = analizar(dl, dv, "Italy", "France")
+    a = analizar(dl, dv, "Italy", "France", competicion="UEFA Nations League A Grp. 1")
     etapas_reglas = [(s["etapa"], s["regla"]) for s in a.motor.traza_lambda]
-    assert ("coef_liga", "ajuste_coef_liga_tier") in etapas_reglas
-    paso_coef = [s for s in a.motor.traza_lambda if s["regla"] == "ajuste_coef_liga_tier"][0]
-    assert float(paso_coef["lam_l_despues"]) < float(paso_coef["lam_l_antes"])
-    assert float(paso_coef["lam_v_despues"]) > float(paso_coef["lam_v_antes"])
-    assert "tier_coef=" in paso_coef["motivo"]
+    coefs_anclados = (a.motor.recursivo or {}).get("coefs_torneo_anclados") or {}
+    assert coefs_anclados.get("comparten_torneo") is True
+    assert coefs_anclados.get("aplica_coef_liga") is False
+    assert ("coef_liga", "ajuste_coef_liga_tier") not in etapas_reglas
     assert ("red_45_dcn", "prohibicion_inflacion_dual") in etapas_reglas
+
+    # Cuando sí existe desnivel real entre ligas distintas, ajuste_coef_liga_tier sigue trazándose
+    dl_deb = copy.deepcopy(dl)
+    dv_fuerte = copy.deepcopy(dv)
+    for p in dl_deb.get("partidos") or []:
+        p["torneo"] = "Liga Nacional Amateur"
+        p["competicion"] = "Liga Nacional Amateur"
+    for p in dv_fuerte.get("partidos") or []:
+        p["torneo"] = "Premier League"
+        p["competicion"] = "Premier League"
+    a_mix = analizar(dl_deb, dv_fuerte, "Club Debil", "Club Elite", competicion="Amistoso Mixto")
+    etapas_mix = [(s["etapa"], s["regla"]) for s in a_mix.motor.traza_lambda]
+    assert ("coef_liga", "ajuste_coef_liga_tier") in etapas_mix
+    paso_coef = [s for s in a_mix.motor.traza_lambda if s["regla"] == "ajuste_coef_liga_tier"][0]
+    assert float(paso_coef["lam_l_despues"]) < float(paso_coef["lam_l_antes"])
+    assert "tier_coef=" in paso_coef["motivo"]
 
 
 def test_parser_90ft_flashscore_separa_penaltis_de_tiempo_reglamentario():

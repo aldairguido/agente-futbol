@@ -1744,19 +1744,27 @@ class MotorMercados:
                 self.doc_visitante.get("partidos"), self.nombre_visitante)
 
             from motor_recursivo_45_dcn import (
-                obtener_tier_coef, obtener_tier_equipo, es_sede_neutral,
-                factor_uefa_relativo,
+                obtener_coefs_torneo_anclados, obtener_tier_equipo, es_sede_neutral,
             )
+            comp_actual_m = str(getattr(self, "competicion", "") or getattr(self.p, "competicion", "") or "")
             tier_L_int = obtener_tier_equipo(partidos_l_red)
             tier_V_int = obtener_tier_equipo(partidos_v_red)
-            tier_L = obtener_tier_coef(partidos_l_red, perfil_l_gen, self.nombre_local)
-            tier_V = obtener_tier_coef(partidos_v_red, perfil_v_gen, self.nombre_visitante)
+            info_coefs = obtener_coefs_torneo_anclados(
+                partidos_l_red, partidos_v_red,
+                perfil_l_gen, perfil_v_gen,
+                self.nombre_local, self.nombre_visitante,
+                competicion_str=comp_actual_m,
+            )
+            tier_L = float(info_coefs["coef_L"])
+            tier_V = float(info_coefs["coef_V"])
 
-            sede_neutral_L = es_sede_neutral(self.nombre_local, getattr(self, "competicion", ""))
+            sede_neutral_L = es_sede_neutral(self.nombre_local, comp_actual_m)
             cond_adn_l = "neutral" if sede_neutral_L else cond_l
 
-            fu_L = factor_uefa_relativo(tier_L, tier_V)
-            fu_V = factor_uefa_relativo(tier_V, tier_L)
+            fu_L = float(info_coefs["fu_L"])
+            fu_V = float(info_coefs["fu_V"])
+            aplica_coef_liga = bool(info_coefs["aplica_coef_liga"])
+            comparten_torneo_m = bool(info_coefs["comparten_torneo"])
 
             # Módulo Doble ADN con Contracción Bayesiana k=3.5 (Fase 5.1) + Descuento ΔTier + UEFA
             mu_l_cond = red.calcular_doble_adn_con_shrinkage(
@@ -1794,12 +1802,14 @@ class MotorMercados:
                 "motivo": f"Doble ADN k=3.5 cond=({cond_adn_l},{cond_v}) delta_tier=({tier_L_int},{tier_V_int}) uefa=({fu_L:.3f},{fu_V:.3f})",
             })
 
-            # Ponderación por Coeficiente de Liga (tier_coef) solo si no hubo ya ajuste ΔTier de división
+            # Ponderación por Coeficiente de Liga (tier_coef) anclado al torneo actual
             _ratio_fuerza_log = 1.0
-            if tier_L != tier_V and tier_L_int == tier_V_int:
+            if aplica_coef_liga and tier_L != tier_V and tier_L_int == tier_V_int:
                 tier_menor = min(tier_L, tier_V)
                 tier_mayor = max(tier_L, tier_V)
                 ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
+                if comparten_torneo_m:
+                    ratio_fuerza = max(0.90, min(1.0, ratio_fuerza))
                 _ratio_fuerza_log = ratio_fuerza
                 if tier_L < tier_V:
                     atq_L_cond = atq_L_cond * ratio_fuerza
@@ -1810,7 +1820,7 @@ class MotorMercados:
 
             lam_l = round((atq_L_cond + def_V_cond) / 2.0, 2)
             lam_v = round((atq_V_cond + def_L_cond) / 2.0, 2)
-            if tier_L != tier_V and tier_L_int == tier_V_int:
+            if aplica_coef_liga and tier_L != tier_V and tier_L_int == tier_V_int:
                 _traza.append({
                     "etapa": "coef_liga",
                     "regla": "ajuste_coef_liga_tier",
@@ -1830,6 +1840,7 @@ class MotorMercados:
                 partidos_v_red,
                 n_simulaciones_mc=int(getattr(self.p, "mc_simulaciones", 100_000)),
                 sede_neutral_local=sede_neutral_L,
+                competicion_str=comp_actual_m,
             )
             resultado["atq_local_base"] = atq_L_cond
             resultado["def_visita_base"] = def_V_cond
@@ -2012,6 +2023,26 @@ class MotorMercados:
                 lam_l_nuevo = max(lam_l_nuevo, round(lam_l * 0.72, 2))
             if lam_v_red < lam_v and not (es_vivo and roja_v):
                 lam_v_nuevo = max(lam_v_nuevo, round(lam_v * 0.72, 2))
+
+            try:
+                _techo_post = float((cargar_umbrales_cobertura() or {}).get("techo_ajuste_red_dcn_pct", 18.0))
+            except Exception:
+                _techo_post = 18.0
+            _f_t = _techo_post / 100.0
+            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_local")):
+                if abs(f_ctx_l - 1.0) <= 1e-6:
+                    if bool(resultado.get("freno_bajista_dcn_local")):
+                        lam_l_nuevo = min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo)
+                    else:
+                        _piso_t_l = round(min(lam_l * (1.0 - _f_t), lam_l_red), 4)
+                        lam_l_nuevo = max(_piso_t_l, min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo))
+            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_visita")):
+                if abs(f_ctx_v - 1.0) <= 1e-6 and not (pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45))):
+                    if bool(resultado.get("freno_bajista_dcn_visita")):
+                        lam_v_nuevo = min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo)
+                    else:
+                        _piso_t_v = round(min(lam_v * (1.0 - _f_t), lam_v_red), 4)
+                        lam_v_nuevo = max(_piso_t_v, min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo))
 
             # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22

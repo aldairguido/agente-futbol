@@ -1761,24 +1761,29 @@ def generar_cuadro_visual_partido(
 
     # ── RED NEURONAL RECURSIVA: SINCRONIZACIÓN ESTRICTA MATRIZ-TICKET ───────
     import motor_recursivo_45_dcn as red_neuronal
-    from motor_recursivo_45_dcn import obtener_tier_coef, obtener_tier_equipo
+    from motor_recursivo_45_dcn import obtener_coefs_torneo_anclados, obtener_tier_coef, obtener_tier_equipo
 
     partidos_l_red = partidos_para_red_neuronal(partidos_15_local, eq_L)
     partidos_v_red = partidos_para_red_neuronal(partidos_15_visita, eq_V)
     tier_L_int = obtener_tier_equipo(partidos_l_red)
     tier_V_int = obtener_tier_equipo(partidos_v_red)
-    tier_coef_L = obtener_tier_coef(partidos_l_red, perfil_local, eq_L, competicion)
-    tier_coef_V = obtener_tier_coef(partidos_v_red, perfil_vis, eq_V, competicion)
+    info_coefs_v = obtener_coefs_torneo_anclados(
+        partidos_l_red, partidos_v_red,
+        perfil_local, perfil_vis, eq_L, eq_V,
+        competicion_str=competicion,
+    )
+    tier_coef_L = float(info_coefs_v["coef_L"])
+    tier_coef_V = float(info_coefs_v["coef_V"])
     ratio_tier_L = min(1.0, tier_coef_L / max(0.1, tier_coef_V))
     ratio_tier_V = min(1.0, tier_coef_V / max(0.1, tier_coef_L))
 
-    if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
+    if ratio_tier_V < 0.90 and ratio_tier_V > 0.05:
         rV["Final_Defense_Strength"] = round(rV["Final_Defense_Strength"] * (ratio_tier_V ** 0.65), 1)
         rV["Overall_Hybrid_Rating"] = round(0.48 * rV["Final_Attack_Strength"] + 0.42 * rV["Final_Defense_Strength"] + 0.10 * rV["Pressing_Intensity_Score"], 1)
         if tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
             tV["Avg_Seconds_Between_Goals_Conceded"] = round(tV["Avg_Seconds_Between_Goals_Conceded"] * ratio_tier_V, 1)
 
-    if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
+    if ratio_tier_L < 0.90 and ratio_tier_L > 0.05:
         rL["Final_Defense_Strength"] = round(rL["Final_Defense_Strength"] * (ratio_tier_L ** 0.65), 1)
         rL["Overall_Hybrid_Rating"] = round(0.48 * rL["Final_Attack_Strength"] + 0.42 * rL["Final_Defense_Strength"] + 0.10 * rL["Pressing_Intensity_Score"], 1)
         if tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
@@ -1794,13 +1799,15 @@ def generar_cuadro_visual_partido(
         partidos_15_visita, perfil_vis, "fuera", tier_rival=tier_L_int
     )
 
-    # Ponderación por Coeficiente de Liga (tier_coef) cuando no hubo salto de división interno
-    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L, competicion_str=competicion)
-    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V, competicion_str=competicion)
-    if tier_L != tier_V and tier_L_int == tier_V_int:
+    # Ponderación por Coeficiente de Liga anclado al torneo actual (Fase 5)
+    tier_L = tier_coef_L
+    tier_V = tier_coef_V
+    if info_coefs_v.get("aplica_coef_liga", True) and tier_L != tier_V and tier_L_int == tier_V_int:
         tier_menor = min(tier_L, tier_V)
         tier_mayor = max(tier_L, tier_V)
         ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
+        if info_coefs_v.get("comparten_torneo"):
+            ratio_fuerza = max(0.90, min(1.0, ratio_fuerza))
         if tier_L < tier_V:
             gf_L = round(gf_L * ratio_fuerza, 2)
             xg_L = round(xg_L * ratio_fuerza, 2)
@@ -1841,10 +1848,17 @@ def generar_cuadro_visual_partido(
             partidos_l_red,
             partidos_v_red,
             sede_neutral_local=sede_neutral_L,
+            competicion_str=competicion,
         )
         lam_local = float(res_red["lambda_local_recursivo"])
         lam_vis = float(res_red["lambda_visita_recursivo"])
         matriz_prob = matriz_red_para_dibujar(res_red)
+
+    if isinstance(res_red, dict):
+        if res_red.get("seg_gol_concedido_propio_L") is not None:
+            tL["Avg_Seconds_Between_Goals_Conceded"] = float(res_red["seg_gol_concedido_propio_L"])
+        if res_red.get("seg_gol_concedido_propio_V") is not None:
+            tV["Avg_Seconds_Between_Goals_Conceded"] = float(res_red["seg_gol_concedido_propio_V"])
 
     fig = plt.figure(figsize=(13.5, 23.2), dpi=180, facecolor="#F8FAFC")
     gs = fig.add_gridspec(
@@ -2506,7 +2520,7 @@ def generar_cuadro_desde_analisis(
         "visitante": bloque_para_lado(motor, "visitante", peso_roja=peso_roja),
     }
 
-    from motor_recursivo_45_dcn import obtener_tier_coef
+    from motor_recursivo_45_dcn import obtener_coefs_torneo_anclados
     eq_l_nom = getattr(motor, "nombre_local", "") or ""
     eq_v_nom = getattr(motor, "nombre_visitante", "") or ""
     meta_mkt = getattr(analisis, "metadatos", {}) or {}
@@ -2515,10 +2529,17 @@ def generar_cuadro_desde_analisis(
     pts_l = doc_local.get("partidos") if doc_local else []
     pts_v = doc_visitante.get("partidos") if doc_visitante else []
 
-    t_coef_L = obtener_tier_coef(partidos=pts_l, nombre_equipo=eq_l_nom, competicion_str=comp_nom)
-    t_coef_V = obtener_tier_coef(partidos=pts_v, nombre_equipo=eq_v_nom, competicion_str=comp_nom)
-    ratio_tier_l = min(1.0, t_coef_L / max(0.1, t_coef_V))
-    ratio_tier_v = min(1.0, t_coef_V / max(0.1, t_coef_L))
+    info_coefs_cw = obtener_coefs_torneo_anclados(
+        pts_l, pts_v, None, None, eq_l_nom, eq_v_nom, competicion_str=comp_nom
+    )
+    t_coef_L = float(info_coefs_cw["coef_L"])
+    t_coef_V = float(info_coefs_cw["coef_V"])
+    if info_coefs_cw.get("comparten_torneo") and not info_coefs_cw.get("aplica_coef_liga"):
+        ratio_tier_l = 1.0
+        ratio_tier_v = 1.0
+    else:
+        ratio_tier_l = min(1.0, t_coef_L / max(0.1, t_coef_V))
+        ratio_tier_v = min(1.0, t_coef_V / max(0.1, t_coef_L))
 
     perfil_l = construir_perfil_especialista_equipo(bloques["local"], ratio_tier=ratio_tier_l)
     perfil_v = construir_perfil_especialista_equipo(bloques["visitante"], ratio_tier=ratio_tier_v)

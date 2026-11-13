@@ -385,7 +385,26 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
     ]):
         return 0.50
 
-    # 2. Fases previas / clasificación europea (UCL Qual., UEL Qual., UECL Qual.)
+    # 2. Torneos de selecciones mayores y clasificatorias UEFA/CONMEBOL (no confundir WCQ con previa club UECL)
+    es_sel_qual = any(k in t for k in ["world cup", "euro", "copa del mundo", "copa america", "eliminatoria"]) and any(
+        k in t for k in ["qual", "previa", "clasificaci", "eliminatoria", "round"]
+    )
+    if es_sel_qual:
+        if any(k in t for k in ["uefa", "conmebol", "euro", "europe"]):
+            return 0.90
+        return 0.78
+
+    if "nations league" in t:
+        if any(d in t for d in ["league c", "league d", "liga c", "liga d", "grupo c", "grupo d"]):
+            return 0.75
+        if any(d in t for d in ["league b", "liga b", "grupo b"]):
+            return 0.88
+        return 1.00
+
+    if any(k in t for k in ["world cup", "copa del mundo", "eurocopa", "uefa euro", "copa america", "finalissima"]):
+        return 1.00
+
+    # 2b. Fases previas / clasificación de clubes europeos (UCL Qual., UEL Qual., UECL Qual.)
     if any(k in t for k in ["qual", "previa", "clasificaci"]):
         return 0.68
 
@@ -535,15 +554,164 @@ def peso_credibilidad_partido(partido: Dict[str, Any]) -> float:
     return 1.0
 
 
-def factor_uefa_relativo(tier_coef_propio: float, tier_coef_rival: float) -> float:
-    """(tier_propio / tier_rival) cuando el propio es de liga más débil; si no, 1.0."""
+def _cargar_umbrales_dcn_seguro() -> Dict[str, float]:
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        u = cargar_umbrales_cobertura() or {}
+    except Exception:
+        u = {}
+    return {
+        "techo_dcn": float(u.get("techo_ajuste_red_dcn_pct", 18.0)),
+        "w_actual": float(u.get("peso_torneo_actual_coef", 0.70)),
+        "w_15p": float(u.get("peso_promedio_15p_coef", 0.30)),
+        "r_min": float(u.get("ratio_coef_shared_min", 0.90)),
+        "r_max": float(u.get("ratio_coef_shared_max", 1.10)),
+    }
+
+
+def _normalizar_nombre_torneo_base(torneo: str) -> str:
+    txt = unicodedata.normalize("NFKD", str(torneo or "")).encode("ascii", "ignore").decode("utf-8").lower().strip()
+    if not txt or txt in ("oficial", "amistoso", "friendly", "analisis especialista", "analisis especialista (45 metricas)"):
+        return ""
+    for marcador in (" grp.", " group", " grupo", " jornada", " matchday", " fecha", " round"):
+        if marcador in txt:
+            txt = txt.split(marcador, 1)[0].strip()
+    return txt
+
+
+def resolver_torneo_actual_partido(
+    competicion_str: str,
+    partidos_L: Optional[List[Dict[str, Any]]] = None,
+    partidos_V: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, bool]:
+    """
+    Identifica el torneo actual del enfrentamiento y si ambos equipos comparten
+    esa competencia directa (liga doméstica o torneo de selecciones).
+    """
+    c_raw = str(competicion_str or "").strip()
+    c_base = _normalizar_nombre_torneo_base(c_raw)
+    genericos = {"", "oficial", "ligas europeas", "futbol europeo", "seleccion", "selecciones"}
+
+    def _torneos_top(pts: Optional[List[Dict[str, Any]]]) -> List[str]:
+        out: List[str] = []
+        for p in (pts or [])[:5]:
+            if not isinstance(p, dict):
+                continue
+            src = _partido_fuente(p)
+            t = str(src.get("torneo") or src.get("competition") or p.get("torneo") or "").strip()
+            if t and not es_copa_nacional(t):
+                out.append(t)
+        return out
+
+    tl = _torneos_top(partidos_L)
+    tv = _torneos_top(partidos_V)
+    if c_base in genericos:
+        tv_bases = {_normalizar_nombre_torneo_base(t): t for t in tv if _normalizar_nombre_torneo_base(t)}
+        for t in tl:
+            tb = _normalizar_nombre_torneo_base(t)
+            if tb and tb in tv_bases:
+                c_raw = t
+                c_base = tb
+                break
+        if c_base in genericos and tl and tv and _normalizar_nombre_torneo_base(tl[0]) == _normalizar_nombre_torneo_base(tv[0]):
+            c_raw = tl[0]
+            c_base = _normalizar_nombre_torneo_base(tl[0])
+
+    es_copa_clubes_uefa = any(
+        k in c_base for k in ("champions", "ucl", "europa league", "uel", "conference", "uecl", "libertadores", "sudamericana")
+    )
+    es_torneo_sel = any(
+        k in c_base for k in ("nations league", "world cup", "euro", "copa america", "finalissima", "copa del mundo")
+    )
+    comparten_torneo = False
+    if c_base and c_base not in genericos and not es_copa_clubes_uefa:
+        comparten_torneo = True
+    elif es_torneo_sel:
+        comparten_torneo = True
+    elif tl and tv and _normalizar_nombre_torneo_base(tl[0]) and _normalizar_nombre_torneo_base(tl[0]) == _normalizar_nombre_torneo_base(tv[0]) and not es_copa_clubes_uefa:
+        c_raw = tl[0]
+        comparten_torneo = True
+
+    return c_raw, comparten_torneo
+
+
+def obtener_coefs_torneo_anclados(
+    partidos_L: Optional[List[Dict[str, Any]]] = None,
+    partidos_V: Optional[List[Dict[str, Any]]] = None,
+    perfil_L: Optional[Dict[str, Any]] = None,
+    perfil_V: Optional[Dict[str, Any]] = None,
+    nombre_L: str = "",
+    nombre_V: str = "",
+    competicion_str: str = "",
+) -> Dict[str, Any]:
+    """
+    Calcula coeficientes anclados al torneo actual:
+      coef_efectivo = 0.70 * coef_torneo_actual + 0.30 * coef_promedio_15p
+    y limita cualquier asimetría residual entre rivales de la misma competencia
+    al rango [0.90, 1.10].
+    """
+    parms = _cargar_umbrales_dcn_seguro()
+    torneo_act, comparten_torneo = resolver_torneo_actual_partido(competicion_str, partidos_L, partidos_V)
+    es_copa_clubes_uefa = any(
+        k in (torneo_act or "").lower()
+        for k in ("champions", "ucl", "europa league", "uel", "conference", "uecl", "libertadores", "sudamericana")
+    )
+
+    c15_L = obtener_tier_coef(partidos_L or [], perfil_L, nombre_L, competicion_str=competicion_str)
+    c15_V = obtener_tier_coef(partidos_V or [], perfil_V, nombre_V, competicion_str=competicion_str)
+
+    if torneo_act and not es_copa_clubes_uefa:
+        c_act = obtener_tier_coef_liga(torneo_act)
+        coef_L = round(parms["w_actual"] * c_act + parms["w_15p"] * c15_L, 4)
+        coef_V = round(parms["w_actual"] * c_act + parms["w_15p"] * c15_V, 4)
+    else:
+        coef_L = round(c15_L, 4)
+        coef_V = round(c15_V, 4)
+
+    ratio_raw = coef_L / max(0.1, coef_V)
+    if comparten_torneo:
+        if ratio_raw < parms["r_min"]:
+            coef_L = round(coef_V * parms["r_min"], 4)
+        elif ratio_raw > parms["r_max"]:
+            coef_V = round(coef_L / parms["r_max"], 4)
+        ratio_raw = coef_L / max(0.1, coef_V)
+
+    fu_L = factor_uefa_relativo(coef_L, coef_V, mismo_torneo=comparten_torneo)
+    fu_V = factor_uefa_relativo(coef_V, coef_L, mismo_torneo=comparten_torneo)
+    aplica_coef_liga = bool(abs(coef_L - coef_V) > (0.05 if comparten_torneo else 1e-6))
+
+    return {
+        "torneo_actual": torneo_act,
+        "comparten_torneo": comparten_torneo,
+        "coef_L": coef_L,
+        "coef_V": coef_V,
+        "coef_15p_L": round(c15_L, 4),
+        "coef_15p_V": round(c15_V, 4),
+        "fu_L": fu_L,
+        "fu_V": fu_V,
+        "ratio_raw": round(ratio_raw, 4),
+        "aplica_coef_liga": aplica_coef_liga,
+    }
+
+
+def factor_uefa_relativo(
+    tier_coef_propio: float,
+    tier_coef_rival: float,
+    mismo_torneo: bool = False,
+) -> float:
+    """(tier_propio / tier_rival) cuando el propio es de liga más débil; clamp >=0.90 si comparten torneo."""
     try:
         tp, tr = float(tier_coef_propio), float(tier_coef_rival)
     except (TypeError, ValueError):
         return 1.0
     if tp <= 0 or tr <= 0 or tp >= tr:
         return 1.0
-    return float(tp / tr)
+    rel = float(tp / tr)
+    if mismo_torneo:
+        if abs(tp - tr) <= 0.05:
+            return 1.0
+        return max(0.90, rel)
+    return rel
 
 
 EQUIPOS_SEDE_NEUTRAL_UEFA = (
@@ -1911,6 +2079,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     tol_convergencia_entropia: float = 1e-4,
     n_simulaciones_mc: int = 100000,
     sede_neutral_local: bool = False,
+    competicion_str: str = "",
 ) -> Dict[str, Any]:
     """
     Ejecuta el Bucle Recursivo (Iteración 1 -> Iteración 2 -> Iteración 3 ... hasta Convergencia):
@@ -1925,23 +2094,32 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     """
     eq_L = perfil_local["equipo"]
     eq_V = perfil_visita["equipo"]
-    rL = perfil_local["ratings_0_100"]
-    rV = perfil_visita["ratings_0_100"]
-    tL = perfil_local["tempo_segundos"]
-    tV = perfil_visita["tempo_segundos"]
-    mL = perfil_local["metricas_clave"]
-    mV = perfil_visita["metricas_clave"]
+    rL = dict(perfil_local["ratings_0_100"])
+    rV = dict(perfil_visita["ratings_0_100"])
+    tL = dict(perfil_local["tempo_segundos"])
+    tV = dict(perfil_visita["tempo_segundos"])
+    mL = dict(perfil_local["metricas_clave"])
+    mV = dict(perfil_visita["metricas_clave"])
 
     tier_L = obtener_tier_equipo(partidos_15_local or [], perfil_local)
     tier_V = obtener_tier_equipo(partidos_15_visita or [], perfil_visita)
 
-    # Coeficiente UEFA de liga (1.00 Top-5 / 0.85 / 0.68) y descuento relativo
-    tier_coef_L = obtener_tier_coef(partidos_15_local or [], perfil_local, eq_L)
-    tier_coef_V = obtener_tier_coef(partidos_15_visita or [], perfil_visita, eq_V)
-    fu_L = factor_uefa_relativo(tier_coef_L, tier_coef_V)
-    fu_V = factor_uefa_relativo(tier_coef_V, tier_coef_L)
+    # Coeficiente anclado al torneo actual (70% torneo actual + 30% promedio 15P, clamp [0.90, 1.10] compartido)
+    info_coefs = obtener_coefs_torneo_anclados(
+        partidos_15_local or [], partidos_15_visita or [],
+        perfil_local, perfil_visita, eq_L, eq_V,
+        competicion_str=competicion_str,
+    )
+    tier_coef_L = info_coefs["coef_L"]
+    tier_coef_V = info_coefs["coef_V"]
+    fu_L = info_coefs["fu_L"]
+    fu_V = info_coefs["fu_V"]
+    comparten_torneo_dcn = bool(info_coefs["comparten_torneo"])
     ratio_tier_L = min(1.0, tier_coef_L / max(0.1, tier_coef_V))
     ratio_tier_V = min(1.0, tier_coef_V / max(0.1, tier_coef_L))
+    if comparten_torneo_dcn and not info_coefs["aplica_coef_liga"]:
+        ratio_tier_L = 1.0
+        ratio_tier_V = 1.0
     if sede_neutral_local is None:
         sede_neutral_local = es_sede_neutral(eq_L)
 
@@ -2006,7 +2184,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     # Ajuste por salto competitivo de liga doméstica (ratio_tier < 1.0):
     # Si un equipo de liga menor (ej. Ferencváros en Hungría 0.65) enfrenta a un club de élite (ej. Milan 1.00):
     # Sus números defensivos domésticos se descuentan severamente para reflejar el salto competitivo.
-    if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
+    if ratio_tier_L < 0.90 and ratio_tier_L > 0.05:
         if mu_L_casa.get("goles_contra") is not None:
             mu_L_casa["goles_contra"] = round(mu_L_casa["goles_contra"] / ratio_tier_L, 2)
         if mu_L_casa.get("xgot_enfrentado") is not None:
@@ -2019,9 +2197,23 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             estados_L["xgot_enfrentado"]["h_reciente"] = float(estados_L["xgot_enfrentado"]["h_reciente"]) / ratio_tier_L
         if "goles_evitados" in estados_L:
             estados_L["goles_evitados"]["h_reciente"] = float(estados_L["goles_evitados"]["h_reciente"]) * ratio_tier_L - 0.35 * (1.0 - ratio_tier_L)
-        tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_L_casa["goles_contra"]), 1)
 
-    if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
+    n_cond_adn_L = sum(
+        1 for _p in (partidos_15_local or [])
+        if isinstance(_p, dict) and str((_partido_fuente(_p).get("condicion") or _p.get("condicion") or "")).lower() in ("casa", "local", "h", "home")
+    )
+    gc_gen_L = mL.get("goles_contra")
+    gc_cond_L = mu_L_casa.get("goles_contra")
+    if gc_cond_L is not None and gc_gen_L is not None and n_cond_adn_L >= 4:
+        gc_w_L = 0.65 * float(gc_cond_L) + 0.35 * float(gc_gen_L)
+    elif gc_gen_L is not None:
+        gc_w_L = float(gc_gen_L)
+    else:
+        gc_w_L = float(gc_cond_L) if gc_cond_L is not None else None
+    if gc_w_L is not None:
+        tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_L), 1)
+
+    if ratio_tier_V < 0.90 and ratio_tier_V > 0.05:
         if mu_V_fuera.get("goles_contra") is not None:
             mu_V_fuera["goles_contra"] = round(mu_V_fuera["goles_contra"] / ratio_tier_V, 2)
         if mu_V_fuera.get("xgot_enfrentado") is not None:
@@ -2034,7 +2226,21 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             estados_V["xgot_enfrentado"]["h_reciente"] = float(estados_V["xgot_enfrentado"]["h_reciente"]) / ratio_tier_V
         if "goles_evitados" in estados_V:
             estados_V["goles_evitados"]["h_reciente"] = float(estados_V["goles_evitados"]["h_reciente"]) * ratio_tier_V - 0.35 * (1.0 - ratio_tier_V)
-        tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_V_fuera["goles_contra"]), 1)
+
+    n_cond_adn_V = sum(
+        1 for _p in (partidos_15_visita or [])
+        if isinstance(_p, dict) and str((_partido_fuente(_p).get("condicion") or _p.get("condicion") or "")).lower() in ("fuera", "visita", "visitante", "a", "away")
+    )
+    gc_gen_V = mV.get("goles_contra")
+    gc_cond_V = mu_V_fuera.get("goles_contra")
+    if gc_cond_V is not None and gc_gen_V is not None and n_cond_adn_V >= 4:
+        gc_w_V = 0.65 * float(gc_cond_V) + 0.35 * float(gc_gen_V)
+    elif gc_gen_V is not None:
+        gc_w_V = float(gc_gen_V)
+    else:
+        gc_w_V = float(gc_cond_V) if gc_cond_V is not None else None
+    if gc_w_V is not None:
+        tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_V), 1)
 
     # ── λ EFECTIVO: finalización, portería rival vulnerable y errores regalados ──
     comp_L = componentes_lambda_efectivo(estados_L, estados_V)
@@ -2455,6 +2661,54 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     if xgotc_riv_V >= 1.50 and float(rL.get("Final_Attack_Strength", 50.0)) >= 50.0:
         delta_pct_real_L = max(0.0, delta_pct_real_L)
 
+    _techo_dcn = _cargar_umbrales_dcn_seguro()["techo_dcn"]
+    _claves_5 = (
+        "F_posesion_progresiva",
+        "F_creacion",
+        "F_finalizacion",
+        "F_porteria_rival",
+        "F_fragilidad_rival",
+    )
+
+    def _alineado_5_dims(f_dict: Dict[str, float], delta_val: float, n_cond: int, gen_diff_pos: bool, gen_diff_neg: bool) -> bool:
+        if n_cond < 4 or abs(delta_val) <= 1e-6:
+            return False
+        s_dir = 1.0 if delta_val > 0 else -1.0
+        cond_all5 = all(float(f_dict.get(ck, 0.0) or 0.0) * s_dir > 0.05 for ck in _claves_5)
+        if not cond_all5:
+            return False
+        return bool(gen_diff_pos if s_dir > 0 else gen_diff_neg)
+
+    _gen_pos_L = (float(rL.get("Final_Attack_Strength", 50.0)) - float(rV.get("Final_Defense_Strength", 50.0)) > 5.0) and (float(mL.get("xg") or lam_base_local) >= lam_base_local)
+    _gen_neg_L = (float(rV.get("Final_Defense_Strength", 50.0)) - float(rL.get("Final_Attack_Strength", 50.0)) > 5.0) and (float(mL.get("xg") or lam_base_local) <= lam_base_local)
+    _gen_pos_V = (float(rV.get("Final_Attack_Strength", 50.0)) - float(rL.get("Final_Defense_Strength", 50.0)) > 5.0) and (float(mV.get("xg") or lam_base_visita) >= lam_base_visita)
+    _gen_neg_V = (float(rL.get("Final_Defense_Strength", 50.0)) - float(rV.get("Final_Attack_Strength", 50.0)) > 5.0) and (float(mV.get("xg") or lam_base_visita) <= lam_base_visita)
+
+    alineado_5_L = _alineado_5_dims(f_l, delta_pct_real_L, n_cond_adn_L, _gen_pos_L, _gen_neg_L)
+    alineado_5_V = _alineado_5_dims(f_v, delta_pct_real_V, n_cond_adn_V, _gen_pos_V, _gen_neg_V)
+
+    _freno_bajista_L = any(
+        (str(t.get("regla", "")).startswith("techo_") or str(t.get("regla", "")).startswith("freno_"))
+        and float(t.get("lam_l_despues", 99.0)) < float(t.get("lam_l_antes", 0.0))
+        for t in traza_red_45_dcn
+    )
+    _freno_bajista_V = any(
+        (str(t.get("regla", "")).startswith("techo_") or str(t.get("regla", "")).startswith("freno_"))
+        and float(t.get("lam_v_despues", 99.0)) < float(t.get("lam_v_antes", 0.0))
+        for t in traza_red_45_dcn
+    )
+
+    if not alineado_5_L and abs(delta_pct_real_L) > _techo_dcn:
+        if delta_pct_real_L < -_techo_dcn and _freno_bajista_L:
+            delta_pct_real_L = round(min(delta_pct_real_L, _techo_dcn), 1)
+        else:
+            delta_pct_real_L = round(clip(delta_pct_real_L, -_techo_dcn, _techo_dcn), 1)
+    if not alineado_5_V and abs(delta_pct_real_V) > _techo_dcn:
+        if delta_pct_real_V < -_techo_dcn and _freno_bajista_V:
+            delta_pct_real_V = round(min(delta_pct_real_V, _techo_dcn), 1)
+        else:
+            delta_pct_real_V = round(clip(delta_pct_real_V, -_techo_dcn, _techo_dcn), 1)
+
     pisos_L = {}
     if f_l.get("F_fragilidad_rival", 0.0) >= 3.0:
         pisos_L["F_fragilidad_rival"] = 4.0
@@ -2474,6 +2728,31 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     lam_pre_reesc_V = round(float(lam_k_V), 2)
     lam_k_L = round(float(lam_base_local * (1.0 + pct_tot_L / 100.0)), 2)
     lam_k_V = round(float(lam_base_visita * (1.0 + pct_tot_V / 100.0)), 2)
+
+    if abs(lam_k_L - lam_pre_reesc_L) > 1e-4 or abs(lam_k_V - lam_pre_reesc_V) > 1e-4:
+        try:
+            def _pmf_poisson_vec(lam_v: float, dim: int) -> np.ndarray:
+                v = np.array([math.exp(-lam_v) * (lam_v ** k) / math.factorial(k) for k in range(dim)], dtype=float)
+                s = float(np.sum(v))
+                return (v / s) if s > 0 else np.full(dim, 1.0 / dim)
+
+            dim_r, dim_c = matriz_final.shape
+            pi_t = _pmf_poisson_vec(lam_k_L, dim_r)
+            pj_t = _pmf_poisson_vec(lam_k_V, dim_c)
+            m_sync = np.array(matriz_final, dtype=float)
+            for _ in range(25):
+                rs = np.sum(m_sync, axis=1)
+                for _i in range(dim_r):
+                    if rs[_i] > 1e-12:
+                        m_sync[_i, :] *= pi_t[_i] / rs[_i]
+                cs = np.sum(m_sync, axis=0)
+                for _j in range(dim_c):
+                    if cs[_j] > 1e-12:
+                        m_sync[:, _j] *= pj_t[_j] / cs[_j]
+            if float(np.sum(m_sync)) > 0:
+                matriz_final = m_sync / float(np.sum(m_sync))
+        except Exception:
+            pass
     if (
         abs(lam_k_L - lam_pre_reesc_L) > 1e-6
         or abs(lam_k_V - lam_pre_reesc_V) > 1e-6
@@ -2538,6 +2817,13 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         "defensa_kamikaze_activa": cruces_6["defensa_kamikaze_activa"],
         "seg_gol_concedido_rival_L": float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
         "seg_gol_concedido_rival_V": float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        "seg_gol_concedido_propio_L": float(tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        "seg_gol_concedido_propio_V": float(tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0)),
+        "coefs_torneo_anclados": info_coefs,
+        "alineado_5_dims_local": alineado_5_L,
+        "alineado_5_dims_visita": alineado_5_V,
+        "freno_bajista_dcn_local": _freno_bajista_L,
+        "freno_bajista_dcn_visita": _freno_bajista_V,
         "seg_gol_L": float(tL.get("Avg_Seconds_Between_Goals", 3500.0)),
         "seg_gol_V": float(tV.get("Avg_Seconds_Between_Goals", 3500.0)),
         "cerrojo_L_activo": cerrojo_L_activo,

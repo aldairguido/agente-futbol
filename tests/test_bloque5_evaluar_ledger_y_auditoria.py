@@ -240,10 +240,10 @@ def test_liquidar_todas_lineas_reales_y_evaluar_tanda_sin_reglas_faltantes(tmp_p
         r5["docs"]["italy"], r5["docs"]["france"], "Italy", "France",
         fecha_partido="2026-11-12", competicion="UEFA Nations League",
     )
-    assert round(an_tb.motor.traza_lambda[-1]["lam_l_despues"], 2) == 1.04
-    assert round(an_tb.motor.traza_lambda[-1]["lam_v_despues"], 2) == 3.55
-    assert round(an_if.motor.traza_lambda[-1]["lam_l_despues"], 2) == 1.03
-    assert round(an_if.motor.traza_lambda[-1]["lam_v_despues"], 2) == 2.33
+    assert round(an_tb.motor.traza_lambda[-1]["lam_l_despues"], 2) == 1.10
+    assert round(an_tb.motor.traza_lambda[-1]["lam_v_despues"], 2) == 2.98
+    assert round(an_if.motor.traza_lambda[-1]["lam_l_despues"], 2) == 1.31
+    assert round(an_if.motor.traza_lambda[-1]["lam_v_despues"], 2) == 1.79
 
     payload_tb = copy.deepcopy(r5["partidos_objetivo"]["turkey_belgium"])
     payload_tb["flashscore_stats"] = dict(STATS_FLASHSCORE_TB, inicio_utc="2026-11-12T17:00:00Z")
@@ -277,17 +277,17 @@ def test_liquidar_todas_lineas_reales_y_evaluar_tanda_sin_reglas_faltantes(tmp_p
     liq_if = ep.liquidar_todas_lineas_fixture(doc_if, res_if, "IF-R5")
 
     assert liq_tb["resumen"]["regla_no_definida"] == 0
-    assert liq_tb["resumen"]["n_publicadas"] == 59
-    assert liq_tb["resumen"]["n_evaluables"] == 58
-    assert liq_tb["resumen"]["aciertos"] == 52
+    assert liq_tb["resumen"]["n_publicadas"] == 56
+    assert liq_tb["resumen"]["n_evaluables"] == 55
+    assert liq_tb["resumen"]["aciertos"] == 49
     assert liq_tb["resumen"]["fallos"] == 6
     assert liq_tb["resumen"]["no_verificables"] == 1
 
     assert liq_if["resumen"]["regla_no_definida"] == 0
-    assert liq_if["resumen"]["n_publicadas"] == 44
-    assert liq_if["resumen"]["n_evaluables"] == 44
-    assert liq_if["resumen"]["aciertos"] == 37
-    assert liq_if["resumen"]["fallos"] == 7
+    assert liq_if["resumen"]["n_publicadas"] == 47
+    assert liq_if["resumen"]["n_evaluables"] == 47
+    assert liq_if["resumen"]["aciertos"] == 41
+    assert liq_if["resumen"]["fallos"] == 6
 
     # Verificar que evaluar_tanda propaga discrepancias a limitaciones y liquida los snapshots
     snaps = [
@@ -323,14 +323,14 @@ def test_liquidar_todas_lineas_reales_y_evaluar_tanda_sin_reglas_faltantes(tmp_p
         "Italia vs Francia": res_if,
     }
     informe = ep.evaluar_tanda(snaps, resultados)
-    assert len(informe.evaluaciones) == 59 + 44
+    assert len(informe.evaluaciones) == 56 + 47
     assert any("matriz vacía" in lim for lim in informe.limitaciones)
-    assert sum(1 for e in informe.evaluaciones if e.estado_liquidacion == "ganada") == 89
-    assert sum(1 for e in informe.evaluaciones if e.estado_liquidacion == "perdida") == 13
+    assert sum(1 for e in informe.evaluaciones if e.estado_liquidacion == "ganada") == 90
+    assert sum(1 for e in informe.evaluaciones if e.estado_liquidacion == "perdida") == 12
     assert sum(1 for e in informe.evaluaciones if e.estado_liquidacion == "no_verificable") == 1
     texto_tg = ep.resumen_telegram(informe)
     assert "Evaluables (binarias comparables): 101" in texto_tg
-    assert "Eventos cumplidos: 88; no cumplidos: 13" in texto_tg
+    assert "Eventos cumplidos: 89; no cumplidos: 12" in texto_tg
 
 
 def test_corte_prepartido_bloquea_fuga_y_post_kickoff():
