@@ -679,6 +679,11 @@ def generar_ticket_valor_png(
         fontsize=8.5, color="#475569", style="italic", family="sans-serif",
     )
 
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+    fig.text(
+        0.98, 0.012, _obtener_sello_build(),
+        ha="right", fontsize=8.0, color="#475569", fontweight="bold", family="sans-serif",
+    )
     plt.savefig(destino, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     return str(destino)
@@ -852,8 +857,8 @@ def redactar_analisis_3_parrafos(
         doc_visitante=doc_visitante,
     )
     if bloque_xai:
-        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}"
-    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}"
+        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
+    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
 
 
 def generar_bloque_narrativo_xai_desde_analisis(

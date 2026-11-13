@@ -2771,9 +2771,11 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     fecha_val = metadatos.get('fecha_partido')
     fecha_display = (str(fecha_val) if fecha_val and str(fecha_val).lower() not in ('no disponible', 'none', '')
                      else "Sin partido próximo en calendario (localía por orden de consulta)")
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     L.append(f"Fecha: {fecha_display} | "
              f"Competición: {metadatos.get('competicion') or 'no disponible'} | "
-             f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'}")
+             f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'} | "
+             f"{_obtener_sello_build()}")
     L.extend(_resumen_muestra(motor))
     L.append(f"Condición usada: local={motor.cond_local}, visitante={motor.cond_visitante} "
              f"(muestra de condición: {motor.muestras['local_cond'].partidos_condicion}/"

@@ -1142,6 +1142,9 @@ def renderizar_ticket_mercados_png(
         w_b = _get_w("AUDITORÍA DE COBERTURA D.1", f_badge_hdr) + 24
         draw.rounded_rectangle([w_img - w_b - 30, 30, w_img - 30, 65], radius=6, fill="#1E3A8A")
         draw.text((w_img - w_b - 18, 38), "AUDITORÍA DE COBERTURA D.1", font=f_badge_hdr, fill="#FFFFFF")
+        from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+        _sello_abs = _sanear_para_canvas(_obtener_sello_build())
+        draw.text((w_img - 30 - _get_w(_sello_abs, f_meta), 76), _sello_abs, font=f_meta, fill="#475569")
 
         # Tarjeta de Alerta de Abstención
         est_cob = str(meta.get("estado_cobertura") or "cobertura_insuficiente").upper()
@@ -1726,6 +1729,9 @@ def renderizar_ticket_mercados_png(
 
         y_c += 36
         d.text((PAD_X, y_c), "TICKET CUANTITATIVO DE ALTA PROBABILIDAD", font=f_sub, fill=C_COBALT)
+        from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+        _sello_tkt = _sanear_para_canvas(_obtener_sello_build())
+        d.text((ANCHO_CANVAS - PAD_X - _get_w(_sello_tkt, f_meta), y_c + 2), _sello_tkt, font=f_meta, fill=C_TXT_MUTED)
 
         y_c += 22
         meta_parts = []
@@ -2376,7 +2382,8 @@ def preparar_analisis(
             f"• {contexto['equipo_local']}: {decision_cob.etiqueta_cobertura_a}\n"
             f"• {contexto['equipo_visitante']}: {decision_cob.etiqueta_cobertura_b}\n\n"
             f"{decision_cob.alerta_descriptiva}\n\n"
-            f"⚠️ Por política cuantitativa estricta, no se publican probabilidades ni matrices sin evidencia estadística suficiente."
+            f"⚠️ Por política cuantitativa estricta, no se publican probabilidades ni matrices sin evidencia estadística suficiente.\n"
+            f"🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
         )
 
         return {
@@ -2410,6 +2417,8 @@ def preparar_analisis(
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
 
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+    analisis.metadatos["build"] = _obtener_sello_build()
     analisis.metadatos["estado_cobertura"] = decision_cob.estado
     analisis.metadatos["etiqueta_cobertura_local"] = decision_cob.etiqueta_cobertura_a
     analisis.metadatos["etiqueta_cobertura_visitante"] = decision_cob.etiqueta_cobertura_b

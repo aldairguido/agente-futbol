@@ -2358,7 +2358,7 @@ def generar_cuadro_visual_partido(
 
     fig.text(
         0.50, 0.008,
-        "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en la Red Neuronal de 45 variables y el Doble ADN.",
+        "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en la Red Neuronal de 45 variables y el Doble ADN.  ·  " + __import__("utilidades_seguridad").obtener_sello_build(),
         ha="center", fontsize=8.0, color="#64748B", style="italic"
     )
 
@@ -2960,7 +2960,7 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     fig.text(
         0.50, 0.008,
-        "Verificación de Integridad: Todos los cálculos provienen exclusivamente de los 15 partidos oficiales listados arriba (0 amistosos, 0 datos inventados).",
+        "Verificación de Integridad: Todos los cálculos provienen exclusivamente de los 15 partidos oficiales listados arriba (0 amistosos, 0 datos inventados).  ·  " + __import__("utilidades_seguridad").obtener_sello_build(),
         ha="center", fontsize=8.0, color="#64748B", style="italic"
     )
 

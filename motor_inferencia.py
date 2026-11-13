@@ -971,6 +971,7 @@ def generar_reporte_xai_telegram(
 
     k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel) if (n_ev_l_tel > 0 and n_ev_v_tel > 0) else max(n_ev_l_tel, n_ev_v_tel)
     from decision_cobertura import cargar_umbrales_cobertura
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 
     if k_eval_cron_tel < k_min_cron_tel:
@@ -990,6 +991,7 @@ def generar_reporte_xai_telegram(
     lineas = [
         f"📊 *TICKET DE ANÁLISIS PROFUNDO: {nombre_local.upper()} VS {nombre_visita.upper()}*",
         f"🎯 *Predicción Final:* {veredicto}",
+        f"🏷️ _{_obtener_sello_build()}_",
         "",
         "🧠 *¿POR QUÉ EL AGENTE TOMA ESTA DECISIÓN? (Análisis XAI - 55 Patrones)*",
         "",

@@ -331,6 +331,7 @@ def cmd_estado(message):
     texto = (
         "🤖 *AGENTE CUANTITATIVO AUTÓNOMO — ESTADO DEL MOTOR*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *Versión Activa:* `{__import__('utilidades_seguridad').obtener_sello_build()}`\n"
         f"• *Estado del Demonio:* 🟢 Online (Listener Activo)\n"
         f"• *Núcleo Agéntico:* 🧠 Antigravity ReAct + 4 Sub-Agentes Activos\n"
         f"• *Barrido en curso:* {estado_barrido}\n"
