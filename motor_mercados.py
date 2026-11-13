@@ -1425,6 +1425,7 @@ class MotorMercados:
         self.clusters: dict[str, Any] = {}
         # Factores latentes de la Arquitectura Híbrida (XAI)
         self.xai_factores: dict[str, Any] = {}
+        self.micropatrones_combinatorios: dict[str, Any] = {}
         self.traza_lambda: list[dict[str, Any]] = []
         self.detalle_goles: dict[str, Any] = {}
         eq_l = doc_local.get("equipo")
@@ -2250,7 +2251,26 @@ class MotorMercados:
                 self.xai_factores["visita"]["factores_red_neuronal"] = dict(ct_d.get("factores_red_neuronal_visita") or ct_d.get("factores_visita") or {})
                 self.xai_factores["local"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_local", 0.0))
                 self.xai_factores["visita"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_visita", 0.0))
-            self.xai_factores["alertas_xai"] = list(resultado.get("alertas_xai", []))
+            try:
+                from motor_patrones import evaluar_micropatrones_combinatorios
+                mp_comb = evaluar_micropatrones_combinatorios(
+                    self.doc_local,
+                    self.doc_visitante,
+                    eq_l=self.nombre_local,
+                    eq_v=self.nombre_visitante,
+                )
+            except Exception:
+                mp_comb = {}
+            self.micropatrones_combinatorios = mp_comb
+            if isinstance(self.recursivo, dict):
+                self.recursivo["micropatrones_combinatorios"] = mp_comb
+            alertas_xai_m = list(resultado.get("alertas_xai", []))
+            for res_mp in (mp_comb.get("resumen_xai") or [])[:2]:
+                txt_mp = f"🧬 {res_mp}"
+                if txt_mp not in alertas_xai_m:
+                    alertas_xai_m.append(txt_mp)
+            self.xai_factores["alertas_xai"] = alertas_xai_m
+            self.xai_factores["micropatrones_combinatorios"] = mp_comb
             self.xai_factores["mu_local_casa"] = dict(resultado.get("mu_local_casa", {}))
             self.xai_factores["mu_visita_fuera"] = dict(resultado.get("mu_visita_fuera", {}))
 

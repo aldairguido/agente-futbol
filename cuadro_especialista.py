@@ -2951,6 +2951,10 @@ def generar_cuadro_auditoria_15_partidos_png(
             selecciones_sec1=sec1_v,
             para_canvas=True,
             motor=motor_obj,
+            micropatrones_combinatorios=(
+                getattr(motor_obj, "micropatrones_combinatorios", None)
+                or (getattr(motor_obj, "recursivo", None) or {}).get("micropatrones_combinatorios")
+            ),
         )
         lineas_ver = [ln.strip() for ln in texto_veredicto.splitlines() if ln.strip()]
     except Exception:

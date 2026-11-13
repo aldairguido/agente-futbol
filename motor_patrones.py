@@ -1031,6 +1031,352 @@ def construir_tensor_multi_periodo_equipo(
     }
 
 
+def _leer_umbrales_micropatrones() -> Dict[str, float]:
+    defaults = {
+        "min_corners_visita_freno": 3.0,
+        "max_corners_concedidos_local_freno": 5.0,
+    }
+    try:
+        import os
+        import yaml  # type: ignore
+
+        ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "umbrales_cobertura.yaml")
+        if os.path.exists(ruta):
+            with open(ruta, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            umb = data.get("umbrales") if isinstance(data.get("umbrales"), dict) else data
+            if isinstance(umb, dict):
+                if umb.get("min_corners_visita_freno") is not None:
+                    defaults["min_corners_visita_freno"] = float(umb["min_corners_visita_freno"])
+                if umb.get("max_corners_concedidos_local_freno") is not None:
+                    defaults["max_corners_concedidos_local_freno"] = float(umb["max_corners_concedidos_local_freno"])
+    except Exception:
+        pass
+    return defaults
+
+
+def _extraer_stat_tensor(
+    tensor_obj: Dict[str, Any],
+    periodo: str,
+    ambito: str,
+    metrica: str,
+    campo: str = "media",
+) -> Optional[float]:
+    if not isinstance(tensor_obj, dict):
+        return None
+    if ambito == "mezcla_65_35":
+        nodo = ((tensor_obj.get("mezcla_65_35") or {}).get(periodo) or {}).get(metrica)
+        if isinstance(nodo, dict):
+            val = nodo.get(campo) if campo in nodo else nodo.get("media")
+            return float(val) if val is not None else None
+        if isinstance(nodo, (int, float)) and campo == "media":
+            return float(nodo)
+        return None
+    nodo = (((tensor_obj.get("tensor") or {}).get(periodo) or {}).get(ambito) or {}).get(metrica)
+    if not isinstance(nodo, dict):
+        return None
+    if campo in ("min", "max"):
+        rango = nodo.get("rango_min_max")
+        if isinstance(rango, (list, tuple)) and len(rango) >= 2:
+            idx = 0 if campo == "min" else 1
+            return float(rango[idx]) if rango[idx] is not None else None
+        return None
+    val = nodo.get(campo)
+    return float(val) if val is not None else None
+
+
+def _media_goles_evitados_observados(doc: Any, cond_objetivo: Optional[str]) -> Optional[float]:
+    partidos = list(doc.get("partidos") or []) if isinstance(doc, dict) else (list(doc) if isinstance(doc, (list, tuple)) else [])
+    if not partidos:
+        return None
+    vals_cond: List[float] = []
+    vals_gen: List[float] = []
+    for p in partidos:
+        if not isinstance(p, dict):
+            continue
+        per_ft = ((p.get("periodos") or {}).get("FT") or {})
+        filas = per_ft.get("filas") if isinstance(per_ft, dict) else None
+        g_ev: Optional[float] = None
+        if isinstance(filas, list):
+            for fl in filas:
+                if not isinstance(fl, dict):
+                    continue
+                if str(fl.get("clave", "")).strip() == "goles_evitados" and fl.get("equipo") is not None:
+                    try:
+                        g_ev = float(fl["equipo"])
+                    except Exception:
+                        g_ev = None
+                    break
+        elif isinstance(p.get("FT"), dict) and p["FT"].get("goles_evitados") is not None:
+            try:
+                g_ev = float(p["FT"]["goles_evitados"])
+            except Exception:
+                g_ev = None
+        if g_ev is None:
+            continue
+        vals_gen.append(g_ev)
+        if cond_objetivo and str(p.get("condicion", "")).strip().lower() == str(cond_objetivo).strip().lower():
+            vals_cond.append(g_ev)
+    if len(vals_cond) >= 3:
+        return round(sum(vals_cond) / float(len(vals_cond)), 4)
+    if vals_gen:
+        return round(sum(vals_gen) / float(len(vals_gen)), 4)
+    return None
+
+
+def evaluar_micropatrones_combinatorios(
+    doc_local: Any,
+    doc_visitante: Any,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    tensor_local: Optional[Dict[str, Any]] = None,
+    tensor_visita: Optional[Dict[str, Any]] = None,
+    umbrales: Optional[Dict[str, float]] = None,
+) -> Dict[str, Any]:
+    """
+    Motor de micropatrones combinatorios (1 a 4 variables) sobre tensores (FT, 1T, 2T)
+    x (General 15P, Condicion). Nunca fabrica métricas None ni fuerza disparos sin dato.
+    """
+    umb = _leer_umbrales_micropatrones()
+    if isinstance(umbrales, dict):
+        for k in ("min_corners_visita_freno", "max_corners_concedidos_local_freno"):
+            if umbrales.get(k) is not None:
+                umb[k] = float(umbrales[k])
+
+    tl = tensor_local if isinstance(tensor_local, dict) else construir_tensor_multi_periodo_equipo(doc_local, "casa")
+    tv = tensor_visita if isinstance(tensor_visita, dict) else construir_tensor_multi_periodo_equipo(doc_visitante, "fuera")
+
+    n_cond_l = int(tl.get("n_condicion") or 0)
+    n_cond_v = int(tv.get("n_condicion") or 0)
+    amb_l = "condicion" if n_cond_l >= 3 else "general"
+    amb_v = "condicion" if n_cond_v >= 3 else "general"
+
+    patrones: List[Dict[str, Any]] = []
+
+    # MP01: Asedio 2T del Local (combinando volumen 2T local + caida 2T visitante)
+    loc_xg_2t = _extraer_stat_tensor(tl, "2T", amb_l, "xg")
+    loc_go_2t = _extraer_stat_tensor(tl, "2T", amb_l, "grandes_ocasiones")
+    loc_ta_2t = _extraer_stat_tensor(tl, "2T", amb_l, "toques_area_rival")
+    loc_ratio_2t = (tl.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+    vis_xg_1t = _extraer_stat_tensor(tv, "1T", amb_v, "xg")
+    vis_xg_2t = _extraer_stat_tensor(tv, "2T", amb_v, "xg")
+
+    mp01_vars: List[str] = []
+    if loc_xg_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.xg={loc_xg_2t:.2f}")
+    elif loc_ratio_2t is not None:
+        mp01_vars.append(f"L.ratio_2t_1t_xg={float(loc_ratio_2t):.2f}")
+    if loc_go_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.grandes_ocasiones={loc_go_2t:.2f}")
+    if loc_ta_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.toques_area_rival={loc_ta_2t:.1f}")
+    if vis_xg_1t is not None and vis_xg_2t is not None:
+        mp01_vars.append(f"V.1T->2T.{amb_v}.xg={vis_xg_1t:.2f}->{vis_xg_2t:.2f}")
+
+    mp01_evaluable = bool(
+        (loc_xg_2t is not None or loc_ratio_2t is not None)
+        and loc_go_2t is not None
+        and vis_xg_1t is not None
+        and vis_xg_2t is not None
+    )
+    if mp01_evaluable:
+        cond_xg_l = (loc_xg_2t >= 1.25) if loc_xg_2t is not None else (float(loc_ratio_2t) >= 1.35)  # type: ignore[arg-type]
+        cond_ta_l = True if loc_ta_2t is None else (loc_ta_2t >= 16.0)
+        mp01_act = bool(cond_xg_l and loc_go_2t >= 2.0 and cond_ta_l and (vis_xg_2t < vis_xg_1t))  # type: ignore[operator]
+    else:
+        mp01_act = False
+    mp01_evid = (
+        f"{eq_l} genera {loc_xg_2t:.2f} xG / {loc_go_2t:.1f} gr. oc."
+        + (f" / {loc_ta_2t:.1f} toques área" if loc_ta_2t is not None else "")
+        + f" en 2T ({amb_l}) mientras {eq_v} cae en 2T ({vis_xg_1t:.2f}->{vis_xg_2t:.2f} xG)."
+        if mp01_evaluable
+        else "Sin datos suficientes de 2T para evaluar Asedio 2T del Local."
+    )
+    patrones.append({
+        "codigo": "MP01_ASEDIO_2T_LOCAL",
+        "nombre": "Asedio 2T del Local vs Caída Visitante",
+        "activo": mp01_act,
+        "evaluable": mp01_evaluable,
+        "variables_usadas": mp01_vars[:4],
+        "evidencia": mp01_evid,
+        "familia_senales": "asedio_segundo_tiempo_local",
+        "senales_favor": ["total_goles:over_1.5", "goles_2t:over_0.5", "equipo_local_2t:over_0.5"] if mp01_act else [],
+        "senales_contra": ["doble_oportunidad:x2", "1x2:visita"] if mp01_act else [],
+        "resumen_corto": f"Asedio 2T {eq_l} ({loc_xg_2t:.2f} xG, {loc_go_2t:.1f} gr. oc.) vs caída 2T {eq_v} ({vis_xg_1t:.2f}->{vis_xg_2t:.2f}): veta X2 ciego y apoya goles 2T/+1.5 FT." if mp01_act else "",
+    })
+
+    # MP02: Freno Visitante +X.5 Córneres (mínimo histórico fuera vs concesión local casa)
+    vis_min_crn = _extraer_stat_tensor(tv, "FT", "condicion", "corners", "min")
+    vis_med_crn = _extraer_stat_tensor(tv, "FT", "condicion", "corners", "media")
+    loc_cc_med = _extraer_stat_tensor(tl, "FT", "condicion", "corners_contra", "media")
+    loc_cc_mediana = _extraer_stat_tensor(tl, "FT", "condicion", "corners_contra", "mediana")
+
+    mp02_vars: List[str] = []
+    if vis_min_crn is not None:
+        mp02_vars.append(f"V.FT.fuera.corners_min={vis_min_crn:.0f}")
+    if vis_med_crn is not None:
+        mp02_vars.append(f"V.FT.fuera.corners_media={vis_med_crn:.2f}")
+    if loc_cc_med is not None:
+        mp02_vars.append(f"L.FT.casa.corners_contra_media={loc_cc_med:.2f}")
+    if loc_cc_mediana is not None:
+        mp02_vars.append(f"L.FT.casa.corners_contra_mediana={loc_cc_mediana:.1f}")
+
+    mp02_evaluable = bool(n_cond_v >= 3 and n_cond_l >= 3 and vis_min_crn is not None and (loc_cc_med is not None or loc_cc_mediana is not None))
+    if mp02_evaluable:
+        cc_ref = min(float(x) for x in (loc_cc_med, loc_cc_mediana) if x is not None)
+        mp02_act = bool(
+            float(vis_min_crn) <= umb["min_corners_visita_freno"]  # type: ignore[arg-type]
+            and cc_ref <= umb["max_corners_concedidos_local_freno"]
+        )
+    else:
+        cc_ref = None
+        mp02_act = False
+    mp02_evid = (
+        f"{eq_v} registra mínimo fuera de {vis_min_crn:.0f} córneres (n={n_cond_v}) y {eq_l} solo concede {cc_ref:.2f} en casa (n={n_cond_l})."
+        if mp02_evaluable and cc_ref is not None
+        else "Sin cobertura condicionada suficiente (>=3 casa/fuera) para freno de córneres visita."
+    )
+    patrones.append({
+        "codigo": "MP02_FRENO_CORNERS_VISITA",
+        "nombre": "Freno de Córneres Visitante",
+        "activo": mp02_act,
+        "evaluable": mp02_evaluable,
+        "variables_usadas": mp02_vars[:4],
+        "evidencia": mp02_evid,
+        "familia_senales": "freno_corners_visita",
+        "senales_favor": ["total_corners:under_12.5", "total_corners:under_11.5", "total_corners:under_10.5"] if mp02_act else [],
+        "senales_contra": ["corners_visita:over_3.5", "corners_visita:over_4.5", "corners_visita:over_5.5"] if mp02_act else [],
+        "resumen_corto": f"Freno córneres {eq_v} (mín. fuera {vis_min_crn:.0f} <= {umb['min_corners_visita_freno']:.0f} vs {eq_l} casa concede {cc_ref:.2f}): bloquea {eq_v} +3.5 Córn. y favorece Under córneres." if mp02_act and cc_ref is not None else "",
+    })
+
+    # MP03: 1T Contenido + Explosión 2T
+    def _xg_mezcla_o_amb(t_obj: Dict[str, Any], per: str, amb_fb: str) -> Optional[float]:
+        v_m = _extraer_stat_tensor(t_obj, per, "mezcla_65_35", "xg")
+        if v_m is not None:
+            return v_m
+        return _extraer_stat_tensor(t_obj, per, amb_fb, "xg")
+
+    loc_1t_m = _xg_mezcla_o_amb(tl, "1T", amb_l)
+    vis_1t_m = _xg_mezcla_o_amb(tv, "1T", amb_v)
+    loc_2t_m = _xg_mezcla_o_amb(tl, "2T", amb_l)
+    vis_2t_m = _xg_mezcla_o_amb(tv, "2T", amb_v)
+    r2_l = (tl.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+    r2_v = (tv.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+
+    mp03_vars: List[str] = []
+    if loc_1t_m is not None:
+        mp03_vars.append(f"L.1T.xg={loc_1t_m:.2f}")
+    if vis_1t_m is not None:
+        mp03_vars.append(f"V.1T.xg={vis_1t_m:.2f}")
+    if loc_2t_m is not None and vis_2t_m is not None:
+        mp03_vars.append(f"L+V.2T.xg={loc_2t_m + vis_2t_m:.2f}")
+    ratios_ok = [float(r) for r in (r2_l, r2_v) if r is not None]
+    if ratios_ok:
+        mp03_vars.append(f"max_ratio_2t_1t={max(ratios_ok):.2f}")
+
+    mp03_evaluable = bool(
+        loc_1t_m is not None
+        and vis_1t_m is not None
+        and loc_2t_m is not None
+        and vis_2t_m is not None
+        and len(ratios_ok) >= 1
+    )
+    if mp03_evaluable:
+        mp03_act = bool(
+            loc_1t_m <= 0.70  # type: ignore[operator]
+            and vis_1t_m <= 0.70  # type: ignore[operator]
+            and (loc_2t_m + vis_2t_m) >= 1.35  # type: ignore[operator]
+            and max(ratios_ok) >= 1.30
+        )
+    else:
+        mp03_act = False
+    mp03_evid = (
+        f"1T contenido ({loc_1t_m:.2f} + {vis_1t_m:.2f} xG) y salto en 2T ({loc_2t_m + vis_2t_m:.2f} xG, ratio {max(ratios_ok):.2f}x)."
+        if mp03_evaluable
+        else "Sin cobertura completa 1T/2T xG para evaluar sesgo de segunda mitad."
+    )
+    patrones.append({
+        "codigo": "MP03_1T_CONTENIDO_EXPLOSION_2T",
+        "nombre": "1T Contenido y Explosión 2T",
+        "activo": mp03_act,
+        "evaluable": mp03_evaluable,
+        "variables_usadas": mp03_vars[:4],
+        "evidencia": mp03_evid,
+        "familia_senales": "explosividad_2t_sobre_1t",
+        "senales_favor": ["goles_2t:over_0.5", "total_goles:over_1.5"] if mp03_act else [],
+        "senales_contra": ["goles_1t:over_0.5", "goles_1t:over_1.5"] if mp03_act else [],
+        "resumen_corto": f"1T contenido ({loc_1t_m:.2f}+{vis_1t_m:.2f} xG) -> 2T explosivo ({loc_2t_m + vis_2t_m:.2f} xG): prioriza Goles 2T +0.5 frente a 1T." if mp03_act else "",
+    })
+
+    # MP04: Dominio Estéril vs Muro Defensivo (evalúa ambos sentidos)
+    mp04_act = False
+    mp04_evaluable = False
+    mp04_vars: List[str] = []
+    mp04_evid = "Sin datos suficientes de posesión/remates/despejes-portero para Dominio Estéril vs Muro."
+    mp04_resumen = ""
+
+    parejas_dir = [
+        (eq_l, tl, amb_l, eq_v, tv, amb_v, doc_visitante, "fuera"),
+        (eq_v, tv, amb_v, eq_l, tl, amb_l, doc_local, "casa"),
+    ]
+    for nom_dom, t_dom, a_dom, nom_mur, t_mur, a_mur, doc_mur, cond_mur in parejas_dir:
+        pos_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "posesion_pct")
+        rem_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "remates_totales")
+        xg_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "xg")
+        desp_m = _extraer_stat_tensor(t_mur, "FT", a_mur, "despejes")
+        gev_m = _media_goles_evitados_observados(doc_mur, cond_mur)
+        if pos_d is None or rem_d is None or xg_d is None or (desp_m is None and gev_m is None):
+            continue
+        mp04_evaluable = True
+        xg_por_rem = xg_d / max(1.0, rem_d)
+        muro_ok = bool((desp_m is not None and desp_m >= 20.0) or (gev_m is not None and gev_m >= 0.15))
+        if pos_d >= 57.0 and rem_d >= 10.0 and xg_por_rem < 0.11 and muro_ok:
+            mp04_act = True
+            mp04_vars = [
+                f"{nom_dom}.FT.pos={pos_d:.1f}%",
+                f"{nom_dom}.FT.xg_rem={xg_por_rem:.3f}",
+            ]
+            if desp_m is not None:
+                mp04_vars.append(f"{nom_mur}.FT.despejes={desp_m:.1f}")
+            if gev_m is not None:
+                mp04_vars.append(f"{nom_mur}.FT.goles_evitados={gev_m:+.2f}")
+            muro_det = f"despejes {desp_m:.1f}" if desp_m is not None and desp_m >= 20.0 else f"portero {gev_m:+.2f} g.ev."
+            mp04_evid = f"{nom_dom} domina posesión ({pos_d:.1f}%) con baja calidad/remate ({xg_por_rem:.3f} xG/rem) ante muro de {nom_mur} ({muro_det})."
+            mp04_resumen = f"Dominio estéril {nom_dom} ({pos_d:.0f}% pos., {xg_por_rem:.3f} xG/rem) vs muro {nom_mur} ({muro_det}): apoya Under goles FT."
+            break
+
+    patrones.append({
+        "codigo": "MP04_DOMINIO_ESTERIL_VS_MURO",
+        "nombre": "Dominio Estéril vs Muro Defensivo",
+        "activo": mp04_act,
+        "evaluable": mp04_evaluable,
+        "variables_usadas": mp04_vars[:4],
+        "evidencia": mp04_evid,
+        "familia_senales": "dominio_esteril_vs_muro",
+        "senales_favor": ["total_goles:under_2.5", "total_goles:under_3.5"] if mp04_act else [],
+        "senales_contra": ["total_goles:over_2.5", "total_goles:over_3.5"] if mp04_act else [],
+        "resumen_corto": mp04_resumen if mp04_act else "",
+    })
+
+    activos = [p for p in patrones if p["activo"]]
+    favor_agg = sorted({s for p in activos for s in p.get("senales_favor", [])})
+    contra_agg = sorted({s for p in activos for s in p.get("senales_contra", [])})
+    resumen_xai = [p["resumen_corto"] for p in activos if p.get("resumen_corto")]
+
+    return {
+        "todos": patrones,
+        "activos": activos,
+        "codigos_activos": [p["codigo"] for p in activos],
+        "senales_favor": favor_agg,
+        "senales_contra": contra_agg,
+        "vetos_mercados": contra_agg,
+        "resumen_xai": resumen_xai,
+        "tensor_local_disponible": bool(tl.get("n_general", 0)),
+        "tensor_visita_disponible": bool(tv.get("n_general", 0)),
+        "umbrales_aplicados": umb,
+    }
+
+
 def detectar_contexto_competicion(
     competicion: str = "",
     fase: str = "",

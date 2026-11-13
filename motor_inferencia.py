@@ -1073,6 +1073,7 @@ def generar_veredicto_tactico_partido(
     selecciones_sec1: Optional[List[Any]] = None,
     para_canvas: bool = False,
     motor: Any = None,
+    micropatrones_combinatorios: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Genera dinámicamente el bloque '🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?'
@@ -1387,6 +1388,13 @@ def generar_veredicto_tactico_partido(
                 f"{etq_vol_2t} y {txt_p26}). Sumado al flujo del tramo 76'-90' "
                 f"({flujo_76_90} goles combinados), es una selección con respaldo estadístico."
             )
+    mp_ver = micropatrones_combinatorios
+    if not isinstance(mp_ver, dict) and motor is not None:
+        mp_ver = getattr(motor, "micropatrones_combinatorios", None) or (getattr(motor, "recursivo", None) or {}).get("micropatrones_combinatorios")
+    if isinstance(mp_ver, dict):
+        act_mp = [a for a in (mp_ver.get("activos") or []) if isinstance(a, dict) and a.get("resumen_corto")]
+        if act_mp:
+            c4 = f"{c4} | Patrón: {act_mp[0]['resumen_corto']}"
     return "\n".join([encabezado, sub, c1, c2, c3, c4])
 
 
