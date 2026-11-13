@@ -821,24 +821,44 @@ def matriz_red_para_dibujar(res_red: dict[str, Any]) -> list[list[float]]:
 # 3. RADIÓGRAFO DE MITADES (1T vs 2T sobre 2700 s cada una)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]:
+def perfil_mitades(doc: dict[str, Any], condicion: str | None = None) -> dict[str, Any]:
     """
     Compara el ritmo ofensivo del 1T con el del 2T (cada mitad son 2700 s) usando
-    las muestras por periodo del motor. Devuelve los segundos por tiro, los
-    remates y el Índice de Cambio de Ritmo (2T/1T) con su etiqueta de perfil.
+    mezcla 65% condición + 35% general cuando N_cond >= 4 (fallback a general
+    en caso contrario) e incorpora ratio_2t_1t_xg junto a ratio_2t_1t_remates.
     """
     try:
         import motor_mercados as mm
     except Exception:                                   # pragma: no cover
         return {}
+
+    def _mezcla_metrica(m_gen: Any, m_cond: Any, clave: str) -> float | None:
+        val_gen = m_gen.media(clave)
+        if condicion is not None and m_cond is not None:
+            mc = m_cond.metricas.get(clave)
+            n_c = getattr(mc, "n", 0) if mc is not None else 0
+            val_cond = getattr(mc, "media", None) if mc is not None else None
+            if n_c >= 4 and val_cond is not None and val_gen is not None:
+                return round(0.65 * float(val_cond) + 0.35 * float(val_gen), 4)
+        return val_gen
+
     salida: dict[str, Any] = {}
+    hubo_mezcla_cond = False
+    n_cond_max = 0
     for etiqueta, periodo in (("1T", "1T"), ("2T", "2T")):
-        muestra = mm.extraer_muestra(doc, condicion, periodo)
-        remates = muestra.media("remates_totales_favor")
-        xg = muestra.media("xg_favor")
-        recuperaciones = muestra.media("recuperaciones_favor")
-        duelos = muestra.media("duelos_suelo_pct_favor")
-        faltas = muestra.media("faltas_favor")
+        m_gen = mm.extraer_muestra(doc, None, periodo)
+        m_cond = mm.extraer_muestra(doc, condicion, periodo) if condicion is not None else None
+        if m_cond is not None:
+            n_cond_max = max(n_cond_max, m_cond.partidos_condicion)
+            if (m_cond.metricas.get("remates_totales_favor") and m_cond.metricas["remates_totales_favor"].n >= 4) or (
+                m_cond.metricas.get("xg_favor") and m_cond.metricas["xg_favor"].n >= 4
+            ):
+                hubo_mezcla_cond = True
+        remates = _mezcla_metrica(m_gen, m_cond, "remates_totales_favor")
+        xg = _mezcla_metrica(m_gen, m_cond, "xg_favor")
+        recuperaciones = _mezcla_metrica(m_gen, m_cond, "recuperaciones_favor")
+        duelos = _mezcla_metrica(m_gen, m_cond, "duelos_suelo_pct_favor")
+        faltas = _mezcla_metrica(m_gen, m_cond, "faltas_favor")
         salida[etiqueta] = {
             "remates_totales": remates,
             "xg": xg,
@@ -847,13 +867,15 @@ def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]
             "recuperaciones": recuperaciones,
             "duelos_suelo_pct": duelos,
             "faltas": faltas,
-            "partidos": muestra.partidos_general,
+            "partidos": m_gen.partidos_general,
+            "partidos_condicion": m_cond.partidos_condicion if m_cond is not None else 0,
         }
 
     r1, r2 = salida["1T"]["remates_totales"], salida["2T"]["remates_totales"]
     # Reconciliación matemática obligatoria: xG_1T + xG_2T == xG_FT y tempo de FT
-    muestra_ft = mm.extraer_muestra(doc, condicion, "FT")
-    xg_ft = muestra_ft.media("xg_favor")
+    m_ft_gen = mm.extraer_muestra(doc, None, "FT")
+    m_ft_cond = mm.extraer_muestra(doc, condicion, "FT") if condicion is not None else None
+    xg_ft = _mezcla_metrica(m_ft_gen, m_ft_cond, "xg_favor")
     x1, x2 = salida["1T"]["xg"], salida["2T"]["xg"]
     if xg_ft is not None and x1 is not None and x2 is not None:
         sum_x = x1 + x2
@@ -866,28 +888,45 @@ def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]
     if r1 is not None and r2 is not None and (r1 + r2) > 0:
         salida["segundos_por_tiro_ft"] = round(SEGUNDOS_PARTIDO / (r1 + r2), 1)
 
-    ratio = (r2 / r1) if (r1 and r2) else None
-    salida["ratio_2t_1t_remates"] = round(ratio, 3) if ratio is not None else None
+    ratio_rem = (r2 / r1) if (r1 and r2 and r1 > 0 and r2 > 0) else None
+    x1_eff, x2_eff = salida["1T"]["xg"], salida["2T"]["xg"]
+    ratio_xg = (x2_eff / x1_eff) if (x1_eff is not None and x2_eff is not None and x1_eff > 0) else None
+    salida["ratio_2t_1t_remates"] = round(ratio_rem, 3) if ratio_rem is not None else None
+    salida["ratio_2t_1t_xg"] = round(ratio_xg, 3) if ratio_xg is not None else None
+    salida["condicion_evaluada"] = condicion or "general"
+    salida["modo_muestra"] = (
+        f"mezcla 65% {condicion} + 35% general"
+        if (condicion and hubo_mezcla_cond)
+        else ("general (N_cond < 4)" if (condicion and n_cond_max < 4) else "general")
+    )
 
     d1 = salida["1T"]["duelos_suelo_pct"]
     d2 = salida["2T"]["duelos_suelo_pct"]
     salida["caida_duelos_pp"] = (round(d1 - d2, 1) if (d1 is not None and d2 is not None)
                                  else None)
 
-    if ratio is None:
+    if ratio_rem is None and ratio_xg is None:
         perfil = "sin datos suficientes por mitades"
         perfil_corto = "s/d"
-    elif ratio >= 1.35:
+    elif ratio_xg is not None and ratio_xg >= 1.35:
         perfil = "Equipo diésel (crece en el 2T)"
         perfil_corto = "Diésel 2T"
-    elif ratio <= 0.72:
+    elif ratio_xg is not None and ratio_xg <= 0.75:
+        perfil = "Arranque explosivo (se apaga en el 2T)"
+        perfil_corto = "Explosivo 1T"
+    elif ratio_rem is not None and ratio_rem >= 1.35:
+        perfil = "Equipo diésel (crece en el 2T)"
+        perfil_corto = "Diésel 2T"
+    elif ratio_rem is not None and ratio_rem <= 0.72:
         perfil = "Arranque explosivo (se apaga en el 2T)"
         perfil_corto = "Explosivo 1T"
     else:
         perfil = "Ritmo estable entre mitades"
         perfil_corto = "Estable"
+
+    ratio_caida = ratio_xg if ratio_xg is not None else ratio_rem
     if (salida["caida_duelos_pp"] is not None and salida["caida_duelos_pp"] >= 6.0
-            and ratio is not None and ratio < 1.0):
+            and ratio_caida is not None and ratio_caida < 1.0):
         perfil += " · colapso físico en el 2T"
         perfil_corto += " + colapso"
     salida["perfil"] = perfil
@@ -2484,9 +2523,9 @@ def generar_cuadro_desde_analisis(
     perfil_l = construir_perfil_especialista_equipo(bloques["local"], ratio_tier=ratio_tier_l)
     perfil_v = construir_perfil_especialista_equipo(bloques["visitante"], ratio_tier=ratio_tier_v)
 
-    if doc_local is not None:
-        mit_l = perfil_mitades(doc_local, None)
-        mit_v = perfil_mitades(doc_visitante, None)
+    if doc_local is not None or doc_visitante is not None:
+        mit_l = perfil_mitades(doc_local, "casa") if doc_local is not None else {}
+        mit_v = perfil_mitades(doc_visitante, "fuera") if doc_visitante is not None else {}
     else:
         mit_l = mit_v = {}
 

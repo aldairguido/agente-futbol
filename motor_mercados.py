@@ -1212,24 +1212,57 @@ def repartir_lambdas_por_tiempos(
     if lam_ft_l is None or lam_ft_v is None:
         return None, None, None, None, "sin λ FT", ["No hay λ FT: no se pueden repartir tiempos."]
 
+    from motor_patrones import construir_tensor_multi_periodo_equipo
+
     xg: dict[str, dict[str, float | None]] = {}
+    goles_respaldo: dict[str, dict[str, float | None]] = {}
+    modos_usados: list[str] = []
+    uso_fallback_goles = False
+
     for etiqueta, doc, cond in (("local", doc_local, cond_local),
                                 ("visitante", doc_visitante, cond_visitante)):
+        tens = construir_tensor_multi_periodo_equipo(
+            doc,
+            condicion_objetivo=cond,
+            metricas=("xg", "xg_contra", "goles", "goles_contra"),
+        )
+        mez = tens.get("mezcla_65_35") or {}
         xg[etiqueta] = {
-            "1T": _xg_periodo(doc, "1T", cond, "equipo"),
-            "2T": _xg_periodo(doc, "2T", cond, "equipo"),
-            "1T_contra": _xg_periodo(doc, "1T", cond, "rival"),
-            "2T_contra": _xg_periodo(doc, "2T", cond, "rival"),
+            "1T": (mez.get("1T", {}).get("xg") or {}).get("media_ponderada_60_40"),
+            "2T": (mez.get("2T", {}).get("xg") or {}).get("media_ponderada_60_40"),
+            "1T_contra": (mez.get("1T", {}).get("xg_contra") or {}).get("media_ponderada_60_40"),
+            "2T_contra": (mez.get("2T", {}).get("xg_contra") or {}).get("media_ponderada_60_40"),
         }
+        goles_respaldo[etiqueta] = {
+            "1T": (mez.get("1T", {}).get("goles") or {}).get("media_ponderada_60_40"),
+            "2T": (mez.get("2T", {}).get("goles") or {}).get("media_ponderada_60_40"),
+            "1T_contra": (mez.get("1T", {}).get("goles_contra") or {}).get("media_ponderada_60_40"),
+            "2T_contra": (mez.get("2T", {}).get("goles_contra") or {}).get("media_ponderada_60_40"),
+        }
+        modos_usados.append(str((mez.get("1T", {}).get("xg") or {}).get("modo") or "general"))
 
     # xG cruzado por mitad: (xG propio + xG concedido por el rival) / 2
+    # Si falta xG en algún periodo, usa goles reales por mitades del mismo tensor
+    # (sin inventar datos; solo combina 65% condición + 35% general si N_cond >= 4).
     cruzado: dict[str, dict[str, float | None]] = {"local": {}, "visitante": {}}
     for eq, rival in (("local", "visitante"), ("visitante", "local")):
         for per in ("1T", "2T"):
             propio = xg[eq][per]
             concedido = xg[rival][f"{per}_contra"]
             if propio is None or concedido is None:
-                cruzado[eq][per] = None
+                g_prop = goles_respaldo[eq][per]
+                g_conc = goles_respaldo[rival][f"{per}_contra"]
+                if propio is not None and g_conc is not None:
+                    cruzado[eq][per] = (propio + g_conc) / 2.0
+                    uso_fallback_goles = True
+                elif g_prop is not None and concedido is not None:
+                    cruzado[eq][per] = (g_prop + concedido) / 2.0
+                    uso_fallback_goles = True
+                elif g_prop is not None and g_conc is not None:
+                    cruzado[eq][per] = (g_prop + g_conc) / 2.0
+                    uso_fallback_goles = True
+                else:
+                    cruzado[eq][per] = None
             else:
                 cruzado[eq][per] = (propio + concedido) / 2.0
 
@@ -1251,12 +1284,16 @@ def repartir_lambdas_por_tiempos(
     use_50_v = ((cruzado["visitante"]["1T"] or 0.0) + (cruzado["visitante"]["2T"] or 0.0)) <= 0
     l1, l2 = reparto(lam_ft_l, "local")
     v1, v2 = reparto(lam_ft_v, "visitante")
+    hay_mezcla = any("mezcla_65_" in m for m in modos_usados)
+    etq_base = "goles/xG por tiempos" if uso_fallback_goles else "xG cruzado por tiempos"
+    etq_peso = "mezcla 65% cond + 35% gen, 60/40" if hay_mezcla else "general 15P, 60/40"
     proc_txt = (
         "reparto 50/50 sin validar (xG por mitades nulo)"
         if (use_50_l or use_50_v)
-        else "xG cruzado por tiempos (inferido)"
+        else f"{etq_base} ({etq_peso})"
     )
-    notas.append("Probabilidades por tiempo INFERIDAS del xG cruzado por mitades, "
+    notas.append("Probabilidades por tiempo INFERIDAS del tensor multi-periodo 1T/2T "
+                 "(65% condición + 35% general si N_cond >= 4, ponderado 60/40), "
                  "normalizadas para sumar FT; se asume independencia temporal entre mitades.")
     return l1, v1, l2, v2, proc_txt, notas
 

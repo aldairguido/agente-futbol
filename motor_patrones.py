@@ -735,6 +735,302 @@ def calcular_patrones_completos_partido(
     return calcular_55_patrones_matchup(p_l, p_v)
 
 
+_METRICAS_TENSOR_DEFAULT: tuple[str, ...] = (
+    "xg",
+    "xg_contra",
+    "goles",
+    "goles_contra",
+    "remates_totales",
+    "remates_totales_contra",
+    "remates_puerta",
+    "remates_puerta_contra",
+    "grandes_ocasiones",
+    "grandes_ocasiones_contra",
+    "toques_area_rival",
+    "toques_area_rival_contra",
+    "corners",
+    "corners_contra",
+    "tarjetas_amarillas",
+    "faltas",
+    "posesion_pct",
+    "pases_precision_pct",
+    "duelos_suelo_pct",
+    "recuperaciones",
+    "despejes",
+)
+
+
+def _normalizar_condicion_tensor(cond: Any) -> str:
+    c = str(cond or "").strip().lower()
+    if c in ("casa", "local", "l", "h", "home"):
+        return "casa"
+    if c in ("fuera", "visita", "visitante", "v", "a", "away"):
+        return "fuera"
+    return c
+
+
+def _ordenar_partidos_cronologico_tensor(partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ordena los partidos de más antiguo a más reciente preservando None-safety."""
+    def _clave(item: Tuple[int, Dict[str, Any]]) -> Tuple[str, int]:
+        idx, p = item
+        f = str(p.get("fecha_iso") or p.get("fecha") or p.get("utcTime") or p.get("date") or "").strip()
+        # Normaliza DD.MM.YYYY -> YYYY-MM-DD si aparece
+        if len(f) >= 10 and f[2:3] in (".", "/") and f[5:6] in (".", "/"):
+            f = f"{f[6:10]}-{f[3:5]}-{f[0:2]}"
+        else:
+            f = f[:10]
+        # Si fechas empatan o faltan, respeta el orden inverso asumiendo idx=0 más reciente
+        return (f, -idx)
+
+    ordenados = sorted(enumerate(partidos), key=_clave)
+    return [p for _, p in ordenados]
+
+
+def _a_float_real_tensor(val: Any) -> Optional[float]:
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return float(val)
+    txt = str(val).strip().lower()
+    if txt in ("", "none", "null", "nan", "n/a", "n/d", "sin_dato", "sin dato", "-"):
+        return None
+    try:
+        num = float(val)
+        return None if (math.isnan(num) or math.isinf(num)) else num
+    except (TypeError, ValueError):
+        return None
+
+
+def _extraer_goles_periodo_tensor(partido: Dict[str, Any], periodo: str, bando: str) -> Optional[float]:
+    filas = ((partido.get("periodos") or {}).get(periodo) or {}).get("filas") or []
+    for fila in filas:
+        if str(fila.get("clave") or "").strip().lower() == "goles":
+            v = _a_float_real_tensor(fila.get(bando))
+            if v is not None:
+                return v
+
+    def _leer_m(clave_m: str) -> Optional[float]:
+        m = partido.get(clave_m)
+        if isinstance(m, dict):
+            return _a_float_real_tensor(m.get(bando))
+        return None
+
+    if periodo == "FT":
+        return _leer_m("marcador")
+    if periodo == "1T":
+        return _leer_m("marcador_1t")
+    if periodo == "2T":
+        g2 = _leer_m("marcador_2t")
+        if g2 is not None:
+            return g2
+        g_ft = _leer_m("marcador")
+        g_1t = _leer_m("marcador_1t")
+        if g_ft is not None and g_1t is not None and g_ft >= g_1t:
+            return float(g_ft - g_1t)
+    return None
+
+
+def _extraer_valor_tensor_partido(partido: Dict[str, Any], metrica: str, periodo: str) -> Optional[float]:
+    m_low = str(metrica or "").strip().lower()
+    if m_low.endswith("_contra"):
+        bando = "rival"
+        clave_base = m_low[:-7]
+    elif m_low.endswith("_favor"):
+        bando = "equipo"
+        clave_base = m_low[:-6]
+    else:
+        bando = "equipo"
+        clave_base = m_low
+
+    if clave_base == "goles":
+        return _extraer_goles_periodo_tensor(partido, periodo, bando)
+
+    filas = ((partido.get("periodos") or {}).get(periodo) or {}).get("filas") or []
+    for fila in filas:
+        if str(fila.get("clave") or "").strip().lower() == clave_base:
+            v = _a_float_real_tensor(fila.get(bando))
+            if v is not None:
+                return v
+    return None
+
+
+def _percentil_lineal_tensor(ordenados: List[float], q: float) -> float:
+    if not ordenados:
+        return 0.0
+    if len(ordenados) == 1:
+        return float(ordenados[0])
+    pos = (len(ordenados) - 1) * q
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(ordenados[lo])
+    frac = pos - lo
+    return float(ordenados[lo] + (ordenados[hi] - ordenados[lo]) * frac)
+
+
+def _calcular_estadisticos_tensor(valores: List[float]) -> Dict[str, Any]:
+    import statistics as _stats
+
+    n = len(valores)
+    if n == 0:
+        return {
+            "n": 0,
+            "media": None,
+            "media_ponderada_60_40": None,
+            "mediana": None,
+            "desviacion_estandar": None,
+            "rango_min_max": None,
+            "p25_p75": None,
+            "frecuencias_empiricas": {},
+        }
+    media = sum(valores) / n
+    if n > 5:
+        u5 = sum(valores[-5:]) / 5.0
+        prev = sum(valores[:-5]) / float(n - 5)
+        w60_40 = 0.60 * u5 + 0.40 * prev
+    else:
+        w60_40 = media
+    med = float(_stats.median(valores))
+    std = float(_stats.pstdev(valores)) if n >= 2 else 0.0
+    ord_v = sorted(valores)
+    p25 = _percentil_lineal_tensor(ord_v, 0.25)
+    p75 = _percentil_lineal_tensor(ord_v, 0.75)
+
+    umbrales_gt = (("gt_0_5", 0.5), ("gt_1_5", 1.5), ("gt_2_5", 2.5), ("gt_3_5", 3.5), ("gt_4_5", 4.5), ("gt_5_5", 5.5))
+    umbrales_lt = (("lt_1_5", 1.5), ("lt_2_5", 2.5), ("lt_3_5", 3.5), ("lt_12_5", 12.5))
+    freqs: Dict[str, Dict[str, Any]] = {}
+    for k_lbl, thr in umbrales_gt:
+        cnt = sum(1 for v in valores if v > thr)
+        freqs[k_lbl] = {"k": cnt, "n": n, "pct": round(cnt / n, 4), "etiqueta": f"{cnt}/{n}"}
+    for k_lbl, thr in umbrales_lt:
+        cnt = sum(1 for v in valores if v < thr)
+        freqs[k_lbl] = {"k": cnt, "n": n, "pct": round(cnt / n, 4), "etiqueta": f"{cnt}/{n}"}
+
+    return {
+        "n": n,
+        "media": round(media, 4),
+        "media_ponderada_60_40": round(w60_40, 4),
+        "mediana": round(med, 4),
+        "desviacion_estandar": round(std, 4),
+        "rango_min_max": [round(ord_v[0], 4), round(ord_v[-1], 4)],
+        "p25_p75": [round(p25, 4), round(p75, 4)],
+        "frecuencias_empiricas": freqs,
+    }
+
+
+def construir_tensor_multi_periodo_equipo(
+    doc_o_partidos: Any,
+    condicion_objetivo: Optional[str] = "casa",
+    metricas: Optional[Tuple[str, ...]] = None,
+) -> Dict[str, Any]:
+    """
+    Construye el tensor multi-periodo (FT, 1T, 2T) x (General 15P, Condicion)
+    con media ponderada 60/40 (últimos 5 cronológicos), mediana, desviación
+    estándar, rango, P25/P75, frecuencias empíricas (k/N) y mezcla bayesiana
+    65% condición + 35% general cuando N_cond >= 4 (fallback a general si < 4).
+    """
+    if isinstance(doc_o_partidos, dict):
+        partidos_raw = list(doc_o_partidos.get("partidos") or [])
+    elif isinstance(doc_o_partidos, list):
+        partidos_raw = list(doc_o_partidos)
+    else:
+        partidos_raw = []
+
+    partidos_ord = _ordenar_partidos_cronologico_tensor([p for p in partidos_raw if isinstance(p, dict)])
+    cond_norm = _normalizar_condicion_tensor(condicion_objetivo) if condicion_objetivo else ""
+    if cond_norm not in ("casa", "fuera"):
+        cond_norm = ""
+    partidos_cond = [
+        p for p in partidos_ord
+        if cond_norm and _normalizar_condicion_tensor(p.get("condicion")) == cond_norm
+    ]
+
+    lista_metricas = tuple(metricas) if metricas else _METRICAS_TENSOR_DEFAULT
+    tensor: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]] = {}
+    mezcla: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    for periodo in ("FT", "1T", "2T"):
+        tensor[periodo] = {"general": {}, "condicion": {}}
+        mezcla[periodo] = {}
+        for m in lista_metricas:
+            vals_gen = [
+                v for v in (_extraer_valor_tensor_partido(p, m, periodo) for p in partidos_ord)
+                if v is not None
+            ]
+            vals_cond = [
+                v for v in (_extraer_valor_tensor_partido(p, m, periodo) for p in partidos_cond)
+                if v is not None
+            ]
+            est_gen = _calcular_estadisticos_tensor(vals_gen)
+            est_cond = _calcular_estadisticos_tensor(vals_cond)
+            tensor[periodo]["general"][m] = est_gen
+            tensor[periodo]["condicion"][m] = est_cond
+
+            n_c = est_cond["n"]
+            n_g = est_gen["n"]
+            if cond_norm and n_c >= 4 and n_g >= 1 and est_cond["media_ponderada_60_40"] is not None and est_gen["media_ponderada_60_40"] is not None:
+                m60 = 0.65 * float(est_cond["media_ponderada_60_40"]) + 0.35 * float(est_gen["media_ponderada_60_40"])
+                m_arp = 0.65 * float(est_cond["media"]) + 0.35 * float(est_gen["media"])
+                m_med = 0.65 * float(est_cond["mediana"]) + 0.35 * float(est_gen["mediana"])
+                modo = f"mezcla_65_{cond_norm}_35_general"
+                w_c, w_g = 0.65, 0.35
+                freqs = est_cond["frecuencias_empiricas"]
+            elif n_g >= 1:
+                m60 = est_gen["media_ponderada_60_40"]
+                m_arp = est_gen["media"]
+                m_med = est_gen["mediana"]
+                modo = "fallback_general"
+                w_c, w_g = 0.0, 1.0
+                freqs = est_gen["frecuencias_empiricas"]
+            else:
+                m60 = m_arp = m_med = None
+                modo = "sin_dato"
+                w_c, w_g = 0.0, 0.0
+                freqs = {}
+
+            mezcla[periodo][m] = {
+                "n_general": n_g,
+                "n_condicion": n_c,
+                "peso_condicion": w_c,
+                "peso_general": w_g,
+                "modo": modo,
+                "media": round(m_arp, 4) if m_arp is not None else None,
+                "media_ponderada_60_40": round(m60, 4) if m60 is not None else None,
+                "mediana": round(m_med, 4) if m_med is not None else None,
+                "desviacion_estandar": est_cond["desviacion_estandar"] if (w_c > 0 and est_cond["desviacion_estandar"] is not None) else est_gen["desviacion_estandar"],
+                "rango_min_max": est_cond["rango_min_max"] if (w_c > 0 and est_cond["rango_min_max"] is not None) else est_gen["rango_min_max"],
+                "p25_p75": est_cond["p25_p75"] if (w_c > 0 and est_cond["p25_p75"] is not None) else est_gen["p25_p75"],
+                "frecuencias_empiricas": freqs,
+            }
+
+    def _ratio_m(clave: str) -> Optional[float]:
+        v1 = (mezcla["1T"].get(clave) or {}).get("media_ponderada_60_40")
+        v2 = (mezcla["2T"].get(clave) or {}).get("media_ponderada_60_40")
+        if v1 is not None and v2 is not None and float(v1) > 0:
+            return round(float(v2) / float(v1), 3)
+        return None
+
+    d1_pct = (mezcla["1T"].get("duelos_suelo_pct") or {}).get("media")
+    d2_pct = (mezcla["2T"].get("duelos_suelo_pct") or {}).get("media")
+    caida_duelos = round(float(d1_pct) - float(d2_pct), 1) if (d1_pct is not None and d2_pct is not None) else None
+
+    return {
+        "condicion_objetivo": cond_norm or "general",
+        "n_general": len(partidos_ord),
+        "n_condicion": len(partidos_cond),
+        "tensor": tensor,
+        "mezcla_65_35": mezcla,
+        "ratios_mitades": {
+            "ratio_2t_1t_xg": _ratio_m("xg"),
+            "ratio_2t_1t_remates": _ratio_m("remates_totales"),
+            "ratio_2t_1t_goles": _ratio_m("goles"),
+            "caida_duelos_pp": caida_duelos,
+        },
+    }
+
+
 def detectar_contexto_competicion(
     competicion: str = "",
     fase: str = "",
