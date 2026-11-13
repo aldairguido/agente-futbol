@@ -35,6 +35,7 @@ Formatos de entrada tolerados
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import re
@@ -56,6 +57,7 @@ from motor_mercados import NOMBRE_MODELO, UMBRAL_DEFECTO, VERSION_MODELO
 PRONOSTICOS_DIR = os.path.join(config.INFORME_DIR, "pronosticos")
 EVALUACION_DIR = os.path.join(config.INFORME_DIR, "evaluacion")
 MERCADOS_DIR = os.path.join(config.INFORME_DIR, "mercados")
+LEDGER_OOS_PATH = os.path.join(EVALUACION_DIR, "ledger_oos.jsonl")
 
 # ─── Bandas excluyentes exigidas por la especificación ────────────────────────
 BANDAS: tuple[tuple[str, float, float], ...] = (
@@ -94,13 +96,38 @@ def _ahora() -> str:
     return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
+_EXONIMOS_CANONICOS = {
+    "turquia": "turkey", "turkiye": "turkey", "turkey": "turkey",
+    "belgica": "belgium", "belgie": "belgium", "belgique": "belgium", "belgium": "belgium",
+    "italia": "italy", "italy": "italy",
+    "francia": "france", "france": "france",
+    "espana": "spain", "spain": "spain",
+    "alemania": "germany", "deutschland": "germany", "germany": "germany",
+    "inglaterra": "england", "england": "england",
+    "paisesbajos": "netherlands", "holanda": "netherlands", "netherlands": "netherlands",
+    "suiza": "switzerland", "switzerland": "switzerland",
+    "croacia": "croatia", "hrvatska": "croatia", "croatia": "croatia",
+    "polonia": "poland", "polska": "poland", "poland": "poland",
+    "grecia": "greece", "greece": "greece",
+    "hungria": "hungary", "magyarorszag": "hungary", "hungary": "hungary",
+    "suecia": "sweden", "sverige": "sweden", "sweden": "sweden",
+    "noruega": "norway", "norge": "norway", "norway": "norway",
+    "dinamarca": "denmark", "danmark": "denmark", "denmark": "denmark",
+    "escocia": "scotland", "scotland": "scotland",
+    "gales": "wales", "wales": "wales",
+    "irlanda": "ireland", "ireland": "ireland",
+    "republicacheca": "czechia", "chequia": "czechia", "czechrepublic": "czechia", "czechia": "czechia",
+}
+
+
 def _clave_equipo(nombre: str) -> str:
-    """Clave tolerante a tildes y palabras vacías para emparejar equipos."""
+    """Clave tolerante a tildes, exónimos bilingües y palabras vacías para emparejar equipos."""
     base = unicodedata.normalize("NFKD", str(nombre or "")).encode("ascii", "ignore").decode()
     palabras = [p for p in re.split(r"[^A-Za-z0-9]+", base.lower()) if p]
     vacias = {"de", "del", "la", "el", "los", "las", "y", "e", "club", "fc", "cf"}
     sig = [p for p in palabras if p not in vacias]
-    return "".join(sig) or "".join(palabras)
+    clave = "".join(sig) or "".join(palabras)
+    return _EXONIMOS_CANONICOS.get(clave, clave)
 
 
 def banda_de(p: float | None) -> str:
@@ -450,6 +477,8 @@ class ResultadoPartido:
     goles: list[dict[str, Any]] = field(default_factory=list)   # minuto, equipo, autor, propio
     tarjetas: list[dict[str, Any]] = field(default_factory=list)
     notas: list[str] = field(default_factory=list)
+    stats_periodos: dict[str, Any] = field(default_factory=dict)
+    discrepancias: list[str] = field(default_factory=list)
 
     @property
     def finalizado(self) -> bool:
@@ -468,6 +497,7 @@ class ResultadoPartido:
             "amarillas": {"local": self.amarillas_local, "visitante": self.amarillas_visitante},
             "rojas": {"local": self.rojas_local, "visitante": self.rojas_visitante},
             "eventos_gol": self.goles, "tarjetas": self.tarjetas, "notas": self.notas,
+            "stats_periodos": self.stats_periodos, "discrepancias": self.discrepancias,
         }
 
 
@@ -482,6 +512,268 @@ def _titulo_stats(bloque: dict[str, Any], titulo: str) -> list[Any] | None:
     return None
 
 
+def _int_o_none(val: Any) -> int | None:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        return int(round(float(val)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _float_o_none(val: Any) -> float | None:
+    if val is None or isinstance(val, bool):
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _aplicar_flashscore_en_resultado(
+    res: ResultadoPartido,
+    fs_payload: dict[str, Any],
+    scraper_vacio: bool = False,
+    detalle_scraper_notas: list[str] | None = None,
+) -> None:
+    """
+    Aplica estadísticas verificadas de Flashscore (FT, 1T, 2T) sobre `res` y
+    registra explícitamente cualquier discrepancia respecto al payload del scraper.
+    """
+    if not isinstance(fs_payload, dict) or not fs_payload:
+        return
+
+    periodos_fs = fs_payload.get("periodos") if isinstance(fs_payload.get("periodos"), dict) else fs_payload
+    ft_d = periodos_fs.get("FT") or {}
+    t1_d = periodos_fs.get("1T") or {}
+    t2_d = periodos_fs.get("2T") or {}
+
+    def _par(bloque: dict[str, Any], *claves: str) -> tuple[Any, Any]:
+        if not isinstance(bloque, dict):
+            return None, None
+        for k in claves:
+            v = bloque.get(k)
+            if isinstance(v, (list, tuple)) and len(v) >= 2:
+                return v[0], v[1]
+            if isinstance(v, dict):
+                l_v = v.get("local") if "local" in v else v.get("equipo")
+                v_v = v.get("visitante") if "visitante" in v else v.get("rival")
+                if l_v is not None or v_v is not None:
+                    return l_v, v_v
+            if f"{k}_local" in bloque or f"{k}_visitante" in bloque:
+                return bloque.get(f"{k}_local"), bloque.get(f"{k}_visitante")
+        return None, None
+
+    gl_fs, gv_fs = _par(ft_d, "goles", "marcador")
+    gl_i, gv_i = _int_o_none(gl_fs), _int_o_none(gv_fs)
+    if gl_i is not None and gv_i is not None:
+        if res.goles_local is not None and res.goles_visitante is not None:
+            if (res.goles_local, res.goles_visitante) != (gl_i, gv_i):
+                msg = (
+                    f"Discrepancia marcador scraper ({res.goles_local}-{res.goles_visitante}) "
+                    f"vs Flashscore ({gl_i}-{gv_i}): no se reconcilia marcador automáticamente."
+                )
+                res.discrepancias.append(msg)
+                res.notas.append(msg)
+        else:
+            res.goles_local = gl_i
+            res.goles_visitante = gv_i
+            res.estado = "finalizado"
+
+    g1l_fs, g1v_fs = _par(t1_d, "goles", "marcador")
+    g1l_i, g1v_i = _int_o_none(g1l_fs), _int_o_none(g1v_fs)
+    if g1l_i is not None and g1v_i is not None:
+        if res.goles_local_1t is None or res.goles_visitante_1t is None:
+            res.goles_local_1t = g1l_i
+            res.goles_visitante_1t = g1v_i
+        elif (res.goles_local_1t, res.goles_visitante_1t) != (g1l_i, g1v_i):
+            msg = (
+                f"Discrepancia 1T scraper ({res.goles_local_1t}-{res.goles_visitante_1t}) "
+                f"vs Flashscore ({g1l_i}-{g1v_i})."
+            )
+            res.discrepancias.append(msg)
+            res.notas.append(msg)
+
+    # Validar suma 1T + 2T == FT si viene 2T
+    g2l_fs, g2v_fs = _par(t2_d, "goles", "marcador")
+    g2l_i, g2v_i = _int_o_none(g2l_fs), _int_o_none(g2v_fs)
+    if (
+        g1l_i is not None and g1v_i is not None
+        and g2l_i is not None and g2v_i is not None
+        and res.goles_local is not None and res.goles_visitante is not None
+    ):
+        if (g1l_i + g2l_i, g1v_i + g2v_i) != (res.goles_local, res.goles_visitante):
+            res.discrepancias.append(
+                f"Inconsistencia 1T+2T!=FT en Flashscore: 1T {g1l_i}-{g1v_i} + 2T {g2l_i}-{g2v_i} != FT {res.goles_local}-{res.goles_visitante}"
+            )
+
+    for per, pdict in (("FT", ft_d), ("1T", t1_d), ("2T", t2_d)):
+        if not isinstance(pdict, dict) or not pdict:
+            continue
+        cl, cv = _par(pdict, "corners")
+        cl_i, cv_i = _int_o_none(cl), _int_o_none(cv)
+        if cl_i is not None and cv_i is not None:
+            if res.corners_local.get(per) is None:
+                res.corners_local[per] = cl_i
+                res.corners_visitante[per] = cv_i
+            elif (res.corners_local[per], res.corners_visitante[per]) != (cl_i, cv_i):
+                res.discrepancias.append(
+                    f"Discrepancia córneres {per}: scraper ({res.corners_local[per]}-{res.corners_visitante[per]}) vs Flashscore ({cl_i}-{cv_i})"
+                )
+
+        al, av = _par(pdict, "amarillas", "tarjetas_amarillas")
+        al_i, av_i = _int_o_none(al), _int_o_none(av)
+        if al_i is not None and av_i is not None:
+            if res.amarillas_local.get(per) is None:
+                res.amarillas_local[per] = al_i
+                res.amarillas_visitante[per] = av_i
+            elif (res.amarillas_local[per], res.amarillas_visitante[per]) != (al_i, av_i):
+                res.discrepancias.append(
+                    f"Discrepancia amarillas {per}: scraper ({res.amarillas_local[per]}-{res.amarillas_visitante[per]}) vs Flashscore ({al_i}-{av_i})"
+                )
+
+        # Conservar métricas detalladas para tabla/ledger/banco
+        per_stats: dict[str, Any] = {}
+        for k_stat in (
+            "goles", "corners", "xg", "xgot", "goles_evitados",
+            "remates_totales", "remates_puerta", "grandes_ocasiones",
+            "posesion_pct", "faltas", "amarillas", "fueras_de_juego",
+            "toques_area_rival", "xa_equipo", "rojas",
+        ):
+            vl, vv = _par(pdict, k_stat)
+            if vl is not None or vv is not None:
+                per_stats[k_stat] = [vl, vv]
+        if per_stats:
+            res.stats_periodos[per] = per_stats
+
+    rl_fs, rv_fs = _par(ft_d, "rojas", "tarjetas_rojas")
+    if _int_o_none(rl_fs) is not None and res.rojas_local is None:
+        res.rojas_local = _int_o_none(rl_fs)
+    if _int_o_none(rv_fs) is not None and res.rojas_visitante is None:
+        res.rojas_visitante = _int_o_none(rv_fs)
+
+    if isinstance(fs_payload.get("goles_eventos"), list) and not res.goles:
+        res.goles = list(fs_payload["goles_eventos"])
+    if not res.inicio_utc and fs_payload.get("inicio_utc"):
+        res.inicio_utc = str(fs_payload["inicio_utc"])
+
+    if scraper_vacio:
+        notas_txt = "; ".join(detalle_scraper_notas or [])
+        msg = (
+            "Discrepancia FotMob scraper vs Flashscore: el payload del scraper FotMob "
+            f"devolvió matriz vacía sin estadísticas de detalle FT/1T/2T ({notas_txt or 'filas vacías'}), "
+            "mientras Flashscore sí reportó marcador por mitad, córneres, tarjetas y xG/xGOT verificados."
+        )
+        res.discrepancias.append(msg)
+        res.notas.append(msg)
+        if "flashscore" not in (res.fuente or "").lower():
+            res.fuente = f"{res.fuente}+flashscore" if res.fuente else "flashscore"
+
+
+def _extraer_resultado_desde_matriz(
+    detalle: dict[str, Any],
+    consultado_en: str | None = None,
+    fuente: str = "fotmob",
+) -> ResultadoPartido:
+    res = ResultadoPartido(fuente=fuente, consultado_en=consultado_en or _ahora())
+    mat = detalle.get("matriz") if isinstance(detalle.get("matriz"), dict) else detalle
+    condicion = str(mat.get("condicion") or "casa").lower()
+    if mat.get("local") and mat.get("visitante"):
+        res.local = str(mat.get("local") or "")
+        res.visitante = str(mat.get("visitante") or "")
+        lado_l, lado_v = ("rival", "equipo") if condicion == "fuera" else ("equipo", "rival")
+    elif condicion == "fuera":
+        res.local = str(mat.get("rival") or "")
+        res.visitante = str(mat.get("equipo") or "")
+        lado_l, lado_v = "rival", "equipo"
+    else:
+        res.local = str(mat.get("equipo") or "")
+        res.visitante = str(mat.get("rival") or "")
+        lado_l, lado_v = "equipo", "rival"
+
+    marc = mat.get("marcador") or {}
+    geq = marc.get("equipo") if marc.get("equipo") is not None else mat.get("goles_equipo")
+    griv = marc.get("rival") if marc.get("rival") is not None else mat.get("goles_rival")
+    if geq is not None and griv is not None:
+        gl_raw = griv if lado_l == "rival" else geq
+        gv_raw = geq if lado_l == "rival" else griv
+        res.goles_local = _int_o_none(gl_raw)
+        res.goles_visitante = _int_o_none(gv_raw)
+
+    res.id_partido = str(mat.get("id_partido") or mat.get("id") or detalle.get("id_partido") or "") or None
+    res.competicion = mat.get("torneo") or mat.get("competicion") or detalle.get("competicion")
+    res.inicio_utc = str(mat.get("inicio_utc") or detalle.get("inicio_utc") or "") or None
+
+    st_raw = detalle.get("status") or mat.get("status")
+    if isinstance(st_raw, dict):
+        if st_raw.get("finished"):
+            res.estado = "finalizado"
+        elif st_raw.get("started"):
+            res.estado = "en_juego"
+        else:
+            res.estado = "no_finalizado"
+    elif mat.get("estado"):
+        res.estado = str(mat.get("estado"))
+    elif res.goles_local is not None and res.goles_visitante is not None:
+        res.estado = "finalizado"
+
+    periodos = mat.get("periodos") or {}
+    total_filas = 0
+    for per in ("FT", "1T", "2T"):
+        filas = (periodos.get(per) or {}).get("filas") or []
+        total_filas += len(filas)
+        fmap = {f.get("clave"): f for f in filas if isinstance(f, dict) and f.get("clave")}
+        fc = fmap.get("corners") or {}
+        if not fc.get("estimado"):
+            cl, cv = _int_o_none(fc.get(lado_l)), _int_o_none(fc.get(lado_v))
+            if cl is not None and cv is not None:
+                res.corners_local[per] = cl
+                res.corners_visitante[per] = cv
+        fa = fmap.get("tarjetas_amarillas") or {}
+        if not fa.get("estimado"):
+            al, av = _int_o_none(fa.get(lado_l)), _int_o_none(fa.get(lado_v))
+            if al is not None and av is not None:
+                res.amarillas_local[per] = al
+                res.amarillas_visitante[per] = av
+        if per == "FT":
+            fr = fmap.get("tarjetas_rojas") or {}
+            if not fr.get("estimado"):
+                rl, rv = _int_o_none(fr.get(lado_l)), _int_o_none(fr.get(lado_v))
+                if rl is not None and rv is not None:
+                    res.rojas_local = rl
+                    res.rojas_visitante = rv
+
+    g1t_l = mat.get("goles_local_1t")
+    g1t_v = mat.get("goles_visitante_1t")
+    if isinstance(mat.get("marcador_1t"), (list, tuple)) and len(mat["marcador_1t"]) >= 2:
+        g1t_l, g1t_v = mat["marcador_1t"][0], mat["marcador_1t"][1]
+    if _int_o_none(g1t_l) is not None and _int_o_none(g1t_v) is not None:
+        res.goles_local_1t = _int_o_none(g1t_l)
+        res.goles_visitante_1t = _int_o_none(g1t_v)
+
+    scraper_vacio = (total_filas == 0)
+    notas_mat = [str(n) for n in (mat.get("notas") or []) if n]
+    for n in notas_mat:
+        res.notas.append(n)
+    if scraper_vacio and res.goles_local is not None:
+        msg_empty = (
+            f"Scraper ({fuente}) sin filas de detalle FT/1T/2T para {res.local} vs {res.visitante} "
+            f"({res.goles_local}-{res.goles_visitante}): córneres, tarjetas y descanso quedan en None (sin_dato)."
+        )
+        res.notas.append(msg_empty)
+
+    fs_payload = (
+        detalle.get("flashscore_stats")
+        or detalle.get("flashscore")
+        or mat.get("flashscore_stats")
+        or mat.get("flashscore")
+    )
+    if isinstance(fs_payload, dict) and fs_payload:
+        _aplicar_flashscore_en_resultado(res, fs_payload, scraper_vacio=scraper_vacio, detalle_scraper_notas=notas_mat)
+
+    return res
+
+
 def extraer_resultado(detalle: dict[str, Any], consultado_en: str | None = None,
                       fuente: str = "fotmob") -> ResultadoPartido:
     """
@@ -492,6 +784,11 @@ def extraer_resultado(detalle: dict[str, Any], consultado_en: str | None = None,
     if not isinstance(detalle, dict):
         res.notas.append("respuesta vacía: no verificable")
         return res
+
+    if "header" not in detalle and any(
+        k in detalle for k in ("matriz", "periodos", "goles_equipo", "marcador", "flashscore_stats", "flashscore")
+    ):
+        return _extraer_resultado_desde_matriz(detalle, consultado_en=consultado_en, fuente=fuente)
 
     header = detalle.get("header") or {}
     equipos = header.get("teams") or []
@@ -606,6 +903,9 @@ def extraer_resultado(detalle: dict[str, Any], consultado_en: str | None = None,
                  if v is None]
     if faltantes:
         res.notas.append(f"sin dato en la fuente para: {', '.join(faltantes)}")
+    fs_extra = detalle.get("flashscore_stats") or detalle.get("flashscore")
+    if isinstance(fs_extra, dict) and fs_extra:
+        _aplicar_flashscore_en_resultado(res, fs_extra, scraper_vacio=(not periodos))
     return res
 
 
@@ -905,10 +1205,15 @@ def liquidar(seleccion: dict[str, Any], resultado: ResultadoPartido,
     # ── EQUIPO QUE ANOTA EL GOL 1 ─────────────────────────────────────────
     if evento.startswith("primer_gol_"):
         if evento == "primer_gol_ninguno":
-            return binario(len(resultado.goles) == 0,
-                           f"{len(resultado.goles)} goles: {'ninguno' if not resultado.goles else 'sí hubo'}")
+            if resultado.goles:
+                return binario(False, f"{len(resultado.goles)} goles: sí hubo")
+            if total_ft == 0:
+                return binario(True, "0 goles: ninguno")
+            return no_verificable("marcador con goles sin cronología minuto a minuto en la fuente")
         if not resultado.goles:
-            return binario(False, "no hubo goles: ningún equipo anotó primero")
+            if total_ft == 0:
+                return binario(False, "no hubo goles: ningún equipo anotó primero")
+            return no_verificable(f"marcador {gl}-{gv} sin cronología/minuto del primer gol en la fuente")
         primero = resultado.goles[0]
         autor = _clave_equipo(resultado.local if primero["equipo"] == "local"
                               else resultado.visitante)
@@ -996,6 +1301,23 @@ def liquidar(seleccion: dict[str, Any], resultado: ResultadoPartido,
         return binario(t1 > 0 and t2 > 0, f"1T {t1} goles / 2T {t2} goles")
 
     # ── CÓRNERES ──────────────────────────────────────────────────────────
+    if evento.startswith(("corners_over_", "corners_under_")) and equipo_evento:
+        linea_c = _interpretar_linea(evento)
+        valor = _corners(resultado, equipo_evento, periodo)
+        if valor is None or linea_c is None:
+            return no_verificable(f"sin córneres de {equipo_evento} en {periodo}")
+        if evento.startswith("corners_over_"):
+            return binario(valor > linea_c, f"{equipo_evento} {valor} córneres vs más de {linea_c}")
+        return binario(valor < linea_c, f"{equipo_evento} {valor} córneres vs menos de {linea_c}")
+    if evento.startswith(("local_corners_", "visitante_corners_")):
+        linea_c = _interpretar_linea(evento)
+        eq_c = resultado.local if evento.startswith("local_corners_") else resultado.visitante
+        valor = _corners(resultado, eq_c, periodo)
+        if valor is None or linea_c is None:
+            return no_verificable(f"sin córneres de {eq_c} en {periodo}")
+        if "_over_" in evento:
+            return binario(valor > linea_c, f"{eq_c} {valor} córneres vs más de {linea_c}")
+        return binario(valor < linea_c, f"{eq_c} {valor} córneres vs menos de {linea_c}")
     if evento.startswith("corners_over_") or evento.startswith("corners_under_"):
         linea_c = _interpretar_linea(evento)
         c_local = resultado.corners_local.get(periodo)
@@ -1006,14 +1328,6 @@ def liquidar(seleccion: dict[str, Any], resultado: ResultadoPartido,
         if evento.startswith("corners_over_"):
             return binario(total_c > linea_c, f"{c_local}+{c_visit}={total_c} vs más de {linea_c}")
         return binario(total_c < linea_c, f"{c_local}+{c_visit}={total_c} vs menos de {linea_c}")
-    if evento.startswith(("local_corners_", "visitante_corners_")):
-        linea_c = _interpretar_linea(evento)
-        valor = _corners(resultado, equipo_evento, periodo)
-        if valor is None or linea_c is None:
-            return no_verificable(f"sin córneres de {equipo_evento} en {periodo}")
-        if "_over_" in evento:
-            return binario(valor > linea_c, f"{equipo_evento} {valor} córneres vs más de {linea_c}")
-        return binario(valor < linea_c, f"{equipo_evento} {valor} córneres vs menos de {linea_c}")
 
     # ── TARJETAS ──────────────────────────────────────────────────────────
     if evento.startswith(("amarillas_over_", "amarillas_under_")):
@@ -2123,6 +2437,10 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
             faltantes.append(f"{clave}: resultado {resultado.estado}")
 
     publicadas = [e for e in evaluaciones]
+    for _clave_p, _r in resultados.items():
+        for _disc in getattr(_r, "discrepancias", []) or []:
+            limitaciones.append(f"[{_clave_p}] {_disc}")
+
     norm_filtro = normalizar_filtro_equipos(filtro_equipos)
     if norm_filtro:
         publicadas = [e for e in publicadas if coincide_evaluacion_filtro(e, norm_filtro)]
@@ -3081,6 +3399,281 @@ def _enviar_imagen(bot_inst: Any, destino: Any, ruta: str, caption: str = "") ->
         return False
     finally:
         bot_inst.parse_mode = original
+
+
+def validar_corte_prepartido_sin_fuga(
+    generado_en: str | None,
+    inicio_utc: str | None,
+    partidos_historicos: list[dict[str, Any]] | None = None,
+    h2h: list[dict[str, Any]] | None = None,
+    fecha_objetivo: str | None = None,
+    id_partido_objetivo: str | int | None = None,
+) -> dict[str, Any]:
+    """
+    Verifica estrictamente (regla operativa, sin validación cronológica de umbrales)
+    que el pronóstico fue congelado antes del inicio del partido y que ningún partido
+    de fecha >= fecha_objetivo o con el mismo id_partido se filtró en las ventanas históricas/H2H.
+    """
+    t_gen = _parsear_momento(generado_en)
+    t_ini = _parsear_momento(inicio_utc)
+    motivos: list[str] = []
+    margen_h: float | None = None
+    pre_kickoff_ok = False
+    if t_gen is None or t_ini is None:
+        motivos.append("Falta timestamp verificable de generación o inicio UTC.")
+    else:
+        margen_h = round((t_ini - t_gen).total_seconds() / 3600.0, 4)
+        pre_kickoff_ok = t_gen < t_ini
+        if not pre_kickoff_ok:
+            motivos.append(
+                f"Corte posterior o simultáneo al inicio: generado={t_gen.isoformat()} >= inicio={t_ini.isoformat()}"
+            )
+
+    fecha_ref = str(fecha_objetivo or (t_ini.strftime("%Y-%m-%d") if t_ini else "") or "")[:10]
+    id_obj = str(id_partido_objetivo) if id_partido_objetivo is not None else None
+    fugas: list[str] = []
+
+    for origen, lista in (("historico", partidos_historicos or []), ("h2h", h2h or [])):
+        for idx, p in enumerate(lista):
+            if not isinstance(p, dict):
+                continue
+            p_id = str(p.get("id_partido") or p.get("id") or "")
+            p_fecha = str(p.get("fecha") or "")[:10]
+            if id_obj and p_id and p_id == id_obj:
+                fugas.append(f"{origen}[{idx}] coincide con id_partido objetivo ({p_id})")
+            if fecha_ref and p_fecha and len(p_fecha) == 10 and p_fecha >= fecha_ref:
+                fugas.append(f"{origen}[{idx}] fecha={p_fecha} >= objetivo={fecha_ref}")
+
+    if fugas:
+        motivos.extend(fugas)
+
+    return {
+        "ok": pre_kickoff_ok and not fugas,
+        "pre_kickoff_verificado": pre_kickoff_ok,
+        "fuga_historica": bool(fugas),
+        "t_generado_utc": t_gen.isoformat() if t_gen else None,
+        "t_inicio_utc": t_ini.isoformat() if t_ini else None,
+        "margen_horas": margen_h,
+        "fecha_objetivo": fecha_ref or None,
+        "fugas_detalle": fugas,
+        "motivos": motivos,
+    }
+
+
+def liquidar_todas_lineas_fixture(
+    analisis: dict[str, Any],
+    resultado: ResultadoPartido,
+    id_trabajo: str = "FIXTURE",
+) -> dict[str, Any]:
+    """
+    Toma el resultado de `motor_mercados.analizar(...)` (y/o documento de pronóstico)
+    y liquida TODAS sus líneas publicadas (top5, ticket competitivo y selecciones publicadas),
+    sin omitir líneas y sin inventar datos faltantes.
+    """
+    vistas: dict[str, dict[str, Any]] = {}
+    fuentes_sel: list[tuple[str, list[dict[str, Any]]]] = [
+        ("top5", list(analisis.get("top5") or [])),
+        ("ticket", list(analisis.get("opciones_ticket") or analisis.get("ticket") or [])),
+        ("publicadas", list(analisis.get("selecciones_publicadas") or [])),
+    ]
+    # Incluir 1X2/DC/valor explícitos si vienen aparte
+    for k_extra in ("valor_1x2_dc", "selecciones_filtradas", "selecciones"):
+        extra = analisis.get(k_extra)
+        if isinstance(extra, list):
+            fuentes_sel.append((k_extra, extra))
+
+    for origen_grp, lista in fuentes_sel:
+        for s in lista:
+            if not isinstance(s, dict) or not s.get("evento"):
+                continue
+            prob_raw = s.get("probabilidad_calibrada")
+            if prob_raw is None:
+                prob_raw = s.get("probabilidad")
+            if prob_raw is None and isinstance(s.get("probabilidad_pct"), (int, float)):
+                prob_raw = float(s["probabilidad_pct"]) / 100.0
+            # Si viene de selecciones_filtradas sin filtro de ticket, incluir solo >=70% salvo ya en ticket/top5
+            if origen_grp in ("selecciones_filtradas", "selecciones"):
+                if isinstance(prob_raw, (int, float)) and float(prob_raw) < 0.70 and not s.get("publicada"):
+                    continue
+            sel_norm = dict(s)
+            if isinstance(prob_raw, (int, float)):
+                sel_norm["probabilidad"] = float(prob_raw)
+            if not sel_norm.get("mercado"):
+                sel_norm["mercado"] = sel_norm.get("categoria") or "Mercado"
+            if not sel_norm.get("etiqueta"):
+                sel_norm["etiqueta"] = sel_norm.get("nombre") or sel_norm["evento"]
+            k = clave_seleccion(
+                str(sel_norm.get("mercado") or ""),
+                str(sel_norm.get("evento") or ""),
+                str(sel_norm.get("periodo") or "FT"),
+                sel_norm.get("equipo"),
+                sel_norm.get("linea"),
+            )
+            if k not in vistas:
+                sel_norm["_origen_grupo"] = origen_grp
+                vistas[k] = sel_norm
+            else:
+                grp_prev = str(vistas[k].get("_origen_grupo") or "")
+                if origen_grp not in grp_prev.split(","):
+                    vistas[k]["_origen_grupo"] = f"{grp_prev},{origen_grp}" if grp_prev else origen_grp
+
+    filas: list[dict[str, Any]] = []
+    evals: list[Evaluacion] = []
+    for _k, s in vistas.items():
+        ev = liquidar(s, resultado, id_trabajo=id_trabajo)
+        evals.append(ev)
+        filas.append({
+            "grupo": s.get("_origen_grupo", ""),
+            "linea": ev.etiqueta or ev.evento,
+            "mercado": ev.mercado,
+            "evento": ev.evento,
+            "periodo": ev.periodo,
+            "probabilidad_publicada": ev.probabilidad_original,
+            "probabilidad_pct": round(ev.probabilidad_original * 100.0, 2) if isinstance(ev.probabilidad_original, (int, float)) else None,
+            "resultado_real": ev.detalle,
+            "estado_liquidacion": ev.estado_liquidacion,
+            "evento_ocurrio": ev.evento_ocurrio,
+        })
+
+    n_gan = sum(1 for e in evals if e.estado_liquidacion == "ganada")
+    n_per = sum(1 for e in evals if e.estado_liquidacion == "perdida")
+    n_dev = sum(1 for e in evals if e.estado_liquidacion == "devolucion")
+    n_nv = sum(1 for e in evals if e.estado_liquidacion == "no_verificable")
+    n_regla = sum(1 for e in evals if e.estado_liquidacion == "regla_no_definida")
+    n_eval = n_gan + n_per
+    brier = brier_binario(evals)
+    return {
+        "partido": f"{resultado.local} vs {resultado.visitante}",
+        "id_partido": resultado.id_partido,
+        "marcador_ft": [resultado.goles_local, resultado.goles_visitante],
+        "marcador_1t": [resultado.goles_local_1t, resultado.goles_visitante_1t],
+        "lineas": filas,
+        "evaluaciones": [e.a_dict() for e in evals],
+        "discrepancias_scraper": list(getattr(resultado, "discrepancias", []) or []),
+        "resumen": {
+            "n_publicadas": len(evals),
+            "n_evaluables": n_eval,
+            "aciertos": n_gan,
+            "fallos": n_per,
+            "tasa_acierto": round(n_gan / n_eval, 4) if n_eval else None,
+            "devoluciones": n_dev,
+            "no_verificables": n_nv,
+            "regla_no_definida": n_regla,
+            "brier": brier.get("brier"),
+        },
+    }
+
+
+def _hash_canonico_oos(payload_sin_hash: dict[str, Any]) -> str:
+    crudo = json.dumps(payload_sin_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
+
+
+def cargar_ledger_oos(ruta_ledger: str | None = None) -> list[dict[str, Any]]:
+    ruta = ruta_ledger or LEDGER_OOS_PATH
+    if not os.path.exists(ruta):
+        return []
+    registros: list[dict[str, Any]] = []
+    with open(ruta, encoding="utf-8") as f:
+        for i, linea in enumerate(f, 1):
+            s = linea.strip()
+            if not s:
+                continue
+            try:
+                registros.append(json.loads(s))
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Línea corrupta en ledger OOS (línea {i}): {e}") from e
+    return registros
+
+
+def verificar_cadena_ledger_oos(ruta_ledger: str | None = None) -> dict[str, Any]:
+    """Verifica secuencialmente prev_sha256, índice monotónico y SHA256 de cada entrada."""
+    ruta = ruta_ledger or LEDGER_OOS_PATH
+    registros = cargar_ledger_oos(ruta)
+    errores: list[str] = []
+    prev_esperado = "0" * 64
+    for idx_esp, reg in enumerate(registros):
+        if reg.get("indice") != idx_esp:
+            errores.append(f"Índice esperado {idx_esp}, encontrado {reg.get('indice')}")
+        if reg.get("prev_sha256") != prev_esperado:
+            errores.append(
+                f"Entrada {idx_esp}: prev_sha256={reg.get('prev_sha256')} != esperado={prev_esperado}"
+            )
+        hash_reg = reg.get("sha256")
+        sin_hash = {k: v for k, v in reg.items() if k != "sha256"}
+        recomp = _hash_canonico_oos(sin_hash)
+        if hash_reg != recomp:
+            errores.append(f"Entrada {idx_esp}: sha256 adulterado ({hash_reg} != {recomp})")
+        if reg.get("retroalimenta_modelo") is not False:
+            errores.append(f"Entrada {idx_esp}: retroalimenta_modelo debe ser False")
+        prev_esperado = str(hash_reg or "")
+    return {
+        "ok": len(errores) == 0,
+        "ruta": ruta,
+        "entradas": len(registros),
+        "ultimo_sha256": prev_esperado if registros else None,
+        "errores": errores,
+    }
+
+
+def registrar_en_ledger_oos(
+    registro: dict[str, Any],
+    ruta_ledger: str | None = None,
+) -> dict[str, Any]:
+    """
+    Añade de forma estrictamente append-only e idempotente una liquidación out-of-sample
+    al ledger SHA256 (`retroalimenta_modelo=False`). Valida toda la cadena previa antes de escribir.
+    """
+    ruta = ruta_ledger or LEDGER_OOS_PATH
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    estado_previo = verificar_cadena_ledger_oos(ruta)
+    if not estado_previo["ok"]:
+        raise ValueError(f"Integridad comprometida en ledger OOS: {estado_previo['errores']}")
+
+    existentes = cargar_ledger_oos(ruta)
+    id_part = str(registro.get("id_partido") or "")
+    fecha = str(registro.get("fecha") or "")
+    partido = str(registro.get("partido") or "")
+    for ex in existentes:
+        if id_part and str(ex.get("id_partido") or "") == id_part and str(ex.get("fecha") or "") == fecha:
+            return {
+                "registrado": False,
+                "ya_existia": True,
+                "indice": ex.get("indice"),
+                "sha256": ex.get("sha256"),
+                "ruta": ruta,
+            }
+        if not id_part and ex.get("partido") == partido and str(ex.get("fecha") or "") == fecha:
+            return {
+                "registrado": False,
+                "ya_existia": True,
+                "indice": ex.get("indice"),
+                "sha256": ex.get("sha256"),
+                "ruta": ruta,
+            }
+
+    prev_hash = existentes[-1]["sha256"] if existentes else ("0" * 64)
+    nuevo = {
+        "version": 1,
+        "indice": len(existentes),
+        "registrado_en_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        **{k: v for k, v in registro.items() if k not in ("version", "indice", "prev_sha256", "sha256", "retroalimenta_modelo")},
+        "retroalimenta_modelo": False,
+        "prev_sha256": prev_hash,
+    }
+    nuevo["sha256"] = _hash_canonico_oos(nuevo)
+
+    with open(ruta, "a", encoding="utf-8") as f:
+        f.write(json.dumps(nuevo, ensure_ascii=False, sort_keys=True) + "\n")
+
+    return {
+        "registrado": True,
+        "ya_existia": False,
+        "indice": nuevo["indice"],
+        "sha256": nuevo["sha256"],
+        "prev_sha256": nuevo["prev_sha256"],
+        "ruta": ruta,
+    }
 
 
 def tabla_ascii_minimalista(columnas: list[str], filas: list[list[str]]) -> str:

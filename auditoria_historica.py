@@ -1935,15 +1935,51 @@ def reconstruir_marcador_mitades_partido(
         return None, None, None, None, False, "sin_dato"
 
 
+_METRICAS_XG_SIN_SINTETICO = frozenset({
+    "xg", "xgot", "xg_juego_abierto", "xg_balon_parado",
+    "xg_sin_penalti", "xgot_enfrentado", "xa_equipo", "goles_evitados",
+})
+
+
+def _es_procedencia_sintetica(fila: dict[str, Any] | None, procedencia_celda: str = "") -> bool:
+    f = fila or {}
+    if bool(f.get("estimado")):
+        return True
+    s = f"{procedencia_celda} {f.get('fuente', '')}".lower()
+    return any(tok in s for tok in ("estimacion_modelo", "sintetic", "reconstruid", "estimado"))
+
+
+def _es_tag_flashscore(tag: str) -> bool:
+    s = str(tag or "").strip().lower()
+    if not s or _es_procedencia_sintetica(None, s):
+        return False
+    if "flashscore" in s:
+        return True
+    return bool(re.search(r"(?:^|[^a-z0-9])fs(?:[^a-z0-9]|$)", s))
+
+
+def _es_tag_fotmob(tag: str) -> bool:
+    s = str(tag or "").strip().lower()
+    if not s or _es_procedencia_sintetica(None, s):
+        return False
+    if "fotmob" in s:
+        return True
+    return bool(re.search(r"(?:^|[^a-z0-9])fm(?:[^a-z0-9]|$)", s))
+
+
 def _formatear_valor_metrica_45(
     clave: str,
     valor: Any,
     filas_map: dict[str, dict[str, Any]] | None = None,
     lado: str = "equipo",
     fuente_partido: str = "",
+    procedencia_celda: str = "",
 ) -> str:
     """Formatea limpiamente un valor según la especificación de la métrica y formato compuesto c/t (pct%)."""
     if valor is None:
+        return "sin_dato"
+    fila_actual = (filas_map or {}).get(clave) if filas_map else None
+    if clave in _METRICAS_XG_SIN_SINTETICO and _es_procedencia_sintetica(fila_actual, procedencia_celda):
         return "sin_dato"
 
     # Detector de métricas no cubiertas según proveedor:
@@ -2084,9 +2120,15 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
             str_1t = "sin_dato"
             str_2t = "sin_dato"
 
-        xg_l = f_ft.get("xg", {}).get(lado_l)
-        xg_v = f_ft.get("xg", {}).get(lado_v)
-        str_xg = f"{float(xg_l or 0):.2f} vs {float(xg_v or 0):.2f}"
+        proc_ft = (p.get("procedencia") or {}).get("FT") or {}
+        fila_xg_ft = f_ft.get("xg") or {}
+        xg_l = fila_xg_ft.get(lado_l)
+        xg_v = fila_xg_ft.get(lado_v)
+        proc_xg_l = str((proc_ft.get(lado_l) or {}).get("xg") or "") if isinstance(proc_ft, dict) else ""
+        proc_xg_v = str((proc_ft.get(lado_v) or {}).get("xg") or "") if isinstance(proc_ft, dict) else ""
+        s_xg_l = "sin_dato" if (xg_l is None or _es_procedencia_sintetica(fila_xg_ft, proc_xg_l)) else f"{float(xg_l):.2f}"
+        s_xg_v = "sin_dato" if (xg_v is None or _es_procedencia_sintetica(fila_xg_ft, proc_xg_v)) else f"{float(xg_v):.2f}"
+        str_xg = f"{s_xg_l} vs {s_xg_v}"
 
         fecha = str(p.get("fecha") or "N/D")[:10]
         torneo = str(p.get("torneo") or "Oficial")
@@ -2094,9 +2136,8 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
         fs = p.get("fuente_secundaria") or {}
         id_fs = str(fs.get("id_flashscore") or "N/D")
 
-        proc_ft = (p.get("procedencia") or {}).get("FT") or {}
         es_fm = (id_fm != "N/D" and bool(id_fm))
-        es_fs = (id_fs != "N/D" and bool(id_fs) and bool(fs.get("pareado") or "flashscore" in str(p.get("fuente") or "").lower()))
+        es_fs = (id_fs != "N/D" and bool(id_fs) and (fs.get("pareado") is not False))
 
         celdas_fs = 0
         celdas_fm = 0
@@ -2106,10 +2147,9 @@ def _construir_tabla_resumen_inicial(partidos: list[dict[str, Any]]) -> list[str
                 d_lado = p_dict.get(lado_k) if isinstance(p_dict, dict) else {}
                 if isinstance(d_lado, dict):
                     for v_src in d_lado.values():
-                        s_src = str(v_src).lower()
-                        if "flashscore" in s_src or s_src == "fs":
+                        if es_fs and _es_tag_flashscore(str(v_src)):
                             celdas_fs += 1
-                        elif "fotmob" in s_src or s_src == "fm":
+                        elif _es_tag_fotmob(str(v_src)):
                             celdas_fm += 1
 
         if celdas_fs > 0 and celdas_fm > 0:
@@ -2218,41 +2258,49 @@ def formatear_matriz_45_partido(
         lineas.append("|---|---------------------------|---------------|----------------|---------------|----------------|---------------|----------------|--------|")
 
         metricas_cat = [m for m in LAS_45_METRICAS_OFICIALES if m[3] == cat_id]
+        fuente_partido_base = str(partido.get("fuente") or ("fotmob" if (id_fm != "N/D" and id_fm) else "flashscore"))
+        fs_pareado_valido = (id_fs != "N/D" and bool(id_fs) and (fs.get("pareado") is not False))
+
         for num, clave, etiqueta, _cat in metricas_cat:
+            p_l_ft = str((proc_ft.get(lado_local) or {}).get(clave) or "")
+            p_v_ft = str((proc_ft.get(lado_visita) or {}).get(clave) or "")
+            p_l_1t = str((proc_1t.get(lado_local) or {}).get(clave) or "")
+            p_v_1t = str((proc_1t.get(lado_visita) or {}).get(clave) or "")
+            p_l_2t = str((proc_2t.get(lado_local) or {}).get(clave) or "")
+            p_v_2t = str((proc_2t.get(lado_visita) or {}).get(clave) or "")
+
             # FT
             fila_ft = f_ft.get(clave) or {}
             val_l_ft = fila_ft.get(lado_local)
             val_v_ft = fila_ft.get(lado_visita)
-            str_l_ft = _formatear_valor_metrica_45(clave, val_l_ft, f_ft, lado_local)
-            str_v_ft = _formatear_valor_metrica_45(clave, val_v_ft, f_ft, lado_visita)
+            str_l_ft = _formatear_valor_metrica_45(clave, val_l_ft, f_ft, lado_local, fuente_partido=p_l_ft or fuente_partido_base, procedencia_celda=p_l_ft)
+            str_v_ft = _formatear_valor_metrica_45(clave, val_v_ft, f_ft, lado_visita, fuente_partido=p_v_ft or fuente_partido_base, procedencia_celda=p_v_ft)
 
             # 1T
             fila_1t = f_1t.get(clave) or {}
             val_l_1t = fila_1t.get(lado_local)
             val_v_1t = fila_1t.get(lado_visita)
-            str_l_1t = _formatear_valor_metrica_45(clave, val_l_1t, f_1t, lado_local)
-            str_v_1t = _formatear_valor_metrica_45(clave, val_v_1t, f_1t, lado_visita)
+            str_l_1t = _formatear_valor_metrica_45(clave, val_l_1t, f_1t, lado_local, fuente_partido=p_l_1t or fuente_partido_base, procedencia_celda=p_l_1t)
+            str_v_1t = _formatear_valor_metrica_45(clave, val_v_1t, f_1t, lado_visita, fuente_partido=p_v_1t or fuente_partido_base, procedencia_celda=p_v_1t)
 
             # 2T
             fila_2t = f_2t.get(clave) or {}
             val_l_2t = fila_2t.get(lado_local)
             val_v_2t = fila_2t.get(lado_visita)
-            str_l_2t = _formatear_valor_metrica_45(clave, val_l_2t, f_2t, lado_local)
-            str_v_2t = _formatear_valor_metrica_45(clave, val_v_2t, f_2t, lado_visita)
+            str_l_2t = _formatear_valor_metrica_45(clave, val_l_2t, f_2t, lado_local, fuente_partido=p_l_2t or fuente_partido_base, procedencia_celda=p_l_2t)
+            str_v_2t = _formatear_valor_metrica_45(clave, val_v_2t, f_2t, lado_visita, fuente_partido=p_v_2t or fuente_partido_base, procedencia_celda=p_v_2t)
 
-            # Fuente
-            p_ft = (proc_ft.get("equipo", {}).get(clave)
-                    or proc_ft.get("rival", {}).get(clave) or "")
-            p_1t_val = (proc_1t.get("equipo", {}).get(clave) or proc_1t.get("rival", {}).get(clave) or "")
-            p_2t_val = (proc_2t.get("equipo", {}).get(clave) or proc_2t.get("rival", {}).get(clave) or "")
-            src_str_row = f"{p_ft} {p_1t_val} {p_2t_val}".lower()
-            row_has_fs = ("flashscore" in src_str_row or " fs" in src_str_row)
-            row_has_fm = ("fotmob" in src_str_row or " fm" in src_str_row)
+            # Fuente real de la fila
+            tags_fila = [p_l_ft, p_v_ft, p_l_1t, p_v_1t, p_l_2t, p_v_2t]
+            src_str_row = " ".join(t for t in tags_fila if t).lower()
+            row_has_fs = fs_pareado_valido and any(_es_tag_flashscore(t) for t in tags_fila)
+            row_has_fm = any(_es_tag_fotmob(t) for t in tags_fila)
+            row_solo_est = bool(tags_fila and any(_es_procedencia_sintetica(fila_ft, t) for t in tags_fila)) and not row_has_fm and not row_has_fs
 
             todos_sin_dato = all(s == "sin_dato" for s in [str_l_ft, str_v_ft, str_l_1t, str_v_1t, str_l_2t, str_v_2t])
             if todos_sin_dato:
                 fuente_txt = "sin_dato"
-            elif clave == "saques_puerta" and ("est" in str(p_ft).lower() or fila_ft.get("estimado")):
+            elif row_solo_est or (clave == "saques_puerta" and ("est" in src_str_row or fila_ft.get("estimado"))):
                 fuente_txt = "Est."
             elif id_fm == "N/D" or not id_fm:
                 fuente_txt = "Flashscore" if (id_fs != "N/D" and bool(id_fs)) else "sin_dato"
@@ -2262,7 +2310,7 @@ def formatear_matriz_45_partido(
                 fuente_txt = "Flashscore"
             elif row_has_fm and not row_has_fs:
                 fuente_txt = "FotMob"
-            elif id_fs == "N/D" or not fs.get("pareado"):
+            elif not fs_pareado_valido:
                 fuente_txt = "FotMob"
             else:
                 fuente_txt = "FotMob"
