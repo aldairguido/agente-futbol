@@ -165,7 +165,7 @@ def test_5_filtro_lineas_triviales_top5():
     """Problema 5: Excluye del Top 5 Under en líneas altas con cuota ínfima sin cuota real de mercado."""
     sels = [
         {"mercado": "Doble oportunidad", "evento": "dc_1x", "etiqueta": "1X (Londrina o empate)", "periodo": "FT", "probabilidad": 0.72, "estado": "mantiene"},
-        {"mercado": "Total de goles", "evento": "under_3.5", "etiqueta": "Menos de 3.5 goles", "periodo": "FT", "linea": 3.5, "probabilidad": 0.86, "estado": "mantiene"},
+        {"mercado": "Total de goles", "evento": "under_3.5", "etiqueta": "Menos de 3.5 goles", "periodo": "FT", "linea": 3.5, "probabilidad": 0.89, "estado": "mantiene"},
         {"mercado": "Total de goles", "evento": "under_4.5", "etiqueta": "Menos de 4.5 goles", "periodo": "FT", "linea": 4.5, "probabilidad": 0.95, "estado": "mantiene"},
         {"mercado": "Total de tarjetas", "evento": "amarillas_under_6.5", "etiqueta": "Menos de 6.5 tarjetas", "periodo": "FT", "linea": 6.5, "probabilidad": 0.88, "estado": "mantiene"},
         {"mercado": "Goles 2T", "evento": "goles_2t_over_0.5", "etiqueta": "Goles 2T: +0.5 Goles", "periodo": "2T", "probabilidad": 0.74, "estado": "mantiene"},
@@ -341,11 +341,11 @@ def test_10_calibracion_real_corners_poisson_cero_desviacion():
 
 
 def test_11_umbrales_yaml_centralizados():
-    """Punto 4: k_min_cronologia (10) y min_cuota_justa (1.25) se leen de umbrales_cobertura.yaml."""
+    """Punto 4: k_min_cronologia (10) y min_cuota_justa (1.14) se leen de umbrales_cobertura.yaml."""
     from decision_cobertura import cargar_umbrales_cobertura
     u = cargar_umbrales_cobertura()
     assert u.get("min_partidos_cronologia_verificada") == 10
-    assert u.get("min_cuota_justa_no_trivial_top5") == 1.25
+    assert u.get("min_cuota_justa_no_trivial_top5") == 1.14
     assert u.get("max_desvio_frecuencia_observada_pts") == 10.0
     assert u.get("bloqueo_recorte_independiente_calibracion") is True
 

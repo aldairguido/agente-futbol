@@ -4809,7 +4809,7 @@ def _resolver_ecuaciones_periodo(
             if (
                 tot is not None and tot > 0 and pct is not None
                 and comp is not None
-                and ((pct < 99.5 and abs(comp - tot) < 0.5) or comp > tot)
+                and ((pct < 100.0 and abs(comp - tot) < 0.5) or comp > tot)
             ):
                 comp = float(round((tot * pct) / 100.0))
                 d[k_comp] = comp

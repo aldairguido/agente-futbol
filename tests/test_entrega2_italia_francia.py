@@ -487,7 +487,7 @@ def test_fase6_micropatrones_sinteticos_mp03_mp04_y_manejo_none() -> None:
 def test_fase7_umbrales_cobertura_yaml_regla_operativa() -> None:
     umb = dc.cargar_umbrales_cobertura()
     assert umb["max_desvio_frecuencia_observada_pts"] == 10.0
-    assert umb["min_cuota_justa_no_trivial_top5"] == 1.25
+    assert umb["min_cuota_justa_no_trivial_top5"] == 1.14
     assert umb["peso_prob_modelo_gatekeeper"] == 0.60
     assert umb["peso_tasa_empirica_gatekeeper"] == 0.40
     assert umb["umbral_promocion_empirica_top5"] == 0.85
@@ -514,18 +514,22 @@ def test_fase7_gatekeeper_integracion_italia_francia_y_turquia_belgica() -> None
     etiquetas_if = [t["etiqueta"].lower() for t in top5_if] + [s.etiqueta.lower() for s in s1_if]
     assert not any("x2" in et for et in etiquetas_if)
     assert not any("france" in et and "3.5" in et and "córner" in et for et in etiquetas_if)
-    assert any("-11.5 córn." in t["etiqueta"].lower() and t.get("respaldo_micropatron") for t in top5_if)
+    etq_top5_if = [t["etiqueta"].lower() for t in top5_if]
+    assert any("+1.5 goles" in et and "ft" in et for et in etq_top5_if), f"Falta +1.5 Goles FT en Top 5: {etq_top5_if}"
+    assert any("-4.5 goles" in et and "ft" in et for et in etq_top5_if), f"Falta -4.5 Goles FT en Top 5: {etq_top5_if}"
+    assert any(("-12.5 córn." in t["etiqueta"].lower() or "-11.5 córn." in t["etiqueta"].lower()) and t.get("respaldo_micropatron") for t in top5_if)
     for item in top5_if:
         assert item["score_gatekeeper"] is not None
         assert float(item["probabilidad"]) >= 0.70
 
-    # 2. Regresion positiva: Turquia vs Belgica mantiene ganador y DNB/corners validos
+    # 2. Regresion positiva: Turquia vs Belgica mantiene DNB/ganador/X2 y corners validos
     an_tb = mm.analizar(
         docs["turkey"], docs["belgium"], "Turkey", "Belgium", competicion="UEFA Nations League"
     )
     top5_tb, s1_tb, _ = sm.obtener_top5_y_seccion1_filtrados(an_tb, an_tb.metadatos)
     assert len(top5_tb) >= 3
-    assert "belgium gana" in top5_tb[0]["etiqueta"].lower()
+    assert "belgium" in top5_tb[0]["etiqueta"].lower()
+    assert any("belgium gana" in t["etiqueta"].lower() for t in top5_tb)
     assert len(s1_tb) >= 4
 
 
@@ -638,3 +642,90 @@ def test_fase7_gatekeeper_vetos_y_score_compuesto_sintetico() -> None:
     assert len(top5) == 2
     assert all(x["respaldo_micropatron"] is True for x in top5)
     assert all(x["frecuencia_observada"] is not None and float(x["frecuencia_observada"]) >= 0.85 for x in top5)
+
+
+def test_fase7_top5_permite_goles_complementarios_sin_duplicar_redundantes() -> None:
+    s_o15_ft = mm.Seleccion("total_goles", "Total de goles", "over_1.5", "más de 1.5 goles", "FT", None, 1.5, 0.809, estado="mantiene")
+    s_o25_ft = mm.Seleccion("total_goles", "Total de goles", "over_2.5", "más de 2.5 goles", "FT", None, 2.5, 0.720, estado="mantiene")
+    s_u45_ft = mm.Seleccion("total_goles", "Total de goles", "under_4.5", "menos de 4.5 goles", "FT", None, 4.5, 0.798, estado="mantiene")
+    s_o05_2t = mm.Seleccion("total_goles", "Total de goles", "gol_2t", "Al menos un gol en el 2T", "2T", None, 0.5, 0.840, estado="mantiene")
+    s_u125_c = mm.Seleccion("total_corners", "Total de tiros de esquina", "corners_under_12.5", "menos de 12.5 córneres", "FT", None, 12.5, 0.844, estado="mantiene")
+
+    top5 = mm.seleccionar_top_5_jugadas_recomendadas(
+        [s_o15_ft, s_o25_ft, s_u45_ft, s_o05_2t, s_u125_c],
+        motor=None,
+        eq_l="Italy",
+        eq_v="France",
+    )
+    etqs = [x["etiqueta"].lower() for x in top5]
+    assert any("+1.5 goles" in e and "(ft)" in e for e in etqs)
+    assert any("-4.5 goles" in e and "(ft)" in e for e in etqs)
+    assert any("2t" in e and "+0.5 goles" in e for e in etqs)
+    assert any("-12.5 córn." in e for e in etqs)
+    # No debe duplicar +1.5 FT y +2.5 FT (mismo periodo y mismo sentido over)
+    assert not any("+2.5 goles" in e for e in etqs)
+
+
+def test_fase3_formato_pases_tercio_final_entradas_y_pases_ratio_limpios() -> None:
+    # 1. #10 pases_ratio: calcula completados cuando falta y nunca imprime total/total con pct < 100%
+    fm_sin_comp = {
+        "pases_totales": {"clave": "pases_totales", "equipo": 400.0},
+        "pases_precision_pct": {"clave": "pases_precision_pct", "equipo": 85.0},
+        "pases_ratio": {"clave": "pases_ratio", "equipo": 85.0},
+    }
+    assert ah._formatear_valor_metrica_45("pases_ratio", 85.0, fm_sin_comp, "equipo", fuente_partido="flashscore") == "340/400 (85%)"
+
+    fm_copia_tot = {
+        "pases_completados": {"clave": "pases_completados", "equipo": 400.0},
+        "pases_totales": {"clave": "pases_totales", "equipo": 400.0},
+        "pases_precision_pct": {"clave": "pases_precision_pct", "equipo": 88.0},
+        "pases_ratio": {"clave": "pases_ratio", "equipo": 88.0},
+    }
+    assert ah._formatear_valor_metrica_45("pases_ratio", 88.0, fm_copia_tot, "equipo", fuente_partido="flashscore") == "352/400 (88%)"
+
+    # 2. #32 entradas_pct: nunca imprime artificial N/N (100%) en conteos 1..4 sin denominador separado
+    fm_ent_sint = {
+        "entradas": {"clave": "entradas", "equipo": 4.0},
+        "entradas_ganadas": {"clave": "entradas_ganadas", "equipo": 4.0},
+        "entradas_ganadas_pct": {"clave": "entradas_ganadas_pct", "equipo": 100.0},
+        "entradas_pct": {"clave": "entradas_pct", "equipo": 4.0},
+    }
+    out_ent = ah._formatear_valor_metrica_45("entradas_pct", 4.0, fm_ent_sint, "equipo", fuente_partido="fotmob")
+    assert out_ent == "4" and "4/4 (100%)" not in out_ent
+
+    fm_ent_obs = {
+        "entradas": {"clave": "entradas", "equipo": 7.0},
+        "entradas_ganadas": {"clave": "entradas_ganadas", "equipo": 4.0},
+        "entradas_ganadas_pct": {"clave": "entradas_ganadas_pct", "equipo": 57.0},
+        "entradas_pct": {"clave": "entradas_pct", "equipo": 57.0},
+    }
+    assert ah._formatear_valor_metrica_45("entradas_pct", 57.0, fm_ent_obs, "equipo", fuente_partido="fotmob") == "4/7 (57%)"
+
+    # 3. #27 pases_tercio_final_pct: nunca inventa /100 en Flashscore ni FotMob
+    fm_ptf_fs = {
+        "pases_tercio_final": {"clave": "pases_tercio_final", "equipo": 100.0, "fuente": "flashscore"},
+        "pases_tercio_final_completados": {"clave": "pases_tercio_final_completados", "equipo": 62.0, "fuente": "flashscore"},
+        "pases_tercio_final_pct": {"clave": "pases_tercio_final_pct", "equipo": 62.0, "fuente": "flashscore"},
+    }
+    out_ptf = ah._formatear_valor_metrica_45("pases_tercio_final_pct", 62.0, fm_ptf_fs, "equipo", fuente_partido="flashscore")
+    assert "/100" not in out_ptf and out_ptf == "62%"
+
+    # 4. Barrido completo sobre los 60 partidos reales de ronda5_real_fixtures.json
+    docs = _cargar_docs_reales()
+    for doc in docs.values():
+        for p in doc.get("partidos", []):
+            for per in ("FT", "1T", "2T"):
+                filas = (p.get("periodos", {}).get(per) or {}).get("filas") or []
+                fm = {f.get("clave"): f for f in filas if f.get("clave")}
+                for lado in ("equipo", "rival"):
+                    for k in ("pases_ratio", "pases_tercio_final_pct", "entradas_pct"):
+                        if k not in fm:
+                            continue
+                        out = ah._formatear_valor_metrica_45(k, fm[k].get(lado), fm, lado, p.get("fuente", ""))
+                        assert "/100 " not in out
+                        if k == "entradas_pct" and "/" in out:
+                            lp, rp = out.split("/", 1)
+                            assert not (lp == rp.split()[0] and "(100%)" in rp)
+                        if k == "pases_ratio" and "/" in out:
+                            lp, rp = out.split("/", 1)
+                            assert not (lp == rp.split()[0] and "(100%)" not in rp)

@@ -2150,16 +2150,30 @@ def _formatear_valor_metrica_45(
             tot_f = filas_map.get("pases_tercio_final") or {}
             comp = comp_f.get(lado)
             tot = tot_f.get(lado)
-            # Evitar falsos "40/100 (40%)" heredados de fuentes sin denominador real
+            # Evitar falsos "40/100 (40%)" heredados de fuentes sin denominador real (FotMob o Flashscore)
             es_falso_100 = (
                 tot is not None and abs(float(tot) - 100.0) < 1e-6
-                and comp is not None and valor is not None
-                and abs(float(comp) - float(valor)) < 0.5
-                and not es_flashscore
+                and not bool(tot_f.get("denominador_observado"))
+                and (
+                    _es_procedencia_sintetica(tot_f, procedencia_celda)
+                    or _es_procedencia_sintetica(comp_f, procedencia_celda)
+                    or comp is None
+                    or (valor is not None and abs(float(comp) - float(valor)) < 0.5)
+                )
             )
-            if comp is not None and tot is not None and tot > 0 and not es_falso_100 and not _es_procedencia_sintetica(tot_f):
+            if (
+                comp is not None and tot is not None and tot > 0
+                and not es_falso_100
+                and not _es_procedencia_sintetica(tot_f, procedencia_celda)
+                and not _es_procedencia_sintetica(comp_f, procedencia_celda)
+            ):
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if es_flashscore and valor is not None:
+                try:
+                    return f"{int(round(float(valor)))}%"
+                except (TypeError, ValueError):
+                    pass
         elif clave == "cruces_pct":
             comp = filas_map.get("centros_completados", {}).get(lado)
             tot = filas_map.get("centros", {}).get(lado)
@@ -2173,19 +2187,34 @@ def _formatear_valor_metrica_45(
             tot = tot_f.get(lado)
             pct_e = (filas_map.get("entradas_ganadas_pct") or {}).get(lado)
             es_falso_100_ent = (
-                comp is not None and tot is not None and not es_flashscore
-                and abs(float(comp) - float(tot)) < 1e-6 and float(comp) >= 5.0
+                comp is not None and tot is not None
+                and not bool(tot_f.get("denominador_observado"))
+                and abs(float(comp) - float(tot)) < 1e-6 and float(comp) > 0.0
                 and (pct_e is None or abs(float(pct_e) - 100.0) < 1e-6)
             )
-            if comp is not None and tot is not None and tot > 0 and not es_falso_100_ent and not _es_procedencia_sintetica(tot_f):
+            if (
+                comp is not None and tot is not None and tot > 0
+                and not es_falso_100_ent
+                and not _es_procedencia_sintetica(tot_f, procedencia_celda)
+                and not _es_procedencia_sintetica(comp_f, procedencia_celda)
+            ):
                 pct = int(round(pct_e)) if pct_e is not None else int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "pases_ratio":
-            comp = filas_map.get("pases_completados", {}).get(lado)
-            tot = filas_map.get("pases_totales", {}).get(lado) or filas_map.get("pases_total", {}).get(lado)
-            pct = filas_map.get("pases_precision_pct", {}).get(lado) or filas_map.get("pases_pct", {}).get(lado)
-            if comp is not None and tot is not None and tot > 0:
-                if pct is not None and ((float(pct) < 99.5 and abs(float(comp) - float(tot)) < 0.5) or float(comp) > float(tot)):
+            def _num_pase(d_f):
+                return d_f.get(lado) if isinstance(d_f, dict) else None
+
+            comp = _num_pase(filas_map.get("pases_completados"))
+            tot = _num_pase(filas_map.get("pases_totales"))
+            if tot is None:
+                tot = _num_pase(filas_map.get("pases_total"))
+            pct = _num_pase(filas_map.get("pases_precision_pct"))
+            if pct is None:
+                pct = _num_pase(filas_map.get("pases_pct"))
+            if tot is not None and tot > 0 and (comp is not None or pct is not None):
+                if comp is None and pct is not None:
+                    comp = float(round(float(tot) * float(pct) / 100.0))
+                elif pct is not None and ((float(pct) < 100.0 and abs(float(comp) - float(tot)) < 0.5) or float(comp) > float(tot)):
                     comp = float(round(float(tot) * float(pct) / 100.0))
                 p_int = int(round(pct)) if pct is not None else int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({p_int}%)"

@@ -100,11 +100,14 @@ def test_1_2_y_1_3_y_1_4_y_1_7_y_1_8_coherencia_multi_superficie_reales(tmp_path
     an = mm.analizar(doc_l, doc_v, eq_l, eq_v, competicion=comp, fecha_partido=fecha)
     top5, sec1, sec2 = sm.obtener_top5_y_seccion1_filtrados(an, metadatos=an.metadatos, umbral=0.70)
 
-    # Regla 1.7: sin cuotas reales, ninguna jugada en Top 5 puede tener cuota justa < 1.25 (p > 0.80)
+    # Regla 1.7: sin cuotas reales, ninguna jugada en Top 5 puede violar min_cuota_justa_no_trivial_top5 (1.14 -> p <= 0.8772)
+    import decision_cobertura as dc
+    cuota_min_cfg = float((dc.cargar_umbrales_cobertura() or {}).get("min_cuota_justa_no_trivial_top5", 1.14))
+    prob_max_cfg = round(1.0 / cuota_min_cfg, 4)
     for it in top5:
         if it.get("ev_pct") is None and it.get("ev") is None:
-            assert float(it["probabilidad"]) <= 0.800001, f"{eq_l} vs {eq_v}: Top 5 violo cuota justa >= 1.25 -> {it}"
-            assert float(it.get("cuota_justa", 9.99)) >= 1.25
+            assert float(it["probabilidad"]) <= prob_max_cfg + 1e-5, f"{eq_l} vs {eq_v}: Top 5 violo cuota justa >= {cuota_min_cfg} -> {it}"
+            assert float(it.get("cuota_justa", 9.99)) >= cuota_min_cfg
 
     # Regla 1.8: sin cuotas reales, prohibido afirmar ALTO VALOR o ineficiencia de mercado
     assert "ALTO VALOR" not in an.mensaje
@@ -338,7 +341,8 @@ def test_1_6_flashscore_header_league_amistosos_region_y_backfill():
 
 
 def test_1_7_regla_cuota_justa_min_125_y_excepcion_cuota_real_ev():
-    # Todos los mercados >= 0.8001 sin cuota real quedan excluidos del Top 5
+    # Con min_cuota_justa=1.14 (p_max=0.8772), mercados > 0.8772 sin cuota real quedan excluidos,
+    # mientras que el rango desbloqueado 80.1%-87.7% (0.83, 0.84, 0.85) si califica.
     sels_triviales = [
         {"mercado": "Total de goles", "evento": "under_4.5", "etiqueta": "menos de 4.5 goles", "periodo": "FT", "linea": 4.5, "probabilidad": 0.91, "estado": "mantiene"},
         {"mercado": "Doble oportunidad", "evento": "dc_x2", "etiqueta": "X2", "periodo": "FT", "probabilidad": 0.84, "estado": "mantiene"},
@@ -348,13 +352,18 @@ def test_1_7_regla_cuota_justa_min_125_y_excepcion_cuota_real_ev():
         {"mercado": "Total de goles", "evento": "under_2.5", "etiqueta": "menos de 2.5 goles", "periodo": "FT", "linea": 2.5, "probabilidad": 0.78, "estado": "mantiene"},
     ]
     top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels_triviales, motor=None, eq_l="Turquía", eq_v="Bélgica")
-    assert len(top5) == 1
-    assert top5[0]["probabilidad"] == pytest.approx(0.78, abs=1e-4)
+    probs_top5 = [round(float(x["probabilidad"]), 4) for x in top5]
+    assert 0.91 not in probs_top5
+    assert 0.89 not in probs_top5
+    assert 0.84 in probs_top5 and 0.85 in probs_top5 and 0.78 in probs_top5
 
-    # Con cuota real que genera EV positivo (>= +3%), si puede entrar aunque p > 0.80
-    sels_con_ev = [dict(sels_triviales[1], cuota_real=1.30)] + sels_triviales[5:]
+    # Con cuota real que genera EV positivo (>= +3%), si puede entrar aunque p > 0.8772
+    sels_con_ev = [
+        {"mercado": "Doble oportunidad", "evento": "dc_x2", "etiqueta": "X2", "periodo": "FT", "probabilidad": 0.90, "estado": "mantiene", "cuota_real": 1.30},
+        sels_triviales[-1],
+    ]
     top5_ev = mm.seleccionar_top_5_jugadas_recomendadas(sels_con_ev, motor=None, eq_l="Turquía", eq_v="Bélgica")
-    assert any(it.get("ev_pct") is not None and it["ev_pct"] > 0 for it in top5_ev)
+    assert any(round(float(it["probabilidad"]), 2) == 0.90 and it.get("ev_pct") is not None and it["ev_pct"] > 0 for it in top5_ev)
 
 
 def test_1_9_y_1_10_leyenda_red_pesos_fijos_y_h2h_sin_alterar_matriz(tmp_path):

@@ -4259,8 +4259,8 @@ def es_seleccion_competitiva_ticket(
     lin = _v(s, "linea", None)
     prob = float(_v(s, "probabilidad", 0.0) or 0.0)
 
-    es_over = ("over_" in ev or "mas de" in et or "más de" in et or "al_menos_" in ev or "al menos" in et)
-    es_under = ("under_" in ev or "menos de" in et or "menos" in et)
+    es_over = ("over_" in ev or "mas de" in et or "más de" in et or "al_menos_" in ev or "al menos" in et or ev in ("gol_1t", "gol_2t"))
+    es_under = ("under_" in ev or "menos de" in et or ("menos" in et and "al menos" not in et))
     if "al_menos_" in ev and lin is not None and isinstance(lin, (int, float)):
         lin = float(lin) - 0.5
 
@@ -4448,7 +4448,7 @@ def calcular_frecuencia_observada(
     nom_l = normalizar_texto(eq_l)
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
-    es_under = ("under" in ev or "menos" in et)
+    es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
 
     # 1. Doble oportunidad (1X, X2, 12)
     if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
@@ -4737,8 +4737,8 @@ def _clasificar_tokens_micropatron(s: Any, eq_l: str = "Local", eq_v: str = "Vis
     tokens: set[str] = set()
     es_corner = ("corner" in m or "córner" in m or "esquina" in m or "corner" in ev or "córn" in et or "corn" in et)
     es_tarj = ("tarjeta" in m or "amarilla" in m or "tarjeta" in ev or "amarilla" in ev or "tarj" in et)
-    es_over = ("over" in ev or "mas " in et or "más " in et or "mas de" in et or "más de" in et or "al_menos" in ev or ": +" in et)
-    es_under = ("under" in ev or "menos" in et or ": -" in et)
+    es_over = ("over" in ev or "mas " in et or "más " in et or "mas de" in et or "más de" in et or "al_menos" in ev or "al menos" in et or ev in ("gol_1t", "gol_2t") or ": +" in et)
+    es_under = ("under" in ev or ("menos" in et and "al menos" not in et) or ": -" in et)
 
     lin_f = None
     if lin is not None:
@@ -4870,7 +4870,7 @@ def seleccionar_top_5_jugadas_recomendadas(
         # Regla 1.7 (Ronda 5+6): Sin cuota real +EV, cuota justa mínima obligatoria en Top 5
         # para TODOS los mercados (Overs, Unders, 1X2, Doble Oportunidad, DNB, Mitades, Córneres, Tarjetas)
         from decision_cobertura import cargar_umbrales_cobertura
-        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.25))
+        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.14))
         prob_max_trivial = round(1.0 / max(0.01, cuota_justa_min), 4)
         if p_c > prob_max_trivial + 1e-9:
             return True
@@ -5396,6 +5396,11 @@ def seleccionar_top_5_jugadas_recomendadas(
                     "estado": "mantiene",
                 })
 
+    mp_comb_top = _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
+    cods_mp_top = set(mp_comb_top.get("codigos_activos") or []) if isinstance(mp_comb_top, dict) else set()
+    favor_mp_top = {str(x) for x in (mp_comb_top.get("senales_favor") or [])} if isinstance(mp_comb_top, dict) else set()
+    contra_mp_top = {str(x) for x in (mp_comb_top.get("senales_contra") or [])} if isinstance(mp_comb_top, dict) else set()
+
     # Punto 23c y Sección 5.3: Alerta de Posesión Estéril vs. Portero Figura (preservando P01=None como no_evaluable)
     p01_l_raw = pat_l_top.get("P01_xG_por_Remate")
     p01_v_raw = pat_v_top.get("P01_xG_por_Remate")
@@ -5424,6 +5429,8 @@ def seleccionar_top_5_jugadas_recomendadas(
             if not es_ov or lin_s is None:
                 return False
             lf = float(lin_s) - 0.5 if "al_menos" in ev_s else float(lin_s)
+            if lf == 1.5 and ("total_goles:over_1.5" in favor_mp_top and "total_goles:over_1.5" not in contra_mp_top):
+                return False
             return lf in (1.5, 2.5)
         candidatas = [s for s in candidatas if not _es_over_ft_15_25(s)]
 
@@ -5666,8 +5673,6 @@ def seleccionar_top_5_jugadas_recomendadas(
         entradas_fall = max(1.5, round(((100.0 - _safe_float(mu_l.get("entradas_pct"), 14.0)) * 0.08 + (100.0 - _safe_float(mu_v.get("entradas_pct"), 14.0)) * 0.08), 1))
         return f"Respaldo ADN: Cruce [faltas_cometidas {faltas:.1f} ⊗ duelos_suelo {duelos:.1f}%] + [pases_entre_lineas_rival {lineas:.0f} ⊗ entradas_falladas {entradas_fall:.1f}]."
 
-    mp_comb_top = _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
-    cods_mp_top = set(mp_comb_top.get("codigos_activos") or []) if isinstance(mp_comb_top, dict) else set()
     try:
         _umb_gk = cargar_umbrales_cobertura() or {}
     except Exception:
@@ -5851,8 +5856,31 @@ def seleccionar_top_5_jugadas_recomendadas(
                 n_tarjetas += 1
             break
 
-    # Paso 3: Si aún faltan para 5, rellenar con las mejores restantes respetando MAX 1 Córner y MAX 1 Tarjeta
+    # Paso 3: Si aún faltan para 5, rellenar con las mejores restantes respetando MAX 1 Córner, MAX 1 Tarjeta
+    # y evitando duplicar líneas redundantes del mismo periodo y mismo sentido en goles totales
+    # (sí se permiten líneas complementarias de distinto sentido como +1.5 FT + -4.5 FT o de distinta mitad como +0.5 2T).
+    def _firma_gol_total_redundante(s: Any) -> tuple[str, str] | None:
+        sl_g = _slot_seleccion(s)
+        if sl_g not in (2, 3):
+            return None
+        eq_g = _v(s, "equipo", None)
+        ev_g = str(_v(s, "evento") or "").lower()
+        et_g = str(_v(s, "etiqueta") or "").lower()
+        if (eq_g and str(eq_g).strip() not in ("None", "Total", "null", "")) or "local_" in ev_g or "visitante_" in ev_g:
+            return None
+        per_g = str(_v(s, "periodo") or "FT").strip().upper()
+        es_ov = ("over" in ev_g or "mas" in et_g or "más" in et_g or "al_menos" in ev_g or ev_g in ("gol_1t", "gol_2t"))
+        es_un = ("under" in ev_g or ("menos" in et_g and "al menos" not in et_g))
+        if es_ov and not es_un:
+            return (per_g, "over")
+        if es_un and not es_ov:
+            return (per_g, "under")
+        return None
+
     if len(elegidas) < 5:
+        firmas_gol_usadas = {
+            f for _, it in elegidas for f in [_firma_gol_total_redundante(it)] if f is not None
+        }
         todas_ord = sorted(candidatas, key=_puntaje_podio, reverse=True)
         for cand in todas_ord:
             if len(elegidas) >= 5:
@@ -5867,9 +5895,14 @@ def seleccionar_top_5_jugadas_recomendadas(
                 continue
             if sl_cand == 5 and n_tarjetas >= 1 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 continue
+            fg_cand = _firma_gol_total_redundante(cand)
+            if fg_cand is not None and fg_cand in firmas_gol_usadas:
+                continue
 
             elegidas.append((sl_cand, cand))
             usadas_claves.add(et_c)
+            if fg_cand is not None:
+                firmas_gol_usadas.add(fg_cand)
             if sl_cand == 4:
                 n_corners += 1
             if sl_cand == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
