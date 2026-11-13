@@ -1108,6 +1108,8 @@ class MotorMercados:
         self.clusters: dict[str, Any] = {}
         # Factores latentes de la Arquitectura Híbrida (XAI)
         self.xai_factores: dict[str, Any] = {}
+        self.traza_lambda: list[dict[str, Any]] = []
+        self.detalle_goles: dict[str, Any] = {}
         eq_l = doc_local.get("equipo")
         self.nombre_local = participante_local or (eq_l if isinstance(eq_l, str) else (eq_l or {}).get("nombre")) or "Local"
         eq_v = doc_visitante.get("equipo")
@@ -1320,6 +1322,7 @@ class MotorMercados:
             para no romper `λ_1T + λ_2T = λ_FT`.
         """
         self.recursivo = {}
+        self.traza_lambda = []
         if not getattr(self.p, "aplicar_motor_recursivo", True):
             self.notas.append("Red neuronal recursiva desactivada por parámetro.")
             return
@@ -1327,6 +1330,42 @@ class MotorMercados:
         lam_v = self.tasas.lambda_visitante_ft
         if lam_l is None or lam_v is None:
             return
+        _traza: list[dict[str, Any]] = []
+        _mods = (getattr(self, 'detalle_goles', None) or {}).get("_moduladores") or {}
+        _lam_plano_l = float(_mods.get("lambda_local_sin_modular", (getattr(self, 'detalle_goles', None) or {}).get("lambda_local") or lam_l) or lam_l)
+        _lam_plano_v = float(_mods.get("lambda_visitante_sin_modular", (getattr(self, 'detalle_goles', None) or {}).get("lambda_visitante") or lam_v) or lam_v)
+        _traza.append({
+            "etapa": "base_plana",
+            "regla": "tasas_goles_plano",
+            "lam_l_antes": round(_lam_plano_l, 4),
+            "lam_l_despues": round(_lam_plano_l, 4),
+            "lam_v_antes": round(_lam_plano_v, 4),
+            "lam_v_despues": round(_lam_plano_v, 4),
+            "motivo": f"Promedios ponderados goles/xG (w_cond={self.p.w_condicion:g}, w_xg={self.p.w_xg:g})",
+        })
+        if _mods:
+            _traza.append({
+                "etapa": "base_plana",
+                "regla": "moduladores_tacticos",
+                "lam_l_antes": round(_lam_plano_l, 4),
+                "lam_l_despues": round(float(_mods.get("lambda_local_modulada", _lam_plano_l)), 4),
+                "lam_v_antes": round(_lam_plano_v, 4),
+                "lam_v_despues": round(float(_mods.get("lambda_visitante_modulada", _lam_plano_v)), 4),
+                "motivo": f"mult=({_mods.get('mult_goles_L')}, {_mods.get('mult_goles_V')}); metricas={','.join(_mods.get('metricas_activas') or [])}",
+            })
+        _lam_ef = (getattr(self, 'detalle_goles', None) or {}).get("_lambda_efectivo") or {}
+        if _lam_ef.get("aplicado"):
+            _lam_pre_ef_l = float(_mods.get("lambda_local_modulada", _lam_plano_l))
+            _lam_pre_ef_v = float(_mods.get("lambda_visitante_modulada", _lam_plano_v))
+            _traza.append({
+                "etapa": "base_plana",
+                "regla": "lambda_efectivo_finalizacion",
+                "lam_l_antes": round(_lam_pre_ef_l, 4),
+                "lam_l_despues": round(float(_lam_ef.get("lambda_local_efectiva", lam_l)), 4),
+                "lam_v_antes": round(_lam_pre_ef_v, 4),
+                "lam_v_despues": round(float(_lam_ef.get("lambda_visitante_efectiva", lam_v)), 4),
+                "motivo": str(_lam_ef.get("nota") or "Calibracion finalizacion/xgot"),
+            })
 
         try:
             import cuadro_especialista as ce
@@ -1426,11 +1465,25 @@ class MotorMercados:
             xgot_l_c = mu_l_cond.get('xgot_enfrentado')
             def_L_cond = 0.50 * (gc_l_c if gc_l_c is not None else def_L) + 0.50 * (xgot_l_c if xgot_l_c is not None else def_L)
 
+            _lam_pre_tier_l = round((atq_L_cond + def_V_cond) / 2.0, 4)
+            _lam_pre_tier_v = round((atq_V_cond + def_L_cond) / 2.0, 4)
+            _traza.append({
+                "etapa": "doble_adn",
+                "regla": "doble_adn_60_40",
+                "lam_l_antes": round(float(lam_l), 4),
+                "lam_l_despues": _lam_pre_tier_l,
+                "lam_v_antes": round(float(lam_v), 4),
+                "lam_v_despues": _lam_pre_tier_v,
+                "motivo": f"Doble ADN k=3.5 cond=({cond_adn_l},{cond_v}) delta_tier=({tier_L_int},{tier_V_int}) uefa=({fu_L:.3f},{fu_V:.3f})",
+            })
+
             # Ponderación por Coeficiente de Liga (tier_coef) solo si no hubo ya ajuste ΔTier de división
+            _ratio_fuerza_log = 1.0
             if tier_L != tier_V and tier_L_int == tier_V_int:
                 tier_menor = min(tier_L, tier_V)
                 tier_mayor = max(tier_L, tier_V)
                 ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
+                _ratio_fuerza_log = ratio_fuerza
                 if tier_L < tier_V:
                     atq_L_cond = atq_L_cond * ratio_fuerza
                     def_L_cond = def_L_cond / ratio_fuerza
@@ -1440,6 +1493,16 @@ class MotorMercados:
 
             lam_l = round((atq_L_cond + def_V_cond) / 2.0, 2)
             lam_v = round((atq_V_cond + def_L_cond) / 2.0, 2)
+            if tier_L != tier_V and tier_L_int == tier_V_int:
+                _traza.append({
+                    "etapa": "coef_liga",
+                    "regla": "ajuste_coef_liga_tier",
+                    "lam_l_antes": _lam_pre_tier_l,
+                    "lam_l_despues": round(float(lam_l), 4),
+                    "lam_v_antes": _lam_pre_tier_v,
+                    "lam_v_despues": round(float(lam_v), 4),
+                    "motivo": f"tier_coef=({tier_L:.3f} vs {tier_V:.3f}), tier_int=({tier_L_int},{tier_V_int}), ratio_fuerza={_ratio_fuerza_log:.4f}",
+                })
 
             resultado = red.ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                 perfil_l_gen,
@@ -1478,6 +1541,19 @@ class MotorMercados:
         # ── Sustitución efectiva de λ y matriz (FT) + Sincronización con Motor 55 Patrones, Rachas 60/40 y En Vivo ──
         lam_l_red = float(resultado["lambda_local_recursivo"])
         lam_v_red = float(resultado["lambda_visita_recursivo"])
+        _lam_pre_freno_red_l = float(resultado.get("lambda_local_pre_freno", lam_l_red))
+        _lam_pre_freno_red_v = float(resultado.get("lambda_visita_pre_freno", lam_v_red))
+        _traza.append({
+            "etapa": "red_45_dcn",
+            "regla": "red_recursiva_45_dcn_bucle",
+            "lam_l_antes": round(float(lam_l), 4),
+            "lam_l_despues": round(_lam_pre_freno_red_l, 4),
+            "lam_v_antes": round(float(lam_v), 4),
+            "lam_v_despues": round(_lam_pre_freno_red_v, 4),
+            "motivo": f"Convergencia it={resultado.get('iteracion_convergencia')} (cruces: {resultado.get('cruce_dominante_local')} / {resultado.get('cruce_dominante_visita')})",
+        })
+        for _st in (resultado.get("traza_red_45_dcn") or []):
+            _traza.append(dict(_st))
         resultado["aplicado"] = True
         resultado["tasas_por_equipo"] = {
             "local": _tasas_sequia_explosion(partidos_l_red),
@@ -1637,26 +1713,64 @@ class MotorMercados:
             suma_red_l_pura = round(float(sum(factores_red_l_puros.values())), 1)
             suma_red_v_pura = round(float(sum(factores_red_v_puros.values())), 1)
 
-            lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
-                lam_base_local=float(lam_l),
-                lam_base_visita=float(lam_v),
-                lam_red_local=lam_l_nuevo,
-                lam_red_visita=lam_v_nuevo,
-                ratings_local=r_l_0_100,
-                ratings_visita=r_v_0_100,
-                posesion_proyectada_local=pos_proy_l,
-                posesion_proyectada_visita=pos_proy_v,
-                en_crisis_local=crisis_l,
-                en_crisis_visita=crisis_v,
-                goles_ult5_local=g_ult5_l,
-                goles_ult5_visita=g_ult5_v,
-                competicion=str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or ""),
-                sede_neutral=bool(sede_neutral_L),
-                toques_area_local=mu_l_c.get("toques_area_rival"),
-                cobertura_asedio_real=bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None),
-                cuadro_b_local=getattr(self, "cuadro_b_local", None),
-                cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
-            )
+            _traza.append({
+                "etapa": "post_sinc_mercados",
+                "regla": "sincronizacion_55_patrones_racha_contexto",
+                "lam_l_antes": round(float(lam_l_red), 4),
+                "lam_l_despues": round(float(lam_l_nuevo), 4),
+                "lam_v_antes": round(float(lam_v_red), 4),
+                "lam_v_despues": round(float(lam_v_nuevo), 4),
+                "motivo": f"mult_sinc=({mult_sinc_l:.4f}, {mult_sinc_v:.4f}), ratio_55=({ratio_55_l:.3f}, {ratio_55_v:.3f}), racha=({f_racha_l:.3f}, {f_racha_v:.3f}), ctx=({f_ctx_l:.3f}, {f_ctx_v:.3f})",
+            })
+            _traza_post_sinc: list[dict[str, Any]] = []
+            _comp_freno = str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or "")
+            _cob_asedio = bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None)
+            try:
+                lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
+                    lam_base_local=float(lam_l),
+                    lam_base_visita=float(lam_v),
+                    lam_red_local=lam_l_nuevo,
+                    lam_red_visita=lam_v_nuevo,
+                    ratings_local=r_l_0_100,
+                    ratings_visita=r_v_0_100,
+                    posesion_proyectada_local=pos_proy_l,
+                    posesion_proyectada_visita=pos_proy_v,
+                    en_crisis_local=crisis_l,
+                    en_crisis_visita=crisis_v,
+                    goles_ult5_local=g_ult5_l,
+                    goles_ult5_visita=g_ult5_v,
+                    competicion=_comp_freno,
+                    sede_neutral=bool(sede_neutral_L),
+                    toques_area_local=mu_l_c.get("toques_area_rival"),
+                    cobertura_asedio_real=_cob_asedio,
+                    cuadro_b_local=getattr(self, "cuadro_b_local", None),
+                    cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
+                    traza_out=_traza_post_sinc,
+                    etapa_prefijo="post_sinc_mercados",
+                )
+            except TypeError:
+                lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
+                    lam_base_local=float(lam_l),
+                    lam_base_visita=float(lam_v),
+                    lam_red_local=lam_l_nuevo,
+                    lam_red_visita=lam_v_nuevo,
+                    ratings_local=r_l_0_100,
+                    ratings_visita=r_v_0_100,
+                    posesion_proyectada_local=pos_proy_l,
+                    posesion_proyectada_visita=pos_proy_v,
+                    en_crisis_local=crisis_l,
+                    en_crisis_visita=crisis_v,
+                    goles_ult5_local=g_ult5_l,
+                    goles_ult5_visita=g_ult5_v,
+                    competicion=_comp_freno,
+                    sede_neutral=bool(sede_neutral_L),
+                    toques_area_local=mu_l_c.get("toques_area_rival"),
+                    cobertura_asedio_real=_cob_asedio,
+                    cuadro_b_local=getattr(self, "cuadro_b_local", None),
+                    cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
+                )
+            for _st in _traza_post_sinc:
+                _traza.append(_st)
 
             lam_l_red_orig = lam_l_red
             lam_v_red_orig = lam_v_red
@@ -1739,6 +1853,12 @@ class MotorMercados:
             resultado["matriz_probabilidades"] = mat_base_red
             resultado["matriz_marcadores"] = mat_base_red
 
+        for _idx, _st in enumerate(_traza, start=1):
+            _st["paso"] = _idx
+        self.traza_lambda = _traza
+        resultado["traza_lambda"] = list(_traza)
+        if isinstance(getattr(self, 'detalle_goles', None), dict):
+            self.detalle_goles["traza_lambda"] = list(_traza)
         self.tasas.lambda_local_ft = lam_l_red
         self.tasas.lambda_visitante_ft = lam_v_red
         self.matriz_ft = mat_base_red
@@ -6002,6 +6122,20 @@ def generar_informe(analisis_metadatos: dict[str, Any], motor: MotorMercados,
         L.append("")
         for linea in lineas_recursivo:
             L.append(f"- {linea}")
+        L.append("")
+    traza_lam = getattr(motor, "traza_lambda", None) or (getattr(motor, "recursivo", None) or {}).get("traza_lambda") or []
+    if traza_lam:
+        L.append("### Traza ordenada de λ (`traza_lambda`)")
+        L.append("")
+        L.append("| Paso | Etapa | Regla | λ Local (antes→después) | λ Visita (antes→después) | Motivo |")
+        L.append("|---:|---|---|---|---|---|")
+        for st in traza_lam:
+            L.append(
+                f"| {st.get('paso', '')} | {st.get('etapa', '')} | `{st.get('regla', '')}` | "
+                f"{st.get('lam_l_antes')} → {st.get('lam_l_despues')} | "
+                f"{st.get('lam_v_antes')} → {st.get('lam_v_despues')} | "
+                f"{st.get('motivo', '')} |"
+            )
         L.append("")
 
     # ── IA Explicable (XAI): 5 Factores Latentes y Cluster Dominante ─────────

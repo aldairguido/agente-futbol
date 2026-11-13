@@ -900,6 +900,8 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     cuadro_b_local: Optional[Dict[str, Any]] = None,
     cuadro_b_visita: Optional[Dict[str, Any]] = None,
     es_gigante_visitante: Optional[bool] = None,
+    traza_out: Optional[List[Dict[str, Any]]] = None,
+    etapa_prefijo: str = "",
 ) -> Tuple[float, float, float, float]:
     """
     Implementa los Puntos 21, 22, 34, 35 y 40:
@@ -910,6 +912,21 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         `lam_visita_ajustada = max(lam_visita * 1.15, 1.15 * lam_local_ref)` y `lam_local_ajustada = 0.85 * lam_local_ref`.
     Retorna: (lam_final_local, lam_final_visita, delta_pct_local, delta_pct_visita).
     """
+    def _trazar(regla: str, al: float, dl: float, av: float, dv: float, motivo: str) -> None:
+        if traza_out is None:
+            return
+        if abs(dl - al) < 1e-6 and abs(dv - av) < 1e-6:
+            return
+        traza_out.append({
+            "etapa": etapa_prefijo or "freno_matchup_21_22",
+            "regla": regla,
+            "lam_l_antes": round(float(al), 4),
+            "lam_l_despues": round(float(dl), 4),
+            "lam_v_antes": round(float(av), 4),
+            "lam_v_despues": round(float(dv), 4),
+            "motivo": motivo,
+        })
+
     rL = ratings_local or {}
     rV = ratings_visita or {}
 
@@ -964,12 +981,21 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         ajuste_l = min(1.55, bono_ofensivo_l * factor_def_rota_l)
         ajuste_v = min(1.55, factor_def_rota_v)
 
+    _al, _av = lam_l, lam_v
     lam_l *= ajuste_l
     lam_v *= ajuste_v
+    _trazar(
+        "copa_asedio_defensa_rota",
+        _al, lam_l, _av, lam_v,
+        f"copa={es_copa} (x{factor_copa_l:.2f}), asedio_L=x{factor_asedio_l:.2f}, "
+        f"def_rota_V=x{factor_def_rota_l:.2f} (Def_V={defense_rating_visita:.1f}), "
+        f"def_rota_L=x{factor_def_rota_v:.2f} (Def_L={defense_rating_local:.1f})",
+    )
 
     # ── Sección 8.3: Regla 'Gigante Visitante' con orden exacto de operaciones ──
     if es_gigante_visitante:
         bono_localia_a_retirar = factor_copa_l if (ajuste_l == factor_copa_l and factor_copa_l > 1.0) else 1.0
+        _al, _av = lam_l, lam_v
         res_gv = aplicar_ajuste_gigante_visitante(
             lam_local=lam_l,
             lam_visita=lam_v,
@@ -978,10 +1004,13 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         )
         lam_l = float(res_gv["lam_local_ajustada"])
         lam_v = float(res_gv["lam_visita_ajustada"])
+        _trazar("gigante_visitante", _al, lam_l, _av, lam_v, "Regla Gigante Visitante (retira localía y ajusta ratio)")
 
     # c) Amortiguador de "Fortín Defensivo Local" (Defense_Local >= 60.0):
     if defense_rating_local >= 60.0 and lam_v > 2.05:
+        _av = lam_v
         lam_v = 1.95 + (lam_v - 1.95) * 0.40
+        _trazar("fortin_defensivo_local", lam_l, lam_l, _av, lam_v, f"Def_L={defense_rating_local:.1f}>=60 comprime lam_V>2.05")
 
     # ── Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús") ──
     # 1. Local con ataque paupérrimo:
@@ -992,21 +1021,35 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         techo_atk_bajo = 1.10
 
     if attack_rating_local < 25.0:
+        _al = lam_l
         lam_l = min(lam_l, 0.90)
+        _trazar("freno_local_ataque_muy_bajo_0.90", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<25")
     if attack_rating_local < 20.0 and (en_crisis_local or goles_ult5_local < 0.50):
+        _al = lam_l
         lam_l = min(lam_l, 0.60)
+        _trazar("freno_local_crisis_extrema_0.60", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<20 & crisis/gol_ult5={goles_ult5_local:.2f}")
     elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
+        _al = lam_l
         lam_l = min(lam_l, techo_atk_bajo)
+        _trazar("techo_lambda_ataque_bajo_local", _al, lam_l, lam_v, lam_v, f"en_crisis_L={en_crisis_local} o Attack_L={attack_rating_local:.1f}<35 con Def_V={defense_rating_visita:.1f}>=30 -> techo={techo_atk_bajo:.2f}")
 
     # 2. Visitante en Bloque Bajo ("Autobús"):
     if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.80)
+        _trazar("freno_visita_bloque_bajo_0.80", lam_l, lam_l, _av, lam_v, f"Pos_V={posesion_proyectada_visita:.1f}<45 & Attack_V={attack_rating_visita:.1f}<35")
     if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("freno_visita_autobus_0.60", lam_l, lam_l, _av, lam_v, f"Press_V={pressing_rating_visita:.1f}<30 & Pos_V={posesion_proyectada_visita:.1f}<42")
     if attack_rating_visita < 20.0 and (en_crisis_visita or goles_ult5_visita < 0.50):
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("freno_visita_crisis_extrema_0.60", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<20 & crisis/gol_ult5={goles_ult5_visita:.2f}")
     elif (en_crisis_visita or attack_rating_visita < 35.0) and defense_rating_local >= 30.0:
+        _av = lam_v
         lam_v = min(lam_v, techo_atk_bajo)
+        _trazar("techo_lambda_ataque_bajo_visita", lam_l, lam_l, _av, lam_v, f"en_crisis_V={en_crisis_visita} o Attack_V={attack_rating_visita:.1f}<35 con Def_L={defense_rating_local:.1f}>=30 -> techo={techo_atk_bajo:.2f}")
 
     # Punto 50 (Ítem 3): Tope contra doble penalización acumulada (45-DCN + [EN CRISIS])
     # Cuando lambda_red < lambda_base (la red ya descontó la racha/jerarquía),
@@ -1014,34 +1057,46 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     # (lambda_final >= 0.90 * lambda_red), respetando un piso acumulado de
     # lambda_final >= 0.72 * lambda_base (salvo expulsión en vivo).
     if lam_red_local < lam_base_local:
+        _al = lam_l
         piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
         lam_l = max(lam_l, piso_l)
+        _trazar("piso_doble_castigo_punto50_local", _al, lam_l, lam_v, lam_v, f"piso={piso_l:.2f} (0.90*red o 0.72*base)")
 
     if lam_red_visita < lam_base_visita:
+        _av = lam_v
         piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
         lam_v = max(lam_v, piso_v)
+        _trazar("piso_doble_castigo_punto50_visita", lam_l, lam_l, _av, lam_v, f"piso={piso_v:.2f} (0.90*red o 0.72*base)")
 
     # ── Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating ──
     delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
     delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
 
     if attack_rating_local < 26.0:
+        _al = lam_l
         delta_pct_l = min(0.0, delta_pct_l)
         lam_l = min(0.90, lam_b_l * (1.0 + delta_pct_l / 100.0))
         delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
+        _trazar("techo_caja_azul_local_26", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<26 (delta<=0%, lam<=0.90)")
     elif attack_rating_local < 35.0 and defense_rating_visita >= 30.0:
         if delta_pct_l > 12.0:
+            _al = lam_l
             delta_pct_l = 12.0
             lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
+            _trazar("techo_caja_azul_local_35_12pct", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<35 limita bono<=+12%")
 
     if attack_rating_visita < 26.0:
+        _av = lam_v
         delta_pct_v = min(0.0, delta_pct_v)
         lam_v = min(0.90, lam_b_v * (1.0 + delta_pct_v / 100.0))
         delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
+        _trazar("techo_caja_azul_visita_26", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<26 (delta<=0%, lam<=0.90)")
     elif attack_rating_visita < 35.0 and defense_rating_local >= 30.0:
         if delta_pct_v > 12.0:
+            _av = lam_v
             delta_pct_v = 12.0
             lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+            _trazar("techo_caja_azul_visita_35_12pct", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<35 limita bono<=+12%")
 
     # Prohibición de Inflación Dual:
     # La suma de los cambios porcentuales de ambos equipos en la Caja Azul jamás puede superar +25.0%
@@ -1055,6 +1110,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     techo_suma_dual = 10.0 if (attack_rating_local < 40.0 and attack_rating_visita < 40.0 and not hay_defensa_rota_o_asedio) else (65.0 if hay_defensa_rota_o_asedio else 25.0)
     suma_actual = delta_pct_l + delta_pct_v
     if suma_actual > techo_suma_dual:
+        _al, _av = lam_l, lam_v
         exceso_dual = suma_actual - techo_suma_dual
         pos_l = max(0.0, delta_pct_l)
         pos_v = max(0.0, delta_pct_v)
@@ -1067,28 +1123,43 @@ def aplicar_freno_de_mano_y_matchup_21_22(
             delta_pct_v -= exceso_dual * 0.5
         lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
         lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+        _trazar("prohibicion_inflacion_dual", _al, lam_l, _av, lam_v, f"suma={suma_actual:.1f}% > techo={techo_suma_dual:.1f}%")
 
     # Re-aplicar techos absolutos de Doble Freno de Mano tras ajuste porcentual
     if attack_rating_local < 26.0:
+        _al = lam_l
         lam_l = min(lam_l, 0.90)
+        _trazar("reaplicacion_techo_local_0.90", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<26")
     if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.80)
+        _trazar("reaplicacion_bloque_bajo_visita_0.80", lam_l, lam_l, _av, lam_v, f"Pos_V={posesion_proyectada_visita:.1f}<45 & Attack_V={attack_rating_visita:.1f}<35")
     if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("reaplicacion_autobus_visita_0.60", lam_l, lam_l, _av, lam_v, f"Press_V={pressing_rating_visita:.1f}<30 & Pos_V={posesion_proyectada_visita:.1f}<42")
     if defense_rating_local >= 60.0 and lam_v > 2.05:
+        _av = lam_v
         lam_v = 1.95 + (lam_v - 1.95) * 0.40
+        _trazar("reaplicacion_fortin_local", lam_l, lam_l, _av, lam_v, f"Def_L={defense_rating_local:.1f}>=60")
 
     # Re-asegurar piso contra doble penalización post-recorte dual
     if lam_red_local < lam_base_local:
+        _al = lam_l
         piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
         lam_l = max(lam_l, piso_l)
+        _trazar("reaplicacion_piso_doble_castigo_local", _al, lam_l, lam_v, lam_v, f"piso={piso_l:.2f}")
 
     if lam_red_visita < lam_base_visita:
+        _av = lam_v
         piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
         lam_v = max(lam_v, piso_v)
+        _trazar("reaplicacion_piso_doble_castigo_visita", lam_l, lam_l, _av, lam_v, f"piso={piso_v:.2f}")
 
+    _al, _av = lam_l, lam_v
     lam_l = round(max(0.25, min(4.20, lam_l)), 2)
     lam_v = round(max(0.25, min(4.20, lam_v)), 2)
+    _trazar("clamping_rango_y_redondeo", _al, lam_l, _av, lam_v, "Rango operativo [0.25, 4.20] y redondeo a 2 dec.")
     delta_pct_l = round(((lam_l - lam_b_l) / lam_b_l) * 100.0, 1)
     delta_pct_v = round(((lam_v - lam_b_v) / lam_b_v) * 100.0, 1)
 

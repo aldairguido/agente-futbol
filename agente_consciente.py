@@ -179,6 +179,36 @@ def _descubrir_api_key() -> str:
     return ""
 
 
+_RE_OVERRIDE_LLM = re.compile(
+    r"(?:\{|\[)\s*['\"]?(?:probabilidad|lambda|umbral|stake|top_?5|ev|cuota|decision_final)"
+    r"|(?:\b(?:lambda|umbral|probabilidad|stake|top\s*5|ev)\b\s*[:=]\s*[-+]?\d)",
+    re.IGNORECASE,
+)
+
+
+def sanitizar_respuesta_llm_texto(texto: Any) -> tuple[str, list[str]]:
+    """
+    Garantiza aislamiento estricto del LLM (Regla 2.7): el lenguaje natural
+    solo explica la decisión ya calculada y no puede inyectar JSON ni sobrescribir
+    probabilidades, lambdas, umbrales, stakes ni selecciones del Top 5.
+    """
+    raw = str(texto or "").strip()
+    if not raw:
+        return "", []
+    violaciones: list[str] = []
+    if (raw.startswith("{") and raw.endswith("}")) or (raw.startswith("[") and raw.endswith("]")):
+        violaciones.append("json_override_rechazado")
+    for m in _RE_OVERRIDE_LLM.finditer(raw):
+        violaciones.append(m.group(0)[:60])
+    if violaciones:
+        return (
+            "Narrativa LLM suprimida por aislamiento cuantitativo: intento de modificar "
+            "parámetros numéricos, probabilidades, umbrales o Top 5.",
+            violaciones,
+        )
+    return raw, []
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. MOTOR NEURONAL MULTI-MODELO CON ROTACIÓN Y FALLBACK EN CALIENTE
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -980,6 +1010,90 @@ class AgenteConsciente:
         }
 
     def diagnosticar_enfrentamiento(
+        self,
+        equipo_local: str,
+        equipo_visitante: str,
+        analisis_mercados: Any | None = None,
+        info_h2h: dict[str, Any] | None = None,
+        usar_llm: bool = False,
+    ) -> dict[str, Any]:
+        """Envoltorio de aislamiento estricto del LLM: protege evaluación, lambdas, umbrales y Top 5."""
+        import copy as _copy
+        snap_eval = _copy.deepcopy(getattr(self, "evaluacion_real", {}))
+        snap_estado = self.estado_adaptativo
+        snap_madurez = self.nivel_madurez
+        snap_am = None
+        snap_tasas = None
+        snap_selecciones = None
+        if analisis_mercados is not None:
+            snap_am = {
+                "lambda_local": getattr(analisis_mercados, "lambda_local", None),
+                "lambda_visitante": getattr(analisis_mercados, "lambda_visitante", None),
+                "lambda_local_recursivo": getattr(analisis_mercados, "lambda_local_recursivo", None),
+                "lambda_visita_recursivo": getattr(analisis_mercados, "lambda_visita_recursivo", None),
+                "top_5_recomendadas": _copy.deepcopy(getattr(analisis_mercados, "top_5_recomendadas", None)),
+                "selecciones_filtradas": _copy.deepcopy(getattr(analisis_mercados, "selecciones_filtradas", None)),
+            }
+            if hasattr(analisis_mercados, "selecciones"):
+                snap_selecciones = _copy.deepcopy(getattr(analisis_mercados, "selecciones", None))
+            motor_obj = getattr(analisis_mercados, "motor", None)
+            if motor_obj is not None and hasattr(motor_obj, "tasas"):
+                snap_tasas = _copy.deepcopy(getattr(motor_obj, "tasas"))
+
+        res = self._diagnosticar_enfrentamiento_nucleo(
+            equipo_local=equipo_local,
+            equipo_visitante=equipo_visitante,
+            analisis_mercados=analisis_mercados,
+            info_h2h=info_h2h,
+            usar_llm=usar_llm,
+        )
+
+        # Restaurar cualquier mutación accidental por parte del LLM
+        violaciones: list[str] = []
+        if getattr(self, "evaluacion_real", {}) != snap_eval:
+            self.evaluacion_real = snap_eval
+            violaciones.append("evaluacion_real_mutada")
+        if self.estado_adaptativo != snap_estado:
+            self.estado_adaptativo = snap_estado
+            violaciones.append("estado_adaptativo_mutado")
+        if self.nivel_madurez != snap_madurez:
+            self.nivel_madurez = snap_madurez
+            violaciones.append("nivel_madurez_mutado")
+        if snap_am is not None and analisis_mercados is not None:
+            for k_am, val_orig in snap_am.items():
+                if hasattr(analisis_mercados, k_am) and getattr(analisis_mercados, k_am) != val_orig:
+                    try:
+                        setattr(analisis_mercados, k_am, val_orig)
+                    except Exception:
+                        pass
+                    violaciones.append(f"analisis_mercados.{k_am}_mutado")
+            if snap_selecciones is not None and getattr(analisis_mercados, "selecciones", None) != snap_selecciones:
+                try:
+                    analisis_mercados.selecciones = snap_selecciones
+                except Exception:
+                    pass
+                violaciones.append("analisis_mercados.selecciones_mutadas")
+            motor_obj = getattr(analisis_mercados, "motor", None)
+            if snap_tasas is not None and motor_obj is not None and getattr(motor_obj, "tasas", None) != snap_tasas:
+                try:
+                    motor_obj.tasas = snap_tasas
+                except Exception:
+                    pass
+                violaciones.append("analisis_mercados.motor.tasas_mutadas")
+
+        if isinstance(res, dict) and usar_llm:
+            texto_limpio, viol_txt = sanitizar_respuesta_llm_texto(res.get("reflexion_metacognitiva"))
+            if viol_txt:
+                res["reflexion_metacognitiva"] = texto_limpio
+                violaciones.extend(viol_txt)
+
+        if isinstance(res, dict):
+            res["llm_solo_explicativo"] = True
+            res["llm_aislamiento_verificado"] = True
+            res["llm_violaciones_bloqueadas"] = violaciones
+        return res
+
+    def _diagnosticar_enfrentamiento_nucleo(
         self,
         equipo_local: str,
         equipo_visitante: str,

@@ -2197,6 +2197,7 @@ def _resumen_motor_recursivo(analisis: Any) -> dict[str, Any]:
         "tasa_sequia_local", "tasa_sequia_visita",
         "tasas_por_equipo",
         "sello_verificacion_visual",
+        "traza_lambda",
     )
     resumen = {clave: rec.get(clave) for clave in claves}
     resumen["aplicado"] = True
@@ -2649,6 +2650,11 @@ def preparar_analisis(
             "masa_residual_ft": analisis.motor.residual_ft,
             # Red Neuronal Recursiva: matriz EFECTIVA con la que se seleccionaron
             # los mercados SEGUROS y se dibujaron las dos láminas.
+            "traza_lambda": (
+                red_verificada.get("traza_lambda")
+                or getattr(analisis.motor, "traza_lambda", [])
+                or []
+            ),
             "motor_recursivo": _resumen_motor_recursivo(analisis),
             "red_neuronal_recursiva": red_verificada,
             "selecciones_filtradas": [

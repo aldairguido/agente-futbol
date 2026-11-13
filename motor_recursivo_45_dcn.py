@@ -2328,6 +2328,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
             break
         entropia_previa = entropia_k
 
+    lam_red_pre_freno_l = round(float(lam_k_L), 4)
+    lam_red_pre_freno_v = round(float(lam_k_V), 4)
+    traza_red_45_dcn: List[Dict[str, Any]] = []
+
     # ── Puntos 21 y 22: Doble Freno de Mano, Techo de Caja Azul y Multiplicadores de Matchup ──
     try:
         from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
@@ -2336,16 +2340,30 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         pos_sum_m = max(1.0, pos_l_raw_m + pos_v_raw_m)
         pos_proy_l_m = (pos_l_raw_m / pos_sum_m) * 100.0
         pos_proy_v_m = (pos_v_raw_m / pos_sum_m) * 100.0
-        lam_21_l, lam_21_v, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
-            lam_base_local=lam_base_local,
-            lam_base_visita=lam_base_visita,
-            lam_red_local=lam_k_L,
-            lam_red_visita=lam_k_V,
-            ratings_local=rL,
-            ratings_visita=rV,
-            posesion_proyectada_local=pos_proy_l_m,
-            posesion_proyectada_visita=pos_proy_v_m,
-        )
+        try:
+            lam_21_l, lam_21_v, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+                lam_base_local=lam_base_local,
+                lam_base_visita=lam_base_visita,
+                lam_red_local=lam_k_L,
+                lam_red_visita=lam_k_V,
+                ratings_local=rL,
+                ratings_visita=rV,
+                posesion_proyectada_local=pos_proy_l_m,
+                posesion_proyectada_visita=pos_proy_v_m,
+                traza_out=traza_red_45_dcn,
+                etapa_prefijo="red_45_dcn",
+            )
+        except TypeError:
+            lam_21_l, lam_21_v, _, _ = aplicar_freno_de_mano_y_matchup_21_22(
+                lam_base_local=lam_base_local,
+                lam_base_visita=lam_base_visita,
+                lam_red_local=lam_k_L,
+                lam_red_visita=lam_k_V,
+                ratings_local=rL,
+                ratings_visita=rV,
+                posesion_proyectada_local=pos_proy_l_m,
+                posesion_proyectada_visita=pos_proy_v_m,
+            )
         if abs(lam_21_l - lam_k_L) > 0.01 or abs(lam_21_v - lam_k_V) > 0.01:
             lam_k_L = lam_21_l
             lam_k_V = lam_21_v
@@ -2452,8 +2470,26 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
 
     pct_tot_L = round(float(sum(f_l.values())), 1)
     pct_tot_V = round(float(sum(f_v.values())), 1)
+    lam_pre_reesc_L = round(float(lam_k_L), 2)
+    lam_pre_reesc_V = round(float(lam_k_V), 2)
     lam_k_L = round(float(lam_base_local * (1.0 + pct_tot_L / 100.0)), 2)
     lam_k_V = round(float(lam_base_visita * (1.0 + pct_tot_V / 100.0)), 2)
+    if (
+        abs(lam_k_L - lam_pre_reesc_L) > 1e-6
+        or abs(lam_k_V - lam_pre_reesc_V) > 1e-6
+    ):
+        traza_red_45_dcn.append({
+            "etapa": "red_45_dcn",
+            "regla": "reescalado_caja_azul_y_factores_xai",
+            "lam_l_antes": lam_pre_reesc_L,
+            "lam_l_despues": round(float(lam_k_L), 4),
+            "lam_v_antes": lam_pre_reesc_V,
+            "lam_v_despues": round(float(lam_k_V), 4),
+            "motivo": (
+                f"Sincronización final Caja Azul: lambda_base*(1+sum_factores/100) "
+                f"(L {pct_tot_L:+.1f}%, V {pct_tot_V:+.1f}%)"
+            ),
+        })
 
     cruces_6["factores_local"] = f_l
     cruces_6["factores_visita"] = f_v
@@ -2474,6 +2510,9 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     return {
         "lambda_base_local": round(float(lam_base_local), 2),
         "lambda_base_visita": round(float(lam_base_visita), 2),
+        "lambda_local_pre_freno": lam_red_pre_freno_l,
+        "lambda_visita_pre_freno": lam_red_pre_freno_v,
+        "traza_red_45_dcn": traza_red_45_dcn,
         "lambda_local_recursivo": round(lam_k_L, 2),
         "lambda_visita_recursivo": round(lam_k_V, 2),
         "iteracion_convergencia": iteracion_final,

@@ -134,6 +134,122 @@ def _goles_desde_texto(bruto: Any) -> tuple[int | None, int | None]:
         return None, None
 
 
+_RAZONES_DESEMPATE_FOTMOB = {
+    "pen", "pen.", "ap", "penalties", "aet", "et", "a.e.t.",
+    "after pen", "after penalties", "after extra time",
+}
+
+
+def resolver_marcador_reglamentario_fotmob(
+    estado: dict[str, Any] | None,
+    raw_gl: int | None,
+    raw_gv: int | None,
+    detalle: dict[str, Any] | None = None,
+) -> tuple[int | None, int | None, str | None, str | None]:
+    """
+    Garantiza que el marcador extraído de FotMob corresponda a los 90' reglamentarios
+    (`90'-FT`) cuando el partido se resolvió por prórroga o tanda de penaltis.
+
+    Devuelve `(goles_local_90, goles_visitante_90, razon_fin, marcador_desempate)`.
+    En partidos normales de 90' (como France 4-6 England) conserva `(raw_gl, raw_gv, razon, None)`.
+    """
+    est = estado if isinstance(estado, dict) else {}
+    reason = est.get("reason") or {}
+    razon_short = str(reason.get("short") or "").strip()
+    razon_long_key = str(reason.get("longKey") or "").strip().lower()
+
+    if isinstance(detalle, dict):
+        hdr_est = ((detalle.get("header") or {}).get("status") or {})
+        if not razon_short:
+            razon_short = str(((hdr_est.get("reason") or {}).get("short") or "")).strip()
+        if not razon_long_key:
+            razon_long_key = str(((hdr_est.get("reason") or {}).get("longKey") or "")).strip().lower()
+        if not est.get("scoreBeforeExtraTime") and hdr_est.get("scoreBeforeExtraTime"):
+            est = {**est, "scoreBeforeExtraTime": hdr_est.get("scoreBeforeExtraTime")}
+
+    contenido = (detalle.get("content") or {}) if isinstance(detalle, dict) else {}
+    eventos = ((contenido.get("matchFacts") or {}).get("events") or {}).get("events") or []
+
+    hay_evento_desempate = False
+    if isinstance(eventos, list):
+        for ev in eventos:
+            if not isinstance(ev, dict):
+                continue
+            ev_type = str(ev.get("type") or "")
+            half_short = str(ev.get("halfStrShort") or "").strip().upper()
+            per_ev = str(ev.get("period") or "")
+            minuto = ev.get("time")
+            if ev.get("isShootoutGoal") or per_ev in ("PenaltyShootout", "ExtraTimeFirstHalf", "ExtraTimeSecondHalf"):
+                hay_evento_desempate = True
+                break
+            if ev_type == "Half" and half_short in ("PEN", "AET", "ET", "ET HT"):
+                hay_evento_desempate = True
+                break
+            if ev_type == "Goal" and isinstance(minuto, (int, float)) and minuto > 90:
+                hay_evento_desempate = True
+                break
+
+    razon_l = razon_short.lower()
+    es_desempate = (
+        hay_evento_desempate
+        or razon_l in _RAZONES_DESEMPATE_FOTMOB
+        or "penalt" in razon_long_key
+        or "extratime" in razon_long_key
+        or "extra_time" in razon_long_key
+    )
+    if not es_desempate:
+        return raw_gl, raw_gv, (razon_short or None), None
+
+    desemp_str = (
+        f"{raw_gl}-{raw_gv} ({razon_short or 'Pen/AET'})"
+        if isinstance(raw_gl, int) and isinstance(raw_gv, int)
+        else (str(est.get("scoreStr") or "").strip() or (razon_short or "Pen/AET"))
+    )
+
+    # 1) Si FotMob expone explícitamente scoreBeforeExtraTime (90' exactos)
+    gl_90, gv_90 = _goles_desde_texto(est.get("scoreBeforeExtraTime"))
+    if gl_90 is not None and gv_90 is not None:
+        return gl_90, gv_90, (razon_short or "Pen/AET"), desemp_str
+
+    # 2) Contar goles de juego reglamentario (time <= 90) antes de marcador FT/AET/PEN o tanda
+    if isinstance(eventos, list) and eventos:
+        tiene_goals_o_half = any(
+            isinstance(ev, dict) and str(ev.get("type") or "") in ("Goal", "Half")
+            for ev in eventos
+        )
+        if tiene_goals_o_half:
+            g_loc = 0
+            g_vis = 0
+            despues_de_90 = False
+            for ev in eventos:
+                if not isinstance(ev, dict):
+                    continue
+                ev_type = str(ev.get("type") or "")
+                half_short = str(ev.get("halfStrShort") or "").strip().upper()
+                per_ev = str(ev.get("period") or "")
+                minuto = ev.get("time")
+                if ev_type == "Half" and half_short in ("FT", "AET", "ET", "PEN", "ET HT"):
+                    despues_de_90 = True
+                    continue
+                if per_ev in ("PenaltyShootout", "ExtraTimeFirstHalf", "ExtraTimeSecondHalf"):
+                    despues_de_90 = True
+                    continue
+                if ev.get("isShootoutGoal"):
+                    continue
+                if ev_type == "Goal":
+                    if despues_de_90:
+                        continue
+                    if isinstance(minuto, (int, float)) and minuto > 90:
+                        continue
+                    if ev.get("isHome"):
+                        g_loc += 1
+                    else:
+                        g_vis += 1
+            return g_loc, g_vis, (razon_short or "Pen/AET"), desemp_str
+
+    return raw_gl, raw_gv, (razon_short or None), desemp_str
+
+
 def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Convierte los fixtures NO terminados de `/teams` en partidos próximos ligeros,
@@ -3460,21 +3576,31 @@ class FuenteFotMob(FuenteXG):
                 gl = gl_str
             if not isinstance(gv, int):
                 gv = gv_str
+        gl_reg, gv_reg, razon_90, marcador_desemp = resolver_marcador_reglamentario_fotmob(
+            estado,
+            gl if isinstance(gl, int) else None,
+            gv if isinstance(gv, int) else None,
+        )
+        extra_p = {
+            "razon_fin": razon_90 or (estado.get("reason") or {}).get("short"),
+            "marcador_texto": estado.get("scoreStr"),
+            "home_id": str(home.get("id") or ""),
+            "away_id": str(away.get("id") or ""),
+            "rival_id": str((away.get("id") if str(home.get("id")) == tid else home.get("id")) or ""),
+        }
+        if marcador_desemp:
+            extra_p["marcador_desempate"] = marcador_desemp
         return PartidoFinalizado(
             id_partido=str(f.get("id")),
             fecha=str(estado.get("utcTime") or "")[:10],
             torneo=torneo,
             local=str(home.get("name") or ""),
             visitante=str(away.get("name") or ""),
-            goles_local=gl if isinstance(gl, int) else None,
-            goles_visitante=gv if isinstance(gv, int) else None,
+            goles_local=gl_reg if isinstance(gl_reg, int) else None,
+            goles_visitante=gv_reg if isinstance(gv_reg, int) else None,
             es_local_el_equipo=str(home.get("id")) == tid,
             url=str(f.get("pageUrl") or ""),
-            extra={"razon_fin": (estado.get("reason") or {}).get("short"),
-                   "marcador_texto": estado.get("scoreStr"),
-                   "home_id": str(home.get("id") or ""),
-                   "away_id": str(away.get("id") or ""),
-                   "rival_id": str((away.get("id") if str(home.get("id")) == tid else home.get("id")) or "")},
+            extra=extra_p,
         )
 
     # ── matriz de un partido ───────────────────────────────────────────────
@@ -3505,6 +3631,31 @@ class FuenteFotMob(FuenteXG):
             return matriz
 
         contenido = detalle.get("content") or {}
+        hdr_status = ((detalle.get("header") or {}).get("status") or {})
+        estado_comb = dict(hdr_status) if isinstance(hdr_status, dict) else {}
+        if partido.extra and partido.extra.get("razon_fin") and not estado_comb.get("reason"):
+            estado_comb["reason"] = {"short": partido.extra.get("razon_fin")}
+        gl_90, gv_90, razon_det, marcador_desemp = resolver_marcador_reglamentario_fotmob(
+            estado_comb,
+            partido.goles_local,
+            partido.goles_visitante,
+            detalle=detalle,
+        )
+        if isinstance(gl_90, int) and isinstance(gv_90, int) and (
+            gl_90 != partido.goles_local or gv_90 != partido.goles_visitante
+        ):
+            matriz.notas.append(
+                f"Marcador ajustado a 90'-FT reglamentarios: {gl_90}-{gv_90} "
+                f"(desempate/prórroga previo: {partido.goles_local}-{partido.goles_visitante}, motivo={razon_det})"
+            )
+            partido.goles_local = gl_90
+            partido.goles_visitante = gv_90
+            if isinstance(partido.extra, dict) and marcador_desemp:
+                partido.extra["marcador_desempate"] = marcador_desemp
+            goles_equipo = gl_90 if es_local else gv_90
+            goles_rival = gv_90 if es_local else gl_90
+            matriz.goles_equipo = goles_equipo
+            matriz.goles_rival = goles_rival
         stats = (contenido.get("stats") or {}).get("Periods") or {}
 
         # Índice de etiquetas -> valor(es) por periodo.
@@ -3818,6 +3969,8 @@ class FuenteFotMob(FuenteXG):
                 tid = str(s.get("teamId") or "")
                 lado = "equipo" if tid == id_equipo else "rival"
                 per_raw = str(s.get("period") or "")
+                if per_raw in ("PenaltyShootout", "ExtraTimeFirstHalf", "ExtraTimeSecondHalf"):
+                    continue
                 if per_raw == "FirstHalf":
                     cab_1t[lado] += 1.0
                 else:
@@ -3842,6 +3995,12 @@ class FuenteFotMob(FuenteXG):
                     if not isinstance(ev, dict):
                         continue
                     if str(ev.get("type") or "") == "Half":
+                        half_short = str(ev.get("halfStrShort") or "").strip().upper()
+                        min_ev = ev.get("time")
+                        if half_short in ("FT", "AET", "ET", "PEN", "ET HT"):
+                            continue
+                        if isinstance(min_ev, (int, float)) and min_ev > 55 and half_short not in ("HT", "1T"):
+                            continue
                         sc = ev.get("halfStrShort") or ev.get("scoreStr") or ""
                         gl_ht, gv_ht = _goles_desde_texto(str(sc))
                         if gl_ht is not None and gv_ht is not None:
@@ -5206,7 +5365,11 @@ class FuenteFlashscore(FuenteXG):
                 goles_local=item.get("goles_local"),
                 goles_visitante=item.get("goles_visitante"),
                 es_local_el_equipo=es_local,
-                extra={"id_flashscore": str(item.get("id") or "")},
+                extra={
+                    "id_flashscore": str(item.get("id") or ""),
+                    "estado_extra": str(item.get("estado_extra") or ""),
+                    **({"marcador_desempate": item.get("marcador_desempate")} if item.get("marcador_desempate") else {}),
+                },
             )
             if es_competicion_amistosa(torneo):
                 amistosos_res.append(pf)

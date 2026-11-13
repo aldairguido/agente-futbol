@@ -1421,20 +1421,25 @@ class ListadoEquipoFlashscore:
                         mid = m.group(1)
                 if not mid:
                     continue
-                numeros = [l for l in lineas[3:] if l.isdigit()]
-                if len(numeros) < 2:
+                goles_l_90, goles_v_90, marcador_desemp = resolver_marcador_reglamentario_flashscore(
+                    lineas[3:], estado_extra=estado_extra
+                )
+                if goles_l_90 is None or goles_v_90 is None:
                     continue
                 fecha = _parsear_fecha_listado(lineas[0], estado_fecha)
                 if not fecha:
                     continue
-                partidos.append({
+                partido_item = {
                     "id": mid, "fecha": fecha,
                     "torneo": torneos_por_id.get(mid, ""),
                     "estado_extra": estado_extra,
                     "local": lineas[1], "visitante": lineas[2],
-                    "goles_local": int(numeros[0]),
-                    "goles_visitante": int(numeros[1]),
-                })
+                    "goles_local": int(goles_l_90),
+                    "goles_visitante": int(goles_v_90),
+                }
+                if marcador_desemp:
+                    partido_item["marcador_desempate"] = marcador_desemp
+                partidos.append(partido_item)
 
         try:
             if contexto is not None:
@@ -1542,6 +1547,78 @@ def _parsear_fecha_listado(texto: str, estado: dict[str, Any]) -> str:
         return ""
 
 
+_ESTADOS_DESEMPATE_90 = {
+    "pen", "pen.", "aet", "et", "after pen.", "after et", "ap", "tp",
+    "t.p.", "penaltis", "prórroga", "prorroga", "p",
+}
+
+
+def resolver_marcador_reglamentario_flashscore(
+    lineas_score: list[str],
+    estado_extra: str = "",
+) -> tuple[int | None, int | None, str | None]:
+    """
+    Extrae el marcador reglamentario 90'-FT de un bloque de Flashscore.
+
+    Si el partido se definió por penaltis o prórroga (p. ej. "Pen", "AET",
+    `lineas_score = ["5", "2", "(1)", "(1)"]` en Bosnia & Herzegovina vs Italy),
+    devuelve el marcador reglamentario `(1, 1, "5-2 (Pen)")` para no contaminar
+    las tasas de goles ni el cómputo de 2T con tandas de penaltis o prórroga.
+    En partidos normales de 90' (incluso abultados como France 4-6 England),
+    devuelve `(goles_local, goles_visitante, None)` sin alterar el marcador.
+    """
+    tokens = [str(l).strip() for l in (lineas_score or []) if str(l).strip()]
+    est_norm = str(estado_extra or "").strip().lower()
+    hay_estado_desemp = est_norm in _ESTADOS_DESEMPATE_90
+    tokens_filtrados: list[str] = []
+    for tok in tokens:
+        if tok.lower() in _ESTADOS_DESEMPATE_90:
+            hay_estado_desemp = True
+            if not estado_extra:
+                estado_extra = tok
+            continue
+        tokens_filtrados.append(tok)
+
+    numeros_planos = [int(tok) for tok in tokens_filtrados if tok.isdigit()]
+    numeros_parentesis: list[int] = []
+    for tok in tokens_filtrados:
+        m_par = re.fullmatch(r"\((\d+)\)", tok)
+        if m_par:
+            numeros_parentesis.append(int(m_par.group(1)))
+            continue
+        m_par_duo = re.fullmatch(r"\((\d+)\s*[-:]\s*(\d+)\)", tok)
+        if m_par_duo:
+            numeros_parentesis.extend([int(m_par_duo.group(1)), int(m_par_duo.group(2))])
+
+    if len(numeros_planos) < 2 and len(numeros_parentesis) < 2:
+        for tok in tokens_filtrados:
+            m_gl = re.search(r"(\d+)\s*[-:]\s*(\d+)", tok)
+            if m_gl:
+                numeros_planos = [int(m_gl.group(1)), int(m_gl.group(2))]
+                break
+
+    if hay_estado_desemp and len(numeros_parentesis) >= 2:
+        desemp = (
+            f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra or 'Pen/AET'})"
+            if len(numeros_planos) >= 2
+            else str(estado_extra or "Pen/AET")
+        )
+        return numeros_parentesis[0], numeros_parentesis[1], desemp
+
+    if len(numeros_planos) >= 2:
+        desemp = (
+            f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra})"
+            if hay_estado_desemp and estado_extra
+            else None
+        )
+        return numeros_planos[0], numeros_planos[1], desemp
+
+    if len(numeros_parentesis) >= 2:
+        return numeros_parentesis[0], numeros_parentesis[1], (estado_extra or None)
+
+    return None, None, None
+
+
 def candidatos_desde_feed_hh(
     id_flashscore: str, cliente: ClienteFlashscore | None = None
 ) -> list[dict[str, Any]]:
@@ -1586,16 +1663,24 @@ def candidatos_desde_feed_hh(
         gv = None
         kl = items.get("KL", "").strip()
         km = items.get("KM", "").strip()
+        # Si Flashscore empaqueta marcador con desempate entre paréntesis (p. ej. "1 (4)"),
+        # extraer solo los goles enteros reglamentarios iniciales si no son tanda aislada.
+        m_kl_par = re.match(r"^(\d+)\s*\(\d+\)$", kl)
+        m_km_par = re.match(r"^(\d+)\s*\(\d+\)$", km)
         if kl.isdigit():
             gl = int(kl)
+        elif m_kl_par:
+            gl = int(m_kl_par.group(1))
         elif ":" in kl:
             partes = kl.split(":")
-            if partes[0].isdigit():
-                gl = int(partes[0])
-            if partes[1].isdigit():
-                gv = int(partes[1])
+            if partes[0].strip().isdigit():
+                gl = int(partes[0].strip())
+            if len(partes) > 1 and partes[1].strip().isdigit():
+                gv = int(partes[1].strip())
         if km.isdigit():
             gv = int(km)
+        elif m_km_par:
+            gv = int(m_km_par.group(1))
 
         nom_l = items.get("KJ", "").strip().lstrip("*")
         nom_v = items.get("KK", "").strip().lstrip("*")
