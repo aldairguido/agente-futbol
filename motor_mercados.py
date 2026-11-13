@@ -1546,6 +1546,24 @@ class MotorMercados:
                 info_contexto=ctx_av,
                 contexto_partido=ctx_av,
             )
+            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
+            if isinstance(pat_l, dict):
+                pat_l["_muestra_etiqueta"] = _etq_adn
+                pat_l["_n_muestra_adn"] = _nl_adn
+            if isinstance(pat_v, dict):
+                pat_v["_muestra_etiqueta"] = _etq_adn
+                pat_v["_n_muestra_adn"] = _nv_adn
+            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
+            if isinstance(pat_l, dict):
+                pat_l["_muestra_etiqueta"] = _etq_adn
+                pat_l["_n_muestra_adn"] = _nl_adn
+            if isinstance(pat_v, dict):
+                pat_v["_muestra_etiqueta"] = _etq_adn
+                pat_v["_n_muestra_adn"] = _nv_adn
             resultado["patrones_55_local"] = pat_l
             resultado["patrones_55_visita"] = pat_v
             resultado["alertas_55"] = alertas_55
@@ -1738,12 +1756,24 @@ class MotorMercados:
             pass
 
         if getattr(self, "xai_factores", None) and self.xai_factores.get("aplicado"):
+            _lam_base_sync_l = float(resultado.get("lambda_base_local", lam_l) or lam_l)
+            _lam_base_sync_v = float(resultado.get("lambda_base_visita", lam_v) or lam_v)
+            _lam_red_puro_l = float(lam_l_red_orig if "lam_l_red_orig" in locals() else lam_l_red)
+            _lam_red_puro_v = float(lam_v_red_orig if "lam_v_red_orig" in locals() else lam_v_red)
+            _pct_real_l = round(((float(lam_l_red) / max(0.05, _lam_base_sync_l)) - 1.0) * 100.0, 1)
+            _pct_real_v = round(((float(lam_v_red) / max(0.05, _lam_base_sync_v)) - 1.0) * 100.0, 1)
+            _pct_red_puro_l = round(((_lam_red_puro_l / max(0.05, _lam_base_sync_l)) - 1.0) * 100.0, 1)
+            _pct_red_puro_v = round(((_lam_red_puro_v / max(0.05, _lam_base_sync_v)) - 1.0) * 100.0, 1)
+            self.xai_factores["local"]["lambda_base"] = round(_lam_base_sync_l, 4)
+            self.xai_factores["local"]["lambda_red"] = round(_lam_red_puro_l, 4)
+            self.xai_factores["local"]["pct_red"] = _pct_red_puro_l
             self.xai_factores["local"]["lambda_efectivo"] = round(lam_l_red, 4)
-            pct_l = round(float(sum(resultado.get("cruces_tacticos", {}).get("factores_local", {}).values())), 1) if "cruces_tacticos" in resultado else round(((lam_l_red / max(0.05, float(lam_l))) - 1.0) * 100.0, 1)
-            pct_v = round(float(sum(resultado.get("cruces_tacticos", {}).get("factores_visita", {}).values())), 1) if "cruces_tacticos" in resultado else round(((lam_v_red / max(0.05, float(lam_v))) - 1.0) * 100.0, 1)
-            self.xai_factores["local"]["total_pct"] = pct_l
+            self.xai_factores["local"]["total_pct"] = _pct_real_l
+            self.xai_factores["visita"]["lambda_base"] = round(_lam_base_sync_v, 4)
+            self.xai_factores["visita"]["lambda_red"] = round(_lam_red_puro_v, 4)
+            self.xai_factores["visita"]["pct_red"] = _pct_red_puro_v
             self.xai_factores["visita"]["lambda_efectivo"] = round(lam_v_red, 4)
-            self.xai_factores["visita"]["total_pct"] = pct_v
+            self.xai_factores["visita"]["total_pct"] = _pct_real_v
             if "cruces_tacticos" in resultado and isinstance(resultado["cruces_tacticos"], dict):
                 ct_d = resultado["cruces_tacticos"]
                 self.xai_factores["local"]["factores"] = dict(ct_d.get("factores_local", {}))
@@ -2814,7 +2844,9 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     if top5_podio:
         L.append("")
         n_top_reales = len(top5_podio)
-        tit_top_reales = f"🏆 TOP {n_top_reales} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):" if n_top_reales < 5 else f"🏆 TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):"
+        _tiene_cuota_real_t5 = any(isinstance(it, dict) and (it.get("ev_pct") is not None or it.get("ev") is not None) for it in top5_podio)
+        _suf_tit_t5 = "(ALTO VALOR TE APUESTO)" if _tiene_cuota_real_t5 else "(ALTA PROBABILIDAD DEL MODELO)"
+        tit_top_reales = f"🏆 TOP {n_top_reales} JUGADAS RECOMENDADAS {_suf_tit_t5}:" if n_top_reales < 5 else f"🏆 TOP 5 JUGADAS RECOMENDADAS {_suf_tit_t5}:"
         L.append(tit_top_reales)
         nota_cal = top5_podio[0].get("nota_calibracion")
         if nota_cal:
@@ -3605,15 +3637,27 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
         for alt in alertas:
             lineas.append(f"▸ {alt}")
 
+    def _hdr_xai_lado(info: dict, f_dict: dict) -> str:
+        lb = float(info.get("lambda_base", 0.0) or 0.0)
+        le = float(info.get("lambda_efectivo", 0.0) or 0.0)
+        lr = float(info.get("lambda_red", le) or le)
+        tot = float(info.get("total_pct", 0.0) or 0.0)
+        sf = round(float(sum(float(v or 0.0) for v in (f_dict or {}).values())), 1)
+        if abs(lr - le) >= 0.015 or abs(tot - sf) >= 0.5:
+            pr = float(info.get("pct_red", round(((lr / max(0.05, lb)) - 1.0) * 100.0, 1)) or 0.0)
+            p_reg = ((le / max(0.05, lr)) - 1.0) * 100.0
+            return f"▸ {info.get('nombre', 'Equipo')}: λ {lb:.2f} → Red {lr:.2f} ({pr:+.1f}%) → Final {le:.2f} ({tot:+.1f}% total; reglas post-red {p_reg:+.1f}%; factores red {sf:+.1f}%)"
+        return f"▸ {info.get('nombre', 'Equipo')}: λ {lb:.2f} → {le:.2f} ({tot:+.1f}%)"
+
     lineas.extend([
-        "🧠 Desglose de Factores de la Red Neuronal (XAI):",
-        f"▸ {loc.get('nombre', 'Local')}: λ {loc.get('lambda_base', 0.0):.2f} → {loc.get('lambda_efectivo', 0.0):.2f} ({loc.get('total_pct', 0.0):+.1f}%)",
+        "🧠 Desglose de Factores (Red de Factores con Pesos Fijos · XAI):",
+        _hdr_xai_lado(loc, f_l),
         f"  - Posesión Progresiva: {f_l.get('F_posesion_progresiva', 0.0):+.1f}%",
         f"  - Creación Ofensiva: {f_l.get('F_creacion', 0.0):+.1f}%",
         f"  - Letalidad / Finalización: {f_l.get('F_finalizacion', 0.0):+.1f}%",
         f"  - Vulnerabilidad Portería Rival: {f_l.get('F_porteria_rival', 0.0):+.1f}%",
         f"  - Fragilidad Defensiva Rival: {f_l.get('F_fragilidad_rival', 0.0):+.1f}%",
-        f"▸ {vis.get('nombre', 'Visitante')}: λ {vis.get('lambda_base', 0.0):.2f} → {vis.get('lambda_efectivo', 0.0):.2f} ({vis.get('total_pct', 0.0):+.1f}%)",
+        _hdr_xai_lado(vis, f_v),
         f"  - Posesión Progresiva: {f_v.get('F_posesion_progresiva', 0.0):+.1f}%",
         f"  - Creación Ofensiva: {f_v.get('F_creacion', 0.0):+.1f}%",
         f"  - Letalidad / Finalización: {f_v.get('F_finalizacion', 0.0):+.1f}%",
@@ -4047,17 +4091,12 @@ def seleccionar_top_5_jugadas_recomendadas(
         ev_c = str(_v(sel_cand, "evento") or "").lower()
         et_c = str(_v(sel_cand, "etiqueta") or "").lower()
         lin_c = _v(sel_cand, "linea", None)
-        # Descartar Under en líneas altas con cuota justa < min_cuota_justa sin cuota real
+        # Regla 1.7 (Ronda 5+6): Sin cuota real +EV, cuota justa mínima obligatoria en Top 5
+        # para TODOS los mercados (Overs, Unders, 1X2, Doble Oportunidad, DNB, Mitades, Córneres, Tarjetas)
         from decision_cobertura import cargar_umbrales_cobertura
         cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.25))
         prob_max_trivial = round(1.0 / max(0.01, cuota_justa_min), 4)
-        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c >= prob_max_trivial:
-            return True
-        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c >= prob_max_trivial:
-            return True
-        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c >= prob_max_trivial:
-            return True
-        if p_c >= 0.89 and not any(k in ev_c for k in ("1x", "x2", "dc_1x", "dc_x2")):
+        if p_c > prob_max_trivial + 1e-9:
             return True
         return False
 
@@ -4904,6 +4943,9 @@ def seleccionar_top_5_jugadas_recomendadas(
         else:
             return 0.5 - abs(p - 0.80) + est_bonus
 
+    # Filtro final Regla 1.7 tras sincronizaciones e inyecciones 2T: ninguna selección sin +EV real puede entrar con cuota justa < 1.25
+    candidatas = [s for s in candidatas if not _es_linea_trivial_top5(s)]
+
     por_slot: dict[int, list[Any]] = {1: [], 2: [], 3: [], 4: [], 5: []}
     for s in candidatas:
         sl = _slot_seleccion(s)
@@ -5031,8 +5073,13 @@ def seleccionar_top_5_jugadas_recomendadas(
         prob_base_top1_pct = round(p_bas_1 * 100.0, 1)
         prob_ajustada_top1_pct = round(p_adj_1 * 100.0, 1)
 
+    _hay_cuota_real_podio = any(
+        _v(cand_e, "cuota_real", _v(cand_e, "cuota", _v(cand_e, "odds", None))) is not None
+        for _, cand_e in elegidas[:5]
+    )
+    _txt_origen_cal = "e ineficiencia de mercado" if _hay_cuota_real_podio else "(sin cuotas de mercado cargadas)"
     nota_calibracion_str = (
-        f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. "
+        f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) {_txt_origen_cal}. "
         f"Base Matriz Poisson: {prob_base_top1_pct:.1f}% -> Ajustada Ticket: {prob_ajustada_top1_pct:.1f}%."
     )
 

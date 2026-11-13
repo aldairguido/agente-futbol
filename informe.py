@@ -921,7 +921,15 @@ def generar_bloque_narrativo_xai_desde_analisis(
         if isinstance(rec.get("mu_visita_fuera"), dict):
             d_vis_V.update(rec["mu_visita_fuera"])
 
-        P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+        if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
+            P_L = dict(rec["patrones_55_local"])
+            P_V = dict(rec["patrones_55_visita"])
+        else:
+            P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+            if isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict):
+                _etq_m = "Doble ADN pond."
+                P_L["_muestra_etiqueta"] = _etq_m
+                P_V["_muestra_etiqueta"] = _etq_m
 
         probs_1x2 = _extraer_probabilidades_red_general(analisis)
         # Sincronización estricta C1: 1X2 en Telegram idéntico a motor.matriz_ft
@@ -965,6 +973,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
             ratings_visita=ratings_V_v,
             top5_podio=top5_v,
             selecciones_sec1=sec1_v,
+            motor=motor,
         )
     except Exception:
         return ""

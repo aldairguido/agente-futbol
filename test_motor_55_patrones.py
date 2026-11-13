@@ -405,7 +405,7 @@ def test_5_escenarios_laliga_puntos_21_30():
     # - Prohibido recomendar "Getafe +0.5 Goles" o "Goles 1T: +0.5 Goles" o "+10.5 Córneres"
     # - Reemplazo automático de 1T +0.5 por "Goles 2T: +0.5 Goles"
     class _DummyMotor:
-        matriz_ft = [[0.10, 0.05, 0.01], [0.28, 0.14, 0.03], [0.22, 0.12, 0.05]]
+        matriz_ft = [[0.08, 0.10, 0.08], [0.24, 0.10, 0.04], [0.20, 0.14, 0.02]]
         recursivo = {
             "lambda_local_recursivo": 1.80,
             "lambda_visita_recursivo": 0.58,
@@ -418,7 +418,7 @@ def test_5_escenarios_laliga_puntos_21_30():
         }
 
     sels_gate = [
-        {"mercado": "Doble oportunidad", "evento": "1x", "etiqueta": "1X (Villarreal o empate)", "periodo": "FT", "equipo": "Villarreal", "probabilidad": 0.84, "estado": "mantiene"},
+        {"mercado": "Doble oportunidad", "evento": "1x", "etiqueta": "1X (Villarreal o empate)", "periodo": "FT", "equipo": "Villarreal", "probabilidad": 0.78, "estado": "mantiene"},
         {"mercado": "Total de goles", "evento": "under_3.5", "etiqueta": "menos de 3.5 goles", "periodo": "FT", "linea": 3.5, "probabilidad": 0.78, "estado": "mantiene"},
         {"mercado": "Total de goles Getafe", "evento": "visitante_over_0.5", "etiqueta": "Getafe: más de 0.5 goles", "periodo": "FT", "equipo": "Getafe", "linea": 0.5, "probabilidad": 0.75, "estado": "mantiene"},
         {"mercado": "Gol en ambos tiempos", "evento": "gol_1t", "etiqueta": "Al menos un gol en el 1T", "periodo": "1T", "probabilidad": 0.76, "estado": "mantiene"},

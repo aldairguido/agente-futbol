@@ -344,9 +344,25 @@ _RE_AMISTOSO = re.compile(
 )
 
 
+def _es_region_geografica(nombre_torneo: str) -> bool:
+    """True si la cadena es una región/confederación (ej. Europe, World) y no un torneo real."""
+    s = _sin_acentos(str(nombre_torneo or "")).lower().strip()
+    return s in {
+        "europe", "europa", "world", "mundo",
+        "africa", "asia", "oceania",
+        "south america", "sudamerica",
+        "north america", "norteamerica",
+        "north & central america", "central america",
+        "concacaf", "international", "internacional",
+    }
+
+
 def es_competicion_amistosa(nombre_torneo: str) -> bool:
     """True si el torneo es amistoso/pretemporada (sin estadísticas avanzadas fiables)."""
     return bool(nombre_torneo and _RE_AMISTOSO.search(str(nombre_torneo)))
+
+
+_es_torneo_amistoso = es_competicion_amistosa
 
 # Normalización de nombres de periodo de la fuente -> etiquetas del informe
 PERIODOS_NORMALIZADOS = {
@@ -5171,7 +5187,13 @@ class FuenteFlashscore(FuenteXG):
         nom_eq = str(equipo.get("nombre") or "")
 
         for item in crudos:
-            torneo = str(item.get("torneo") or equipo.get("liga") or "Competición Oficial")
+            torneo_item = str(item.get("torneo") or "").strip()
+            torneo_eq = str(equipo.get("liga") or "").strip()
+            if _es_region_geografica(torneo_item):
+                torneo_item = ""
+            if _es_region_geografica(torneo_eq):
+                torneo_eq = ""
+            torneo = torneo_item or torneo_eq or "Competición Oficial"
             loc = str(item.get("local") or "")
             vis = str(item.get("visitante") or "")
             es_local = bool(_parecido(loc, nom_eq)) or not bool(_parecido(vis, nom_eq))

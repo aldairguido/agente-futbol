@@ -402,6 +402,113 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
     }
 
 
+def construir_resumen_h2h_ticket(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+    equipo_local: str,
+    equipo_visitante: str,
+    fecha_objetivo: str | None = None,
+    info_h2h: dict[str, Any] | None = None,
+) -> str:
+    """Extrae enfrentamientos directos recientes (< fecha_objetivo) de forma puramente informativa para el Ticket."""
+    from fuentes_xg import _sin_acentos, variantes_de_busqueda
+    from resolvedor_entidades import (
+        obtener_nombre_flashscore,
+        obtener_nombre_fotmob,
+        obtener_seleccion_nacional,
+    )
+
+    def _toks(n: str) -> set[str]:
+        s = _sin_acentos(str(n or "")).lower().strip()
+        als = {s}
+        try:
+            for v in variantes_de_busqueda(n) or []:
+                als.add(v)
+        except Exception:
+            pass
+        try:
+            sel = obtener_seleccion_nacional(n)
+            if sel:
+                als.add(sel[0])
+                als.update(sel[2] or [])
+            als.add(obtener_nombre_flashscore(n))
+            als.add(obtener_nombre_fotmob(n))
+        except Exception:
+            pass
+        return {_sin_acentos(str(a)).lower().strip() for a in als if a and len(_sin_acentos(str(a)).strip()) >= 3}
+
+    t_l = _toks(equipo_local)
+    t_v = _toks(equipo_visitante)
+    fecha_lim = str(fecha_objetivo or "")[:10]
+
+    def _mismo(nombre: str, toks: set[str]) -> bool:
+        s = _sin_acentos(str(nombre or "")).lower().strip()
+        return any(s == tk or tk in s or s in tk for tk in toks if len(tk) >= 3)
+
+    encontrados: list[tuple[str, str, str, int, int]] = []
+    vistos: set[tuple[str, str, str]] = set()
+    candidatos = list((info_h2h or {}).get("duelos") or [])
+    for doc in (doc_local, doc_visitante):
+        if isinstance(doc, dict):
+            candidatos.extend(doc.get("partidos") or [])
+
+    for p in candidatos:
+        if not isinstance(p, dict):
+            continue
+        f_p = str(p.get("fecha") or "")[:10]
+        if fecha_lim and len(f_p) == 10 and f_p >= fecha_lim:
+            continue
+        marc = p.get("marcador") if isinstance(p.get("marcador"), dict) else {}
+        if "equipo" in p and "rival" in p:
+            loc = p.get("equipo").get("nombre") if isinstance(p.get("equipo"), dict) else str(p.get("equipo") or "")
+            vis = p.get("rival").get("nombre") if isinstance(p.get("rival"), dict) else str(p.get("rival") or "")
+            es_fuera = str(p.get("condicion") or "").lower() in ("fuera", "visitante", "away")
+            g_eq = p.get("goles_equipo") if p.get("goles_equipo") is not None else marc.get("equipo")
+            g_riv = p.get("goles_rival") if p.get("goles_rival") is not None else marc.get("rival")
+            if es_fuera:
+                loc, vis = vis, loc
+                gl = p.get("goles_local") if p.get("goles_local") is not None else marc.get("local")
+                gv = p.get("goles_visitante") if p.get("goles_visitante") is not None else marc.get("visitante")
+                if gl is None or gv is None:
+                    gl, gv = g_riv, g_eq
+            else:
+                gl = p.get("goles_local") if p.get("goles_local") is not None else marc.get("local")
+                gv = p.get("goles_visitante") if p.get("goles_visitante") is not None else marc.get("visitante")
+                if gl is None or gv is None:
+                    gl, gv = g_eq, g_riv
+        else:
+            loc = p.get("local").get("nombre") if isinstance(p.get("local"), dict) else str(p.get("local") or "")
+            vis = p.get("visitante").get("nombre") if isinstance(p.get("visitante"), dict) else str(p.get("visitante") or "")
+            gl = p.get("goles_local") if p.get("goles_local") is not None else marc.get("local")
+            gv = p.get("goles_visitante") if p.get("goles_visitante") is not None else marc.get("visitante")
+        if gl is None or gv is None:
+            continue
+        es_lv = _mismo(loc, t_l) and _mismo(vis, t_v)
+        es_vl = _mismo(loc, t_v) and _mismo(vis, t_l)
+        if not (es_lv or es_vl):
+            continue
+        loc_disp = equipo_local if _mismo(loc, t_l) else equipo_visitante
+        vis_disp = equipo_visitante if _mismo(vis, t_v) else equipo_local
+        clave = (f_p, _sin_acentos(loc_disp).lower(), _sin_acentos(vis_disp).lower())
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        encontrados.append((f_p, loc_disp, vis_disp, int(gl), int(gv)))
+
+    if not encontrados:
+        return ""
+    encontrados.sort(key=lambda x: x[0], reverse=True)
+    partes = []
+    for f_p, loc, vis, gl, gv in encontrados[:2]:
+        try:
+            y, m, d = f_p.split("-")
+            f_es = f"{d}/{m}/{y}"
+        except Exception:
+            f_es = f_p
+        partes.append(f"{loc} {gl}-{gv} {vis} ({f_es})")
+    return "H2H Reciente (informativo): " + " · ".join(partes)
+
+
 def son_ligas_equivalentes(liga_decl: str, liga_det: str) -> bool:
     """
     Determina si la competición declarada y la detectada corresponden al mismo torneo
@@ -430,20 +537,35 @@ def son_ligas_equivalentes(liga_decl: str, liga_det: str) -> bool:
     if r1 == r2 or r1 in r2 or r2 in r1:
         return True
 
-    # Familias continentales de selecciones (UEFA, CONMEBOL, CONCACAF, CAF, AFC, FIFA)
+    from fuentes_xg import _es_region_geografica
+    if _es_region_geografica(s_decl) or _es_region_geografica(s_det):
+        return False
+
+    # Familias estrictas de COMPETICIONES de selecciones (nunca confundir regiones como "Europe" con un torneo)
     familias = [
-        # UEFA
-        {"uefa", "nations", "uefanationsleague", "euro", "eurocopa", "uefaeuro", "eliminatoriasuefa", "worldcupqualuefa", "worldcupqualificationuefa", "europe", "europa"},
-        # CONMEBOL
-        {"conmebol", "copaamerica", "eliminatoriasconmebol", "eliminatoriassudamericanas", "southamerica", "sudamerica"},
-        # CONCACAF
-        {"concacaf", "concacafnationsleague", "copaoro", "goldcup", "northcentralamerica", "northamerica"},
-        # CAF
-        {"caf", "copaafrica", "africa", "africancupofnations"},
-        # AFC
-        {"afc", "copaasiatica", "asiancup", "asia"},
-        # FIFA World Cup
-        {"worldcup", "copadelmundo", "mundial", "fifaworldcup", "world"},
+        # UEFA Nations League (sin "europe"/"europa")
+        {"nationsleague", "uefanationsleague"},
+        # UEFA Euro / Eurocopa
+        {"eurocopa", "uefaeuro"},
+        # Eliminatorias UEFA
+        {"eliminatoriasuefa", "worldcupqualuefa", "worldcupqualificationuefa"},
+        # Copa América (sin "southamerica"/"sudamerica")
+        {"copaamerica"},
+        # Eliminatorias CONMEBOL
+        {
+            "eliminatoriasconmebol",
+            "eliminatoriassudamericanas",
+            "clasificacionconmebol",
+            "worldcupclasificacionconmebol",
+            "worldcupqualsouthamerica",
+            "worldcupqualificationsouthamerica",
+        },
+        # CONCACAF Nations League / Copa Oro
+        {"concacafnationsleague", "copaoro", "goldcup"},
+        # Copa Africana / Asiática
+        {"copaafrica", "africancupofnations", "copaasiatica", "asiancup"},
+        # FIFA World Cup (sin región "world" genérica ni confundir con Word/Club WC)
+        {"worldcup", "copadelmundo", "mundial", "fifaworldcup", "worldchampionship"},
     ]
     toks_decl = {w for w in re.split(r"[\s\-_./()\[\]:]+", s_decl) if w}
     toks_det = {w for w in re.split(r"[\s\-_./()\[\]:]+", s_det) if w}
@@ -705,7 +827,17 @@ def resolver_enfrentamiento(
     liga_decl_raw = (nombre_liga_txt or (liga_final.get("nombre") if isinstance(liga_final, dict) else str(liga_final or ""))).strip()
     torneos_reales = [str(p.get("torneo") or "").strip() for p in (doc_a.get("partidos") or []) if p.get("torneo")]
     liga_partidos = torneos_reales[0] if torneos_reales else ""
-    liga_det_raw = str(liga_partidos or (doc_a.get("equipo") or {}).get("liga") or res_puente.liga or contexto.get("competicion") or "").strip()
+    from fuentes_xg import _es_region_geografica
+    _cands_liga_det = [
+        liga_partidos,
+        (doc_a.get("equipo") or {}).get("liga"),
+        getattr(res_puente, "liga", None),
+        contexto.get("competicion"),
+    ]
+    liga_det_raw = next(
+        (str(x).strip() for x in _cands_liga_det if str(x or "").strip() and not _es_region_geografica(str(x))),
+        "",
+    )
     if liga_decl_raw and liga_det_raw and not son_ligas_equivalentes(liga_decl_raw, liga_det_raw):
         adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
         avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
@@ -1646,7 +1778,53 @@ def renderizar_ticket_mercados_png(
 
         linea_cluster = (clusters_info or {}).get("linea_pie", "")
 
-        alto_header = 118
+        h2h_tkt_txt = str(meta.get("h2h_reciente_ticket") or "").strip()
+        if not h2h_tkt_txt and (getattr(motor, "doc_local", None) or getattr(motor, "doc_visitante", None)):
+            h2h_tkt_txt = construir_resumen_h2h_ticket(
+                getattr(motor, "doc_local", None),
+                getattr(motor, "doc_visitante", None),
+                eq_l,
+                eq_v,
+                fecha_objetivo=str(meta.get("fecha_partido") or ""),
+            )
+            if h2h_tkt_txt:
+                meta["h2h_reciente_ticket"] = h2h_tkt_txt
+        meta_parts_pre = []
+        if competicion:
+            meta_parts_pre.append(f"Competición: {competicion}")
+        if meta.get("advertencia_liga"):
+            adv_str = str(meta["advertencia_liga"])
+            partes_adv = adv_str.split("|")
+            p_decl = partes_adv[0].replace("Declarada:", "").strip() if len(partes_adv) > 0 else ""
+            p_det = partes_adv[1].replace("Detectada:", "").strip() if len(partes_adv) > 1 else ""
+            if not son_ligas_equivalentes(p_decl, p_det):
+                meta_parts_pre.append(f"⚠️ {meta['advertencia_liga']}")
+        if fecha:
+            meta_parts_pre.append(f"Fecha: {fecha}")
+        meta_parts_pre.append("Modelo: Poisson bivariado con contracción bayesiana")
+        _rec_ticket = (getattr(getattr(analisis, "motor", None), "recursivo", None) or {})
+        if _rec_ticket.get("aplicado"):
+            meta_parts_pre[-1] = (
+                f"Modelo: red de factores con pesos fijos "
+                f"(conv. it. {_rec_ticket.get('iteracion_convergencia')})"
+            )
+        meta_txt_full = _sanear_para_canvas("   ·   ".join(meta_parts_pre))
+        meta_lineas: list[str] = []
+        if _get_w(meta_txt_full, f_meta) <= ANCHO_TABLA:
+            meta_lineas = [meta_txt_full]
+        else:
+            cur_m = ""
+            for mp in meta_parts_pre:
+                mp_s = _sanear_para_canvas(mp)
+                cand_m = f"{cur_m}   ·   {mp_s}" if cur_m else mp_s
+                if cur_m and _get_w(cand_m, f_meta) > ANCHO_TABLA:
+                    meta_lineas.append(cur_m)
+                    cur_m = mp_s
+                else:
+                    cur_m = cand_m
+            if cur_m:
+                meta_lineas.append(cur_m)
+        alto_header = 118 + max(0, len(meta_lineas) - 1) * 18 + (20 if h2h_tkt_txt else 0)
         alto_banner = 44
         alto_tbl_hdr = 32
         alto_footer = 56 if linea_cluster else 40
@@ -1734,41 +1912,28 @@ def renderizar_ticket_mercados_png(
         d.text((ANCHO_CANVAS - PAD_X - _get_w(_sello_tkt, f_meta), y_c + 2), _sello_tkt, font=f_meta, fill=C_TXT_MUTED)
 
         y_c += 22
-        meta_parts = []
-        if competicion:
-            meta_parts.append(f"Competición: {competicion}")
-        if meta.get("advertencia_liga"):
-            adv_str = str(meta["advertencia_liga"])
-            partes_adv = adv_str.split("|")
-            p_decl = partes_adv[0].replace("Declarada:", "").strip() if len(partes_adv) > 0 else ""
-            p_det = partes_adv[1].replace("Detectada:", "").strip() if len(partes_adv) > 1 else ""
-            if not son_ligas_equivalentes(p_decl, p_det):
-                meta_parts.append(f"⚠️ {meta['advertencia_liga']}")
-        if fecha:
-            meta_parts.append(f"Fecha: {fecha}")
-        meta_parts.append("Modelo: Poisson bivariado con contracción bayesiana")
-        # Si el Motor Recursivo 45-DCN recalculó la matriz, se declara en la
-        # cabecera: el ticket no puede atribuir a Poisson lo que hizo el motor.
-        _rec_ticket = (getattr(getattr(analisis, "motor", None), "recursivo", None) or {})
-        if _rec_ticket.get("aplicado"):
-            meta_parts[-1] = (
-                f"Modelo: Red Neuronal Recursiva 45→8→n "
-                f"(conv. it. {_rec_ticket.get('iteracion_convergencia')})")
-        meta_txt = "   ·   ".join(meta_parts)
-        d.text((PAD_X, y_c), meta_txt, font=f_meta, fill=C_TXT_MUTED)
+        for idx_ml, ml_txt in enumerate(meta_lineas):
+            if idx_ml > 0:
+                y_c += 18
+            d.text((PAD_X, y_c), ml_txt, font=f_meta, fill=C_TXT_MUTED)
+        if h2h_tkt_txt:
+            y_c += 20
+            d.text((PAD_X, y_c), _sanear_para_canvas(h2h_tkt_txt), font=f_meta, fill=C_COBALT)
 
         y_c += 32
         d.line([PAD_X, y_c, PAD_X + ANCHO_TABLA, y_c], fill=C_BORDER, width=1)
         y_c += 12
 
-        # 1.5 Bloque destacado: TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)
+        # 1.5 Bloque destacado: TOP 5 JUGADAS RECOMENDADAS
         if top5_podio:
             C_PODIO_BG = (227, 242, 253)        # #E3F2FD
             C_PODIO_BORDER = (26, 107, 168)     # #1A6BA8
             C_PODIO_TXT = (19, 29, 49)          # #131D31
             d.rounded_rectangle([PAD_X, y_c, PAD_X + ANCHO_TABLA, y_c + alto_banner],
                                 radius=6, fill=C_PODIO_BG, outline=C_PODIO_BORDER, width=1)
-            tit_podio_hdr = f"TOP {len(top5_podio)} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if len(top5_podio) < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+            _t5_tiene_cuota = any(isinstance(it, dict) and (it.get("ev_pct") is not None or it.get("ev") is not None) for it in top5_podio)
+            _suf_tkt = "(ALTO VALOR TE APUESTO)" if _t5_tiene_cuota else "(ALTA PROBABILIDAD DEL MODELO)"
+            tit_podio_hdr = f"TOP {len(top5_podio)} JUGADAS RECOMENDADAS {_suf_tkt}" if len(top5_podio) < 5 else f"TOP 5 JUGADAS RECOMENDADAS {_suf_tkt}"
             d.text((PAD_X + 16, y_c + 8), tit_podio_hdr, font=f_banner_tit, fill=C_PODIO_TXT)
             cnt_podio_txt = f"Top {len(top5_podio)} Selección Élite"
             cw_p = _get_w(cnt_podio_txt, f_banner_cnt) + 18
@@ -1981,9 +2146,8 @@ def renderizar_ticket_mercados_png(
                             radius=6, fill=C_SKY_BG, outline=C_SKY_BORDER, width=1)
         foot_txt = "Criterio Cuantitativo: Probabilidades Poisson bivariado con contracción bayesiana y Dixon-Coles. Juega con responsabilidad."
         if _rec_ticket.get("aplicado"):
-            # El pie no puede atribuir a Poisson lo que calculó la red recursiva.
-            foot_txt = ("Criterio Cuantitativo: Red Neuronal Recursiva (45 variables, "
-                        "Bilinear Pooling + Cross-Attention + Monte Carlo 100.000). "
+            foot_txt = ("Criterio Cuantitativo: red de factores con pesos fijos "
+                        "(Bilinear Pooling + Cross-Attention + Monte Carlo 100.000). "
                         "Juega con responsabilidad.")
         y_foot_text = y_c + 8 if linea_cluster else y_c + 12
         d.text((PAD_X + 16, y_foot_text), foot_txt, font=f_footer, fill=C_SKY_TXT)
@@ -2505,6 +2669,16 @@ def preparar_analisis(
                 for r in analisis.mercados
             ],
         }, f, ensure_ascii=False, indent=1)
+
+    _h2h_inf_tkt = construir_resumen_h2h_ticket(
+        contexto.get("doc_local"),
+        contexto.get("doc_visitante"),
+        contexto["equipo_local"],
+        contexto["equipo_visitante"],
+        fecha_objetivo=contexto.get("fecha_partido"),
+    )
+    if _h2h_inf_tkt and isinstance(getattr(analisis, "metadatos", None), dict):
+        analisis.metadatos["h2h_reciente_ticket"] = _h2h_inf_tkt
 
     ruta_imagen = raiz + ".png"
     try:

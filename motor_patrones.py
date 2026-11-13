@@ -436,14 +436,15 @@ def calcular_55_patrones_equipo(
     err_gol = max(0.0, _val(m, "errores_gol", default=0.15))
 
     paradas = max(0.2, _val(m, "paradas", "paradas_portero", default=3.1))
-    # Cálculo directo y sin inversión para P13_Portero_Goles_Evitados:
-    # Siempre se calcula como: xGOT_enfrentado (recibido por nuestro arquero) - Goles_concedidos
-    tiene_xgot_enf = any(k in m and m[k] is not None for k in ("xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido"))
+    # Cálculo unificado para P13_Portero_Goles_Evitados (Punto 1.1):
+    # Misma fuente que Doble ADN/Consola/Cuadro cuando el proveedor reporta 'goles_evitados' explícito;
+    # si 'goles_evitados' es None/ausente, deriva algebraicamente xGOT_enfrentado - Goles_concedidos.
+    tiene_ge_obs = m.get("goles_evitados") is not None
     xgot_enf = max(0.05, _val(m, "xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido", default=goles_c))
-    if tiene_xgot_enf:
-        goles_evit = round(xgot_enf - goles_c, 2)
+    if tiene_ge_obs:
+        goles_evit = round(_val(m, "goles_evitados", default=0.0), 2)
     else:
-        goles_evit = round(_val(m, "goles_evitados", default=round(xgot_enf - goles_c, 2)), 2)
+        goles_evit = round(xgot_enf - goles_c, 2)
 
     rem_puerta_rec = max(0.5, paradas + goles_c)
     rem_area_rec = max(1.0, _val(m, "remates_dentro_area_recibidos", default=rem_puerta_rec * 1.85))

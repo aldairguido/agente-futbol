@@ -765,7 +765,8 @@ def aplicar_reglas_matchup_55(
     # 2. Regla del Portero Imbatible (Patrón #13 y #50)
     gev_loc = _pf(patrones_local, "P13_Portero_Goles_Evitados", 0.0)
     gev_vis = _pf(patrones_visita, "P13_Portero_Goles_Evitados", 0.0)
-    mejor_arq = nombre_local if gev_loc >= gev_vis else nombre_visita
+    empate_13 = abs(gev_loc - gev_vis) < 0.015
+    mejor_arq = nombre_local if gev_loc > gev_vis else nombre_visita
     if gev_vis > 0.30 and p06_l > 0.40:
         p_loc -= 0.06
         p_emp += 0.04
@@ -775,9 +776,10 @@ def aplicar_reglas_matchup_55(
         p_emp += 0.03
         p_loc += 0.03
     if abs(gev_loc - gev_vis) >= 0.05 or gev_loc != 0.0 or gev_vis != 0.0:
+        txt_arq_13 = "Empate técnico (sin ventaja)" if empate_13 else f"Mayor seguridad bajo palos: {mejor_arq}"
         alertas.append(
             f"Patrón #13 Activado: {nombre_local} {gev_loc:+.2f} GeV vs {nombre_visita} {gev_vis:+.2f} GeV "
-            f"(Mayor seguridad bajo palos: {mejor_arq})."
+            f"({txt_arq_13})."
         )
 
     # 3. Regla del Poder de Cierre en 2T (Patrón #26 y #51) — P25 y P26 son complementarios (suma=1.0), solo se evalúa P26 una vez si es evaluable
@@ -902,6 +904,7 @@ def generar_reporte_xai_telegram(
     ratings_vis: Optional[Dict[str, Any]] = None,
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
+    motor: Any = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -979,6 +982,15 @@ def generar_reporte_xai_telegram(
     else:
         txt_p35_tel = f"En los últimos 15 minutos, {nombre_local} anota {goles_tardios_loc_anot} y recibe {goles_tardios_loc_rec} goles; {nombre_visita} anota {goles_tardios_vis_anot} y recibe {goles_tardios_vis_rec} goles."
 
+    def _fmt_ge(d: Dict[str, Any], k: str) -> str:
+        v = d.get(k)
+        if v is None:
+            return "sin dato"
+        try:
+            return f"{float(v):+.2f} GeV"
+        except (TypeError, ValueError):
+            return "sin dato"
+
     def _fmt_p(d: Dict[str, Any], k: str, mult: float = 1.0, dec: int = 2, suf: str = "") -> str:
         v = d.get(k)
         if v is None:
@@ -1002,7 +1014,7 @@ def generar_reporte_xai_telegram(
         f"• *Patrón #05/#06 - Conversión y Desperdicio:* {nombre_local} necesita {rem_por_gol_loc:.1f} tiros por gol (falla el {_fmt_p(patrones_loc, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} de grandes ocasiones) vs {rem_por_gol_vis:.1f} tiros por gol de {nombre_visita} ({_fmt_p(patrones_vis, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} falladas).",
         "",
         "*2. La Muralla Defensiva y Portería*",
-        f"• *Patrón #13 - Rendimiento de Porteros (Goles Evitados):* El arquero de {nombre_local} registra {float(patrones_loc.get('P13_Portero_Goles_Evitados') or 0.0):+.2f} GeV frente a {float(patrones_vis.get('P13_Portero_Goles_Evitados') or 0.0):+.2f} GeV del arquero de {nombre_visita}.",
+        f"• *Patrón #13 - Rendimiento de Porteros (Goles Evitados):* El arquero de {nombre_local} registra {_fmt_ge(patrones_loc, 'P13_Portero_Goles_Evitados')} frente a {_fmt_ge(patrones_vis, 'P13_Portero_Goles_Evitados')} del arquero de {nombre_visita}.",
         f"• *Patrón #15 - Resistencia al Asedio:* {nombre_local} promedia {_fmt_p(patrones_loc, 'despejes')} despejes ({_fmt_p(patrones_loc, 'intercepciones')} intercepciones) vs {_fmt_p(patrones_vis, 'despejes')} despejes ({_fmt_p(patrones_vis, 'intercepciones')} intercepciones) de {nombre_visita}.",
         f"• *Patrón #20/#21 - Bloqueos y Recuperación:* Densidad de recuperación de {_fmt_p(patrones_loc, 'P21_Densidad_Recuperaciones')} en {nombre_local} vs {_fmt_p(patrones_vis, 'P21_Densidad_Recuperaciones')} en {nombre_visita}.",
         "",
@@ -1036,6 +1048,7 @@ def generar_reporte_xai_telegram(
         ratings_vis=ratings_vis,
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
+        motor=motor,
     )
     if veredicto_4:
         lineas.append("")
@@ -1059,6 +1072,7 @@ def generar_veredicto_tactico_partido(
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
     para_canvas: bool = False,
+    motor: Any = None,
 ) -> str:
     """
     Genera dinámicamente el bloque '🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?'
@@ -1211,18 +1225,43 @@ def generar_veredicto_tactico_partido(
                 break
     if mkt_tarjetas is None and selecciones_sec1:
         for item in selecciones_sec1:
+            if isinstance(item, dict) and isinstance(item.get("pildoras"), list):
+                cat_i = str(item.get("categoria") or "").upper()
+                if "TARJETA" in cat_i:
+                    for pil in item.get("pildoras") or []:
+                        lbl_p = str((pil or {}).get("lbl") or "")
+                        if not lbl_p or "sin líneas" in lbl_p.lower():
+                            continue
+                        p_p = float((pil or {}).get("prob") or 0.0)
+                        if p_p >= 0.70:
+                            mkt_tarjetas = lbl_p
+                            prob_tarjetas = p_p * 100.0 if p_p <= 1.0 else p_p
+                            break
+                if mkt_tarjetas is not None:
+                    break
+                continue
             et_i = str(item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", ""))
             m_i = str(item.get("mercado") if isinstance(item, dict) else getattr(item, "mercado", "")).lower()
-            p_val = float(item.get("probabilidad") if isinstance(item, dict) else getattr(item, "probabilidad", 0.0) or 0.0)
-            if ("tarj" in et_i.lower() or "tarj" in m_i or "amarill" in et_i.lower()) and p_val >= 0.70:
+            raw_p = item.get("probabilidad") if isinstance(item, dict) else getattr(item, "probabilidad", 0.0)
+            p_val = float(raw_p or 0.0)
+            p_norm = p_val / 100.0 if p_val > 1.0 else p_val
+            if ("tarj" in et_i.lower() or "tarj" in m_i or "amarill" in et_i.lower()) and p_norm >= 0.70 and "sin líneas" not in et_i.lower():
                 mkt_tarjetas = et_i
-                prob_tarjetas = p_val * 100.0 if p_val <= 1.0 else p_val
+                prob_tarjetas = p_norm * 100.0
                 break
 
-    # 4. Segunda mitad (2T): exclusivamente desde mercado validado en Top 5 / Sección 1
+    # 4. Segunda mitad (2T): usar proyección λ 2T del modelo cuando exista motor.tasas (coherencia consola/ticket/veredicto)
     p26_raw = pat_fav.get("P26_Poder_Cierre_2T")
     p26_fav = float(p26_raw) if p26_raw is not None else None
-    xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
+    _tasas_m = getattr(motor, "tasas", None) if motor is not None else None
+    _l2t_l = getattr(_tasas_m, "lambda_local_2t", None) if _tasas_m is not None else None
+    _l2t_v = getattr(_tasas_m, "lambda_visitante_2t", None) if _tasas_m is not None else None
+    if _l2t_l is not None and _l2t_v is not None:
+        xg_2t_comb = float(_l2t_l) + float(_l2t_v)
+        etq_vol_2t = "λ 2T proyectado"
+    else:
+        xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
+        etq_vol_2t = "xG 2T histórico"
     mkt_2t = None
     prob_2t = 0.0
     if top5_podio:
@@ -1304,12 +1343,14 @@ def generar_veredicto_tactico_partido(
             f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
         )
 
+    etq_muestra = str(patrones_loc.get("_muestra_etiqueta") or patrones_vis.get("_muestra_etiqueta") or "15P general")
+    txt_faltas_eq = f"{nombre_local} {fal_l:.1f} vs {nombre_visita} {fal_v:.1f} faltas [{etq_muestra}]"
     if mkt_tarjetas is None:
         titulo_ritmo = "Disciplina y fricción táctica"
         c3 = (
             f"3. {titulo_ritmo}: Sin líneas de tarjetas validadas >= 70% en el Ticket. "
-            f"{eq_control} registra {pos_control:.1f}% de posesión [15P general] (Pressing {press_ctrl:.1f}), "
-            f"frente a {riv_control} con una fricción moderada de {fal_l:.1f} vs {fal_v:.1f} faltas [15P general] "
+            f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}), "
+            f"frente a {riv_control} con fricción de {txt_faltas_eq} "
             f"y {am_tot:.1f} tarjetas combinadas esperadas."
         )
     else:
@@ -1320,8 +1361,8 @@ def generar_veredicto_tactico_partido(
         )
         c3 = (
             f"3. {titulo_ritmo}: El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
-            f"{eq_control} registra {pos_control:.1f}% de posesión [15P general] (Pressing {press_ctrl:.1f}) y "
-            f"{riv_control} corta con {fal_l:.1f} vs {fal_v:.1f} faltas [15P general]."
+            f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}) y "
+            f"fricción de {txt_faltas_eq}."
         )
 
     txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
@@ -1330,19 +1371,19 @@ def generar_veredicto_tactico_partido(
     if mkt_2t is None:
         c4 = (
             f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
-            f"Estimación de volumen de 2T: {xg_2t_comb:.2f} xG proyectado y {txt_p26}"
+            f"Estimación de volumen de 2T: {xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}"
             f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT)."
         )
     else:
         if k_eval_ver < k_min_cron:
             c4 = (
-                f"4. Dinámica de la segunda mitad: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-                f"proyectado en 2T y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
+                f"4. Dinámica de la segunda mitad: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"{etq_vol_2t} y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
             )
         else:
             c4 = (
-                f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} xG "
-                f"proyectado en el 2T y {txt_p26}). Sumado al flujo del tramo 76'-90' "
+                f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"{etq_vol_2t} y {txt_p26}). Sumado al flujo del tramo 76'-90' "
                 f"({flujo_76_90} goles combinados), es una selección con respaldo estadístico."
             )
     return "\n".join([encabezado, sub, c1, c2, c3, c4])
@@ -1493,6 +1534,7 @@ def generar_informe_narrativo_xai(
     ratings_visita: Optional[Dict[str, Any]] = None,
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
+    motor: Any = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -1514,4 +1556,5 @@ def generar_informe_narrativo_xai(
         ratings_vis=ratings_visita,
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
+        motor=motor,
     )
