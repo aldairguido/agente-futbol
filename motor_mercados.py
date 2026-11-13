@@ -345,6 +345,279 @@ def nb_pmf(k: int, mu: float, dispersion: float) -> float:
     return coef * (p ** r) * ((1 - p) ** k)
 
 
+
+_FACTOR_SOBREDISPERSION_NB = 1.05
+_EVENTOS_CRONOLOGIA_MITADES = frozenset({
+    "gol_1t", "gol_2t", "gol_ambos_tiempos",
+    "1t_1", "1t_x", "1t_2",
+})
+
+
+def _extraer_metrica_fila_ft(partido: dict[str, Any], claves: tuple[str, ...]) -> tuple[float | None, float | None]:
+    """Lee (equipo, rival) de periodos.FT.filas para `claves`; None nunca se convierte a 0."""
+    if not isinstance(partido, dict):
+        return None, None
+    filas = ((partido.get("periodos") or {}).get("FT") or {}).get("filas") or []
+    for f in filas:
+        if not isinstance(f, dict):
+            continue
+        cl = str(f.get("clave") or "").strip().lower()
+        if cl in claves:
+            eq_v = f.get("equipo")
+            rv_v = f.get("rival")
+            try:
+                eq_f = float(eq_v) if eq_v is not None else None
+            except (TypeError, ValueError):
+                eq_f = None
+            try:
+                rv_f = float(rv_v) if rv_v is not None else None
+            except (TypeError, ValueError):
+                rv_f = None
+            return eq_f, rv_f
+    return None, None
+
+
+def _contar_partidos_corners_doc(doc: Any, muestra: Any = None) -> tuple[int, int]:
+    """Devuelve (partidos_con_dato_real_corners, partidos_totales) sin contar None como 0."""
+    if isinstance(doc, dict) and isinstance(doc.get("partidos"), list) and len(doc.get("partidos")) > 0:
+        pts = doc.get("partidos") or []
+        n_con = 0
+        for p in pts:
+            if not isinstance(p, dict):
+                continue
+            eq_c, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+            if eq_c is not None:
+                n_con += 1
+        return n_con, len(pts)
+    if muestra is not None and hasattr(muestra, "dame"):
+        mc = muestra.dame("corners_favor")
+        n_c = int(getattr(mc, "n", 0) or 0)
+        n_tot = int(getattr(muestra, "partidos_general", 0) or 0)
+        return n_c, n_tot
+    return 0, 0
+
+
+def cobertura_corners_por_equipo(motor: Any, bando: str | None = None) -> dict[str, Any]:
+    """
+    Bloque 3 (3.2): Regla operativa (sin validación cronológica):
+    una línea de córneres solo entra al Top 5 o a Validadas si hay dato real
+    de córneres en al menos `min_partidos_corners_por_equipo` (8 de 15) por equipo.
+    """
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        min_c = int(cargar_umbrales_cobertura().get("min_partidos_corners_por_equipo", 8))
+    except Exception:
+        min_c = 8
+
+    if motor is None:
+        return {
+            "ok_top": True,
+            "ok_catalogo": True,
+            "min_requerido": min_c,
+            "n_local": min_c,
+            "total_local": 15,
+            "n_visitante": min_c,
+            "total_visitante": 15,
+            "n_min": min_c,
+            "den": 15,
+        }
+
+    doc_l = getattr(motor, "doc_local", None)
+    doc_v = getattr(motor, "doc_visitante", None)
+    muestras = getattr(motor, "muestras", {}) or {}
+    nc_l, nt_l = _contar_partidos_corners_doc(doc_l, muestras.get("local_general"))
+    nc_v, nt_v = _contar_partidos_corners_doc(doc_v, muestras.get("visitante_general"))
+
+    ok_top = (nc_l >= min_c) and (nc_v >= min_c)
+    ok_cat = ok_top or (
+        0 < nt_l < min_c and nc_l == nt_l
+        and 0 < nt_v < min_c and nc_v == nt_v
+    )
+    den = max(nt_l, nt_v) or 15
+    n_min_val = nc_l if (bando == "local" and nc_l < min_c) else (nc_v if (bando == "visitante" and nc_v < min_c) else min(nc_l, nc_v))
+    return {
+        "ok_top": ok_top,
+        "ok_catalogo": ok_cat,
+        "min_requerido": min_c,
+        "n_local": nc_l,
+        "total_local": nt_l,
+        "n_visitante": nc_v,
+        "total_visitante": nt_v,
+        "n_min": n_min_val,
+        "den": den,
+    }
+
+
+def _dispersion_corners_muestra(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+    bando: str | None = None,
+) -> dict[str, Any]:
+    """
+    Bloque 3 (3.1d): Calcula media, varianza muestral y var/media real sobre las
+    observaciones reales de córneres del partido (`bando=None`) o del equipo (`local`/`visitante`).
+    Si `n >= 8` y `var/media > 1.05`, activa cola Binomial Negativa.
+    """
+    vals: list[float] = []
+    if bando == "local":
+        for p in ((doc_local or {}).get("partidos") or []):
+            if isinstance(p, dict):
+                c_f, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is not None:
+                    vals.append(float(c_f))
+    elif bando == "visitante":
+        for p in ((doc_visitante or {}).get("partidos") or []):
+            if isinstance(p, dict):
+                c_f, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is not None:
+                    vals.append(float(c_f))
+    else:
+        vistos: set[str] = set()
+        for lado, doc in (("L", doc_local), ("V", doc_visitante)):
+            eq_nom = str(((doc or {}).get("equipo") or {}).get("nombre") or lado).strip().lower()
+            for idx, p in enumerate((doc or {}).get("partidos") or []):
+                if not isinstance(p, dict):
+                    continue
+                c_f, c_c = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is None or c_c is None:
+                    continue
+                pid = str(p.get("id_partido") or "").strip()
+                if pid:
+                    key = f"id:{pid}"
+                else:
+                    riv = str(p.get("rival") or "").strip().lower()
+                    fec = str(p.get("fecha") or "").strip()
+                    key = f"{fec}:{min(eq_nom, riv)}:{max(eq_nom, riv)}:{lado}_{idx}"
+                if key in vistos:
+                    continue
+                vistos.add(key)
+                vals.append(float(c_f) + float(c_c))
+
+    n = len(vals)
+    if n < 2:
+        return {"n": n, "media": None, "varianza": None, "var_sobre_media": None, "sobredisperso": False}
+    media = sum(vals) / n
+    varianza = sum((x - media) ** 2 for x in vals) / (n - 1)
+    v_m = (varianza / media) if media > 0 else None
+    sobredisperso = bool(n >= 8 and v_m is not None and v_m > _FACTOR_SOBREDISPERSION_NB)
+    return {
+        "n": n,
+        "media": round(media, 4),
+        "varianza": round(varianza, 4),
+        "var_sobre_media": round(v_m, 4) if v_m is not None else None,
+        "sobredisperso": sobredisperso,
+    }
+
+
+def es_mercado_cronologia_mitades(s: Any) -> bool:
+    """Identifica selecciones dependientes de mitades/cronología real (1T, 2T, Ganador 1T, 1T/FT, Gol ambos tiempos)."""
+    def _vg(obj: Any, k: str, d: Any = None) -> Any:
+        return obj.get(k, d) if isinstance(obj, dict) else getattr(obj, k, d)
+
+    per = str(_vg(s, "periodo", "FT") or "FT").strip().upper()
+    if per in ("1T", "2T"):
+        return True
+    idm = str(_vg(s, "id_mercado", "") or "").strip().lower()
+    if idm in ("ganador_1t", "_1t_ft", "gol_ambos_tiempos"):
+        return True
+    ev = str(_vg(s, "evento", "") or "").strip().lower()
+    if ev in _EVENTOS_CRONOLOGIA_MITADES:
+        return True
+    if "1t" in ev and "ft" in ev:
+        return True
+    return False
+
+
+def _contar_cronologia_doc(doc: Any, cc_extra: Any = None) -> tuple[int, bool]:
+    """Devuelve (n_partidos_con_eventos, tiene_metadatos_o_partidos)."""
+    if isinstance(doc, dict):
+        cc = doc.get("cuadro_c_timeline")
+        if isinstance(cc, dict) and "_meta" in cc:
+            return int((cc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+        if isinstance(cc_extra, dict) and "_meta" in cc_extra:
+            return int((cc_extra.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+        pts = doc.get("partidos")
+        if isinstance(pts, list):
+            n_ev = 0
+            for p in pts:
+                if not isinstance(p, dict):
+                    continue
+                m1 = p.get("marcador_1t")
+                ev = p.get("eventos_gol") or p.get("goles_minutos")
+                fg = p.get("franjas_goles")
+                marc = p.get("marcador") or {}
+                m_eq = marc.get("equipo") if isinstance(marc, dict) else p.get("goles_equipo")
+                m_rv = marc.get("rival") if isinstance(marc, dict) else p.get("goles_rival")
+                has_00_ev = isinstance(ev, list) and m_eq == 0 and m_rv == 0
+                has_fg = isinstance(fg, dict) and bool(fg)
+                has_m1 = isinstance(m1, dict) and (m1.get("equipo") is not None or m1.get("rival") is not None)
+                if has_m1 or (isinstance(ev, list) and len(ev) > 0) or has_00_ev or has_fg or bool(p.get("cronologia_fuente")) or p.get("goles_1t") is not None:
+                    n_ev += 1
+            return n_ev, True
+    if isinstance(cc_extra, dict) and "_meta" in cc_extra:
+        return int((cc_extra.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+    return 0, False
+
+
+def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
+    """
+    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) usando
+    estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`).
+    Deja pasar mocks mínimos sin `doc_local`/`doc_visitante` dicts (como `_DummyMotor`).
+    """
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        k_min = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    except Exception:
+        k_min = 10
+
+    if motor is None:
+        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+
+    doc_l = getattr(motor, "doc_local", None)
+    doc_v = getattr(motor, "doc_visitante", None)
+    cc_l_m = getattr(motor, "cuadro_c_local", None)
+    cc_v_m = getattr(motor, "cuadro_c_visita", None)
+
+    n_ev_l, has_l = _contar_cronologia_doc(doc_l, cc_l_m)
+    n_ev_v, has_v = _contar_cronologia_doc(doc_v, cc_v_m)
+    if not (has_l or has_v):
+        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+
+    k_eval = min(n_ev_l, n_ev_v) if (has_l and has_v) else (n_ev_l if has_l else n_ev_v)
+    ok = k_eval >= k_min
+    tiene_cc = (
+        (isinstance(doc_l, dict) and isinstance(doc_l.get("cuadro_c_timeline"), dict))
+        or (isinstance(doc_v, dict) and isinstance(doc_v.get("cuadro_c_timeline"), dict))
+        or isinstance(cc_l_m, dict)
+        or isinstance(cc_v_m, dict)
+    )
+    nt_l = len((doc_l or {}).get("partidos") or []) if isinstance(doc_l, dict) else 0
+    nt_v = len((doc_v or {}).get("partidos") or []) if isinstance(doc_v, dict) else 0
+    ok_analizar = ok or (not tiene_cc and max(nt_l, nt_v) < k_min)
+    return {
+        "ok": ok,
+        "ok_analizar": ok_analizar,
+        "k_eval": k_eval,
+        "n_ev_local": n_ev_l,
+        "n_ev_visitante": n_ev_v,
+        "k_min": k_min,
+        "aplica": True,
+    }
+
+
+def _reparto_mitades_sin_validar(motor: Any) -> bool:
+    """True si la división 1T/2T es 50/50 o carece de cronología verificada (Bloque 3.5)."""
+    if motor is None:
+        return False
+    tasas = getattr(motor, "tasas", None)
+    proc = str(getattr(tasas, "procedencia_tiempos", "") or "").lower()
+    if "50/50" in proc:
+        return True
+    cron = cronologia_mitades_verificada(motor)
+    return bool(cron.get("aplica") and not cron.get("ok"))
+
+
 def distribucion_conteo(mu: float | None, maximo: int = MAX_CONTEO,
                         parametros: Parametros | None = None,
                         k_nb: float | None = None) -> list[float]:
@@ -939,24 +1212,57 @@ def repartir_lambdas_por_tiempos(
     if lam_ft_l is None or lam_ft_v is None:
         return None, None, None, None, "sin λ FT", ["No hay λ FT: no se pueden repartir tiempos."]
 
+    from motor_patrones import construir_tensor_multi_periodo_equipo
+
     xg: dict[str, dict[str, float | None]] = {}
+    goles_respaldo: dict[str, dict[str, float | None]] = {}
+    modos_usados: list[str] = []
+    uso_fallback_goles = False
+
     for etiqueta, doc, cond in (("local", doc_local, cond_local),
                                 ("visitante", doc_visitante, cond_visitante)):
+        tens = construir_tensor_multi_periodo_equipo(
+            doc,
+            condicion_objetivo=cond,
+            metricas=("xg", "xg_contra", "goles", "goles_contra"),
+        )
+        mez = tens.get("mezcla_65_35") or {}
         xg[etiqueta] = {
-            "1T": _xg_periodo(doc, "1T", cond, "equipo"),
-            "2T": _xg_periodo(doc, "2T", cond, "equipo"),
-            "1T_contra": _xg_periodo(doc, "1T", cond, "rival"),
-            "2T_contra": _xg_periodo(doc, "2T", cond, "rival"),
+            "1T": (mez.get("1T", {}).get("xg") or {}).get("media_ponderada_60_40"),
+            "2T": (mez.get("2T", {}).get("xg") or {}).get("media_ponderada_60_40"),
+            "1T_contra": (mez.get("1T", {}).get("xg_contra") or {}).get("media_ponderada_60_40"),
+            "2T_contra": (mez.get("2T", {}).get("xg_contra") or {}).get("media_ponderada_60_40"),
         }
+        goles_respaldo[etiqueta] = {
+            "1T": (mez.get("1T", {}).get("goles") or {}).get("media_ponderada_60_40"),
+            "2T": (mez.get("2T", {}).get("goles") or {}).get("media_ponderada_60_40"),
+            "1T_contra": (mez.get("1T", {}).get("goles_contra") or {}).get("media_ponderada_60_40"),
+            "2T_contra": (mez.get("2T", {}).get("goles_contra") or {}).get("media_ponderada_60_40"),
+        }
+        modos_usados.append(str((mez.get("1T", {}).get("xg") or {}).get("modo") or "general"))
 
     # xG cruzado por mitad: (xG propio + xG concedido por el rival) / 2
+    # Si falta xG en algún periodo, usa goles reales por mitades del mismo tensor
+    # (sin inventar datos; solo combina 65% condición + 35% general si N_cond >= 4).
     cruzado: dict[str, dict[str, float | None]] = {"local": {}, "visitante": {}}
     for eq, rival in (("local", "visitante"), ("visitante", "local")):
         for per in ("1T", "2T"):
             propio = xg[eq][per]
             concedido = xg[rival][f"{per}_contra"]
             if propio is None or concedido is None:
-                cruzado[eq][per] = None
+                g_prop = goles_respaldo[eq][per]
+                g_conc = goles_respaldo[rival][f"{per}_contra"]
+                if propio is not None and g_conc is not None:
+                    cruzado[eq][per] = (propio + g_conc) / 2.0
+                    uso_fallback_goles = True
+                elif g_prop is not None and concedido is not None:
+                    cruzado[eq][per] = (g_prop + concedido) / 2.0
+                    uso_fallback_goles = True
+                elif g_prop is not None and g_conc is not None:
+                    cruzado[eq][per] = (g_prop + g_conc) / 2.0
+                    uso_fallback_goles = True
+                else:
+                    cruzado[eq][per] = None
             else:
                 cruzado[eq][per] = (propio + concedido) / 2.0
 
@@ -974,11 +1280,22 @@ def repartir_lambdas_por_tiempos(
             return lam_ft / 2.0, lam_ft / 2.0
         return lam_ft * (a / total), lam_ft * (b / total)
 
+    use_50_l = ((cruzado["local"]["1T"] or 0.0) + (cruzado["local"]["2T"] or 0.0)) <= 0
+    use_50_v = ((cruzado["visitante"]["1T"] or 0.0) + (cruzado["visitante"]["2T"] or 0.0)) <= 0
     l1, l2 = reparto(lam_ft_l, "local")
     v1, v2 = reparto(lam_ft_v, "visitante")
-    notas.append("Probabilidades por tiempo INFERIDAS del xG cruzado por mitades, "
+    hay_mezcla = any("mezcla_65_" in m for m in modos_usados)
+    etq_base = "goles/xG por tiempos" if uso_fallback_goles else "xG cruzado por tiempos"
+    etq_peso = "mezcla 65% cond + 35% gen, 60/40" if hay_mezcla else "general 15P, 60/40"
+    proc_txt = (
+        "reparto 50/50 sin validar (xG por mitades nulo)"
+        if (use_50_l or use_50_v)
+        else f"{etq_base} ({etq_peso})"
+    )
+    notas.append("Probabilidades por tiempo INFERIDAS del tensor multi-periodo 1T/2T "
+                 "(65% condición + 35% general si N_cond >= 4, ponderado 60/40), "
                  "normalizadas para sumar FT; se asume independencia temporal entre mitades.")
-    return l1, v1, l2, v2, "xG cruzado por tiempos (inferido)", notas
+    return l1, v1, l2, v2, proc_txt, notas
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1108,6 +1425,9 @@ class MotorMercados:
         self.clusters: dict[str, Any] = {}
         # Factores latentes de la Arquitectura Híbrida (XAI)
         self.xai_factores: dict[str, Any] = {}
+        self.micropatrones_combinatorios: dict[str, Any] = {}
+        self.traza_lambda: list[dict[str, Any]] = []
+        self.detalle_goles: dict[str, Any] = {}
         eq_l = doc_local.get("equipo")
         self.nombre_local = participante_local or (eq_l if isinstance(eq_l, str) else (eq_l or {}).get("nombre")) or "Local"
         eq_v = doc_visitante.get("equipo")
@@ -1320,6 +1640,7 @@ class MotorMercados:
             para no romper `λ_1T + λ_2T = λ_FT`.
         """
         self.recursivo = {}
+        self.traza_lambda = []
         if not getattr(self.p, "aplicar_motor_recursivo", True):
             self.notas.append("Red neuronal recursiva desactivada por parámetro.")
             return
@@ -1327,6 +1648,42 @@ class MotorMercados:
         lam_v = self.tasas.lambda_visitante_ft
         if lam_l is None or lam_v is None:
             return
+        _traza: list[dict[str, Any]] = []
+        _mods = (getattr(self, 'detalle_goles', None) or {}).get("_moduladores") or {}
+        _lam_plano_l = float(_mods.get("lambda_local_sin_modular", (getattr(self, 'detalle_goles', None) or {}).get("lambda_local") or lam_l) or lam_l)
+        _lam_plano_v = float(_mods.get("lambda_visitante_sin_modular", (getattr(self, 'detalle_goles', None) or {}).get("lambda_visitante") or lam_v) or lam_v)
+        _traza.append({
+            "etapa": "base_plana",
+            "regla": "tasas_goles_plano",
+            "lam_l_antes": round(_lam_plano_l, 4),
+            "lam_l_despues": round(_lam_plano_l, 4),
+            "lam_v_antes": round(_lam_plano_v, 4),
+            "lam_v_despues": round(_lam_plano_v, 4),
+            "motivo": f"Promedios ponderados goles/xG (w_cond={self.p.w_condicion:g}, w_xg={self.p.w_xg:g})",
+        })
+        if _mods:
+            _traza.append({
+                "etapa": "base_plana",
+                "regla": "moduladores_tacticos",
+                "lam_l_antes": round(_lam_plano_l, 4),
+                "lam_l_despues": round(float(_mods.get("lambda_local_modulada", _lam_plano_l)), 4),
+                "lam_v_antes": round(_lam_plano_v, 4),
+                "lam_v_despues": round(float(_mods.get("lambda_visitante_modulada", _lam_plano_v)), 4),
+                "motivo": f"mult=({_mods.get('mult_goles_L')}, {_mods.get('mult_goles_V')}); metricas={','.join(_mods.get('metricas_activas') or [])}",
+            })
+        _lam_ef = (getattr(self, 'detalle_goles', None) or {}).get("_lambda_efectivo") or {}
+        if _lam_ef.get("aplicado"):
+            _lam_pre_ef_l = float(_mods.get("lambda_local_modulada", _lam_plano_l))
+            _lam_pre_ef_v = float(_mods.get("lambda_visitante_modulada", _lam_plano_v))
+            _traza.append({
+                "etapa": "base_plana",
+                "regla": "lambda_efectivo_finalizacion",
+                "lam_l_antes": round(_lam_pre_ef_l, 4),
+                "lam_l_despues": round(float(_lam_ef.get("lambda_local_efectiva", lam_l)), 4),
+                "lam_v_antes": round(_lam_pre_ef_v, 4),
+                "lam_v_despues": round(float(_lam_ef.get("lambda_visitante_efectiva", lam_v)), 4),
+                "motivo": str(_lam_ef.get("nota") or "Calibracion finalizacion/xgot"),
+            })
 
         try:
             import cuadro_especialista as ce
@@ -1388,19 +1745,27 @@ class MotorMercados:
                 self.doc_visitante.get("partidos"), self.nombre_visitante)
 
             from motor_recursivo_45_dcn import (
-                obtener_tier_coef, obtener_tier_equipo, es_sede_neutral,
-                factor_uefa_relativo,
+                obtener_coefs_torneo_anclados, obtener_tier_equipo, es_sede_neutral,
             )
+            comp_actual_m = str(getattr(self, "competicion", "") or getattr(self.p, "competicion", "") or "")
             tier_L_int = obtener_tier_equipo(partidos_l_red)
             tier_V_int = obtener_tier_equipo(partidos_v_red)
-            tier_L = obtener_tier_coef(partidos_l_red, perfil_l_gen, self.nombre_local)
-            tier_V = obtener_tier_coef(partidos_v_red, perfil_v_gen, self.nombre_visitante)
+            info_coefs = obtener_coefs_torneo_anclados(
+                partidos_l_red, partidos_v_red,
+                perfil_l_gen, perfil_v_gen,
+                self.nombre_local, self.nombre_visitante,
+                competicion_str=comp_actual_m,
+            )
+            tier_L = float(info_coefs["coef_L"])
+            tier_V = float(info_coefs["coef_V"])
 
-            sede_neutral_L = es_sede_neutral(self.nombre_local, getattr(self, "competicion", ""))
+            sede_neutral_L = es_sede_neutral(self.nombre_local, comp_actual_m)
             cond_adn_l = "neutral" if sede_neutral_L else cond_l
 
-            fu_L = factor_uefa_relativo(tier_L, tier_V)
-            fu_V = factor_uefa_relativo(tier_V, tier_L)
+            fu_L = float(info_coefs["fu_L"])
+            fu_V = float(info_coefs["fu_V"])
+            aplica_coef_liga = bool(info_coefs["aplica_coef_liga"])
+            comparten_torneo_m = bool(info_coefs["comparten_torneo"])
 
             # Módulo Doble ADN con Contracción Bayesiana k=3.5 (Fase 5.1) + Descuento ΔTier + UEFA
             mu_l_cond = red.calcular_doble_adn_con_shrinkage(
@@ -1426,11 +1791,27 @@ class MotorMercados:
             xgot_l_c = mu_l_cond.get('xgot_enfrentado')
             def_L_cond = 0.50 * (gc_l_c if gc_l_c is not None else def_L) + 0.50 * (xgot_l_c if xgot_l_c is not None else def_L)
 
-            # Ponderación por Coeficiente de Liga (tier_coef) solo si no hubo ya ajuste ΔTier de división
-            if tier_L != tier_V and tier_L_int == tier_V_int:
+            _lam_pre_tier_l = round((atq_L_cond + def_V_cond) / 2.0, 4)
+            _lam_pre_tier_v = round((atq_V_cond + def_L_cond) / 2.0, 4)
+            _traza.append({
+                "etapa": "doble_adn",
+                "regla": "doble_adn_60_40",
+                "lam_l_antes": round(float(lam_l), 4),
+                "lam_l_despues": _lam_pre_tier_l,
+                "lam_v_antes": round(float(lam_v), 4),
+                "lam_v_despues": _lam_pre_tier_v,
+                "motivo": f"Doble ADN k=3.5 cond=({cond_adn_l},{cond_v}) delta_tier=({tier_L_int},{tier_V_int}) uefa=({fu_L:.3f},{fu_V:.3f})",
+            })
+
+            # Ponderación por Coeficiente de Liga (tier_coef) anclado al torneo actual
+            _ratio_fuerza_log = 1.0
+            if aplica_coef_liga and tier_L != tier_V and tier_L_int == tier_V_int:
                 tier_menor = min(tier_L, tier_V)
                 tier_mayor = max(tier_L, tier_V)
                 ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
+                if comparten_torneo_m:
+                    ratio_fuerza = max(0.90, min(1.0, ratio_fuerza))
+                _ratio_fuerza_log = ratio_fuerza
                 if tier_L < tier_V:
                     atq_L_cond = atq_L_cond * ratio_fuerza
                     def_L_cond = def_L_cond / ratio_fuerza
@@ -1440,6 +1821,16 @@ class MotorMercados:
 
             lam_l = round((atq_L_cond + def_V_cond) / 2.0, 2)
             lam_v = round((atq_V_cond + def_L_cond) / 2.0, 2)
+            if aplica_coef_liga and tier_L != tier_V and tier_L_int == tier_V_int:
+                _traza.append({
+                    "etapa": "coef_liga",
+                    "regla": "ajuste_coef_liga_tier",
+                    "lam_l_antes": _lam_pre_tier_l,
+                    "lam_l_despues": round(float(lam_l), 4),
+                    "lam_v_antes": _lam_pre_tier_v,
+                    "lam_v_despues": round(float(lam_v), 4),
+                    "motivo": f"tier_coef=({tier_L:.3f} vs {tier_V:.3f}), tier_int=({tier_L_int},{tier_V_int}), ratio_fuerza={_ratio_fuerza_log:.4f}",
+                })
 
             resultado = red.ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                 perfil_l_gen,
@@ -1450,6 +1841,7 @@ class MotorMercados:
                 partidos_v_red,
                 n_simulaciones_mc=int(getattr(self.p, "mc_simulaciones", 100_000)),
                 sede_neutral_local=sede_neutral_L,
+                competicion_str=comp_actual_m,
             )
             resultado["atq_local_base"] = atq_L_cond
             resultado["def_visita_base"] = def_V_cond
@@ -1478,6 +1870,19 @@ class MotorMercados:
         # ── Sustitución efectiva de λ y matriz (FT) + Sincronización con Motor 55 Patrones, Rachas 60/40 y En Vivo ──
         lam_l_red = float(resultado["lambda_local_recursivo"])
         lam_v_red = float(resultado["lambda_visita_recursivo"])
+        _lam_pre_freno_red_l = float(resultado.get("lambda_local_pre_freno", lam_l_red))
+        _lam_pre_freno_red_v = float(resultado.get("lambda_visita_pre_freno", lam_v_red))
+        _traza.append({
+            "etapa": "red_45_dcn",
+            "regla": "red_recursiva_45_dcn_bucle",
+            "lam_l_antes": round(float(lam_l), 4),
+            "lam_l_despues": round(_lam_pre_freno_red_l, 4),
+            "lam_v_antes": round(float(lam_v), 4),
+            "lam_v_despues": round(_lam_pre_freno_red_v, 4),
+            "motivo": f"Convergencia it={resultado.get('iteracion_convergencia')} (cruces: {resultado.get('cruce_dominante_local')} / {resultado.get('cruce_dominante_visita')})",
+        })
+        for _st in (resultado.get("traza_red_45_dcn") or []):
+            _traza.append(dict(_st))
         resultado["aplicado"] = True
         resultado["tasas_por_equipo"] = {
             "local": _tasas_sequia_explosion(partidos_l_red),
@@ -1546,6 +1951,24 @@ class MotorMercados:
                 info_contexto=ctx_av,
                 contexto_partido=ctx_av,
             )
+            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
+            if isinstance(pat_l, dict):
+                pat_l["_muestra_etiqueta"] = _etq_adn
+                pat_l["_n_muestra_adn"] = _nl_adn
+            if isinstance(pat_v, dict):
+                pat_v["_muestra_etiqueta"] = _etq_adn
+                pat_v["_n_muestra_adn"] = _nv_adn
+            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
+            if isinstance(pat_l, dict):
+                pat_l["_muestra_etiqueta"] = _etq_adn
+                pat_l["_n_muestra_adn"] = _nl_adn
+            if isinstance(pat_v, dict):
+                pat_v["_muestra_etiqueta"] = _etq_adn
+                pat_v["_n_muestra_adn"] = _nv_adn
             resultado["patrones_55_local"] = pat_l
             resultado["patrones_55_visita"] = pat_v
             resultado["alertas_55"] = alertas_55
@@ -1602,6 +2025,26 @@ class MotorMercados:
             if lam_v_red < lam_v and not (es_vivo and roja_v):
                 lam_v_nuevo = max(lam_v_nuevo, round(lam_v * 0.72, 2))
 
+            try:
+                _techo_post = float((cargar_umbrales_cobertura() or {}).get("techo_ajuste_red_dcn_pct", 18.0))
+            except Exception:
+                _techo_post = 18.0
+            _f_t = _techo_post / 100.0
+            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_local")):
+                if abs(f_ctx_l - 1.0) <= 1e-6:
+                    if bool(resultado.get("freno_bajista_dcn_local")):
+                        lam_l_nuevo = min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo)
+                    else:
+                        _piso_t_l = round(min(lam_l * (1.0 - _f_t), lam_l_red), 4)
+                        lam_l_nuevo = max(_piso_t_l, min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo))
+            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_visita")):
+                if abs(f_ctx_v - 1.0) <= 1e-6 and not (pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45))):
+                    if bool(resultado.get("freno_bajista_dcn_visita")):
+                        lam_v_nuevo = min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo)
+                    else:
+                        _piso_t_v = round(min(lam_v * (1.0 - _f_t), lam_v_red), 4)
+                        lam_v_nuevo = max(_piso_t_v, min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo))
+
             # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
             r_l_0_100 = (perfil_l_gen.get("ratings_0_100") or resultado.get("ratings_local") or {}) if isinstance(perfil_l_gen, dict) else (resultado.get("ratings_local") or {})
@@ -1619,26 +2062,64 @@ class MotorMercados:
             suma_red_l_pura = round(float(sum(factores_red_l_puros.values())), 1)
             suma_red_v_pura = round(float(sum(factores_red_v_puros.values())), 1)
 
-            lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
-                lam_base_local=float(lam_l),
-                lam_base_visita=float(lam_v),
-                lam_red_local=lam_l_nuevo,
-                lam_red_visita=lam_v_nuevo,
-                ratings_local=r_l_0_100,
-                ratings_visita=r_v_0_100,
-                posesion_proyectada_local=pos_proy_l,
-                posesion_proyectada_visita=pos_proy_v,
-                en_crisis_local=crisis_l,
-                en_crisis_visita=crisis_v,
-                goles_ult5_local=g_ult5_l,
-                goles_ult5_visita=g_ult5_v,
-                competicion=str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or ""),
-                sede_neutral=bool(sede_neutral_L),
-                toques_area_local=mu_l_c.get("toques_area_rival"),
-                cobertura_asedio_real=bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None),
-                cuadro_b_local=getattr(self, "cuadro_b_local", None),
-                cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
-            )
+            _traza.append({
+                "etapa": "post_sinc_mercados",
+                "regla": "sincronizacion_55_patrones_racha_contexto",
+                "lam_l_antes": round(float(lam_l_red), 4),
+                "lam_l_despues": round(float(lam_l_nuevo), 4),
+                "lam_v_antes": round(float(lam_v_red), 4),
+                "lam_v_despues": round(float(lam_v_nuevo), 4),
+                "motivo": f"mult_sinc=({mult_sinc_l:.4f}, {mult_sinc_v:.4f}), ratio_55=({ratio_55_l:.3f}, {ratio_55_v:.3f}), racha=({f_racha_l:.3f}, {f_racha_v:.3f}), ctx=({f_ctx_l:.3f}, {f_ctx_v:.3f})",
+            })
+            _traza_post_sinc: list[dict[str, Any]] = []
+            _comp_freno = str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or "")
+            _cob_asedio = bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None)
+            try:
+                lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
+                    lam_base_local=float(lam_l),
+                    lam_base_visita=float(lam_v),
+                    lam_red_local=lam_l_nuevo,
+                    lam_red_visita=lam_v_nuevo,
+                    ratings_local=r_l_0_100,
+                    ratings_visita=r_v_0_100,
+                    posesion_proyectada_local=pos_proy_l,
+                    posesion_proyectada_visita=pos_proy_v,
+                    en_crisis_local=crisis_l,
+                    en_crisis_visita=crisis_v,
+                    goles_ult5_local=g_ult5_l,
+                    goles_ult5_visita=g_ult5_v,
+                    competicion=_comp_freno,
+                    sede_neutral=bool(sede_neutral_L),
+                    toques_area_local=mu_l_c.get("toques_area_rival"),
+                    cobertura_asedio_real=_cob_asedio,
+                    cuadro_b_local=getattr(self, "cuadro_b_local", None),
+                    cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
+                    traza_out=_traza_post_sinc,
+                    etapa_prefijo="post_sinc_mercados",
+                )
+            except TypeError:
+                lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
+                    lam_base_local=float(lam_l),
+                    lam_base_visita=float(lam_v),
+                    lam_red_local=lam_l_nuevo,
+                    lam_red_visita=lam_v_nuevo,
+                    ratings_local=r_l_0_100,
+                    ratings_visita=r_v_0_100,
+                    posesion_proyectada_local=pos_proy_l,
+                    posesion_proyectada_visita=pos_proy_v,
+                    en_crisis_local=crisis_l,
+                    en_crisis_visita=crisis_v,
+                    goles_ult5_local=g_ult5_l,
+                    goles_ult5_visita=g_ult5_v,
+                    competicion=_comp_freno,
+                    sede_neutral=bool(sede_neutral_L),
+                    toques_area_local=mu_l_c.get("toques_area_rival"),
+                    cobertura_asedio_real=_cob_asedio,
+                    cuadro_b_local=getattr(self, "cuadro_b_local", None),
+                    cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
+                )
+            for _st in _traza_post_sinc:
+                _traza.append(_st)
 
             lam_l_red_orig = lam_l_red
             lam_v_red_orig = lam_v_red
@@ -1721,6 +2202,12 @@ class MotorMercados:
             resultado["matriz_probabilidades"] = mat_base_red
             resultado["matriz_marcadores"] = mat_base_red
 
+        for _idx, _st in enumerate(_traza, start=1):
+            _st["paso"] = _idx
+        self.traza_lambda = _traza
+        resultado["traza_lambda"] = list(_traza)
+        if isinstance(getattr(self, 'detalle_goles', None), dict):
+            self.detalle_goles["traza_lambda"] = list(_traza)
         self.tasas.lambda_local_ft = lam_l_red
         self.tasas.lambda_visitante_ft = lam_v_red
         self.matriz_ft = mat_base_red
@@ -1738,12 +2225,24 @@ class MotorMercados:
             pass
 
         if getattr(self, "xai_factores", None) and self.xai_factores.get("aplicado"):
+            _lam_base_sync_l = float(resultado.get("lambda_base_local", lam_l) or lam_l)
+            _lam_base_sync_v = float(resultado.get("lambda_base_visita", lam_v) or lam_v)
+            _lam_red_puro_l = float(lam_l_red_orig if "lam_l_red_orig" in locals() else lam_l_red)
+            _lam_red_puro_v = float(lam_v_red_orig if "lam_v_red_orig" in locals() else lam_v_red)
+            _pct_real_l = round(((float(lam_l_red) / max(0.05, _lam_base_sync_l)) - 1.0) * 100.0, 1)
+            _pct_real_v = round(((float(lam_v_red) / max(0.05, _lam_base_sync_v)) - 1.0) * 100.0, 1)
+            _pct_red_puro_l = round(((_lam_red_puro_l / max(0.05, _lam_base_sync_l)) - 1.0) * 100.0, 1)
+            _pct_red_puro_v = round(((_lam_red_puro_v / max(0.05, _lam_base_sync_v)) - 1.0) * 100.0, 1)
+            self.xai_factores["local"]["lambda_base"] = round(_lam_base_sync_l, 4)
+            self.xai_factores["local"]["lambda_red"] = round(_lam_red_puro_l, 4)
+            self.xai_factores["local"]["pct_red"] = _pct_red_puro_l
             self.xai_factores["local"]["lambda_efectivo"] = round(lam_l_red, 4)
-            pct_l = round(float(sum(resultado.get("cruces_tacticos", {}).get("factores_local", {}).values())), 1) if "cruces_tacticos" in resultado else round(((lam_l_red / max(0.05, float(lam_l))) - 1.0) * 100.0, 1)
-            pct_v = round(float(sum(resultado.get("cruces_tacticos", {}).get("factores_visita", {}).values())), 1) if "cruces_tacticos" in resultado else round(((lam_v_red / max(0.05, float(lam_v))) - 1.0) * 100.0, 1)
-            self.xai_factores["local"]["total_pct"] = pct_l
+            self.xai_factores["local"]["total_pct"] = _pct_real_l
+            self.xai_factores["visita"]["lambda_base"] = round(_lam_base_sync_v, 4)
+            self.xai_factores["visita"]["lambda_red"] = round(_lam_red_puro_v, 4)
+            self.xai_factores["visita"]["pct_red"] = _pct_red_puro_v
             self.xai_factores["visita"]["lambda_efectivo"] = round(lam_v_red, 4)
-            self.xai_factores["visita"]["total_pct"] = pct_v
+            self.xai_factores["visita"]["total_pct"] = _pct_real_v
             if "cruces_tacticos" in resultado and isinstance(resultado["cruces_tacticos"], dict):
                 ct_d = resultado["cruces_tacticos"]
                 self.xai_factores["local"]["factores"] = dict(ct_d.get("factores_local", {}))
@@ -1752,7 +2251,26 @@ class MotorMercados:
                 self.xai_factores["visita"]["factores_red_neuronal"] = dict(ct_d.get("factores_red_neuronal_visita") or ct_d.get("factores_visita") or {})
                 self.xai_factores["local"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_local", 0.0))
                 self.xai_factores["visita"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_visita", 0.0))
-            self.xai_factores["alertas_xai"] = list(resultado.get("alertas_xai", []))
+            try:
+                from motor_patrones import evaluar_micropatrones_combinatorios
+                mp_comb = evaluar_micropatrones_combinatorios(
+                    self.doc_local,
+                    self.doc_visitante,
+                    eq_l=self.nombre_local,
+                    eq_v=self.nombre_visitante,
+                )
+            except Exception:
+                mp_comb = {}
+            self.micropatrones_combinatorios = mp_comb
+            if isinstance(self.recursivo, dict):
+                self.recursivo["micropatrones_combinatorios"] = mp_comb
+            alertas_xai_m = list(resultado.get("alertas_xai", []))
+            for res_mp in (mp_comb.get("resumen_xai") or [])[:2]:
+                txt_mp = f"🧬 {res_mp}"
+                if txt_mp not in alertas_xai_m:
+                    alertas_xai_m.append(txt_mp)
+            self.xai_factores["alertas_xai"] = alertas_xai_m
+            self.xai_factores["micropatrones_combinatorios"] = mp_comb
             self.xai_factores["mu_local_casa"] = dict(resultado.get("mu_local_casa", {}))
             self.xai_factores["mu_visita_fuera"] = dict(resultado.get("mu_visita_fuera", {}))
 
@@ -2259,6 +2777,14 @@ class MotorMercados:
 
     # 24. Total de córneres
     def _m_total_corners(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
+        cob = cobertura_corners_por_equipo(self, bando=None)
+        if not cob["ok_catalogo"]:
+            return ResultadoMercado(
+                idm, numero, nombre, estado="datos_insuficientes",
+                nota=(f"Córneres: datos insuficientes ({cob['n_min']}/{cob['den']}; "
+                      f"mínimo {cob['min_requerido']}/15 partidos con dato real por equipo)."),
+                detalle={"cobertura_corners": cob},
+            )
         mu_l = self._mu_corners("local")
         mu_v = self._mu_corners("visitante")
         ml_g = (self.muestras.get("local_general") or MuestraEquipo("")).metricas.get("corners_favor")
@@ -2274,8 +2800,24 @@ class MotorMercados:
         if not eventos:
             return ResultadoMercado(idm, numero, nombre, estado="datos_insuficientes",
                                     nota="No se pudo construir la distribución de córneres.")
-        sels: list[Seleccion] = []
+        mu_tot = mu_l + mu_v
+        disp = _dispersion_corners_muestra(self.doc_local, self.doc_visitante, bando=None)
+        k_emp = None
+        dist_activa = "poisson"
         base = eventos["poisson"]
+        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+            var_mod = mu_tot * float(disp["var_sobre_media"])
+            k_emp = _k_desde_media_varianza(mu_tot, var_mod)
+            if k_emp and not math.isinf(k_emp) and k_emp > 0:
+                dist_nb = distribucion_conteo(
+                    mu_tot,
+                    parametros=Parametros(distribucion_conteos="binomial_negativa", k_nb=k_emp),
+                    k_nb=k_emp,
+                )
+                base = {k: p for k, p in enumerate(dist_nb)}
+                dist_activa = "binomial_negativa"
+
+        sels: list[Seleccion] = []
         for linea in LINEAS_CORNERES:
             sels.append(self._sel(idm, nombre, f"corners_over_{linea}",
                                   f"más de {linea} córneres", "FT", None, linea,
@@ -2284,13 +2826,21 @@ class MotorMercados:
                 sels.append(self._sel(idm, nombre, f"corners_under_{linea}",
                                       f"menos de {linea} córneres", "FT", None, linea,
                                       prob_under(base, linea)))
+        tag_dist = (
+            f"Binomial Negativa (var/media={disp['var_sobre_media']:.2f}, k={k_emp:.2f})"
+            if dist_activa == "binomial_negativa"
+            else f"Poisson (var/media={disp['var_sobre_media']:.2f})" if disp.get("var_sobre_media") is not None else "Poisson"
+        )
         return ResultadoMercado(
             idm, numero, nombre, selecciones=sels,
-            nota=(f"Córneres: cruce bilateral de córneres propios con concedidos por el rival, "
-                  f"ajustado por factor de bloqueo interior y moduladores (μ_L={mu_l:.2f}, μ_V={mu_v:.2f}, total={mu_l+mu_v:.2f}). "
+            nota=(f"Córneres [{tag_dist}]: cruce bilateral de córneres propios con concedidos por el rival, "
+                  f"ajustado por factor de bloqueo interior y moduladores (μ_L={mu_l:.2f}, μ_V={mu_v:.2f}, total={mu_tot:.2f}). "
                   f"Difiere del Cuadro Especialista, que muestra la producción ofensiva unilateral del Doble ADN."),
             detalle={"mu_local": mu_l, "mu_visitante": mu_v,
-                     "mu_total": mu_l + mu_v})
+                     "mu_total": mu_tot, "distribucion_activa": dist_activa,
+                     "var_sobre_media": disp.get("var_sobre_media"),
+                     "k_nb_efectiva": round(k_emp, 4) if k_emp and not math.isinf(k_emp) else None,
+                     "cobertura_corners": cob})
 
     def _mu_corners(self, bando: str) -> float | None:
         """λ de córneres de un equipo: (propios + concedidos por el rival) / 2 ponderado por factor de bloqueo y guion."""
@@ -2423,15 +2973,36 @@ class MotorMercados:
 
     # 28-29. Córneres por equipo
     def _corners_equipo(self, numero: int, idm: str, nombre: str, bando: str) -> ResultadoMercado:
-        mu = self._mu_corners(bando)
         equipo = self.nombre_local if bando == "local" else self.nombre_visitante
+        cob = cobertura_corners_por_equipo(self, bando=bando)
+        if not cob["ok_catalogo"]:
+            return ResultadoMercado(
+                idm, numero, nombre, estado="datos_insuficientes",
+                nota=(f"Córneres {equipo}: datos insuficientes ({cob['n_min']}/{cob['den']}; "
+                      f"mínimo {cob['min_requerido']}/15 partidos con dato real)."),
+                detalle={"cobertura_corners": cob},
+            )
+        mu = self._mu_corners(bando)
         mg = (self.muestras.get(f"{bando}_general") or MuestraEquipo("")).metricas.get("corners_favor")
         p_ceros = mg.pct_ceros if (mg and hasattr(mg, "pct_ceros")) else 0.0
 
         if mu is None or mu < 0.75 or p_ceros > 0.30:
             return ResultadoMercado(idm, numero, nombre, estado="datos_insuficientes",
                                     nota="Faltan córneres o el equipo carece de cobertura oficial (mu < 0.75 o >30% sin registro).")
-        dist_p = distribucion_conteo(mu, parametros=Parametros(distribucion_conteos="poisson"))
+        disp = _dispersion_corners_muestra(self.doc_local, self.doc_visitante, bando=bando)
+        k_emp = None
+        dist_activa = "poisson"
+        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+            k_emp = _k_desde_media_varianza(mu, mu * float(disp["var_sobre_media"]))
+        if k_emp and not math.isinf(k_emp) and k_emp > 0:
+            dist_p = distribucion_conteo(
+                mu,
+                parametros=Parametros(distribucion_conteos="binomial_negativa", k_nb=k_emp),
+                k_nb=k_emp,
+            )
+            dist_activa = "binomial_negativa"
+        else:
+            dist_p = distribucion_conteo(mu, parametros=Parametros(distribucion_conteos="poisson"))
         dist = {k: p for k, p in enumerate(dist_p)}
         sels: list[Seleccion] = []
         for linea in LINEAS_CORNERES[:12]:
@@ -2442,10 +3013,18 @@ class MotorMercados:
                 sels.append(self._sel(idm, nombre, f"{bando}_corners_under_{linea}",
                                       f"{equipo}: menos de {linea} córneres", "FT", equipo, linea,
                                       prob_under(dist, linea)))
+        tag_dist = (
+            f"Binomial Negativa (var/media={disp['var_sobre_media']:.2f}, k={k_emp:.2f})"
+            if dist_activa == "binomial_negativa"
+            else f"Poisson (var/media={disp['var_sobre_media']:.2f})" if disp.get("var_sobre_media") is not None else "Poisson"
+        )
         return ResultadoMercado(
             idm, numero, nombre, selecciones=sels,
-            nota=(f"Córneres {equipo}: Poisson bilateral ponderado (μ={mu:.2f}), ajustado por resistencia defensiva rival y moduladores."),
-            detalle={"mu": mu},
+            nota=(f"Córneres {equipo} [{tag_dist}]: μ={mu:.2f}, ajustado por resistencia defensiva rival y moduladores."),
+            detalle={"mu": mu, "distribucion_activa": dist_activa,
+                     "var_sobre_media": disp.get("var_sobre_media"),
+                     "k_nb_efectiva": round(k_emp, 4) if k_emp and not math.isinf(k_emp) else None,
+                     "cobertura_corners": cob},
         )
 
     def _m_corners_local(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
@@ -2643,10 +3222,19 @@ def _linea_seleccion(seleccion: "Seleccion", umbral: float,
     """Una viñeta: «• Menos de 4.5 goles (FT): 88,5%»."""
     linea = f"• {etiqueta_corta(seleccion)} ({seleccion.periodo}): " \
             f"{formatear_pct(seleccion.probabilidad, umbral)}"
+    extras: list[str] = []
+    if getattr(seleccion, "bajo_vigilancia", False) and getattr(seleccion, "prob_calibrada", None) is not None:
+        extras.append(f"calibrada: {float(seleccion.prob_calibrada) * 100.0:.1f}%".replace(".", ","))
     mot = str(getattr(seleccion, "motivo", "") or "").lower()
+    if "reparto 50/50 sin validar" in mot:
+        extras.append("reparto 50/50 sin validar")
     if "sin calibración validada" in mot:
-        return f"{linea} — sin calibración validada"
-    return linea + sufijo
+        linea = f"{linea} — sin calibración validada"
+    elif sufijo:
+        linea = linea + sufijo
+    if extras:
+        linea = f"{linea} [{' · '.join(extras)}]"
+    return linea
 
 
 def agrupar_por_mercado(selecciones: list["Seleccion"]) -> list[tuple[str, list["Seleccion"]]]:
@@ -2771,9 +3359,11 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     fecha_val = metadatos.get('fecha_partido')
     fecha_display = (str(fecha_val) if fecha_val and str(fecha_val).lower() not in ('no disponible', 'none', '')
                      else "Sin partido próximo en calendario (localía por orden de consulta)")
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     L.append(f"Fecha: {fecha_display} | "
              f"Competición: {metadatos.get('competicion') or 'no disponible'} | "
-             f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'}")
+             f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'} | "
+             f"{_obtener_sello_build()}")
     L.extend(_resumen_muestra(motor))
     L.append(f"Condición usada: local={motor.cond_local}, visitante={motor.cond_visitante} "
              f"(muestra de condición: {motor.muestras['local_cond'].partidos_condicion}/"
@@ -2812,7 +3402,9 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     if top5_podio:
         L.append("")
         n_top_reales = len(top5_podio)
-        tit_top_reales = f"🏆 TOP {n_top_reales} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):" if n_top_reales < 5 else f"🏆 TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO):"
+        _tiene_cuota_real_t5 = any(isinstance(it, dict) and (it.get("ev_pct") is not None or it.get("ev") is not None) for it in top5_podio)
+        _suf_tit_t5 = "(ALTO VALOR TE APUESTO)" if _tiene_cuota_real_t5 else "(ALTA PROBABILIDAD DEL MODELO)"
+        tit_top_reales = f"🏆 TOP {n_top_reales} JUGADAS RECOMENDADAS {_suf_tit_t5}:" if n_top_reales < 5 else f"🏆 TOP 5 JUGADAS RECOMENDADAS {_suf_tit_t5}:"
         L.append(tit_top_reales)
         nota_cal = top5_podio[0].get("nota_calibracion")
         if nota_cal:
@@ -3603,15 +4195,27 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
         for alt in alertas:
             lineas.append(f"▸ {alt}")
 
+    def _hdr_xai_lado(info: dict, f_dict: dict) -> str:
+        lb = float(info.get("lambda_base", 0.0) or 0.0)
+        le = float(info.get("lambda_efectivo", 0.0) or 0.0)
+        lr = float(info.get("lambda_red", le) or le)
+        tot = float(info.get("total_pct", 0.0) or 0.0)
+        sf = round(float(sum(float(v or 0.0) for v in (f_dict or {}).values())), 1)
+        if abs(lr - le) >= 0.015 or abs(tot - sf) >= 0.5:
+            pr = float(info.get("pct_red", round(((lr / max(0.05, lb)) - 1.0) * 100.0, 1)) or 0.0)
+            p_reg = ((le / max(0.05, lr)) - 1.0) * 100.0
+            return f"▸ {info.get('nombre', 'Equipo')}: λ {lb:.2f} → Red {lr:.2f} ({pr:+.1f}%) → Final {le:.2f} ({tot:+.1f}% total; reglas post-red {p_reg:+.1f}%; factores red {sf:+.1f}%)"
+        return f"▸ {info.get('nombre', 'Equipo')}: λ {lb:.2f} → {le:.2f} ({tot:+.1f}%)"
+
     lineas.extend([
-        "🧠 Desglose de Factores de la Red Neuronal (XAI):",
-        f"▸ {loc.get('nombre', 'Local')}: λ {loc.get('lambda_base', 0.0):.2f} → {loc.get('lambda_efectivo', 0.0):.2f} ({loc.get('total_pct', 0.0):+.1f}%)",
+        "🧠 Desglose de Factores (Red de Factores con Pesos Fijos · XAI):",
+        _hdr_xai_lado(loc, f_l),
         f"  - Posesión Progresiva: {f_l.get('F_posesion_progresiva', 0.0):+.1f}%",
         f"  - Creación Ofensiva: {f_l.get('F_creacion', 0.0):+.1f}%",
         f"  - Letalidad / Finalización: {f_l.get('F_finalizacion', 0.0):+.1f}%",
         f"  - Vulnerabilidad Portería Rival: {f_l.get('F_porteria_rival', 0.0):+.1f}%",
         f"  - Fragilidad Defensiva Rival: {f_l.get('F_fragilidad_rival', 0.0):+.1f}%",
-        f"▸ {vis.get('nombre', 'Visitante')}: λ {vis.get('lambda_base', 0.0):.2f} → {vis.get('lambda_efectivo', 0.0):.2f} ({vis.get('total_pct', 0.0):+.1f}%)",
+        _hdr_xai_lado(vis, f_v),
         f"  - Posesión Progresiva: {f_v.get('F_posesion_progresiva', 0.0):+.1f}%",
         f"  - Creación Ofensiva: {f_v.get('F_creacion', 0.0):+.1f}%",
         f"  - Letalidad / Finalización: {f_v.get('F_finalizacion', 0.0):+.1f}%",
@@ -3655,8 +4259,8 @@ def es_seleccion_competitiva_ticket(
     lin = _v(s, "linea", None)
     prob = float(_v(s, "probabilidad", 0.0) or 0.0)
 
-    es_over = ("over_" in ev or "mas de" in et or "más de" in et or "al_menos_" in ev or "al menos" in et)
-    es_under = ("under_" in ev or "menos de" in et or "menos" in et)
+    es_over = ("over_" in ev or "mas de" in et or "más de" in et or "al_menos_" in ev or "al menos" in et or ev in ("gol_1t", "gol_2t"))
+    es_under = ("under_" in ev or "menos de" in et or ("menos" in et and "al menos" not in et))
     if "al_menos_" in ev and lin is not None and isinstance(lin, (int, float)):
         lin = float(lin) - 0.5
 
@@ -3666,8 +4270,16 @@ def es_seleccion_competitiva_ticket(
     if "-0.5 gol" in et or "menos de 0.5 gol" in et:
         return False
 
+    if motor is not None and es_mercado_cronologia_mitades(s):
+        if not cronologia_mitades_verificada(motor).get("ok", True):
+            return False
+
     # 1. CÓRNERES
     if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev:
+        if motor is not None:
+            bando_c = "local" if (eq and eq == eq_l or ev.startswith("local_")) else ("visitante" if (eq and eq == eq_v or ev.startswith("visitante_")) else None)
+            if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
+                return False
         if lin is None:
             return False
         lin_f = float(lin)
@@ -3836,7 +4448,7 @@ def calcular_frecuencia_observada(
     nom_l = normalizar_texto(eq_l)
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
-    es_under = ("under" in ev or "menos" in et)
+    es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
 
     # 1. Doble oportunidad (1X, X2, 12)
     if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
@@ -3968,7 +4580,7 @@ def filtrar_top_opciones_ticket(
     d_v = doc_visitante or getattr(motor, "doc_visitante", None)
     competitivas = [
         s for s in selecciones
-        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
         and not tiene_desvio_excesivo_calibracion(s, d_l, d_v, eq_l, eq_v)[0]
     ]
     if len(competitivas) <= max_opciones:
@@ -3989,6 +4601,216 @@ def filtrar_top_opciones_ticket(
 
     competitivas_ord = sorted(competitivas, key=_score_valor, reverse=True)
     return competitivas_ord[:max_opciones]
+
+
+def calcular_ev_y_stake_calibrado(
+    mercado: str,
+    prob_bruta: float,
+    cuota_real: float | None = None,
+    equipo: str | None = None,
+    min_stake: float = 0.012,
+) -> dict[str, Any]:
+    """
+    Calcula EV_bruto, EV_calibrado y Quarter-Kelly usando la probabilidad calibrada
+    empíricamente de `agente_consciente` (`evaluar_familia_conciencia_cached`).
+    Cuando la familia está `bajo vigilancia`, fuerza stake cero (`0.0`).
+    """
+    prob_b = max(0.001, min(0.999, float(prob_bruta or 0.0)))
+    cal_info: dict[str, Any] = {}
+    try:
+        from agente_consciente import evaluar_familia_conciencia_cached
+        eq_norm = str(equipo) if equipo and str(equipo) not in ("None", "Total") else None
+        cal_info = evaluar_familia_conciencia_cached(
+            str(mercado or ""),
+            equipo=eq_norm,
+            prob_bruta=prob_b,
+        ) or {}
+    except Exception:
+        cal_info = {}
+
+    p_cal_raw = cal_info.get("prob_calibrada")
+    bajo_vig = bool(cal_info.get("bajo_vigilancia", False))
+    p_cal = max(0.001, min(0.999, float(p_cal_raw))) if p_cal_raw is not None else prob_b
+
+    cuota_justa = round(1.0 / max(0.01, prob_b), 2)
+    cuota_minima = round(1.05 / max(0.01, prob_b), 2)
+    cuota_justa_cal = round(1.0 / max(0.01, p_cal), 2)
+    cuota_minima_cal = round(1.05 / max(0.01, p_cal), 2)
+
+    ev_bruto: float | None = None
+    ev_bruto_pct: float | None = None
+    ev_calibrado: float | None = None
+    ev_calibrado_pct: float | None = None
+    stake_sugerido: float | None = None
+    stake_pct: float | None = None
+    estado_stake = "sin_stake_bajo_vigilancia" if bajo_vig else "sin_cuota_real"
+
+    try:
+        if cuota_real is not None and float(cuota_real) > 1.01:
+            c_val = float(cuota_real)
+            ev_bruto = round((prob_b * c_val) - 1.0, 4)
+            ev_bruto_pct = round(ev_bruto * 100.0, 1)
+            ev_calibrado = round((p_cal * c_val) - 1.0, 4)
+            ev_calibrado_pct = round(ev_calibrado * 100.0, 1)
+            if bajo_vig:
+                stake_sugerido = 0.0
+                stake_pct = 0.0
+                estado_stake = "sin_stake_bajo_vigilancia"
+            elif ev_calibrado > 0:
+                b_kelly = max(0.05, c_val - 1.0)
+                q_kelly = 1.0 - p_cal
+                f_quarter = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
+                stake_sugerido = round(max(min_stake, min(0.08, f_quarter)), 4)
+                stake_pct = round(stake_sugerido * 100.0, 1)
+                estado_stake = "activo"
+            else:
+                stake_sugerido = 0.0
+                stake_pct = 0.0
+                estado_stake = "sin_valor_calibrado"
+    except Exception:
+        pass
+
+    return {
+        "prob_bruta": prob_b,
+        "prob_calibrada": p_cal_raw if p_cal_raw is not None else round(p_cal, 4),
+        "bajo_vigilancia": bajo_vig,
+        "familia_conciencia": cal_info.get("familia"),
+        "brecha_conciencia_pp": cal_info.get("brecha_pp"),
+        "origen_calibracion": cal_info.get("origen_calibracion"),
+        "cuota_justa": cuota_justa,
+        "cuota_minima": cuota_minima,
+        "cuota_justa_calibrada": cuota_justa_cal,
+        "cuota_minima_calibrada": cuota_minima_cal,
+        "ev_bruto": ev_bruto,
+        "ev_bruto_pct": ev_bruto_pct,
+        "ev_calibrado": ev_calibrado,
+        "ev_calibrado_pct": ev_calibrado_pct,
+        "ev": ev_calibrado,
+        "ev_pct": ev_calibrado_pct,
+        "stake_sugerido": stake_sugerido,
+        "stake_pct": stake_pct,
+        "estado_stake": estado_stake,
+    }
+
+
+def _obtener_micropatrones_motor(motor: Any, eq_l: str = "Local", eq_v: str = "Visitante") -> dict[str, Any]:
+    if motor is None:
+        return {}
+    mp = getattr(motor, "micropatrones_combinatorios", None)
+    if isinstance(mp, dict) and mp:
+        return mp
+    rec = getattr(motor, "recursivo", None)
+    if isinstance(rec, dict) and isinstance(rec.get("micropatrones_combinatorios"), dict) and rec.get("micropatrones_combinatorios"):
+        return rec["micropatrones_combinatorios"]
+    xai = getattr(motor, "xai_factores", None)
+    if isinstance(xai, dict) and isinstance(xai.get("micropatrones_combinatorios"), dict) and xai.get("micropatrones_combinatorios"):
+        return xai["micropatrones_combinatorios"]
+    dl = getattr(motor, "doc_local", None)
+    dv = getattr(motor, "doc_visitante", None)
+    if isinstance(dl, dict) and isinstance(dv, dict) and (dl.get("partidos") or dv.get("partidos")):
+        try:
+            from motor_patrones import evaluar_micropatrones_combinatorios
+            mp_calc = evaluar_micropatrones_combinatorios(dl, dv, eq_l=eq_l, eq_v=eq_v)
+            try:
+                setattr(motor, "micropatrones_combinatorios", mp_calc)
+            except Exception:
+                pass
+            return mp_calc
+        except Exception:
+            return {}
+    return {}
+
+
+def _clasificar_tokens_micropatron(s: Any, eq_l: str = "Local", eq_v: str = "Visitante") -> set[str]:
+    def _val_m(o: Any, k: str, d: Any = None) -> Any:
+        return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+
+    m = str(_val_m(s, "mercado") or "").lower()
+    ev = str(_val_m(s, "evento") or "").lower().strip()
+    et = str(_val_m(s, "etiqueta") or "").lower()
+    per = str(_val_m(s, "periodo") or "FT").strip().upper()
+    lin = _val_m(s, "linea", None)
+    eq_obj = str(_val_m(s, "equipo") or "").lower()
+    eq_v_l = str(eq_v or "").lower().strip()
+    eq_l_l = str(eq_l or "").lower().strip()
+
+    tokens: set[str] = set()
+    es_corner = ("corner" in m or "córner" in m or "esquina" in m or "corner" in ev or "córn" in et or "corn" in et)
+    es_tarj = ("tarjeta" in m or "amarilla" in m or "tarjeta" in ev or "amarilla" in ev or "tarj" in et)
+    es_over = ("over" in ev or "mas " in et or "más " in et or "mas de" in et or "más de" in et or "al_menos" in ev or "al menos" in et or ev in ("gol_1t", "gol_2t") or ": +" in et)
+    es_under = ("under" in ev or ("menos" in et and "al menos" not in et) or ": -" in et)
+
+    lin_f = None
+    if lin is not None:
+        try:
+            lin_f = float(lin)
+        except Exception:
+            lin_f = None
+    if lin_f is None:
+        for suf in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5", "8.5", "9.5", "10.5", "11.5", "12.5", "13.5"):
+            if suf in ev or suf in et:
+                try:
+                    lin_f = float(suf)
+                    break
+                except Exception:
+                    pass
+
+    if ev in ("x2", "dc_x2") or ev.endswith("_x2") or ("x2" in et and ("empate" in et or (eq_v_l and eq_v_l in et))):
+        tokens.add("doble_oportunidad:x2")
+    if ev in ("1x", "dc_1x") or ev.endswith("_1x"):
+        tokens.add("doble_oportunidad:1x")
+    if ev in ("2", "visitante_gana") or (eq_v_l and f"{eq_v_l} gana" in et and "sin empate" not in et):
+        tokens.add("1x2:visita")
+
+    if es_corner:
+        es_vis_c = ("visitante" in ev) or (bool(eq_v_l) and (eq_v_l in eq_obj or eq_v_l in m or eq_v_l in et))
+        es_loc_c = ("local" in ev) or (bool(eq_l_l) and (eq_l_l in eq_obj or eq_l_l in m or eq_l_l in et))
+        if es_vis_c and es_over and lin_f is not None:
+            tokens.add(f"corners_visita:over_{lin_f:g}")
+            if lin_f >= 3.5:
+                tokens.add("corners_visita:over_3.5_o_mas")
+        elif not es_vis_c and not es_loc_c and not eq_obj:
+            if es_under and lin_f is not None:
+                tokens.add(f"total_corners:under_{lin_f:g}")
+            elif es_over and lin_f is not None:
+                tokens.add(f"total_corners:over_{lin_f:g}")
+    elif not es_tarj:
+        es_eq_esp = ("local_" in ev or "visitante_" in ev or bool(eq_obj))
+        if not es_eq_esp and lin_f is not None:
+            pref = "total_goles" if per == "FT" else f"goles_{per.lower()}"
+            if es_over:
+                tokens.add(f"{pref}:over_{lin_f:g}")
+            elif es_under:
+                tokens.add(f"{pref}:under_{lin_f:g}")
+        elif per == "2T" and ("local" in ev or (eq_l_l and eq_l_l in (eq_obj + " " + et))) and (es_over or "gol_2t" in ev):
+            tokens.add("equipo_local_2t:over_0.5")
+
+    return tokens
+
+
+def es_seleccion_vetada_por_micropatrones(
+    s: Any,
+    motor: Any = None,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    mp_comb: dict[str, Any] | None = None,
+) -> tuple[bool, bool, list[str]]:
+    """
+    Evalúa si una selección queda vetada o respaldada por los micropatrones combinatorios
+    activos (Fase 6 + Fase 7 Gatekeeper). Devuelve (vetada, apoyada, codigos_activos).
+    """
+    mp = mp_comb if isinstance(mp_comb, dict) else _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
+    if not isinstance(mp, dict) or not mp.get("activos"):
+        return False, False, []
+    cods = [str(c) for c in (mp.get("codigos_activos") or [])]
+    contra = {str(x) for x in (mp.get("senales_contra") or [])}
+    favor = {str(x) for x in (mp.get("senales_favor") or [])}
+    if "corners_visita:over_3.5" in contra:
+        contra.add("corners_visita:over_3.5_o_mas")
+    toks = _clasificar_tokens_micropatron(s, eq_l=eq_l, eq_v=eq_v)
+    vetada = bool(toks & contra)
+    apoyada = bool((not vetada) and (toks & favor))
+    return vetada, apoyada, cods
 
 
 def seleccionar_top_5_jugadas_recomendadas(
@@ -4045,17 +4867,12 @@ def seleccionar_top_5_jugadas_recomendadas(
         ev_c = str(_v(sel_cand, "evento") or "").lower()
         et_c = str(_v(sel_cand, "etiqueta") or "").lower()
         lin_c = _v(sel_cand, "linea", None)
-        # Descartar Under en líneas altas con cuota justa < min_cuota_justa sin cuota real
+        # Regla 1.7 (Ronda 5+6): Sin cuota real +EV, cuota justa mínima obligatoria en Top 5
+        # para TODOS los mercados (Overs, Unders, 1X2, Doble Oportunidad, DNB, Mitades, Córneres, Tarjetas)
         from decision_cobertura import cargar_umbrales_cobertura
-        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.25))
+        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.14))
         prob_max_trivial = round(1.0 / max(0.01, cuota_justa_min), 4)
-        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c >= prob_max_trivial:
-            return True
-        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c >= prob_max_trivial:
-            return True
-        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c >= prob_max_trivial:
-            return True
-        if p_c >= 0.89 and not any(k in ev_c for k in ("1x", "x2", "dc_1x", "dc_x2")):
+        if p_c > prob_max_trivial + 1e-9:
             return True
         return False
 
@@ -4130,9 +4947,11 @@ def seleccionar_top_5_jugadas_recomendadas(
     doc_v_m = getattr(motor, "doc_visitante", {}) if motor is not None else {}
     cc_l = (doc_l_m.get("cuadro_c_timeline") or {}) if isinstance(doc_l_m, dict) else {}
     cc_v = (doc_v_m.get("cuadro_c_timeline") or {}) if isinstance(doc_v_m, dict) else {}
-    n_ev_l = int((cc_l.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_l, dict) else 0
-    n_ev_v = int((cc_v.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_v, dict) else 0
-    k_eval_cron = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    cron_info_top = cronologia_mitades_verificada(motor)
+    n_ev_l = int(cron_info_top.get("n_ev_local", (cc_l.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_l, dict) else 0)
+    n_ev_v = int(cron_info_top.get("n_ev_visitante", (cc_v.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_v, dict) else 0)
+    k_eval_cron = int(cron_info_top.get("k_eval", min(n_ev_l, n_ev_v))) if motor is not None else min(n_ev_l, n_ev_v)
+    cron_mitades_ok_top = bool(cron_info_top.get("ok", True))
 
     lam_b_l = float(rec.get("lambda_base_local") or lam_l)
     lam_b_v = float(rec.get("lambda_base_visita") or lam_v)
@@ -4168,15 +4987,21 @@ def seleccionar_top_5_jugadas_recomendadas(
         if not tiene_desvio_excesivo_calibracion(s, doc_l_m, doc_v_m, eq_l, eq_v)[0]
     ]
 
-    # ── Puntos 10 y 20: Filtro +EV con Cuota Real o Fallback a Cuota Mínima ──
+    # ── Puntos 10 y 20 + Bloque 4.1: Filtro +EV Calibrado con Cuota Real ──
     candidatas_filtradas_ev: list[Any] = []
     for s in candidatas:
         prob_s = float(_v(s, "probabilidad", 0.0) or 0.0)
         try:
             cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
             if cuota_r is not None and float(cuota_r) > 1.01:
-                ev_calc = (prob_s * float(cuota_r)) - 1.0
-                if ev_calc < 0.03:
+                ev_info_f = calcular_ev_y_stake_calibrado(
+                    str(_v(s, "mercado") or ""),
+                    prob_s,
+                    float(cuota_r),
+                    equipo=str(_v(s, "equipo") or "") or None,
+                )
+                ev_cal_f = ev_info_f.get("ev_calibrado")
+                if ev_cal_f is not None and float(ev_cal_f) < 0.03:
                     continue
         except Exception:
             pass
@@ -4309,13 +5134,35 @@ def seleccionar_top_5_jugadas_recomendadas(
     if isinstance(bloq_mot, (set, list, tuple)):
         for b_m in bloq_mot:
             mercados_mitad_bloq.add(str(b_m).lower())
-    sin_mitades_goles = ("goles" in mercados_mitad_bloq)
+    sin_mitades_goles = ("goles" in mercados_mitad_bloq) or (motor is not None and not cron_mitades_ok_top)
     if sin_mitades_goles:
         candidatas = [
             s for s in candidatas
-            if str(_v(s, "periodo") or "FT").strip().upper() not in ("1T", "2T")
-            and str(_v(s, "evento") or "").lower() not in ("gol_1t", "gol_2t")
+            if not es_mercado_cronologia_mitades(s)
         ]
+    if motor is not None:
+        _c_filt = []
+        for s in candidatas:
+            ev_s = str(_v(s, "evento") or "").lower()
+            m_s = str(_v(s, "mercado") or "").lower()
+            eq_s = _v(s, "equipo", None)
+            if ("corner" in ev_s or "corner" in m_s or "córner" in m_s):
+                bando_c = "local" if (eq_s == eq_l or ev_s.startswith("local_")) else ("visitante" if (eq_s == eq_v or ev_s.startswith("visitante_")) else None)
+                if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
+                    continue
+            try:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                cal_chk = evaluar_familia_conciencia_cached(
+                    str(_v(s, "mercado") or ""),
+                    equipo=str(eq_s) if eq_s and str(eq_s) not in ("None", "Total") else None,
+                    prob_bruta=float(_v(s, "probabilidad", 0.0) or 0.0),
+                )
+                if cal_chk.get("veto_top5"):
+                    continue
+            except Exception:
+                pass
+            _c_filt.append(s)
+        candidatas = _c_filt
     if "corners" in mercados_mitad_bloq:
         candidatas = [
             s for s in candidatas
@@ -4529,6 +5376,7 @@ def seleccionar_top_5_jugadas_recomendadas(
         if (
             not tiene_2t_05
             and not sin_mitades_goles
+            and cron_mitades_ok_top
             and not desactivar_prioridad_2t_copa
             and prom_p26 is not None
             and prom_p26 >= umbral_p26_val
@@ -4547,6 +5395,11 @@ def seleccionar_top_5_jugadas_recomendadas(
                     "probabilidad": p_2t_05,
                     "estado": "mantiene",
                 })
+
+    mp_comb_top = _obtener_micropatrones_motor(motor, eq_l=eq_l, eq_v=eq_v)
+    cods_mp_top = set(mp_comb_top.get("codigos_activos") or []) if isinstance(mp_comb_top, dict) else set()
+    favor_mp_top = {str(x) for x in (mp_comb_top.get("senales_favor") or [])} if isinstance(mp_comb_top, dict) else set()
+    contra_mp_top = {str(x) for x in (mp_comb_top.get("senales_contra") or [])} if isinstance(mp_comb_top, dict) else set()
 
     # Punto 23c y Sección 5.3: Alerta de Posesión Estéril vs. Portero Figura (preservando P01=None como no_evaluable)
     p01_l_raw = pat_l_top.get("P01_xG_por_Remate")
@@ -4576,6 +5429,8 @@ def seleccionar_top_5_jugadas_recomendadas(
             if not es_ov or lin_s is None:
                 return False
             lf = float(lin_s) - 0.5 if "al_menos" in ev_s else float(lin_s)
+            if lf == 1.5 and ("total_goles:over_1.5" in favor_mp_top and "total_goles:over_1.5" not in contra_mp_top):
+                return False
             return lf in (1.5, 2.5)
         candidatas = [s for s in candidatas if not _es_over_ft_15_25(s)]
 
@@ -4818,6 +5673,37 @@ def seleccionar_top_5_jugadas_recomendadas(
         entradas_fall = max(1.5, round(((100.0 - _safe_float(mu_l.get("entradas_pct"), 14.0)) * 0.08 + (100.0 - _safe_float(mu_v.get("entradas_pct"), 14.0)) * 0.08), 1))
         return f"Respaldo ADN: Cruce [faltas_cometidas {faltas:.1f} ⊗ duelos_suelo {duelos:.1f}%] + [pases_entre_lineas_rival {lineas:.0f} ⊗ entradas_falladas {entradas_fall:.1f}]."
 
+    try:
+        _umb_gk = cargar_umbrales_cobertura() or {}
+    except Exception:
+        _umb_gk = {}
+    _w_mod_gk = float(_umb_gk.get("peso_prob_modelo_gatekeeper", 0.60))
+    _w_emp_gk = float(_umb_gk.get("peso_tasa_empirica_gatekeeper", 0.40))
+    _w_tot_gk = max(1e-6, _w_mod_gk + _w_emp_gk)
+    _w_mod_gk /= _w_tot_gk
+    _w_emp_gk /= _w_tot_gk
+    _u_promo_emp = float(_umb_gk.get("umbral_promocion_empirica_top5", 0.85))
+    _hay_docs_emp = bool(isinstance(doc_l_m, dict) and doc_l_m.get("partidos") and isinstance(doc_v_m, dict) and doc_v_m.get("partidos"))
+
+    def _info_gatekeeper_sel(s: Any) -> dict[str, Any]:
+        p_val = float(_v(s, "probabilidad", 0.0) or 0.0)
+        f_obs_val = None
+        if _hay_docs_emp:
+            try:
+                f_obs_val = calcular_frecuencia_observada(s, doc_l_m, doc_v_m, eq_l, eq_v)
+            except Exception:
+                f_obs_val = None
+        vetada_mp, apoyada_mp, _ = es_seleccion_vetada_por_micropatrones(
+            s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb_top,
+        )
+        score_gk = (_w_mod_gk * p_val + _w_emp_gk * float(f_obs_val)) if f_obs_val is not None else p_val
+        return {
+            "f_obs": round(float(f_obs_val), 4) if f_obs_val is not None else None,
+            "score_gk": round(float(score_gk), 4),
+            "vetada_mp": vetada_mp,
+            "apoyada_mp": apoyada_mp,
+        }
+
     def _puntaje_podio(s: Any) -> float:
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
         est_bonus = 0.06 if _v(s, "estado") == "mantiene" else 0.0
@@ -4829,6 +5715,17 @@ def seleccionar_top_5_jugadas_recomendadas(
         # Prohibir "12 (Sin Empate)" como líder (Punto 6)
         if _es_dc_12(s):
             return -5.0
+
+        gk_info = _info_gatekeeper_sel(s)
+        if gk_info["vetada_mp"]:
+            return -99.0
+        f_obs_s = gk_info["f_obs"]
+        score_gk_s = float(gk_info["score_gk"])
+        est_bonus += (score_gk_s - p) * 1.50
+        if f_obs_s is not None and f_obs_s >= _u_promo_emp:
+            est_bonus += 0.35
+        if gk_info["apoyada_mp"]:
+            est_bonus += 0.45
 
         # Punto 12: Coherencia entre Marcador Exacto (1-0, 0-1, 0-0) y Jugada Principal
         if es_duelo_cerrado or posesion_esteril_vs_portero:
@@ -4864,18 +5761,18 @@ def seleccionar_top_5_jugadas_recomendadas(
             elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and (prom_p26 is not None and prom_p26 >= 0.52):
                 est_bonus += 5.0
 
-        # Si es Resultado / DC (Slot 1), permitir rango ampliado hasta 92.0% (0.92) con altísima prioridad
+        # Si es Resultado / DC (Slot 1), ponderar por score compuesto Gatekeeper sin monopolio ciego
         if sl == 1:
             if 0.70 <= p <= 0.92:
-                return 4.0 - abs(p - 0.82) + est_bonus
+                return (2.20 + 1.50 * score_gk_s) - abs(p - 0.82) + est_bonus
             elif p > 0.92:
-                return 2.5 + est_bonus
+                return 2.0 + est_bonus
 
         # Si Ambos Anotan: No >= 50%, máxima prioridad en Slot 5
         if "btts_no" in ev and p_btts_no_pct >= 50.0:
             return 3.0 + (p_btts_no_pct / 100.0)
 
-        # Córneres (Slot 4): Si índice >= 1.10 impulsar +Córneres; si pocos bloqueos (< 2.2) impulsar -Córneres
+        # Córneres (Slot 4): respetar freno MP02 antes de impulsar +Córneres por índice de centros
         if sl == 4:
             cruces_l = _safe_float(mu_l.get("cruces_pct"), 22.0)
             cruces_v = _safe_float(mu_v.get("cruces_pct"), 20.0)
@@ -4884,7 +5781,10 @@ def seleccionar_top_5_jugadas_recomendadas(
             bloq_riv = _safe_float(mu_v.get("bloqueos"), 2.5) + _safe_float(mu_l.get("bloqueos"), 2.5)
             ind_c = ((centros / 22.0) * 0.55 + (rem_box / 14.0) * 0.45 * (bloq_riv / 5.0))
             es_over = ("over" in ev or "mas" in str(_v(s, "etiqueta", "")).lower() or "más" in str(_v(s, "etiqueta", "")).lower())
-            if ind_c >= 1.10 and es_over and (0.70 <= p <= 0.88):
+            if "MP02_FRENO_CORNERS_VISITA" in cods_mp_top:
+                if not es_over and not _v(s, "equipo") and (0.70 <= p <= 0.88):
+                    return 2.55 - abs(p - 0.81) + est_bonus
+            elif ind_c >= 1.10 and es_over and (0.70 <= p <= 0.88):
                 return 3.0 + (ind_c / 2.0) + est_bonus
             elif bloq_riv < 2.2 and not es_over and (0.70 <= p <= 0.88):
                 return 3.0 + (2.5 - bloq_riv) + est_bonus
@@ -4901,6 +5801,13 @@ def seleccionar_top_5_jugadas_recomendadas(
             return 1.2 - (p - 0.88) * 2.0 + est_bonus
         else:
             return 0.5 - abs(p - 0.80) + est_bonus
+
+    # Filtro final Regla 1.7 + vetos explícitos de micropatrones combinatorios (Fase 7 Gatekeeper)
+    candidatas = [
+        s for s in candidatas
+        if not _es_linea_trivial_top5(s)
+        and not es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb_top)[0]
+    ]
 
     por_slot: dict[int, list[Any]] = {1: [], 2: [], 3: [], 4: [], 5: []}
     for s in candidatas:
@@ -4949,8 +5856,31 @@ def seleccionar_top_5_jugadas_recomendadas(
                 n_tarjetas += 1
             break
 
-    # Paso 3: Si aún faltan para 5, rellenar con las mejores restantes respetando MAX 1 Córner y MAX 1 Tarjeta
+    # Paso 3: Si aún faltan para 5, rellenar con las mejores restantes respetando MAX 1 Córner, MAX 1 Tarjeta
+    # y evitando duplicar líneas redundantes del mismo periodo y mismo sentido en goles totales
+    # (sí se permiten líneas complementarias de distinto sentido como +1.5 FT + -4.5 FT o de distinta mitad como +0.5 2T).
+    def _firma_gol_total_redundante(s: Any) -> tuple[str, str] | None:
+        sl_g = _slot_seleccion(s)
+        if sl_g not in (2, 3):
+            return None
+        eq_g = _v(s, "equipo", None)
+        ev_g = str(_v(s, "evento") or "").lower()
+        et_g = str(_v(s, "etiqueta") or "").lower()
+        if (eq_g and str(eq_g).strip() not in ("None", "Total", "null", "")) or "local_" in ev_g or "visitante_" in ev_g:
+            return None
+        per_g = str(_v(s, "periodo") or "FT").strip().upper()
+        es_ov = ("over" in ev_g or "mas" in et_g or "más" in et_g or "al_menos" in ev_g or ev_g in ("gol_1t", "gol_2t"))
+        es_un = ("under" in ev_g or ("menos" in et_g and "al menos" not in et_g))
+        if es_ov and not es_un:
+            return (per_g, "over")
+        if es_un and not es_ov:
+            return (per_g, "under")
+        return None
+
     if len(elegidas) < 5:
+        firmas_gol_usadas = {
+            f for _, it in elegidas for f in [_firma_gol_total_redundante(it)] if f is not None
+        }
         todas_ord = sorted(candidatas, key=_puntaje_podio, reverse=True)
         for cand in todas_ord:
             if len(elegidas) >= 5:
@@ -4965,13 +5895,25 @@ def seleccionar_top_5_jugadas_recomendadas(
                 continue
             if sl_cand == 5 and n_tarjetas >= 1 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 continue
+            fg_cand = _firma_gol_total_redundante(cand)
+            if fg_cand is not None and fg_cand in firmas_gol_usadas:
+                continue
 
             elegidas.append((sl_cand, cand))
             usadas_claves.add(et_c)
+            if fg_cand is not None:
+                firmas_gol_usadas.add(fg_cand)
             if sl_cand == 4:
                 n_corners += 1
             if sl_cand == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 n_tarjetas += 1
+
+    # Ordenar el Top 5 por score compuesto Gatekeeper real (sin forzar Slot 1 en Puesto #1 si otro mercado lo supera)
+    if elegidas:
+        elegidas.sort(key=lambda item: _puntaje_podio(item[1]), reverse=True)
+        if _es_dc_12(elegidas[0][1]) and any(not _es_dc_12(it[1]) for it in elegidas[1:]):
+            primero_valido = next(i for i, it in enumerate(elegidas) if not _es_dc_12(it[1]))
+            elegidas.insert(0, elegidas.pop(primero_valido))
 
     podio: list[dict[str, Any]] = []
     nombres_slot = {
@@ -5029,8 +5971,13 @@ def seleccionar_top_5_jugadas_recomendadas(
         prob_base_top1_pct = round(p_bas_1 * 100.0, 1)
         prob_ajustada_top1_pct = round(p_adj_1 * 100.0, 1)
 
+    _hay_cuota_real_podio = any(
+        _v(cand_e, "cuota_real", _v(cand_e, "cuota", _v(cand_e, "odds", None))) is not None
+        for _, cand_e in elegidas[:5]
+    )
+    _txt_origen_cal = "e ineficiencia de mercado" if _hay_cuota_real_podio else "(sin cuotas de mercado cargadas)"
     nota_calibracion_str = (
-        f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. "
+        f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) {_txt_origen_cal}. "
         f"Base Matriz Poisson: {prob_base_top1_pct:.1f}% -> Ajustada Ticket: {prob_ajustada_top1_pct:.1f}%."
     )
 
@@ -5042,39 +5989,56 @@ def seleccionar_top_5_jugadas_recomendadas(
         pass
         cuota_minima = round(1.05 / max(0.05, prob), 2)
 
-        # Cálculo de EV% y Stake Kelly Fraccional (25%) garantizado EXCLUSIVAMENTE con cuota real de mercado
-        cuota_justa = round(1.0 / max(0.01, prob), 2)
-        cuota_minima = round(1.05 / max(0.01, prob), 2)
-        ev_valor: float | None = None
-        stake_sugerido: float | None = None
-        ev_pct: float | None = None
-        stake_pct: float | None = None
-
-        try:
-            cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
-            if cuota_r is not None and float(cuota_r) > 1.01:
-                c_val = float(cuota_r)
-                ev_calc = round((prob * c_val) - 1.0, 4)
-                if ev_calc > 0:
-                    ev_valor = ev_calc
-                    ev_pct = round(ev_calc * 100.0, 1)
-                    b_kelly = max(0.05, c_val - 1.0)
-                    q_kelly = 1.0 - prob
-                    stake_sugerido = round(max(0.012, min(0.08, (((b_kelly * prob) - q_kelly) / b_kelly) * 0.25)), 4)
-                    stake_pct = round(stake_sugerido * 100.0, 1)
-        except Exception:
-            pass
+        # Cálculo de EV_bruto, EV_calibrado y Quarter-Kelly desde prob_calibrada (stake=0 si bajo vigilancia)
+        cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
+        eq_p = _v(s, "equipo", None)
+        ev_info = calcular_ev_y_stake_calibrado(
+            str(_v(s, "mercado") or ""),
+            prob,
+            float(cuota_r) if cuota_r is not None else None,
+            equipo=str(eq_p) if eq_p and str(eq_p) not in ("None", "Total") else None,
+        )
+        cuota_justa = ev_info["cuota_justa"]
+        cuota_minima = ev_info["cuota_minima"]
+        cuota_justa_cal = ev_info["cuota_justa_calibrada"]
+        cuota_minima_cal = ev_info["cuota_minima_calibrada"]
+        p_cal_item = ev_info["prob_calibrada"]
+        bajo_vig_item = bool(ev_info["bajo_vigilancia"])
+        ev_bruto_val = ev_info["ev_bruto"]
+        ev_bruto_pct = ev_info["ev_bruto_pct"]
+        ev_cal_val = ev_info["ev_calibrado"]
+        ev_cal_pct = ev_info["ev_calibrado_pct"]
+        ev_pct = ev_info["ev_pct"]
+        stake_sugerido = ev_info["stake_sugerido"]
+        stake_pct = ev_info["stake_pct"]
+        estado_stake = ev_info["estado_stake"]
+        cal_badge_str = f" · Cal {float(p_cal_item) * 100.0:.1f}%" if (bajo_vig_item and p_cal_item is not None) else ""
 
         estado_raw = str(_v(s, "estado") or "mantiene")
         est_badge = "SÓLIDA" if estado_raw == "mantiene" else "SENSIBLE"
-        if ev_pct is not None and stake_pct is not None:
-            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}% (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)"
+        if ev_cal_pct is not None and stake_pct is not None:
+            stk_badge = "Stake: 0.0% (bajo vigilancia)" if bajo_vig_item else f"Stake: {stake_pct:.1f}%"
+            badge_completo = (
+                f"{prob * 100.0:.1f}%{cal_badge_str} "
+                f"({est_badge} · EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}% · {stk_badge})"
+            )
+            etiqueta_valor_str = (
+                f"{prob * 100.0:.1f}%{cal_badge_str} "
+                f"(EV cal {ev_cal_pct:+.1f}% | EV bruto {ev_bruto_pct:+.1f}% | Cuota Mín cal: {cuota_minima_cal:.2f} | {stk_badge})"
+            )
         else:
-            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}% (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
+            if bajo_vig_item:
+                badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima_cal:.2f} cal · Sin stake: vigilancia)"
+                etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa cal: {cuota_justa_cal:.2f} | Cuota Mín cal: {cuota_minima_cal:.2f} | Sin stake: bajo vigilancia)"
+            else:
+                badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
+                etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
 
+        gk_s = _info_gatekeeper_sel(s)
         podio.append({
+            "score_gatekeeper": gk_s["score_gk"],
+            "frecuencia_observada": gk_s["f_obs"],
+            "respaldo_micropatron": bool(gk_s["apoyada_mp"]),
             "rank": idx,
             "slot": actual_slot,
             "categoria_podio": nombres_slot.get(actual_slot, "MERCADO"),
@@ -5082,14 +6046,28 @@ def seleccionar_top_5_jugadas_recomendadas(
             "etiqueta": _etiqueta_limpia(s),
             "probabilidad": prob,
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
+            "prob_calibrada": p_cal_item,
+            "prob_calibrada_pct": f"{float(p_cal_item) * 100.0:.1f}%" if p_cal_item is not None else None,
+            "familia_conciencia": ev_info["familia_conciencia"],
+            "brecha_conciencia_pp": ev_info["brecha_conciencia_pp"],
+            "origen_calibracion": ev_info["origen_calibracion"],
+            "bajo_vigilancia": bajo_vig_item,
             "prob_base_poisson": round(prob_base_p * 100.0, 1),
             "prob_ajustada_ticket": round(prob * 100.0, 1),
             "cuota_justa": cuota_justa,
             "cuota_minima": cuota_minima,
+            "cuota_justa_calibrada": cuota_justa_cal,
+            "cuota_minima_calibrada": cuota_minima_cal,
             "stake_sugerido": stake_sugerido,
             "stake_sugerido_pct": stake_pct,
-            "ev": round(ev_pct / 100.0, 4) if ev_pct is not None else None,
-            "ev_pct": ev_pct,
+            "stake_pct": stake_pct,
+            "estado_stake": estado_stake,
+            "ev_bruto": ev_bruto_val,
+            "ev_bruto_pct": ev_bruto_pct,
+            "ev_calibrado": ev_cal_val,
+            "ev_calibrado_pct": ev_cal_pct,
+            "ev": ev_cal_val,
+            "ev_pct": ev_cal_pct,
             "badge_completo": badge_completo,
             "nota_calibracion": nota_calibracion_str,
             "etiqueta_valor": etiqueta_valor_str,
@@ -5954,6 +6932,20 @@ def generar_informe(analisis_metadatos: dict[str, Any], motor: MotorMercados,
         for linea in lineas_recursivo:
             L.append(f"- {linea}")
         L.append("")
+    traza_lam = getattr(motor, "traza_lambda", None) or (getattr(motor, "recursivo", None) or {}).get("traza_lambda") or []
+    if traza_lam:
+        L.append("### Traza ordenada de λ (`traza_lambda`)")
+        L.append("")
+        L.append("| Paso | Etapa | Regla | λ Local (antes→después) | λ Visita (antes→después) | Motivo |")
+        L.append("|---:|---|---|---|---|---|")
+        for st in traza_lam:
+            L.append(
+                f"| {st.get('paso', '')} | {st.get('etapa', '')} | `{st.get('regla', '')}` | "
+                f"{st.get('lam_l_antes')} → {st.get('lam_l_despues')} | "
+                f"{st.get('lam_v_antes')} → {st.get('lam_v_despues')} | "
+                f"{st.get('motivo', '')} |"
+            )
+        L.append("")
 
     # ── IA Explicable (XAI): 5 Factores Latentes y Cluster Dominante ─────────
     lineas_xai_inf = formatear_bloque_xai(motor)
@@ -6105,11 +7097,34 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                                         params, aviso=avisar)
     requeridos_goles = [n for n, _ in escenarios_goles()]
     requeridos_conteos = [n for n, _ in escenarios_conteos()]
+    _cron_an = cronologia_mitades_verificada(motor)
+    _rep_5050 = _reparto_mitades_sin_validar(motor)
+    _cob_corn_g = cobertura_corners_por_equipo(motor, bando=None)
+    _cob_corn_l = cobertura_corners_por_equipo(motor, bando="local")
+    _cob_corn_v = cobertura_corners_por_equipo(motor, bando="visitante")
+
     selecciones: list[Seleccion] = []
     for res in mercados:
         for s in res.selecciones:
             if not s.estimable or s.probabilidad is None:
                 continue
+            if es_mercado_cronologia_mitades(s) and not _cron_an.get("ok_analizar", True):
+                continue
+            if res.id_mercado == "total_corners" and not _cob_corn_g.get("ok_catalogo", True):
+                continue
+            if res.id_mercado == "corners_local" and not _cob_corn_l.get("ok_catalogo", True):
+                continue
+            if res.id_mercado == "corners_visitante" and not _cob_corn_v.get("ok_catalogo", True):
+                continue
+            try:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                _cal_s = evaluar_familia_conciencia_cached(s.mercado, equipo=s.equipo, prob_bruta=float(s.probabilidad))
+                setattr(s, "prob_calibrada", _cal_s.get("prob_calibrada"))
+                setattr(s, "bajo_vigilancia", bool(_cal_s.get("bajo_vigilancia", False)))
+                setattr(s, "veto_top5", bool(_cal_s.get("veto_top5", False)))
+                setattr(s, "familia_conciencia", _cal_s.get("familia"))
+            except Exception:
+                pass
             esc = sensibilidad.get(_clave_a_texto(s.clave_unica), {})
             s.escenarios = esc
             if s.probabilidad <= params.umbral:
@@ -6128,6 +7143,10 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             s.estado = estado
             if motivo:
                 s.motivo = motivo
+            if _rep_5050 and es_mercado_cronologia_mitades(s):
+                mot_cur = str(getattr(s, "motivo", "") or "")
+                if "reparto 50/50 sin validar" not in mot_cur.lower():
+                    setattr(s, "motivo", f"{mot_cur}; reparto 50/50 sin validar".strip("; "))
             selecciones.append(s)
 
     # Deduplicado exacto de mercado/evento/periodo/equipo/línea

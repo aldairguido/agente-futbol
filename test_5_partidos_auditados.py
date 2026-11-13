@@ -61,11 +61,11 @@ def test_5_partidos_auditados():
     print(f"  • xG Reconstruido: {partido_serie_c_eq['xg']:.2f} (antes 0.0)")
     print(f"  • xGOT Reconstruido: {partido_serie_c_eq['xgot']:.2f} (antes 0.0)")
     print(f"  • xGOT Enfrentados Reconstruido: {partido_serie_c_eq['xgot_enfrentados']:.2f}")
-    print(f"  • Saques de Puerta Derivados: {partido_serie_c_eq.get('saques_puerta', 0)}")
+    print(f"  • Saques de Puerta Derivados: {partido_serie_c_eq.get('saques_puerta')}")
     assert partido_serie_c_eq['xg'] > 0.5, "xG debe reconstruirse cuando hay remates"
     assert partido_serie_c_eq['xgot'] > 0.5, "xGOT debe reconstruirse cuando hay remates a puerta"
-    assert partido_serie_c_eq.get('saques_puerta', 0) >= 1, "saques_puerta no debe ser 0"
-    print("  ✅ Juventus Next Gen vs Renate: Reconstrucción de xG/xGOT y saques_puerta verificada.")
+    assert partido_serie_c_eq.get('saques_puerta') is None, "Fase 3: saques_puerta faltante no debe fabricarse"
+    print("  ✅ Juventus Next Gen vs Renate: Reconstrucción xG/xGOT y cero fabricación de saques_puerta verificada.")
 
     # Caso 3: Parma vs Torino (Ajuste Bidireccional de Portero)
     print("\n[CASO 3] Parma vs Torino (Ajuste Bidireccional de Portero):")

@@ -285,21 +285,9 @@ def formatear_linea_partido_15(idx: int, p: dict[str, Any]) -> str:
     else:
         torneo_fmt = ""
 
-    if len(torneo_fmt) > 18:
-        torneo_fmt = torneo_fmt[:18].strip()
-
     sufijo_torneo = f" · {torneo_fmt}" if torneo_fmt else ""
     prefijo = f"{idx:02d}. {fecha_fmt}  "
     linea = f"{prefijo}{loc} ({gl_str}) vs {vis} ({gv_str}){sufijo_torneo}"
-    if len(linea) > 58:
-        fijo_len = len(prefijo) + len(sufijo_torneo) + len(f" ({gl_str}) vs ({gv_str})")
-        espacio_equipos = max(6, 58 - fijo_len)
-        max_por_eq = max(3, espacio_equipos // 2)
-        loc_c = loc[:max_por_eq].strip()
-        vis_c = vis[:max_por_eq].strip()
-        linea = f"{prefijo}{loc_c} ({gl_str}) vs {vis_c} ({gv_str}){sufijo_torneo}"
-        if len(linea) > 58:
-            linea = linea[:58]
     return linea
 
 
@@ -833,24 +821,44 @@ def matriz_red_para_dibujar(res_red: dict[str, Any]) -> list[list[float]]:
 # 3. RADIÓGRAFO DE MITADES (1T vs 2T sobre 2700 s cada una)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]:
+def perfil_mitades(doc: dict[str, Any], condicion: str | None = None) -> dict[str, Any]:
     """
     Compara el ritmo ofensivo del 1T con el del 2T (cada mitad son 2700 s) usando
-    las muestras por periodo del motor. Devuelve los segundos por tiro, los
-    remates y el Índice de Cambio de Ritmo (2T/1T) con su etiqueta de perfil.
+    mezcla 65% condición + 35% general cuando N_cond >= 4 (fallback a general
+    en caso contrario) e incorpora ratio_2t_1t_xg junto a ratio_2t_1t_remates.
     """
     try:
         import motor_mercados as mm
     except Exception:                                   # pragma: no cover
         return {}
+
+    def _mezcla_metrica(m_gen: Any, m_cond: Any, clave: str) -> float | None:
+        val_gen = m_gen.media(clave)
+        if condicion is not None and m_cond is not None:
+            mc = m_cond.metricas.get(clave)
+            n_c = getattr(mc, "n", 0) if mc is not None else 0
+            val_cond = getattr(mc, "media", None) if mc is not None else None
+            if n_c >= 4 and val_cond is not None and val_gen is not None:
+                return round(0.65 * float(val_cond) + 0.35 * float(val_gen), 4)
+        return val_gen
+
     salida: dict[str, Any] = {}
+    hubo_mezcla_cond = False
+    n_cond_max = 0
     for etiqueta, periodo in (("1T", "1T"), ("2T", "2T")):
-        muestra = mm.extraer_muestra(doc, condicion, periodo)
-        remates = muestra.media("remates_totales_favor")
-        xg = muestra.media("xg_favor")
-        recuperaciones = muestra.media("recuperaciones_favor")
-        duelos = muestra.media("duelos_suelo_pct_favor")
-        faltas = muestra.media("faltas_favor")
+        m_gen = mm.extraer_muestra(doc, None, periodo)
+        m_cond = mm.extraer_muestra(doc, condicion, periodo) if condicion is not None else None
+        if m_cond is not None:
+            n_cond_max = max(n_cond_max, m_cond.partidos_condicion)
+            if (m_cond.metricas.get("remates_totales_favor") and m_cond.metricas["remates_totales_favor"].n >= 4) or (
+                m_cond.metricas.get("xg_favor") and m_cond.metricas["xg_favor"].n >= 4
+            ):
+                hubo_mezcla_cond = True
+        remates = _mezcla_metrica(m_gen, m_cond, "remates_totales_favor")
+        xg = _mezcla_metrica(m_gen, m_cond, "xg_favor")
+        recuperaciones = _mezcla_metrica(m_gen, m_cond, "recuperaciones_favor")
+        duelos = _mezcla_metrica(m_gen, m_cond, "duelos_suelo_pct_favor")
+        faltas = _mezcla_metrica(m_gen, m_cond, "faltas_favor")
         salida[etiqueta] = {
             "remates_totales": remates,
             "xg": xg,
@@ -859,13 +867,15 @@ def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]
             "recuperaciones": recuperaciones,
             "duelos_suelo_pct": duelos,
             "faltas": faltas,
-            "partidos": muestra.partidos_general,
+            "partidos": m_gen.partidos_general,
+            "partidos_condicion": m_cond.partidos_condicion if m_cond is not None else 0,
         }
 
     r1, r2 = salida["1T"]["remates_totales"], salida["2T"]["remates_totales"]
     # Reconciliación matemática obligatoria: xG_1T + xG_2T == xG_FT y tempo de FT
-    muestra_ft = mm.extraer_muestra(doc, condicion, "FT")
-    xg_ft = muestra_ft.media("xg_favor")
+    m_ft_gen = mm.extraer_muestra(doc, None, "FT")
+    m_ft_cond = mm.extraer_muestra(doc, condicion, "FT") if condicion is not None else None
+    xg_ft = _mezcla_metrica(m_ft_gen, m_ft_cond, "xg_favor")
     x1, x2 = salida["1T"]["xg"], salida["2T"]["xg"]
     if xg_ft is not None and x1 is not None and x2 is not None:
         sum_x = x1 + x2
@@ -878,28 +888,45 @@ def perfil_mitades(doc: dict[str, Any], condicion: str | None) -> dict[str, Any]
     if r1 is not None and r2 is not None and (r1 + r2) > 0:
         salida["segundos_por_tiro_ft"] = round(SEGUNDOS_PARTIDO / (r1 + r2), 1)
 
-    ratio = (r2 / r1) if (r1 and r2) else None
-    salida["ratio_2t_1t_remates"] = round(ratio, 3) if ratio is not None else None
+    ratio_rem = (r2 / r1) if (r1 and r2 and r1 > 0 and r2 > 0) else None
+    x1_eff, x2_eff = salida["1T"]["xg"], salida["2T"]["xg"]
+    ratio_xg = (x2_eff / x1_eff) if (x1_eff is not None and x2_eff is not None and x1_eff > 0) else None
+    salida["ratio_2t_1t_remates"] = round(ratio_rem, 3) if ratio_rem is not None else None
+    salida["ratio_2t_1t_xg"] = round(ratio_xg, 3) if ratio_xg is not None else None
+    salida["condicion_evaluada"] = condicion or "general"
+    salida["modo_muestra"] = (
+        f"mezcla 65% {condicion} + 35% general"
+        if (condicion and hubo_mezcla_cond)
+        else ("general (N_cond < 4)" if (condicion and n_cond_max < 4) else "general")
+    )
 
     d1 = salida["1T"]["duelos_suelo_pct"]
     d2 = salida["2T"]["duelos_suelo_pct"]
     salida["caida_duelos_pp"] = (round(d1 - d2, 1) if (d1 is not None and d2 is not None)
                                  else None)
 
-    if ratio is None:
+    if ratio_rem is None and ratio_xg is None:
         perfil = "sin datos suficientes por mitades"
         perfil_corto = "s/d"
-    elif ratio >= 1.35:
+    elif ratio_xg is not None and ratio_xg >= 1.35:
         perfil = "Equipo diésel (crece en el 2T)"
         perfil_corto = "Diésel 2T"
-    elif ratio <= 0.72:
+    elif ratio_xg is not None and ratio_xg <= 0.75:
+        perfil = "Arranque explosivo (se apaga en el 2T)"
+        perfil_corto = "Explosivo 1T"
+    elif ratio_rem is not None and ratio_rem >= 1.35:
+        perfil = "Equipo diésel (crece en el 2T)"
+        perfil_corto = "Diésel 2T"
+    elif ratio_rem is not None and ratio_rem <= 0.72:
         perfil = "Arranque explosivo (se apaga en el 2T)"
         perfil_corto = "Explosivo 1T"
     else:
         perfil = "Ritmo estable entre mitades"
         perfil_corto = "Estable"
+
+    ratio_caida = ratio_xg if ratio_xg is not None else ratio_rem
     if (salida["caida_duelos_pp"] is not None and salida["caida_duelos_pp"] >= 6.0
-            and ratio is not None and ratio < 1.0):
+            and ratio_caida is not None and ratio_caida < 1.0):
         perfil += " · colapso físico en el 2T"
         perfil_corto += " + colapso"
     salida["perfil"] = perfil
@@ -1275,11 +1302,12 @@ def _organizar_sec1_para_cuadro(
         except Exception:
             p_1x2_mat = None
 
-    # Filtrar estrictamente con Gatekeeper (prohibiendo -6.5 Goles, -5.5 Goles, y 12 Sin Empate si P(X) >= 15%)
+    # Filtrar estrictamente con Gatekeeper (corners >=8/15, mitades >=10/15, etc.)
+    mot_gate = getattr(analisis, "motor", None) if analisis is not None else None
     validadas = []
     for s in (lista_sels or []):
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
-        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat):
+        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat, motor=mot_gate):
             validadas.append(s)
 
     # Si vienen más de 18, acotar a las 18 más competitivas
@@ -1327,6 +1355,18 @@ def _organizar_sec1_para_cuadro(
         lin = _v(s, "linea", None)
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
         pct = f"{prob:.0%}"
+        try:
+            p_cal_att = _v(s, "prob_calibrada", None)
+            vig_att = bool(_v(s, "bajo_vigilancia", False) or _v(s, "veto_top5", False))
+            if p_cal_att is None:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                info_c = evaluar_familia_conciencia_cached(str(_v(s, "mercado") or ""), equipo=_v(s, "equipo", None), prob_bruta=prob)
+                p_cal_att = info_c.get("prob_calibrada")
+                vig_att = bool(info_c.get("bajo_vigilancia") or info_c.get("veto_top5"))
+            if vig_att and p_cal_att is not None:
+                pct = f"{prob:.0%} (cal {float(p_cal_att):.0%})"
+        except Exception:
+            pass
         per_s = str(_v(s, "periodo") or "FT").strip().upper()
         if per_s not in ("FT", "1T", "2T"):
             per_s = "FT"
@@ -1463,16 +1503,18 @@ def _organizar_sec1_para_cuadro(
                     agrupado.setdefault("HÁNDICAP / 1X2 / DC", {}).setdefault(amb_s, []).append({"lbl": lbl_s, "pct": pct_s, "prob": prob_s})
                 break
 
+    _orden_canon_amb = ("Tiempo Completo (FT)", "1er Tiempo (1T)", "2º Tiempo (2T)")
     res = []
     for cat in orden_cats:
         ambs = agrupado.get(cat, {})
         todas_pildoras = []
-        amb_nombres = []
         for amb, pildoras in ambs.items():
             if not pildoras:
                 continue
-            amb_nombres.append(amb)
-            todas_pildoras.extend(pildoras)
+            for p_it in pildoras:
+                p_cp = dict(p_it)
+                p_cp["_amb_origen"] = amb
+                todas_pildoras.append(p_cp)
 
         unicas = []
         vistos = set()
@@ -1481,14 +1523,25 @@ def _organizar_sec1_para_cuadro(
                 vistos.add(p["lbl"])
                 unicas.append(p)
 
-        amb_str = " · ".join(amb_nombres[:2]) if amb_nombres else "Tiempo Completo (FT)"
-        if not unicas:
-            unicas = [{"lbl": "Sin líneas validadas >= 70%", "pct": "-", "prob": 0.0}]
+        pills_kept = unicas[:4]
+        ambs_kept = []
+        for amb_c in _orden_canon_amb:
+            if any(pk.get("_amb_origen") == amb_c for pk in pills_kept):
+                ambs_kept.append(amb_c)
+        for pk in pills_kept:
+            a_o = pk.get("_amb_origen")
+            if a_o and a_o not in ambs_kept:
+                ambs_kept.append(a_o)
+            pk.pop("_amb_origen", None)
+
+        amb_str = " · ".join(ambs_kept) if ambs_kept else "Tiempo Completo (FT)"
+        if not pills_kept:
+            pills_kept = [{"lbl": "Sin líneas validadas >= 70%", "pct": "-", "prob": 0.0}]
 
         res.append({
             "categoria": cat,
             "ambito": amb_str,
-            "pildoras": unicas[:4],
+            "pildoras": pills_kept,
         })
     return res
 
@@ -1616,8 +1669,17 @@ def _construir_4_alertas_motor_55(
             dom_01 = eq_L if p01_l > p01_v else eq_V
             det_01 = f"{eq_L}: {p01_l:.2f} xG/tiro vs {eq_V}: {p01_v:.2f} xG/tiro  ·  Mayor claridad: {dom_01}"
 
-        dom_13 = eq_L if p13_l >= p13_v else eq_V
-        dom_39 = eq_L if p39_l >= p39_v else eq_V
+        if abs(p13_l - p13_v) < 0.015:
+            txt_13_dom = "Empate técnico (sin ventaja)"
+        else:
+            dom_13 = eq_L if p13_l > p13_v else eq_V
+            txt_13_dom = f"Mayor seguridad bajo palos: {dom_13}"
+
+        if abs(p39_l - p39_v) * 100.0 < 0.5:
+            txt_39_dom = "Empate técnico (sin ventaja)"
+        else:
+            dom_39 = eq_L if p39_l > p39_v else eq_V
+            txt_39_dom = f"Mayor amenaza en transición: {dom_39}"
 
         if abs(p26_l - p26_v) < 0.03:
             cierre_26_txt = "Empate técnico en el poder de cierre del 2T"
@@ -1633,8 +1695,8 @@ def _construir_4_alertas_motor_55(
             },
             {
                 "codigo": "Patrón #13",
-                "titulo": "Impacto en Portería (Goles Evitados = xGOTc - Goles Contra)",
-                "detalle": f"{eq_L}: {p13_l:+.2f} GEv vs {eq_V}: {p13_v:+.2f} GEv  ·  Mayor seguridad bajo palos: {dom_13}",
+                "titulo": "Impacto en Portería (Goles Evitados)",
+                "detalle": f"{eq_L}: {p13_l:+.2f} GEv vs {eq_V}: {p13_v:+.2f} GEv  ·  {txt_13_dom}",
             },
             {
                 "codigo": "Patrón #26",
@@ -1644,7 +1706,7 @@ def _construir_4_alertas_motor_55(
             {
                 "codigo": "Patrón #39",
                 "titulo": "Verticalidad y Estilo Directo (Precisión Pases Largos)",
-                "detalle": f"{eq_L}: {p39_l*100:.1f}% vs {eq_V}: {p39_v*100:.1f}%  ·  Mayor amenaza en transición: {dom_39}",
+                "detalle": f"{eq_L}: {p39_l*100:.1f}% vs {eq_V}: {p39_v*100:.1f}%  ·  {txt_39_dom}",
             },
         ]
     except Exception:
@@ -1699,24 +1761,29 @@ def generar_cuadro_visual_partido(
 
     # ── RED NEURONAL RECURSIVA: SINCRONIZACIÓN ESTRICTA MATRIZ-TICKET ───────
     import motor_recursivo_45_dcn as red_neuronal
-    from motor_recursivo_45_dcn import obtener_tier_coef, obtener_tier_equipo
+    from motor_recursivo_45_dcn import obtener_coefs_torneo_anclados, obtener_tier_coef, obtener_tier_equipo
 
     partidos_l_red = partidos_para_red_neuronal(partidos_15_local, eq_L)
     partidos_v_red = partidos_para_red_neuronal(partidos_15_visita, eq_V)
     tier_L_int = obtener_tier_equipo(partidos_l_red)
     tier_V_int = obtener_tier_equipo(partidos_v_red)
-    tier_coef_L = obtener_tier_coef(partidos_l_red, perfil_local, eq_L, competicion)
-    tier_coef_V = obtener_tier_coef(partidos_v_red, perfil_vis, eq_V, competicion)
+    info_coefs_v = obtener_coefs_torneo_anclados(
+        partidos_l_red, partidos_v_red,
+        perfil_local, perfil_vis, eq_L, eq_V,
+        competicion_str=competicion,
+    )
+    tier_coef_L = float(info_coefs_v["coef_L"])
+    tier_coef_V = float(info_coefs_v["coef_V"])
     ratio_tier_L = min(1.0, tier_coef_L / max(0.1, tier_coef_V))
     ratio_tier_V = min(1.0, tier_coef_V / max(0.1, tier_coef_L))
 
-    if ratio_tier_V < 1.0 and ratio_tier_V > 0.05:
+    if ratio_tier_V < 0.90 and ratio_tier_V > 0.05:
         rV["Final_Defense_Strength"] = round(rV["Final_Defense_Strength"] * (ratio_tier_V ** 0.65), 1)
         rV["Overall_Hybrid_Rating"] = round(0.48 * rV["Final_Attack_Strength"] + 0.42 * rV["Final_Defense_Strength"] + 0.10 * rV["Pressing_Intensity_Score"], 1)
         if tV.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
             tV["Avg_Seconds_Between_Goals_Conceded"] = round(tV["Avg_Seconds_Between_Goals_Conceded"] * ratio_tier_V, 1)
 
-    if ratio_tier_L < 1.0 and ratio_tier_L > 0.05:
+    if ratio_tier_L < 0.90 and ratio_tier_L > 0.05:
         rL["Final_Defense_Strength"] = round(rL["Final_Defense_Strength"] * (ratio_tier_L ** 0.65), 1)
         rL["Overall_Hybrid_Rating"] = round(0.48 * rL["Final_Attack_Strength"] + 0.42 * rL["Final_Defense_Strength"] + 0.10 * rL["Pressing_Intensity_Score"], 1)
         if tL.get("Avg_Seconds_Between_Goals_Conceded", 3500.0) >= 4200.0:
@@ -1732,13 +1799,15 @@ def generar_cuadro_visual_partido(
         partidos_15_visita, perfil_vis, "fuera", tier_rival=tier_L_int
     )
 
-    # Ponderación por Coeficiente de Liga (tier_coef) cuando no hubo salto de división interno
-    tier_L = obtener_tier_coef(partidos_15_local, perfil_local, eq_L, competicion_str=competicion)
-    tier_V = obtener_tier_coef(partidos_15_visita, perfil_vis, eq_V, competicion_str=competicion)
-    if tier_L != tier_V and tier_L_int == tier_V_int:
+    # Ponderación por Coeficiente de Liga anclado al torneo actual (Fase 5)
+    tier_L = tier_coef_L
+    tier_V = tier_coef_V
+    if info_coefs_v.get("aplica_coef_liga", True) and tier_L != tier_V and tier_L_int == tier_V_int:
         tier_menor = min(tier_L, tier_V)
         tier_mayor = max(tier_L, tier_V)
         ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
+        if info_coefs_v.get("comparten_torneo"):
+            ratio_fuerza = max(0.90, min(1.0, ratio_fuerza))
         if tier_L < tier_V:
             gf_L = round(gf_L * ratio_fuerza, 2)
             xg_L = round(xg_L * ratio_fuerza, 2)
@@ -1779,10 +1848,17 @@ def generar_cuadro_visual_partido(
             partidos_l_red,
             partidos_v_red,
             sede_neutral_local=sede_neutral_L,
+            competicion_str=competicion,
         )
         lam_local = float(res_red["lambda_local_recursivo"])
         lam_vis = float(res_red["lambda_visita_recursivo"])
         matriz_prob = matriz_red_para_dibujar(res_red)
+
+    if isinstance(res_red, dict):
+        if res_red.get("seg_gol_concedido_propio_L") is not None:
+            tL["Avg_Seconds_Between_Goals_Conceded"] = float(res_red["seg_gol_concedido_propio_L"])
+        if res_red.get("seg_gol_concedido_propio_V") is not None:
+            tV["Avg_Seconds_Between_Goals_Conceded"] = float(res_red["seg_gol_concedido_propio_V"])
 
     fig = plt.figure(figsize=(13.5, 23.2), dpi=180, facecolor="#F8FAFC")
     gs = fig.add_gridspec(
@@ -2099,104 +2175,29 @@ def generar_cuadro_visual_partido(
     # ── BLOQUE INFERIOR (gs[2]): TOP 5 + 4 ALERTAS 55 PATRONES + SECCIÓN 1: ALTA PROBABILIDAD (>= 70%) ──
     gs_bot = gs[2].subgridspec(3, 1, height_ratios=[0.84, 0.38, 0.98], hspace=0.14)
 
-    # Resolución de Top 5
+    # Resolución de Top 5 (nunca fabricar líneas dummy cuando el filtro real devuelve < 5 o 0 ítems)
     top5_podio_calc = top5_podio
-    if not top5_podio_calc and analisis is not None:
+    if top5_podio_calc is None and analisis is not None:
         try:
-            from motor_mercados import seleccionar_top_5_jugadas_recomendadas
-            sels_an = getattr(analisis, "selecciones_validadas", []) or []
-            mot_an = getattr(analisis, "motor", None)
-            top5_podio_calc = seleccionar_top_5_jugadas_recomendadas(sels_an, motor=mot_an, eq_l=eq_L, eq_v=eq_V)
+            from servicio_mercados import obtener_top5_y_seccion1_filtrados
+            top5_podio_calc, _, _ = obtener_top5_y_seccion1_filtrados(analisis)
         except Exception:
-            top5_podio_calc = None
-
-    if not top5_podio_calc:
-        p_fav_max = max(p_1, p_2)
-        eq_fav = eq_L if p_1 >= p_2 else eq_V
-        p_dc_fav = (p_1 + p_x) if p_1 >= p_2 else (p_2 + p_x)
-        dc_tag = f"1X: {eq_L} o Empate" if p_1 >= p_2 else f"X2: Empate o {eq_V}"
-        p_adj_1_fb = min(90.0, max(72.0, p_dc_fav - 5.5))
-        nota_fb = (
-            f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. "
-            f"Base Matriz Poisson: {p_dc_fav:.1f}% -> Ajustada Ticket: {p_adj_1_fb:.1f}%."
-        )
-        top5_podio_calc = [
-            {
-                "rank": 1,
-                "slot": 1,
-                "categoria_podio": "RESULTADO / DOBLE OPORTUNIDAD",
-                "etiqueta": f"Doble Oportunidad {dc_tag} (FT)",
-                "probabilidad": p_adj_1_fb / 100.0,
-                "probabilidad_pct": f"{p_adj_1_fb:.1f}%",
-                "prob_base_poisson": round(p_dc_fav, 1),
-                "prob_ajustada_ticket": round(p_adj_1_fb, 1),
-                "badge_completo": f"{p_adj_1_fb:.1f}% (SÓLIDA · Cuota Mín: {1.05 / max(0.05, p_adj_1_fb / 100.0):.2f})",
-                "nota_calibracion": nota_fb,
-                "estado": "mantiene",
-                "respaldo": f"Respaldo ADN: λ Red {lam_local:.2f} vs {lam_vis:.2f} con dominio de área.",
-            },
-            {
-                "rank": 2,
-                "slot": 2,
-                "categoria_podio": "GOLES TOTALES (FT)",
-                "etiqueta": f"Goles Totales (FT): {'+1.5 Goles' if (p_o25 >= 45) else '-3.5 Goles'}",
-                "probabilidad": 0.82 if (p_o25 >= 45) else 0.76,
-                "probabilidad_pct": "82.0%" if (p_o25 >= 45) else "76.0%",
-                "badge_completo": "82.0% (SÓLIDA · Cuota Mín: 1.28)" if (p_o25 >= 45) else "76.0% (SÓLIDA · Cuota Mín: 1.38)",
-                "nota_calibracion": nota_fb,
-                "estado": "mantiene",
-                "respaldo": f"Respaldo ADN: Expectativa combinada λ={lam_local + lam_vis:.2f} goles.",
-            },
-            {
-                "rank": 3,
-                "slot": 3,
-                "categoria_podio": "MITADES / GOLES EQUIPO",
-                "etiqueta": f"Goles {eq_fav} (FT): +0.5 Goles",
-                "probabilidad": 0.85,
-                "probabilidad_pct": "85.0%",
-                "badge_completo": "85.0% (SÓLIDA · Cuota Mín: 1.24)",
-                "nota_calibracion": nota_fb,
-                "estado": "mantiene",
-                "respaldo": f"Respaldo ADN: {eq_fav} promedia volumen ofensivo superior.",
-            },
-            {
-                "rank": 4,
-                "slot": 4,
-                "categoria_podio": "CÓRNERES",
-                "etiqueta": "Córneres Totales (FT): +7.5 Córn.",
-                "probabilidad": 0.78,
-                "probabilidad_pct": "78.0%",
-                "badge_completo": "78.0% (SÓLIDA · Cuota Mín: 1.35)",
-                "nota_calibracion": nota_fb,
-                "estado": "mantiene",
-                "respaldo": "Respaldo ADN: Proyección respaldada por volumen de centros y área.",
-            },
-            {
-                "rank": 5,
-                "slot": 5,
-                "categoria_podio": "TARJETAS / AMBOS ANOTAN",
-                "etiqueta": f"Ambos Equipos Anotan (FT): {'No' if p_btts < 50 else 'Sí'}",
-                "probabilidad": max(p_btts, 100.0 - p_btts) / 100.0,
-                "probabilidad_pct": f"{max(p_btts, 100.0 - p_btts):.1f}%",
-                "badge_completo": f"{max(p_btts, 100.0 - p_btts):.1f}% (SÓLIDA · Cuota Mín: {1.05 / max(0.05, max(p_btts, 100.0 - p_btts) / 100.0):.2f})",
-                "nota_calibracion": nota_fb,
-                "estado": "mantiene",
-                "respaldo": f"Respaldo ADN: Tasas ofensivas y solidez en transición.",
-            },
-        ]
+            top5_podio_calc = []
+    if top5_podio_calc is None:
+        top5_podio_calc = []
 
     nota_cal_top = ""
     if top5_podio_calc and isinstance(top5_podio_calc[0], dict):
         nota_cal_top = str(top5_podio_calc[0].get("nota_calibracion") or "")
     if not nota_cal_top:
         p_dc_b = max(p_1 + p_x, p_2 + p_x)
-        p_adj_b = float((top5_podio_calc[0] if top5_podio_calc else {}).get("probabilidad", 0.85)) * 100.0
+        p_adj_b = float((top5_podio_calc[0] if top5_podio_calc else {}).get("probabilidad", p_dc_b / 100.0)) * 100.0
         nota_cal_top = (
-            f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés) e ineficiencia de mercado. "
+            f"Nota de Calibración: Probabilidad ajustada por varianza (9 escenarios de estrés, sin cuotas de mercado). "
             f"Base Matriz Poisson: {p_dc_b:.1f}% -> Ajustada Ticket: {p_adj_b:.1f}%."
         )
 
-    # 3) Sub-bloque inferior de gs[1]: Caja gris de resumen, JUGADA OPTIMA y Nota de Calibración
+    # 3) Sub-bloque inferior de gs[1]: Caja gris de resumen, JUGADA OPTIMA, H2H informativo y Nota de Calibración
     ax_caja_gris = fig.add_subplot(gs_mid[2])
     ax_caja_gris.axis("off")
     txt_mat_c = (
@@ -2205,6 +2206,10 @@ def generar_cuadro_visual_partido(
     )
     if info_clusters and info_clusters.get("linea_pie"):
         txt_mat_c += f"\n{_sanear_para_canvas(info_clusters['linea_pie'])}"
+    _meta_an = (getattr(analisis, "metadatos", None) or {}) if analisis is not None else {}
+    _h2h_tkt_sc = str(_meta_an.get("h2h_reciente_ticket") or "").strip()
+    if _h2h_tkt_sc:
+        txt_mat_c += f"\n{_sanear_para_canvas(_h2h_tkt_sc)}"
     txt_mat_c += f"\n{nota_cal_top}"
 
     ax_caja_gris.text(
@@ -2222,7 +2227,9 @@ def generar_cuadro_visual_partido(
     rect_banner_top5 = FancyBboxPatch((0.0, 0.84), 1.0, 0.16, boxstyle="round,pad=0.01", facecolor="#E3F2FD", edgecolor="#1A6BA8", lw=1.2, transform=ax_top5.transAxes)
     ax_top5.add_patch(rect_banner_top5)
     n_top5_cnt = len(top5_podio_calc[:5])
-    tit_top5_box = f"TOP {n_top5_cnt} JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)" if n_top5_cnt < 5 else "TOP 5 JUGADAS RECOMENDADAS (ALTO VALOR TE APUESTO)"
+    _t5_con_cuota = any(isinstance(it, dict) and (it.get("ev_pct") is not None or it.get("ev") is not None) for it in top5_podio_calc[:5])
+    _suf_t5_box = "(ALTO VALOR TE APUESTO)" if _t5_con_cuota else "(ALTA PROBABILIDAD DEL MODELO)"
+    tit_top5_box = f"TOP {n_top5_cnt} JUGADAS RECOMENDADAS {_suf_t5_box}" if n_top5_cnt < 5 else f"TOP 5 JUGADAS RECOMENDADAS {_suf_t5_box}"
     ax_top5.text(0.02, 0.93, tit_top5_box, fontsize=9.2, fontweight="bold", color="#131D31", transform=ax_top5.transAxes)
     ax_top5.text(0.02, 0.865, nota_cal_top, fontsize=7.1, color="#334155", transform=ax_top5.transAxes)
 
@@ -2260,9 +2267,12 @@ def generar_cuadro_visual_partido(
             pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · EV {float(ev_p):+.1f}% · Stake: {float(stk_p):.1f}%)")
         else:
             pill_txt = str(item.get("badge_completo") or f"{pct_val} ({est_txt} · Cuota Mín: {c_min:.2f})")
-        rect_pill = FancyBboxPatch((0.708, y_f - 0.105), 0.280, 0.09, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_top5.transAxes)
+        _fsize_pill = 6.3 if len(pill_txt) > 42 else 7.3
+        _px0_pill = 0.630 if len(pill_txt) > 42 else 0.708
+        _pw_pill = 0.358 if len(pill_txt) > 42 else 0.280
+        rect_pill = FancyBboxPatch((_px0_pill, y_f - 0.105), _pw_pill, 0.09, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_top5.transAxes)
         ax_top5.add_patch(rect_pill)
-        ax_top5.text(0.848, y_f - 0.06, pill_txt, ha="center", va="center", fontsize=7.3, fontweight="bold", color="#1B5E20", transform=ax_top5.transAxes)
+        ax_top5.text(_px0_pill + _pw_pill * 0.5, y_f - 0.06, pill_txt, ha="center", va="center", fontsize=_fsize_pill, fontweight="bold", color="#1B5E20", transform=ax_top5.transAxes)
 
     # Sub-bloque intermedio de gs[2]: 4 ALERTAS PRINCIPALES ACTIVADAS DEL MOTOR DE 55 PATRONES
     ax_alertas55 = fig.add_subplot(gs_bot[1])
@@ -2348,7 +2358,7 @@ def generar_cuadro_visual_partido(
         x_pill = 0.50
         for pill in cat_info["pildoras"][:4]:
             p_txt = f"{pill['lbl']}  {pill['pct']}"
-            p_w = min(0.18, max(0.10, len(p_txt) * 0.0072))
+            p_w = min(0.24, max(0.10, len(p_txt) * 0.0072))
             if x_pill + p_w > 0.98:
                 break
             rect_p = FancyBboxPatch((x_pill, y_c - 0.095), p_w, 0.08, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_sec1.transAxes)
@@ -2358,7 +2368,7 @@ def generar_cuadro_visual_partido(
 
     fig.text(
         0.50, 0.008,
-        "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en la Red Neuronal de 45 variables y el Doble ADN.",
+        "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en una red de factores con pesos fijos y el Doble ADN.  ·  " + __import__("utilidades_seguridad").obtener_sello_build(),
         ha="center", fontsize=8.0, color="#64748B", style="italic"
     )
 
@@ -2510,7 +2520,7 @@ def generar_cuadro_desde_analisis(
         "visitante": bloque_para_lado(motor, "visitante", peso_roja=peso_roja),
     }
 
-    from motor_recursivo_45_dcn import obtener_tier_coef
+    from motor_recursivo_45_dcn import obtener_coefs_torneo_anclados
     eq_l_nom = getattr(motor, "nombre_local", "") or ""
     eq_v_nom = getattr(motor, "nombre_visitante", "") or ""
     meta_mkt = getattr(analisis, "metadatos", {}) or {}
@@ -2519,17 +2529,24 @@ def generar_cuadro_desde_analisis(
     pts_l = doc_local.get("partidos") if doc_local else []
     pts_v = doc_visitante.get("partidos") if doc_visitante else []
 
-    t_coef_L = obtener_tier_coef(partidos=pts_l, nombre_equipo=eq_l_nom, competicion_str=comp_nom)
-    t_coef_V = obtener_tier_coef(partidos=pts_v, nombre_equipo=eq_v_nom, competicion_str=comp_nom)
-    ratio_tier_l = min(1.0, t_coef_L / max(0.1, t_coef_V))
-    ratio_tier_v = min(1.0, t_coef_V / max(0.1, t_coef_L))
+    info_coefs_cw = obtener_coefs_torneo_anclados(
+        pts_l, pts_v, None, None, eq_l_nom, eq_v_nom, competicion_str=comp_nom
+    )
+    t_coef_L = float(info_coefs_cw["coef_L"])
+    t_coef_V = float(info_coefs_cw["coef_V"])
+    if info_coefs_cw.get("comparten_torneo") and not info_coefs_cw.get("aplica_coef_liga"):
+        ratio_tier_l = 1.0
+        ratio_tier_v = 1.0
+    else:
+        ratio_tier_l = min(1.0, t_coef_L / max(0.1, t_coef_V))
+        ratio_tier_v = min(1.0, t_coef_V / max(0.1, t_coef_L))
 
     perfil_l = construir_perfil_especialista_equipo(bloques["local"], ratio_tier=ratio_tier_l)
     perfil_v = construir_perfil_especialista_equipo(bloques["visitante"], ratio_tier=ratio_tier_v)
 
-    if doc_local is not None:
-        mit_l = perfil_mitades(doc_local, None)
-        mit_v = perfil_mitades(doc_visitante, None)
+    if doc_local is not None or doc_visitante is not None:
+        mit_l = perfil_mitades(doc_local, "casa") if doc_local is not None else {}
+        mit_v = perfil_mitades(doc_visitante, "fuera") if doc_visitante is not None else {}
     else:
         mit_l = mit_v = {}
 
@@ -2695,16 +2712,7 @@ def generar_cuadro_auditoria_15_partidos_png(
     cuadro_c_L = (doc_local.get("cuadro_c_timeline") if isinstance(doc_local, dict) else None) or calcular_cuadro_c_timeline_15min(lista_L, d_gen_L)
     cuadro_c_V = (doc_visita.get("cuadro_c_timeline") if isinstance(doc_visita, dict) else None) or calcular_cuadro_c_timeline_15min(lista_V, d_gen_V)
 
-    fig = plt.figure(figsize=(13.5, 20.6), dpi=180, facecolor="#F8FAFC")
-    ax = fig.add_axes([0.04, 0.025, 0.92, 0.925])
-    ax.axis("off")
-
-    fig.text(0.04, 0.978, f"{competicion.upper()}   ·   AUDITORÍA OFICIAL 15P + CUADRO B (TENDENCIAS) + CUADRO C (TIMELINE 15 MIN) + VEREDICTO TÁCTICO",
-             fontsize=9.0, fontweight="bold", color="#64748B")
-    fig.text(0.04, 0.953, f"{eq_L} vs {eq_V}",
-             fontsize=20.5, fontweight="bold", color="#0F172A")
-    fig.text(0.04, 0.935, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
-             fontsize=8.5, color="#64748B")
+    mostrar_adv = False
     if meta.get("advertencia_liga"):
         mostrar_adv = True
         try:
@@ -2717,8 +2725,19 @@ def generar_cuadro_auditoria_15_partidos_png(
                 mostrar_adv = False
         except Exception:
             pass
-        if mostrar_adv:
-            fig.text(0.04, 0.920, f"⚠️ {meta['advertencia_liga']}", fontsize=8.5, fontweight="bold", color="#B45309")
+
+    fig = plt.figure(figsize=(13.5, 20.6), dpi=180, facecolor="#F8FAFC")
+    ax = fig.add_axes([0.04, 0.022, 0.92, 0.892 if mostrar_adv else 0.920])
+    ax.axis("off")
+
+    fig.text(0.04, 0.978, f"{competicion.upper()}   ·   AUDITORÍA OFICIAL 15P + CUADRO B (TENDENCIAS) + CUADRO C (TIMELINE 15 MIN) + VEREDICTO TÁCTICO",
+             fontsize=9.0, fontweight="bold", color="#64748B")
+    fig.text(0.04, 0.955, f"{eq_L} vs {eq_V}",
+             fontsize=20.0, fontweight="bold", color="#0F172A")
+    fig.text(0.04, 0.936, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
+             fontsize=8.5, color="#64748B")
+    if mostrar_adv:
+        fig.text(0.04, 0.916, _sanear_para_canvas(f"AVISO LIGA: {meta['advertencia_liga']}"), fontsize=8.3, fontweight="bold", color="#B45309")
 
     # ── BLOQUE 1: LISTA 01..15 DE PARTIDOS ÚNICOS (y: 0.610 .. 0.960) ──
     ax.text(0.005, 0.962, f"AUDITORÍA DE LOS {len(lista_L)} PARTIDOS OFICIALES ÚNICOS — LOCAL: {eq_L.upper()}",
@@ -2736,10 +2755,12 @@ def generar_cuadro_auditoria_15_partidos_png(
         y_pos = 0.930 - idx * 0.0215
         if idx < len(lista_L):
             linea_izq = formatear_linea_partido_15(idx + 1, lista_L[idx])
-            ax.text(0.010, y_pos, linea_izq, fontsize=7.0, color="#1E293B", family="monospace", transform=ax.transAxes)
+            fs_izq = 5.6 if len(linea_izq) > 74 else (6.2 if len(linea_izq) > 60 else 7.0)
+            ax.text(0.010, y_pos, linea_izq, fontsize=fs_izq, color="#1E293B", family="monospace", transform=ax.transAxes)
         if idx < len(lista_V):
             linea_der = formatear_linea_partido_15(idx + 1, lista_V[idx])
-            ax.text(0.522, y_pos, linea_der, fontsize=7.0, color="#1E293B", family="monospace", transform=ax.transAxes)
+            fs_der = 5.6 if len(linea_der) > 74 else (6.2 if len(linea_der) > 60 else 7.0)
+            ax.text(0.522, y_pos, linea_der, fontsize=fs_der, color="#1E293B", family="monospace", transform=ax.transAxes)
 
     # ── BLOQUE 2: CUADRO B — TABLA DE TENDENCIAS HISTÓRICAS (15P) (y: 0.375 .. 0.595) ──
     rect_ban_b = FancyBboxPatch((0.0, 0.568), 1.0, 0.026, boxstyle="round,pad=0.005", facecolor="#E3F2FD", edgecolor="#1A6BA8", lw=1.0, transform=ax.transAxes)
@@ -2823,7 +2844,7 @@ def generar_cuadro_auditoria_15_partidos_png(
     n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
     n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
     n_base = max(15, n_tot_l, n_tot_v)
-    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    k_eval = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
     k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 
@@ -2908,6 +2929,12 @@ def generar_cuadro_auditoria_15_partidos_png(
         except Exception:
             sec1_v = None
 
+        _xai_rec_v = getattr(motor_obj, "xai_factores", None) or {}
+        if isinstance(_xai_rec_v.get("mu_local_casa"), dict) and isinstance(pat_l_v, dict):
+            _nl_v = int(((getattr(motor_obj, "recursivo", None) or {}).get("meta_condicion_local") or {}).get("n_en_condicion") or len(lista_L) or 15)
+            _nv_v = int(((getattr(motor_obj, "recursivo", None) or {}).get("meta_condicion_visita") or {}).get("n_en_condicion") or len(lista_V) or 15)
+            pat_l_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
+            pat_v_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
         texto_veredicto = generar_veredicto_tactico_partido(
             nombre_local=eq_L,
             nombre_visita=eq_V,
@@ -2923,6 +2950,11 @@ def generar_cuadro_auditoria_15_partidos_png(
             top5_podio=top5_v,
             selecciones_sec1=sec1_v,
             para_canvas=True,
+            motor=motor_obj,
+            micropatrones_combinatorios=(
+                getattr(motor_obj, "micropatrones_combinatorios", None)
+                or (getattr(motor_obj, "recursivo", None) or {}).get("micropatrones_combinatorios")
+            ),
         )
         lineas_ver = [ln.strip() for ln in texto_veredicto.splitlines() if ln.strip()]
     except Exception:
@@ -2960,7 +2992,7 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     fig.text(
         0.50, 0.008,
-        "Verificación de Integridad: Todos los cálculos provienen exclusivamente de los 15 partidos oficiales listados arriba (0 amistosos, 0 datos inventados).",
+        "Verificación de Integridad: Todos los cálculos provienen exclusivamente de los 15 partidos oficiales listados arriba (0 amistosos, 0 datos inventados).  ·  " + __import__("utilidades_seguridad").obtener_sello_build(),
         ha="center", fontsize=8.0, color="#64748B", style="italic"
     )
 

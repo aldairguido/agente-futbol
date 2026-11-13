@@ -40,10 +40,13 @@ DEFAULTS_UMBRALES = {
     "min_pares_red_45": 15,
     "min_claves_comunes_red_45": 45,
     "min_partidos_cronologia_verificada": 10,
-    "min_cuota_justa_no_trivial_top5": 1.25,
+    "min_cuota_justa_no_trivial_top5": 1.14,
     "max_desvio_frecuencia_observada_pts": 10.0,
     "bloqueo_recorte_independiente_calibracion": True,
     "techo_lambda_ataque_bajo": 1.10,
+    "umbral_p26_cierre_2t": 0.51,
+    "min_partidos_corners_por_equipo": 8,
+    "max_brecha_familia_top5_pp": -10.0,
 }
 
 CATALOGO_MERCADOS = [
@@ -83,10 +86,12 @@ def cargar_umbrales_cobertura(ruta: Optional[str] = None) -> Dict[str, Any]:
         k, v = linea_limpia.split(":", 1)
         k = k.strip()
         v = v.strip()
-        if re.match(r"^\d+$", v):
+        if re.match(r"^-?\d+$", v):
             umbrales[k] = int(v)
-        elif re.match(r"^\d+\.\d+$", v):
+        elif re.match(r"^-?\d+\.\d+$", v):
             umbrales[k] = float(v)
+        elif v.lower() in ("true", "false"):
+            umbrales[k] = (v.lower() == "true")
 
     return umbrales
 

@@ -221,12 +221,18 @@ def test_3_descuento_laliga2_y_sincronizacion_atletico_deportivo():
 
 def test_4_filtro_relleno_y_podio_top5():
     print("▶ 4. Verificando eliminación de opciones de relleno y Podio TOP 5 JUGADAS RECOMENDADAS...")
+    _res_dort = [(2, 0), (3, 1), (2, 1), (1, 0), (1, 1)]
+    _res_ef = [(1, 2), (0, 2), (1, 1), (1, 2), (2, 3)]
     pts_l = [
         _crear_partido_sintetico(
             i, "Borussia Dortmund", f"RivalBL_{i}",
             "casa" if i % 2 == 0 else "fuera",
-            "Bundesliga", gf=2, gc=1, xg_f=2.05, xg_c=1.10, xgot_f=2.15, xgot_c=1.05,
-            posesion=58.0, toques_area=32, corners_f=7, corners_c=4, amarillas_f=2, amarillas_c=2
+            "Bundesliga",
+            gf=_res_dort[i % 5][0], gc=_res_dort[i % 5][1],
+            xg_f=2.05, xg_c=1.10, xgot_f=2.15, xgot_c=1.05,
+            posesion=58.0, toques_area=32,
+            corners_f=[6, 7, 8, 5, 7][i % 5], corners_c=[4, 3, 5, 4, 4][i % 5],
+            amarillas_f=2, amarillas_c=2,
         )
         for i in range(15)
     ]
@@ -234,8 +240,12 @@ def test_4_filtro_relleno_y_podio_top5():
         _crear_partido_sintetico(
             i, "Eintracht Frankfurt", f"RivalEF_{i}",
             "fuera" if i % 2 == 0 else "casa",
-            "Bundesliga", gf=1, gc=2, xg_f=1.35, xg_c=1.65, xgot_f=1.30, xgot_c=1.70,
-            posesion=49.0, toques_area=22, corners_f=5, corners_c=5, amarillas_f=2, amarillas_c=2
+            "Bundesliga",
+            gf=_res_ef[i % 5][0], gc=_res_ef[i % 5][1],
+            xg_f=1.35, xg_c=1.65, xgot_f=1.30, xgot_c=1.70,
+            posesion=49.0, toques_area=22,
+            corners_f=[5, 4, 6, 5, 4][i % 5], corners_c=[5, 6, 4, 5, 6][i % 5],
+            amarillas_f=2, amarillas_c=2,
         )
         for i in range(15)
     ]

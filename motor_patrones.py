@@ -436,14 +436,15 @@ def calcular_55_patrones_equipo(
     err_gol = max(0.0, _val(m, "errores_gol", default=0.15))
 
     paradas = max(0.2, _val(m, "paradas", "paradas_portero", default=3.1))
-    # Cálculo directo y sin inversión para P13_Portero_Goles_Evitados:
-    # Siempre se calcula como: xGOT_enfrentado (recibido por nuestro arquero) - Goles_concedidos
-    tiene_xgot_enf = any(k in m and m[k] is not None for k in ("xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido"))
+    # Cálculo unificado para P13_Portero_Goles_Evitados (Punto 1.1):
+    # Misma fuente que Doble ADN/Consola/Cuadro cuando el proveedor reporta 'goles_evitados' explícito;
+    # si 'goles_evitados' es None/ausente, deriva algebraicamente xGOT_enfrentado - Goles_concedidos.
+    tiene_ge_obs = m.get("goles_evitados") is not None
     xgot_enf = max(0.05, _val(m, "xgot_enfrentado", "xgot_enfrentados", "xgot_contra", "xgot_recibido", default=goles_c))
-    if tiene_xgot_enf:
-        goles_evit = round(xgot_enf - goles_c, 2)
+    if tiene_ge_obs:
+        goles_evit = round(_val(m, "goles_evitados", default=0.0), 2)
     else:
-        goles_evit = round(_val(m, "goles_evitados", default=round(xgot_enf - goles_c, 2)), 2)
+        goles_evit = round(xgot_enf - goles_c, 2)
 
     rem_puerta_rec = max(0.5, paradas + goles_c)
     rem_area_rec = max(1.0, _val(m, "remates_dentro_area_recibidos", default=rem_puerta_rec * 1.85))
@@ -734,6 +735,648 @@ def calcular_patrones_completos_partido(
     return calcular_55_patrones_matchup(p_l, p_v)
 
 
+_METRICAS_TENSOR_DEFAULT: tuple[str, ...] = (
+    "xg",
+    "xg_contra",
+    "goles",
+    "goles_contra",
+    "remates_totales",
+    "remates_totales_contra",
+    "remates_puerta",
+    "remates_puerta_contra",
+    "grandes_ocasiones",
+    "grandes_ocasiones_contra",
+    "toques_area_rival",
+    "toques_area_rival_contra",
+    "corners",
+    "corners_contra",
+    "tarjetas_amarillas",
+    "faltas",
+    "posesion_pct",
+    "pases_precision_pct",
+    "duelos_suelo_pct",
+    "recuperaciones",
+    "despejes",
+)
+
+
+def _normalizar_condicion_tensor(cond: Any) -> str:
+    c = str(cond or "").strip().lower()
+    if c in ("casa", "local", "l", "h", "home"):
+        return "casa"
+    if c in ("fuera", "visita", "visitante", "v", "a", "away"):
+        return "fuera"
+    return c
+
+
+def _ordenar_partidos_cronologico_tensor(partidos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Ordena los partidos de más antiguo a más reciente preservando None-safety."""
+    def _clave(item: Tuple[int, Dict[str, Any]]) -> Tuple[str, int]:
+        idx, p = item
+        f = str(p.get("fecha_iso") or p.get("fecha") or p.get("utcTime") or p.get("date") or "").strip()
+        # Normaliza DD.MM.YYYY -> YYYY-MM-DD si aparece
+        if len(f) >= 10 and f[2:3] in (".", "/") and f[5:6] in (".", "/"):
+            f = f"{f[6:10]}-{f[3:5]}-{f[0:2]}"
+        else:
+            f = f[:10]
+        # Si fechas empatan o faltan, respeta el orden inverso asumiendo idx=0 más reciente
+        return (f, -idx)
+
+    ordenados = sorted(enumerate(partidos), key=_clave)
+    return [p for _, p in ordenados]
+
+
+def _a_float_real_tensor(val: Any) -> Optional[float]:
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        if math.isnan(val) or math.isinf(val):
+            return None
+        return float(val)
+    txt = str(val).strip().lower()
+    if txt in ("", "none", "null", "nan", "n/a", "n/d", "sin_dato", "sin dato", "-"):
+        return None
+    try:
+        num = float(val)
+        return None if (math.isnan(num) or math.isinf(num)) else num
+    except (TypeError, ValueError):
+        return None
+
+
+def _extraer_goles_periodo_tensor(partido: Dict[str, Any], periodo: str, bando: str) -> Optional[float]:
+    filas = ((partido.get("periodos") or {}).get(periodo) or {}).get("filas") or []
+    for fila in filas:
+        if str(fila.get("clave") or "").strip().lower() == "goles":
+            v = _a_float_real_tensor(fila.get(bando))
+            if v is not None:
+                return v
+
+    def _leer_m(clave_m: str) -> Optional[float]:
+        m = partido.get(clave_m)
+        if isinstance(m, dict):
+            return _a_float_real_tensor(m.get(bando))
+        return None
+
+    if periodo == "FT":
+        return _leer_m("marcador")
+    if periodo == "1T":
+        return _leer_m("marcador_1t")
+    if periodo == "2T":
+        g2 = _leer_m("marcador_2t")
+        if g2 is not None:
+            return g2
+        g_ft = _leer_m("marcador")
+        g_1t = _leer_m("marcador_1t")
+        if g_ft is not None and g_1t is not None and g_ft >= g_1t:
+            return float(g_ft - g_1t)
+    return None
+
+
+def _extraer_valor_tensor_partido(partido: Dict[str, Any], metrica: str, periodo: str) -> Optional[float]:
+    m_low = str(metrica or "").strip().lower()
+    if m_low.endswith("_contra"):
+        bando = "rival"
+        clave_base = m_low[:-7]
+    elif m_low.endswith("_favor"):
+        bando = "equipo"
+        clave_base = m_low[:-6]
+    else:
+        bando = "equipo"
+        clave_base = m_low
+
+    if clave_base == "goles":
+        return _extraer_goles_periodo_tensor(partido, periodo, bando)
+
+    filas = ((partido.get("periodos") or {}).get(periodo) or {}).get("filas") or []
+    for fila in filas:
+        if str(fila.get("clave") or "").strip().lower() == clave_base:
+            v = _a_float_real_tensor(fila.get(bando))
+            if v is not None:
+                return v
+    return None
+
+
+def _percentil_lineal_tensor(ordenados: List[float], q: float) -> float:
+    if not ordenados:
+        return 0.0
+    if len(ordenados) == 1:
+        return float(ordenados[0])
+    pos = (len(ordenados) - 1) * q
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(ordenados[lo])
+    frac = pos - lo
+    return float(ordenados[lo] + (ordenados[hi] - ordenados[lo]) * frac)
+
+
+def _calcular_estadisticos_tensor(valores: List[float]) -> Dict[str, Any]:
+    import statistics as _stats
+
+    n = len(valores)
+    if n == 0:
+        return {
+            "n": 0,
+            "media": None,
+            "media_ponderada_60_40": None,
+            "mediana": None,
+            "desviacion_estandar": None,
+            "rango_min_max": None,
+            "p25_p75": None,
+            "frecuencias_empiricas": {},
+        }
+    media = sum(valores) / n
+    if n > 5:
+        u5 = sum(valores[-5:]) / 5.0
+        prev = sum(valores[:-5]) / float(n - 5)
+        w60_40 = 0.60 * u5 + 0.40 * prev
+    else:
+        w60_40 = media
+    med = float(_stats.median(valores))
+    std = float(_stats.pstdev(valores)) if n >= 2 else 0.0
+    ord_v = sorted(valores)
+    p25 = _percentil_lineal_tensor(ord_v, 0.25)
+    p75 = _percentil_lineal_tensor(ord_v, 0.75)
+
+    umbrales_gt = (("gt_0_5", 0.5), ("gt_1_5", 1.5), ("gt_2_5", 2.5), ("gt_3_5", 3.5), ("gt_4_5", 4.5), ("gt_5_5", 5.5))
+    umbrales_lt = (("lt_1_5", 1.5), ("lt_2_5", 2.5), ("lt_3_5", 3.5), ("lt_12_5", 12.5))
+    freqs: Dict[str, Dict[str, Any]] = {}
+    for k_lbl, thr in umbrales_gt:
+        cnt = sum(1 for v in valores if v > thr)
+        freqs[k_lbl] = {"k": cnt, "n": n, "pct": round(cnt / n, 4), "etiqueta": f"{cnt}/{n}"}
+    for k_lbl, thr in umbrales_lt:
+        cnt = sum(1 for v in valores if v < thr)
+        freqs[k_lbl] = {"k": cnt, "n": n, "pct": round(cnt / n, 4), "etiqueta": f"{cnt}/{n}"}
+
+    return {
+        "n": n,
+        "media": round(media, 4),
+        "media_ponderada_60_40": round(w60_40, 4),
+        "mediana": round(med, 4),
+        "desviacion_estandar": round(std, 4),
+        "rango_min_max": [round(ord_v[0], 4), round(ord_v[-1], 4)],
+        "p25_p75": [round(p25, 4), round(p75, 4)],
+        "frecuencias_empiricas": freqs,
+    }
+
+
+def construir_tensor_multi_periodo_equipo(
+    doc_o_partidos: Any,
+    condicion_objetivo: Optional[str] = "casa",
+    metricas: Optional[Tuple[str, ...]] = None,
+) -> Dict[str, Any]:
+    """
+    Construye el tensor multi-periodo (FT, 1T, 2T) x (General 15P, Condicion)
+    con media ponderada 60/40 (últimos 5 cronológicos), mediana, desviación
+    estándar, rango, P25/P75, frecuencias empíricas (k/N) y mezcla bayesiana
+    65% condición + 35% general cuando N_cond >= 4 (fallback a general si < 4).
+    """
+    if isinstance(doc_o_partidos, dict):
+        partidos_raw = list(doc_o_partidos.get("partidos") or [])
+    elif isinstance(doc_o_partidos, list):
+        partidos_raw = list(doc_o_partidos)
+    else:
+        partidos_raw = []
+
+    partidos_ord = _ordenar_partidos_cronologico_tensor([p for p in partidos_raw if isinstance(p, dict)])
+    cond_norm = _normalizar_condicion_tensor(condicion_objetivo) if condicion_objetivo else ""
+    if cond_norm not in ("casa", "fuera"):
+        cond_norm = ""
+    partidos_cond = [
+        p for p in partidos_ord
+        if cond_norm and _normalizar_condicion_tensor(p.get("condicion")) == cond_norm
+    ]
+
+    lista_metricas = tuple(metricas) if metricas else _METRICAS_TENSOR_DEFAULT
+    tensor: Dict[str, Dict[str, Dict[str, Dict[str, Any]]]] = {}
+    mezcla: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    for periodo in ("FT", "1T", "2T"):
+        tensor[periodo] = {"general": {}, "condicion": {}}
+        mezcla[periodo] = {}
+        for m in lista_metricas:
+            vals_gen = [
+                v for v in (_extraer_valor_tensor_partido(p, m, periodo) for p in partidos_ord)
+                if v is not None
+            ]
+            vals_cond = [
+                v for v in (_extraer_valor_tensor_partido(p, m, periodo) for p in partidos_cond)
+                if v is not None
+            ]
+            est_gen = _calcular_estadisticos_tensor(vals_gen)
+            est_cond = _calcular_estadisticos_tensor(vals_cond)
+            tensor[periodo]["general"][m] = est_gen
+            tensor[periodo]["condicion"][m] = est_cond
+
+            n_c = est_cond["n"]
+            n_g = est_gen["n"]
+            if cond_norm and n_c >= 4 and n_g >= 1 and est_cond["media_ponderada_60_40"] is not None and est_gen["media_ponderada_60_40"] is not None:
+                m60 = 0.65 * float(est_cond["media_ponderada_60_40"]) + 0.35 * float(est_gen["media_ponderada_60_40"])
+                m_arp = 0.65 * float(est_cond["media"]) + 0.35 * float(est_gen["media"])
+                m_med = 0.65 * float(est_cond["mediana"]) + 0.35 * float(est_gen["mediana"])
+                modo = f"mezcla_65_{cond_norm}_35_general"
+                w_c, w_g = 0.65, 0.35
+                freqs = est_cond["frecuencias_empiricas"]
+            elif n_g >= 1:
+                m60 = est_gen["media_ponderada_60_40"]
+                m_arp = est_gen["media"]
+                m_med = est_gen["mediana"]
+                modo = "fallback_general"
+                w_c, w_g = 0.0, 1.0
+                freqs = est_gen["frecuencias_empiricas"]
+            else:
+                m60 = m_arp = m_med = None
+                modo = "sin_dato"
+                w_c, w_g = 0.0, 0.0
+                freqs = {}
+
+            mezcla[periodo][m] = {
+                "n_general": n_g,
+                "n_condicion": n_c,
+                "peso_condicion": w_c,
+                "peso_general": w_g,
+                "modo": modo,
+                "media": round(m_arp, 4) if m_arp is not None else None,
+                "media_ponderada_60_40": round(m60, 4) if m60 is not None else None,
+                "mediana": round(m_med, 4) if m_med is not None else None,
+                "desviacion_estandar": est_cond["desviacion_estandar"] if (w_c > 0 and est_cond["desviacion_estandar"] is not None) else est_gen["desviacion_estandar"],
+                "rango_min_max": est_cond["rango_min_max"] if (w_c > 0 and est_cond["rango_min_max"] is not None) else est_gen["rango_min_max"],
+                "p25_p75": est_cond["p25_p75"] if (w_c > 0 and est_cond["p25_p75"] is not None) else est_gen["p25_p75"],
+                "frecuencias_empiricas": freqs,
+            }
+
+    def _ratio_m(clave: str) -> Optional[float]:
+        v1 = (mezcla["1T"].get(clave) or {}).get("media_ponderada_60_40")
+        v2 = (mezcla["2T"].get(clave) or {}).get("media_ponderada_60_40")
+        if v1 is not None and v2 is not None and float(v1) > 0:
+            return round(float(v2) / float(v1), 3)
+        return None
+
+    d1_pct = (mezcla["1T"].get("duelos_suelo_pct") or {}).get("media")
+    d2_pct = (mezcla["2T"].get("duelos_suelo_pct") or {}).get("media")
+    caida_duelos = round(float(d1_pct) - float(d2_pct), 1) if (d1_pct is not None and d2_pct is not None) else None
+
+    return {
+        "condicion_objetivo": cond_norm or "general",
+        "n_general": len(partidos_ord),
+        "n_condicion": len(partidos_cond),
+        "tensor": tensor,
+        "mezcla_65_35": mezcla,
+        "ratios_mitades": {
+            "ratio_2t_1t_xg": _ratio_m("xg"),
+            "ratio_2t_1t_remates": _ratio_m("remates_totales"),
+            "ratio_2t_1t_goles": _ratio_m("goles"),
+            "caida_duelos_pp": caida_duelos,
+        },
+    }
+
+
+def _leer_umbrales_micropatrones() -> Dict[str, float]:
+    defaults = {
+        "min_corners_visita_freno": 3.0,
+        "max_corners_concedidos_local_freno": 5.0,
+    }
+    try:
+        import os
+        import yaml  # type: ignore
+
+        ruta = os.path.join(os.path.dirname(os.path.abspath(__file__)), "umbrales_cobertura.yaml")
+        if os.path.exists(ruta):
+            with open(ruta, "r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            umb = data.get("umbrales") if isinstance(data.get("umbrales"), dict) else data
+            if isinstance(umb, dict):
+                if umb.get("min_corners_visita_freno") is not None:
+                    defaults["min_corners_visita_freno"] = float(umb["min_corners_visita_freno"])
+                if umb.get("max_corners_concedidos_local_freno") is not None:
+                    defaults["max_corners_concedidos_local_freno"] = float(umb["max_corners_concedidos_local_freno"])
+    except Exception:
+        pass
+    return defaults
+
+
+def _extraer_stat_tensor(
+    tensor_obj: Dict[str, Any],
+    periodo: str,
+    ambito: str,
+    metrica: str,
+    campo: str = "media",
+) -> Optional[float]:
+    if not isinstance(tensor_obj, dict):
+        return None
+    if ambito == "mezcla_65_35":
+        nodo = ((tensor_obj.get("mezcla_65_35") or {}).get(periodo) or {}).get(metrica)
+        if isinstance(nodo, dict):
+            val = nodo.get(campo) if campo in nodo else nodo.get("media")
+            return float(val) if val is not None else None
+        if isinstance(nodo, (int, float)) and campo == "media":
+            return float(nodo)
+        return None
+    nodo = (((tensor_obj.get("tensor") or {}).get(periodo) or {}).get(ambito) or {}).get(metrica)
+    if not isinstance(nodo, dict):
+        return None
+    if campo in ("min", "max"):
+        rango = nodo.get("rango_min_max")
+        if isinstance(rango, (list, tuple)) and len(rango) >= 2:
+            idx = 0 if campo == "min" else 1
+            return float(rango[idx]) if rango[idx] is not None else None
+        return None
+    val = nodo.get(campo)
+    return float(val) if val is not None else None
+
+
+def _media_goles_evitados_observados(doc: Any, cond_objetivo: Optional[str]) -> Optional[float]:
+    partidos = list(doc.get("partidos") or []) if isinstance(doc, dict) else (list(doc) if isinstance(doc, (list, tuple)) else [])
+    if not partidos:
+        return None
+    vals_cond: List[float] = []
+    vals_gen: List[float] = []
+    for p in partidos:
+        if not isinstance(p, dict):
+            continue
+        per_ft = ((p.get("periodos") or {}).get("FT") or {})
+        filas = per_ft.get("filas") if isinstance(per_ft, dict) else None
+        g_ev: Optional[float] = None
+        if isinstance(filas, list):
+            for fl in filas:
+                if not isinstance(fl, dict):
+                    continue
+                if str(fl.get("clave", "")).strip() == "goles_evitados" and fl.get("equipo") is not None:
+                    try:
+                        g_ev = float(fl["equipo"])
+                    except Exception:
+                        g_ev = None
+                    break
+        elif isinstance(p.get("FT"), dict) and p["FT"].get("goles_evitados") is not None:
+            try:
+                g_ev = float(p["FT"]["goles_evitados"])
+            except Exception:
+                g_ev = None
+        if g_ev is None:
+            continue
+        vals_gen.append(g_ev)
+        if cond_objetivo and str(p.get("condicion", "")).strip().lower() == str(cond_objetivo).strip().lower():
+            vals_cond.append(g_ev)
+    if len(vals_cond) >= 3:
+        return round(sum(vals_cond) / float(len(vals_cond)), 4)
+    if vals_gen:
+        return round(sum(vals_gen) / float(len(vals_gen)), 4)
+    return None
+
+
+def evaluar_micropatrones_combinatorios(
+    doc_local: Any,
+    doc_visitante: Any,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    tensor_local: Optional[Dict[str, Any]] = None,
+    tensor_visita: Optional[Dict[str, Any]] = None,
+    umbrales: Optional[Dict[str, float]] = None,
+) -> Dict[str, Any]:
+    """
+    Motor de micropatrones combinatorios (1 a 4 variables) sobre tensores (FT, 1T, 2T)
+    x (General 15P, Condicion). Nunca fabrica métricas None ni fuerza disparos sin dato.
+    """
+    umb = _leer_umbrales_micropatrones()
+    if isinstance(umbrales, dict):
+        for k in ("min_corners_visita_freno", "max_corners_concedidos_local_freno"):
+            if umbrales.get(k) is not None:
+                umb[k] = float(umbrales[k])
+
+    tl = tensor_local if isinstance(tensor_local, dict) else construir_tensor_multi_periodo_equipo(doc_local, "casa")
+    tv = tensor_visita if isinstance(tensor_visita, dict) else construir_tensor_multi_periodo_equipo(doc_visitante, "fuera")
+
+    n_cond_l = int(tl.get("n_condicion") or 0)
+    n_cond_v = int(tv.get("n_condicion") or 0)
+    amb_l = "condicion" if n_cond_l >= 3 else "general"
+    amb_v = "condicion" if n_cond_v >= 3 else "general"
+
+    patrones: List[Dict[str, Any]] = []
+
+    # MP01: Asedio 2T del Local (combinando volumen 2T local + caida 2T visitante)
+    loc_xg_2t = _extraer_stat_tensor(tl, "2T", amb_l, "xg")
+    loc_go_2t = _extraer_stat_tensor(tl, "2T", amb_l, "grandes_ocasiones")
+    loc_ta_2t = _extraer_stat_tensor(tl, "2T", amb_l, "toques_area_rival")
+    loc_ratio_2t = (tl.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+    vis_xg_1t = _extraer_stat_tensor(tv, "1T", amb_v, "xg")
+    vis_xg_2t = _extraer_stat_tensor(tv, "2T", amb_v, "xg")
+
+    mp01_vars: List[str] = []
+    if loc_xg_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.xg={loc_xg_2t:.2f}")
+    elif loc_ratio_2t is not None:
+        mp01_vars.append(f"L.ratio_2t_1t_xg={float(loc_ratio_2t):.2f}")
+    if loc_go_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.grandes_ocasiones={loc_go_2t:.2f}")
+    if loc_ta_2t is not None:
+        mp01_vars.append(f"L.2T.{amb_l}.toques_area_rival={loc_ta_2t:.1f}")
+    if vis_xg_1t is not None and vis_xg_2t is not None:
+        mp01_vars.append(f"V.1T->2T.{amb_v}.xg={vis_xg_1t:.2f}->{vis_xg_2t:.2f}")
+
+    mp01_evaluable = bool(
+        (loc_xg_2t is not None or loc_ratio_2t is not None)
+        and loc_go_2t is not None
+        and vis_xg_1t is not None
+        and vis_xg_2t is not None
+    )
+    if mp01_evaluable:
+        cond_xg_l = (loc_xg_2t >= 1.25) if loc_xg_2t is not None else (float(loc_ratio_2t) >= 1.35)  # type: ignore[arg-type]
+        cond_ta_l = True if loc_ta_2t is None else (loc_ta_2t >= 16.0)
+        mp01_act = bool(cond_xg_l and loc_go_2t >= 2.0 and cond_ta_l and (vis_xg_2t < vis_xg_1t))  # type: ignore[operator]
+    else:
+        mp01_act = False
+    mp01_evid = (
+        f"{eq_l} genera {loc_xg_2t:.2f} xG / {loc_go_2t:.1f} gr. oc."
+        + (f" / {loc_ta_2t:.1f} toques área" if loc_ta_2t is not None else "")
+        + f" en 2T ({amb_l}) mientras {eq_v} cae en 2T ({vis_xg_1t:.2f}->{vis_xg_2t:.2f} xG)."
+        if mp01_evaluable
+        else "Sin datos suficientes de 2T para evaluar Asedio 2T del Local."
+    )
+    patrones.append({
+        "codigo": "MP01_ASEDIO_2T_LOCAL",
+        "nombre": "Asedio 2T del Local vs Caída Visitante",
+        "activo": mp01_act,
+        "evaluable": mp01_evaluable,
+        "variables_usadas": mp01_vars[:4],
+        "evidencia": mp01_evid,
+        "familia_senales": "asedio_segundo_tiempo_local",
+        "senales_favor": ["total_goles:over_1.5", "goles_2t:over_0.5", "equipo_local_2t:over_0.5"] if mp01_act else [],
+        "senales_contra": ["doble_oportunidad:x2", "1x2:visita"] if mp01_act else [],
+        "resumen_corto": f"Asedio 2T {eq_l} ({loc_xg_2t:.2f} xG, {loc_go_2t:.1f} gr. oc.) vs caída 2T {eq_v} ({vis_xg_1t:.2f}->{vis_xg_2t:.2f}): veta X2 ciego y apoya goles 2T/+1.5 FT." if mp01_act else "",
+    })
+
+    # MP02: Freno Visitante +X.5 Córneres (mínimo histórico fuera vs concesión local casa)
+    vis_min_crn = _extraer_stat_tensor(tv, "FT", "condicion", "corners", "min")
+    vis_med_crn = _extraer_stat_tensor(tv, "FT", "condicion", "corners", "media")
+    loc_cc_med = _extraer_stat_tensor(tl, "FT", "condicion", "corners_contra", "media")
+    loc_cc_mediana = _extraer_stat_tensor(tl, "FT", "condicion", "corners_contra", "mediana")
+
+    mp02_vars: List[str] = []
+    if vis_min_crn is not None:
+        mp02_vars.append(f"V.FT.fuera.corners_min={vis_min_crn:.0f}")
+    if vis_med_crn is not None:
+        mp02_vars.append(f"V.FT.fuera.corners_media={vis_med_crn:.2f}")
+    if loc_cc_med is not None:
+        mp02_vars.append(f"L.FT.casa.corners_contra_media={loc_cc_med:.2f}")
+    if loc_cc_mediana is not None:
+        mp02_vars.append(f"L.FT.casa.corners_contra_mediana={loc_cc_mediana:.1f}")
+
+    mp02_evaluable = bool(n_cond_v >= 3 and n_cond_l >= 3 and vis_min_crn is not None and (loc_cc_med is not None or loc_cc_mediana is not None))
+    if mp02_evaluable:
+        cc_ref = min(float(x) for x in (loc_cc_med, loc_cc_mediana) if x is not None)
+        mp02_act = bool(
+            float(vis_min_crn) <= umb["min_corners_visita_freno"]  # type: ignore[arg-type]
+            and cc_ref <= umb["max_corners_concedidos_local_freno"]
+        )
+    else:
+        cc_ref = None
+        mp02_act = False
+    mp02_evid = (
+        f"{eq_v} registra mínimo fuera de {vis_min_crn:.0f} córneres (n={n_cond_v}) y {eq_l} solo concede {cc_ref:.2f} en casa (n={n_cond_l})."
+        if mp02_evaluable and cc_ref is not None
+        else "Sin cobertura condicionada suficiente (>=3 casa/fuera) para freno de córneres visita."
+    )
+    patrones.append({
+        "codigo": "MP02_FRENO_CORNERS_VISITA",
+        "nombre": "Freno de Córneres Visitante",
+        "activo": mp02_act,
+        "evaluable": mp02_evaluable,
+        "variables_usadas": mp02_vars[:4],
+        "evidencia": mp02_evid,
+        "familia_senales": "freno_corners_visita",
+        "senales_favor": ["total_corners:under_12.5", "total_corners:under_11.5", "total_corners:under_10.5"] if mp02_act else [],
+        "senales_contra": ["corners_visita:over_3.5", "corners_visita:over_4.5", "corners_visita:over_5.5"] if mp02_act else [],
+        "resumen_corto": f"Freno córneres {eq_v} (mín. fuera {vis_min_crn:.0f} <= {umb['min_corners_visita_freno']:.0f} vs {eq_l} casa concede {cc_ref:.2f}): bloquea {eq_v} +3.5 Córn. y favorece Under córneres." if mp02_act and cc_ref is not None else "",
+    })
+
+    # MP03: 1T Contenido + Explosión 2T
+    def _xg_mezcla_o_amb(t_obj: Dict[str, Any], per: str, amb_fb: str) -> Optional[float]:
+        v_m = _extraer_stat_tensor(t_obj, per, "mezcla_65_35", "xg")
+        if v_m is not None:
+            return v_m
+        return _extraer_stat_tensor(t_obj, per, amb_fb, "xg")
+
+    loc_1t_m = _xg_mezcla_o_amb(tl, "1T", amb_l)
+    vis_1t_m = _xg_mezcla_o_amb(tv, "1T", amb_v)
+    loc_2t_m = _xg_mezcla_o_amb(tl, "2T", amb_l)
+    vis_2t_m = _xg_mezcla_o_amb(tv, "2T", amb_v)
+    r2_l = (tl.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+    r2_v = (tv.get("ratios_mitades") or {}).get("ratio_2t_1t_xg")
+
+    mp03_vars: List[str] = []
+    if loc_1t_m is not None:
+        mp03_vars.append(f"L.1T.xg={loc_1t_m:.2f}")
+    if vis_1t_m is not None:
+        mp03_vars.append(f"V.1T.xg={vis_1t_m:.2f}")
+    if loc_2t_m is not None and vis_2t_m is not None:
+        mp03_vars.append(f"L+V.2T.xg={loc_2t_m + vis_2t_m:.2f}")
+    ratios_ok = [float(r) for r in (r2_l, r2_v) if r is not None]
+    if ratios_ok:
+        mp03_vars.append(f"max_ratio_2t_1t={max(ratios_ok):.2f}")
+
+    mp03_evaluable = bool(
+        loc_1t_m is not None
+        and vis_1t_m is not None
+        and loc_2t_m is not None
+        and vis_2t_m is not None
+        and len(ratios_ok) >= 1
+    )
+    if mp03_evaluable:
+        mp03_act = bool(
+            loc_1t_m <= 0.70  # type: ignore[operator]
+            and vis_1t_m <= 0.70  # type: ignore[operator]
+            and (loc_2t_m + vis_2t_m) >= 1.35  # type: ignore[operator]
+            and max(ratios_ok) >= 1.30
+        )
+    else:
+        mp03_act = False
+    mp03_evid = (
+        f"1T contenido ({loc_1t_m:.2f} + {vis_1t_m:.2f} xG) y salto en 2T ({loc_2t_m + vis_2t_m:.2f} xG, ratio {max(ratios_ok):.2f}x)."
+        if mp03_evaluable
+        else "Sin cobertura completa 1T/2T xG para evaluar sesgo de segunda mitad."
+    )
+    patrones.append({
+        "codigo": "MP03_1T_CONTENIDO_EXPLOSION_2T",
+        "nombre": "1T Contenido y Explosión 2T",
+        "activo": mp03_act,
+        "evaluable": mp03_evaluable,
+        "variables_usadas": mp03_vars[:4],
+        "evidencia": mp03_evid,
+        "familia_senales": "explosividad_2t_sobre_1t",
+        "senales_favor": ["goles_2t:over_0.5", "total_goles:over_1.5"] if mp03_act else [],
+        "senales_contra": ["goles_1t:over_0.5", "goles_1t:over_1.5"] if mp03_act else [],
+        "resumen_corto": f"1T contenido ({loc_1t_m:.2f}+{vis_1t_m:.2f} xG) -> 2T explosivo ({loc_2t_m + vis_2t_m:.2f} xG): prioriza Goles 2T +0.5 frente a 1T." if mp03_act else "",
+    })
+
+    # MP04: Dominio Estéril vs Muro Defensivo (evalúa ambos sentidos)
+    mp04_act = False
+    mp04_evaluable = False
+    mp04_vars: List[str] = []
+    mp04_evid = "Sin datos suficientes de posesión/remates/despejes-portero para Dominio Estéril vs Muro."
+    mp04_resumen = ""
+
+    parejas_dir = [
+        (eq_l, tl, amb_l, eq_v, tv, amb_v, doc_visitante, "fuera"),
+        (eq_v, tv, amb_v, eq_l, tl, amb_l, doc_local, "casa"),
+    ]
+    for nom_dom, t_dom, a_dom, nom_mur, t_mur, a_mur, doc_mur, cond_mur in parejas_dir:
+        pos_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "posesion_pct")
+        rem_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "remates_totales")
+        xg_d = _extraer_stat_tensor(t_dom, "FT", a_dom, "xg")
+        desp_m = _extraer_stat_tensor(t_mur, "FT", a_mur, "despejes")
+        gev_m = _media_goles_evitados_observados(doc_mur, cond_mur)
+        if pos_d is None or rem_d is None or xg_d is None or (desp_m is None and gev_m is None):
+            continue
+        mp04_evaluable = True
+        xg_por_rem = xg_d / max(1.0, rem_d)
+        muro_ok = bool((desp_m is not None and desp_m >= 20.0) or (gev_m is not None and gev_m >= 0.15))
+        if pos_d >= 57.0 and rem_d >= 10.0 and xg_por_rem < 0.11 and muro_ok:
+            mp04_act = True
+            mp04_vars = [
+                f"{nom_dom}.FT.pos={pos_d:.1f}%",
+                f"{nom_dom}.FT.xg_rem={xg_por_rem:.3f}",
+            ]
+            if desp_m is not None:
+                mp04_vars.append(f"{nom_mur}.FT.despejes={desp_m:.1f}")
+            if gev_m is not None:
+                mp04_vars.append(f"{nom_mur}.FT.goles_evitados={gev_m:+.2f}")
+            muro_det = f"despejes {desp_m:.1f}" if desp_m is not None and desp_m >= 20.0 else f"portero {gev_m:+.2f} g.ev."
+            mp04_evid = f"{nom_dom} domina posesión ({pos_d:.1f}%) con baja calidad/remate ({xg_por_rem:.3f} xG/rem) ante muro de {nom_mur} ({muro_det})."
+            mp04_resumen = f"Dominio estéril {nom_dom} ({pos_d:.0f}% pos., {xg_por_rem:.3f} xG/rem) vs muro {nom_mur} ({muro_det}): apoya Under goles FT."
+            break
+
+    patrones.append({
+        "codigo": "MP04_DOMINIO_ESTERIL_VS_MURO",
+        "nombre": "Dominio Estéril vs Muro Defensivo",
+        "activo": mp04_act,
+        "evaluable": mp04_evaluable,
+        "variables_usadas": mp04_vars[:4],
+        "evidencia": mp04_evid,
+        "familia_senales": "dominio_esteril_vs_muro",
+        "senales_favor": ["total_goles:under_2.5", "total_goles:under_3.5"] if mp04_act else [],
+        "senales_contra": ["total_goles:over_2.5", "total_goles:over_3.5"] if mp04_act else [],
+        "resumen_corto": mp04_resumen if mp04_act else "",
+    })
+
+    activos = [p for p in patrones if p["activo"]]
+    favor_agg = sorted({s for p in activos for s in p.get("senales_favor", [])})
+    contra_agg = sorted({s for p in activos for s in p.get("senales_contra", [])})
+    resumen_xai = [p["resumen_corto"] for p in activos if p.get("resumen_corto")]
+
+    return {
+        "todos": patrones,
+        "activos": activos,
+        "codigos_activos": [p["codigo"] for p in activos],
+        "senales_favor": favor_agg,
+        "senales_contra": contra_agg,
+        "vetos_mercados": contra_agg,
+        "resumen_xai": resumen_xai,
+        "tensor_local_disponible": bool(tl.get("n_general", 0)),
+        "tensor_visita_disponible": bool(tv.get("n_general", 0)),
+        "umbrales_aplicados": umb,
+    }
+
+
 def detectar_contexto_competicion(
     competicion: str = "",
     fase: str = "",
@@ -899,6 +1542,8 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     cuadro_b_local: Optional[Dict[str, Any]] = None,
     cuadro_b_visita: Optional[Dict[str, Any]] = None,
     es_gigante_visitante: Optional[bool] = None,
+    traza_out: Optional[List[Dict[str, Any]]] = None,
+    etapa_prefijo: str = "",
 ) -> Tuple[float, float, float, float]:
     """
     Implementa los Puntos 21, 22, 34, 35 y 40:
@@ -909,6 +1554,21 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         `lam_visita_ajustada = max(lam_visita * 1.15, 1.15 * lam_local_ref)` y `lam_local_ajustada = 0.85 * lam_local_ref`.
     Retorna: (lam_final_local, lam_final_visita, delta_pct_local, delta_pct_visita).
     """
+    def _trazar(regla: str, al: float, dl: float, av: float, dv: float, motivo: str) -> None:
+        if traza_out is None:
+            return
+        if abs(dl - al) < 1e-6 and abs(dv - av) < 1e-6:
+            return
+        traza_out.append({
+            "etapa": etapa_prefijo or "freno_matchup_21_22",
+            "regla": regla,
+            "lam_l_antes": round(float(al), 4),
+            "lam_l_despues": round(float(dl), 4),
+            "lam_v_antes": round(float(av), 4),
+            "lam_v_despues": round(float(dv), 4),
+            "motivo": motivo,
+        })
+
     rL = ratings_local or {}
     rV = ratings_visita or {}
 
@@ -963,12 +1623,21 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         ajuste_l = min(1.55, bono_ofensivo_l * factor_def_rota_l)
         ajuste_v = min(1.55, factor_def_rota_v)
 
+    _al, _av = lam_l, lam_v
     lam_l *= ajuste_l
     lam_v *= ajuste_v
+    _trazar(
+        "copa_asedio_defensa_rota",
+        _al, lam_l, _av, lam_v,
+        f"copa={es_copa} (x{factor_copa_l:.2f}), asedio_L=x{factor_asedio_l:.2f}, "
+        f"def_rota_V=x{factor_def_rota_l:.2f} (Def_V={defense_rating_visita:.1f}), "
+        f"def_rota_L=x{factor_def_rota_v:.2f} (Def_L={defense_rating_local:.1f})",
+    )
 
     # ── Sección 8.3: Regla 'Gigante Visitante' con orden exacto de operaciones ──
     if es_gigante_visitante:
         bono_localia_a_retirar = factor_copa_l if (ajuste_l == factor_copa_l and factor_copa_l > 1.0) else 1.0
+        _al, _av = lam_l, lam_v
         res_gv = aplicar_ajuste_gigante_visitante(
             lam_local=lam_l,
             lam_visita=lam_v,
@@ -977,10 +1646,13 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         )
         lam_l = float(res_gv["lam_local_ajustada"])
         lam_v = float(res_gv["lam_visita_ajustada"])
+        _trazar("gigante_visitante", _al, lam_l, _av, lam_v, "Regla Gigante Visitante (retira localía y ajusta ratio)")
 
     # c) Amortiguador de "Fortín Defensivo Local" (Defense_Local >= 60.0):
     if defense_rating_local >= 60.0 and lam_v > 2.05:
+        _av = lam_v
         lam_v = 1.95 + (lam_v - 1.95) * 0.40
+        _trazar("fortin_defensivo_local", lam_l, lam_l, _av, lam_v, f"Def_L={defense_rating_local:.1f}>=60 comprime lam_V>2.05")
 
     # ── Punto 21b: Doble Freno de Mano Ofensivo (Local Débil y Visitante en Bloque Bajo "Autobús") ──
     # 1. Local con ataque paupérrimo:
@@ -991,21 +1663,35 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         techo_atk_bajo = 1.10
 
     if attack_rating_local < 25.0:
+        _al = lam_l
         lam_l = min(lam_l, 0.90)
+        _trazar("freno_local_ataque_muy_bajo_0.90", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<25")
     if attack_rating_local < 20.0 and (en_crisis_local or goles_ult5_local < 0.50):
+        _al = lam_l
         lam_l = min(lam_l, 0.60)
+        _trazar("freno_local_crisis_extrema_0.60", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<20 & crisis/gol_ult5={goles_ult5_local:.2f}")
     elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
+        _al = lam_l
         lam_l = min(lam_l, techo_atk_bajo)
+        _trazar("techo_lambda_ataque_bajo_local", _al, lam_l, lam_v, lam_v, f"en_crisis_L={en_crisis_local} o Attack_L={attack_rating_local:.1f}<35 con Def_V={defense_rating_visita:.1f}>=30 -> techo={techo_atk_bajo:.2f}")
 
     # 2. Visitante en Bloque Bajo ("Autobús"):
     if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.80)
+        _trazar("freno_visita_bloque_bajo_0.80", lam_l, lam_l, _av, lam_v, f"Pos_V={posesion_proyectada_visita:.1f}<45 & Attack_V={attack_rating_visita:.1f}<35")
     if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("freno_visita_autobus_0.60", lam_l, lam_l, _av, lam_v, f"Press_V={pressing_rating_visita:.1f}<30 & Pos_V={posesion_proyectada_visita:.1f}<42")
     if attack_rating_visita < 20.0 and (en_crisis_visita or goles_ult5_visita < 0.50):
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("freno_visita_crisis_extrema_0.60", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<20 & crisis/gol_ult5={goles_ult5_visita:.2f}")
     elif (en_crisis_visita or attack_rating_visita < 35.0) and defense_rating_local >= 30.0:
+        _av = lam_v
         lam_v = min(lam_v, techo_atk_bajo)
+        _trazar("techo_lambda_ataque_bajo_visita", lam_l, lam_l, _av, lam_v, f"en_crisis_V={en_crisis_visita} o Attack_V={attack_rating_visita:.1f}<35 con Def_L={defense_rating_local:.1f}>=30 -> techo={techo_atk_bajo:.2f}")
 
     # Punto 50 (Ítem 3): Tope contra doble penalización acumulada (45-DCN + [EN CRISIS])
     # Cuando lambda_red < lambda_base (la red ya descontó la racha/jerarquía),
@@ -1013,34 +1699,46 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     # (lambda_final >= 0.90 * lambda_red), respetando un piso acumulado de
     # lambda_final >= 0.72 * lambda_base (salvo expulsión en vivo).
     if lam_red_local < lam_base_local:
+        _al = lam_l
         piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
         lam_l = max(lam_l, piso_l)
+        _trazar("piso_doble_castigo_punto50_local", _al, lam_l, lam_v, lam_v, f"piso={piso_l:.2f} (0.90*red o 0.72*base)")
 
     if lam_red_visita < lam_base_visita:
+        _av = lam_v
         piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
         lam_v = max(lam_v, piso_v)
+        _trazar("piso_doble_castigo_punto50_visita", lam_l, lam_l, _av, lam_v, f"piso={piso_v:.2f} (0.90*red o 0.72*base)")
 
     # ── Punto 21a: Techo de Bono en la Red Recursiva (Caja Azul) según Attack_Rating ──
     delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
     delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
 
     if attack_rating_local < 26.0:
+        _al = lam_l
         delta_pct_l = min(0.0, delta_pct_l)
         lam_l = min(0.90, lam_b_l * (1.0 + delta_pct_l / 100.0))
         delta_pct_l = ((lam_l - lam_b_l) / lam_b_l) * 100.0
+        _trazar("techo_caja_azul_local_26", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<26 (delta<=0%, lam<=0.90)")
     elif attack_rating_local < 35.0 and defense_rating_visita >= 30.0:
         if delta_pct_l > 12.0:
+            _al = lam_l
             delta_pct_l = 12.0
             lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
+            _trazar("techo_caja_azul_local_35_12pct", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<35 limita bono<=+12%")
 
     if attack_rating_visita < 26.0:
+        _av = lam_v
         delta_pct_v = min(0.0, delta_pct_v)
         lam_v = min(0.90, lam_b_v * (1.0 + delta_pct_v / 100.0))
         delta_pct_v = ((lam_v - lam_b_v) / lam_b_v) * 100.0
+        _trazar("techo_caja_azul_visita_26", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<26 (delta<=0%, lam<=0.90)")
     elif attack_rating_visita < 35.0 and defense_rating_local >= 30.0:
         if delta_pct_v > 12.0:
+            _av = lam_v
             delta_pct_v = 12.0
             lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+            _trazar("techo_caja_azul_visita_35_12pct", lam_l, lam_l, _av, lam_v, f"Attack_V={attack_rating_visita:.1f}<35 limita bono<=+12%")
 
     # Prohibición de Inflación Dual:
     # La suma de los cambios porcentuales de ambos equipos en la Caja Azul jamás puede superar +25.0%
@@ -1054,6 +1752,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     techo_suma_dual = 10.0 if (attack_rating_local < 40.0 and attack_rating_visita < 40.0 and not hay_defensa_rota_o_asedio) else (65.0 if hay_defensa_rota_o_asedio else 25.0)
     suma_actual = delta_pct_l + delta_pct_v
     if suma_actual > techo_suma_dual:
+        _al, _av = lam_l, lam_v
         exceso_dual = suma_actual - techo_suma_dual
         pos_l = max(0.0, delta_pct_l)
         pos_v = max(0.0, delta_pct_v)
@@ -1066,28 +1765,43 @@ def aplicar_freno_de_mano_y_matchup_21_22(
             delta_pct_v -= exceso_dual * 0.5
         lam_l = lam_b_l * (1.0 + delta_pct_l / 100.0)
         lam_v = lam_b_v * (1.0 + delta_pct_v / 100.0)
+        _trazar("prohibicion_inflacion_dual", _al, lam_l, _av, lam_v, f"suma={suma_actual:.1f}% > techo={techo_suma_dual:.1f}%")
 
     # Re-aplicar techos absolutos de Doble Freno de Mano tras ajuste porcentual
     if attack_rating_local < 26.0:
+        _al = lam_l
         lam_l = min(lam_l, 0.90)
+        _trazar("reaplicacion_techo_local_0.90", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<26")
     if posesion_proyectada_visita < 45.0 and attack_rating_visita < 35.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.80)
+        _trazar("reaplicacion_bloque_bajo_visita_0.80", lam_l, lam_l, _av, lam_v, f"Pos_V={posesion_proyectada_visita:.1f}<45 & Attack_V={attack_rating_visita:.1f}<35")
     if pressing_rating_visita < 30.0 and posesion_proyectada_visita < 42.0:
+        _av = lam_v
         lam_v = min(lam_v, 0.60)
+        _trazar("reaplicacion_autobus_visita_0.60", lam_l, lam_l, _av, lam_v, f"Press_V={pressing_rating_visita:.1f}<30 & Pos_V={posesion_proyectada_visita:.1f}<42")
     if defense_rating_local >= 60.0 and lam_v > 2.05:
+        _av = lam_v
         lam_v = 1.95 + (lam_v - 1.95) * 0.40
+        _trazar("reaplicacion_fortin_local", lam_l, lam_l, _av, lam_v, f"Def_L={defense_rating_local:.1f}>=60")
 
     # Re-asegurar piso contra doble penalización post-recorte dual
     if lam_red_local < lam_base_local:
+        _al = lam_l
         piso_l = max(round(lam_red_local * 0.90, 2), round(lam_base_local * 0.72, 2))
         lam_l = max(lam_l, piso_l)
+        _trazar("reaplicacion_piso_doble_castigo_local", _al, lam_l, lam_v, lam_v, f"piso={piso_l:.2f}")
 
     if lam_red_visita < lam_base_visita:
+        _av = lam_v
         piso_v = max(round(lam_red_visita * 0.90, 2), round(lam_base_visita * 0.72, 2))
         lam_v = max(lam_v, piso_v)
+        _trazar("reaplicacion_piso_doble_castigo_visita", lam_l, lam_l, _av, lam_v, f"piso={piso_v:.2f}")
 
+    _al, _av = lam_l, lam_v
     lam_l = round(max(0.25, min(4.20, lam_l)), 2)
     lam_v = round(max(0.25, min(4.20, lam_v)), 2)
+    _trazar("clamping_rango_y_redondeo", _al, lam_l, _av, lam_v, "Rango operativo [0.25, 4.20] y redondeo a 2 dec.")
     delta_pct_l = round(((lam_l - lam_b_l) / lam_b_l) * 100.0, 1)
     delta_pct_v = round(((lam_v - lam_b_v) / lam_b_v) * 100.0, 1)
 
