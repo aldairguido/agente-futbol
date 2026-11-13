@@ -284,6 +284,254 @@ def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return salida
 
 
+def _normalizar_ids_exclusion(
+    exclude_match_ids: Any = None,
+    id_partido_excluir: Any = None,
+) -> set[str]:
+    """Normaliza un ID o colección de IDs de partidos a excluir."""
+    ids: set[str] = set()
+    for fuente in (exclude_match_ids, id_partido_excluir):
+        if fuente is None:
+            continue
+        if isinstance(fuente, (list, tuple, set, frozenset)):
+            for item in fuente:
+                s = str(item or "").strip()
+                if s:
+                    ids.add(s)
+        else:
+            s = str(fuente or "").strip()
+            if s:
+                ids.add(s)
+    return ids
+
+
+def _extraer_fecha_hora_utc(valor: Any) -> tuple[str | None, datetime | None, bool]:
+    """Devuelve `(fecha_iso_YYYY_MM_DD, datetime_naive_utc | None, tiene_hora)`."""
+    if valor is None:
+        return None, None, False
+    if isinstance(valor, datetime):
+        dt = valor.replace(tzinfo=None)
+        return dt.strftime("%Y-%m-%d"), dt, (dt.hour != 0 or dt.minute != 0 or dt.second != 0)
+    txt = str(valor).strip()
+    if not txt:
+        return None, None, False
+    m_iso_dt = re.search(r"\b(\d{4}-\d{2}-\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?", txt)
+    if m_iso_dt:
+        fecha_iso = m_iso_dt.group(1)
+        hh, mm = int(m_iso_dt.group(2)), int(m_iso_dt.group(3))
+        ss = int(m_iso_dt.group(4) or 0)
+        try:
+            return fecha_iso, datetime.strptime(f"{fecha_iso} {hh:02d}:{mm:02d}:{ss:02d}", "%Y-%m-%d %H:%M:%S"), True
+        except ValueError:
+            return fecha_iso, None, False
+    m_iso = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", txt)
+    if m_iso:
+        fecha_iso = m_iso.group(1)
+        try:
+            return fecha_iso, datetime.strptime(fecha_iso, "%Y-%m-%d"), False
+        except ValueError:
+            return fecha_iso, None, False
+    m_dmy = re.search(r"\b(\d{2})\.(\d{2})\.(\d{4})\b", txt)
+    if m_dmy:
+        fecha_iso = f"{m_dmy.group(3)}-{m_dmy.group(2)}-{m_dmy.group(1)}"
+        try:
+            return fecha_iso, datetime.strptime(fecha_iso, "%Y-%m-%d"), False
+        except ValueError:
+            return fecha_iso, None, False
+    return None, None, False
+
+
+def filtrar_partido_por_cutoff(
+    fecha_partido: Any = None,
+    id_partido: Any = None,
+    *,
+    utc_time: Any = None,
+    fecha_corte: Any = None,
+    cutoff_timestamp: Any = None,
+    id_partido_excluir: Any = None,
+    exclude_match_ids: Any = None,
+) -> bool:
+    """
+    Devuelve True si el partido es estrictamente histórico y válido antes del corte;
+    False si su ID está excluido o su fecha/hora es >= cutoff_timestamp / fecha_corte.
+    """
+    pid = str(id_partido or "").strip()
+    excluir = _normalizar_ids_exclusion(exclude_match_ids, id_partido_excluir)
+    if pid and pid in excluir:
+        return False
+
+    corte_val = cutoff_timestamp if cutoff_timestamp is not None else fecha_corte
+    if corte_val is None:
+        return True
+
+    corte_iso, corte_dt, corte_con_hora = _extraer_fecha_hora_utc(corte_val)
+    if not corte_iso:
+        return True
+
+    cand_val = utc_time if utc_time else fecha_partido
+    cand_iso, cand_dt, cand_con_hora = _extraer_fecha_hora_utc(cand_val)
+    if not cand_iso:
+        cand_iso, cand_dt, cand_con_hora = _extraer_fecha_hora_utc(fecha_partido)
+    if not cand_iso:
+        return True
+
+    if corte_con_hora and cand_con_hora and corte_dt is not None and cand_dt is not None:
+        return cand_dt < corte_dt
+    return cand_iso < corte_iso
+
+
+def _franja_desde_minuto(minuto: int, periodo: str) -> str | None:
+    """Asigna el gol reglamentario a una de las 6 franjas de 15 minutos."""
+    if periodo == "1T":
+        if minuto <= 15:
+            return "00_15"
+        if minuto <= 30:
+            return "16_30"
+        return "31_45"
+    if periodo == "2T":
+        if minuto <= 60:
+            return "46_60"
+        if minuto <= 75:
+            return "61_75"
+        return "76_90"
+    return None
+
+
+def _extraer_eventos_gol_fotmob(
+    contenido: dict[str, Any],
+    detalle: dict[str, Any] | None = None,
+    *,
+    id_equipo: str = "",
+    es_local: bool = True,
+    goles_equipo: int | None = None,
+    goles_rival: int | None = None,
+) -> tuple[list[dict[str, Any]] | None, dict[str, dict[str, int]] | None, str]:
+    """
+    Extrae cronología verificada de goles en tiempo reglamentario (<=90+desc) desde
+    `content.matchFacts.events.events` y fallback a `header.events`.
+    Retorna `(eventos_gol, franjas_goles, cronologia_fuente)`.
+    """
+    match_facts = (contenido or {}).get("matchFacts") or {}
+    events_obj = match_facts.get("events") if isinstance(match_facts, dict) else None
+    eventos_brutos = events_obj.get("events") if isinstance(events_obj, dict) else None
+
+    def _vacio_franjas() -> dict[str, dict[str, int]]:
+        return {
+            fr: {"anotados": 0, "recibidos": 0}
+            for fr in ("00_15", "16_30", "31_45", "46_60", "61_75", "76_90")
+        }
+
+    def _parsear_lista_events(lista: list[Any], fuente_tag: str) -> tuple[list[dict[str, Any]], dict[str, dict[str, int]], str] | None:
+        evs_out: list[dict[str, Any]] = []
+        franjas = _vacio_franjas()
+        for ev in lista:
+            if not isinstance(ev, dict):
+                continue
+            tipo = str(ev.get("type") or "").strip()
+            if tipo not in ("Goal", "OwnGoal", "Penalty"):
+                continue
+            if bool(ev.get("isPenaltyShootoutEvent")):
+                continue
+            time_str_raw = str(ev.get("timeStr") or "").strip().upper()
+            per_ev = str(ev.get("period") or ev.get("half") or "").strip()
+            if time_str_raw in ("PEN", "ET") or per_ev in ("PenaltyShootout", "ExtraTimeFirstHalf", "ExtraTimeSecondHalf"):
+                continue
+
+            minuto_raw = ev.get("time")
+            sobre = ev.get("overloadTime")
+            if minuto_raw is None:
+                # Intentar leer de timeStr
+                m_t = re.match(r"^(\d+)(?:\s*\+\s*(\d+))?", time_str_raw)
+                if not m_t:
+                    continue
+                minuto_raw = int(m_t.group(1))
+                if m_t.group(2) and sobre is None:
+                    sobre = int(m_t.group(2))
+            try:
+                m_int = int(float(minuto_raw))
+            except (TypeError, ValueError):
+                continue
+            sobre_int = None
+            if sobre is not None:
+                try:
+                    s_cand = int(float(sobre))
+                    if s_cand > 0:
+                        sobre_int = s_cand
+                except (TypeError, ValueError):
+                    sobre_int = None
+
+            # Excluir prórroga real (>90 sin ser descuento del 90+)
+            if m_int > 90:
+                continue
+
+            if m_int <= 45:
+                periodo_norm = "1T"
+                minuto_eff = 45 if (m_int == 45 and sobre_int) else max(1, m_int)
+                minuto_str = f"45+{sobre_int}'" if (m_int == 45 and sobre_int) else f"{m_int}'"
+            else:
+                periodo_norm = "2T"
+                minuto_eff = 90 if (m_int == 90 and sobre_int) else m_int
+                minuto_str = f"90+{sobre_int}'" if (m_int == 90 and sobre_int) else f"{m_int}'"
+
+            if ev.get("isHome") is not None:
+                es_eq = bool(ev.get("isHome")) == bool(es_local)
+            elif ev.get("teamId") is not None and id_equipo:
+                es_eq = str(ev.get("teamId")) == str(id_equipo)
+            else:
+                continue
+
+            lado = "equipo" if es_eq else "rival"
+            fr = _franja_desde_minuto(minuto_eff, periodo_norm)
+            if fr:
+                if es_eq:
+                    franjas[fr]["anotados"] += 1
+                else:
+                    franjas[fr]["recibidos"] += 1
+            evs_out.append({
+                "minuto": int(minuto_eff + (sobre_int or 0) if (m_int in (45, 90) and sobre_int) else minuto_eff),
+                "minuto_str": minuto_str,
+                "lado": lado,
+                "es_propio_equipo": bool(es_eq),
+                "periodo": periodo_norm,
+            })
+
+        if goles_equipo is not None and goles_rival is not None:
+            g_eq_ev = sum(1 for e in evs_out if e["lado"] == "equipo")
+            g_rv_ev = sum(1 for e in evs_out if e["lado"] == "rival")
+            if g_eq_ev != int(goles_equipo) or g_rv_ev != int(goles_rival):
+                return None
+        return evs_out, franjas, fuente_tag
+
+    if isinstance(eventos_brutos, list):
+        res_ev = _parsear_lista_events(eventos_brutos, "fotmob_events")
+        if res_ev is not None:
+            return res_ev
+
+    # Fallback a header.events (homeTeamGoals / awayTeamGoals dict de jugadores)
+    header_ev = ((detalle or {}).get("header") or {}).get("events") or {}
+    if isinstance(header_ev, dict) and (header_ev.get("homeTeamGoals") is not None or header_ev.get("awayTeamGoals") is not None):
+        lista_h: list[dict[str, Any]] = []
+        for clave_bando, flag_home in (("homeTeamGoals", True), ("awayTeamGoals", False)):
+            bloque_g = header_ev.get(clave_bando) or {}
+            if not isinstance(bloque_g, dict):
+                continue
+            for _jugador, arr_goles in bloque_g.items():
+                if not isinstance(arr_goles, list):
+                    continue
+                for g in arr_goles:
+                    if isinstance(g, dict):
+                        g_copia = dict(g)
+                        g_copia.setdefault("type", "Goal")
+                        g_copia["isHome"] = flag_home
+                        lista_h.append(g_copia)
+        if lista_h or (goles_equipo == 0 and goles_rival == 0):
+            res_h = _parsear_lista_events(lista_h, "fotmob_header_events")
+            if res_h is not None:
+                return res_h
+
+    return None, None, ""
+
+
 @dataclass(frozen=True)
 class DefinicionMetrica:
     clave: str
@@ -617,6 +865,10 @@ class MatrizPartido:
     fuente_secundaria: dict[str, Any] = field(default_factory=dict)
     # Inconsistencias aritméticas detectadas (ej. FT < 1T en magnitudes no negativas)
     inconsistencias_aritmeticas: list[dict[str, Any]] = field(default_factory=list)
+    # Cronología directa de goles reglamentarios para Cuadro B/C
+    eventos_gol: list[dict[str, Any]] | None = None
+    franjas_goles: dict[str, dict[str, int]] = field(default_factory=dict)
+    cronologia_fuente: str = ""
 
     @classmethod
     def desde_dict(cls, d: dict[str, Any]) -> MatrizPartido:
@@ -645,10 +897,13 @@ class MatrizPartido:
             error=d.get("error"),
             procedencia=dict(d.get("procedencia") or {}),
             fuente_secundaria=dict(d.get("fuente_secundaria") or {}),
+            eventos_gol=(list(d["eventos_gol"]) if isinstance(d.get("eventos_gol"), list) else None),
+            franjas_goles=dict(d.get("franjas_goles") or {}),
+            cronologia_fuente=str(d.get("cronologia_fuente") or ""),
         )
 
     def a_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "id_partido": self.id_partido,
             "fecha": self.fecha,
             "torneo": self.torneo,
@@ -669,6 +924,13 @@ class MatrizPartido:
             "notas": self.notas,
             "error": self.error,
         }
+        if self.eventos_gol is not None:
+            out["eventos_gol"] = self.eventos_gol
+        if self.franjas_goles:
+            out["franjas_goles"] = self.franjas_goles
+        if self.cronologia_fuente:
+            out["cronologia_fuente"] = self.cronologia_fuente
+        return out
 
 
 @dataclass
@@ -733,7 +995,11 @@ class FuenteXG:
         raise NotImplementedError
 
     def escanear_oficiales(self, equipo: dict[str, Any], objetivo: int,
-                           incluir_amistosos: bool = False) -> ResultadoEscaneo:
+                           incluir_amistosos: bool = False,
+                           fecha_corte: Any = None,
+                           id_partido_excluir: Any = None,
+                           cutoff_timestamp: Any = None,
+                           exclude_match_ids: Any = None) -> ResultadoEscaneo:
         """
         Búsqueda profunda hacia atrás: devuelve tantos partidos OFICIALES finalizados
         como existan, hasta `objetivo` como mínimo deseado.
@@ -3171,7 +3437,11 @@ class FuenteFotMob(FuenteXG):
 
     # ── búsqueda profunda hacia atrás ──────────────────────────────────────
     def escanear_oficiales(self, equipo: dict[str, Any], objetivo: int,
-                           incluir_amistosos: bool = False) -> ResultadoEscaneo:
+                           incluir_amistosos: bool = False,
+                           fecha_corte: Any = None,
+                           id_partido_excluir: Any = None,
+                           cutoff_timestamp: Any = None,
+                           exclude_match_ids: Any = None) -> ResultadoEscaneo:
         """
         Recorre el historial del equipo desde el partido más reciente hacia atrás,
         descartando amistosos, hasta reunir `objetivo` partidos oficiales.
@@ -3213,13 +3483,24 @@ class FuenteFotMob(FuenteXG):
                 vistos.add(pid)
                 nuevos += 1
                 finalizados_totales += 1
+                pf = self._partido_desde_fixture(f, torneo, tid)
+                if not filtrar_partido_por_cutoff(
+                    pf.fecha,
+                    pf.id_partido,
+                    utc_time=(pf.extra or {}).get("utc_time"),
+                    fecha_corte=fecha_corte,
+                    cutoff_timestamp=cutoff_timestamp,
+                    id_partido_excluir=id_partido_excluir,
+                    exclude_match_ids=exclude_match_ids,
+                ):
+                    continue
                 if es_competicion_amistosa(torneo):
                     # Los amistosos nunca cuentan para el objetivo; se reservan por
                     # si el usuario pide rellenar el dataset con ellos.
-                    amistosos_reservados.append(self._partido_desde_fixture(f, torneo, tid))
+                    amistosos_reservados.append(pf)
                     amistosos_excluidos += 1
                     continue
-                oficiales.append(self._partido_desde_fixture(f, torneo, tid))
+                oficiales.append(pf)
 
             # Corte basado en FECHA, no en orden de llegada: cada (liga, temporada)
             # devuelve su propio tramo, así que hay que recolectar de todas antes de
@@ -3582,6 +3863,7 @@ class FuenteFotMob(FuenteXG):
             gv if isinstance(gv, int) else None,
         )
         extra_p = {
+            "utc_time": str(estado.get("utcTime") or ""),
             "razon_fin": razon_90 or (estado.get("reason") or {}).get("short"),
             "marcador_texto": estado.get("scoreStr"),
             "home_id": str(home.get("id") or ""),
@@ -3675,6 +3957,20 @@ class FuenteFotMob(FuenteXG):
                 }
                 for clave, valores in crudo.items()
             }
+
+        # Cronología directa FotMob (eventos de gol + franjas de 15 min)
+        evs_gol_fm, franjas_fm, fuente_cron = _extraer_eventos_gol_fotmob(
+            contenido,
+            detalle=detalle,
+            id_equipo=str(equipo.get("id")),
+            es_local=es_local,
+            goles_equipo=goles_equipo,
+            goles_rival=goles_rival,
+        )
+        matriz.eventos_gol = evs_gol_fm
+        if franjas_fm:
+            matriz.franjas_goles = franjas_fm
+        matriz.cronologia_fuente = fuente_cron
 
         # Extraer goles de cabeza desde shotmap y goles por tiempo desde eventos
         extra_eventos = self._extraer_shotmap_y_eventos(
@@ -4118,6 +4414,8 @@ class FuenteFotMob(FuenteXG):
                         indice["pases_pct"] = {"local": p_loc, "visitante": p_vis}
                     if c_loc is not None or c_vis is not None:
                         indice["pases_completados"] = {"local": c_loc, "visitante": c_vis}
+                    else:
+                        indice.setdefault("pases_completados", {"local": None, "visitante": None})
                 elif key_fm == "long_balls_accurate" or titulo == "accurate long balls":
                     if p_loc is not None or p_vis is not None:
                         indice["pases_largos_pct"] = {"local": p_loc, "visitante": p_vis}
@@ -4182,7 +4480,7 @@ class FuenteFotMob(FuenteXG):
         """
         MAPA_CLAVES: dict[str, tuple[str, ...]] = {
             "expected_assists": ("xa_equipo", "xa"),
-            "passes_into_final_third": ("pases_tercio_final_pct", "pases_tercio_final_completados"),
+            "passes_into_final_third": ("pases_tercio_final_pct",),
             "line_breaking_passes": ("pases_entre_lineas",),
             "chances_created": ("pases_clave",),
             "errors_led_to_goal": ("errores_gol",),
@@ -4378,33 +4676,8 @@ def _resolver_ecuaciones_periodo(
             if "xgot_enfrentados" in s_propio:
                 _marcar_est(ajeno, "xgot")
 
-        # 2b. Saques de puerta (estimación física):
-        sp = propio.get("saques_puerta")
-        rf_atk = ajeno.get("remates_fuera")
-        al_palo_atk = ajeno.get("al_palo") or 0.0
-        if (sp is None or sp == 0.0) and rf_atk is not None:
-            if rf_atk > 0:
-                propio["saques_puerta"] = float(max(1.0, round(rf_atk - al_palo_atk)))
-                _marcar_est(propio, "saques_puerta")
-            elif sp is None and goles_eq is not None:
-                propio["saques_puerta"] = 0.0
-                _marcar_est(propio, "saques_puerta")
-
-        # 2c. Tiros libres directos: concedidos por faltas o fueras de juego cometidos por el rival
-        tl = propio.get("tiros_libres")
-        faltas_riv = ajeno.get("faltas")
-        fj_riv = ajeno.get("fueras_juego") or ajeno.get("fueras_de_juego") or 0.0
-        if (tl is None or tl == 0.0) and faltas_riv is not None and faltas_riv > 0:
-            propio["tiros_libres"] = float(round(faltas_riv + fj_riv))
-            _marcar_est(propio, "tiros_libres")
-
-        # 2d. Pases entre líneas (line breaking passes)
-        pel = propio.get("pases_entre_lineas")
-        if pel is None or pel == 0.0:
-            ptf_comp = propio.get("pases_tercio_final_completados") or propio.get("pases_tercio_final") or 0.0
-            if ptf_comp > 5:
-                propio["pases_entre_lineas"] = float(max(1.0, round(ptf_comp * 0.05)))
-                _marcar_est(propio, "pases_entre_lineas")
+        # FASE 3: saques_puerta, tiros_libres y pases_entre_lineas no se estiman
+        # sintéticamente; cuando faltan en la fuente permanecen como None ("sin_dato").
 
         # 2e. Reconstrucción de xG y xGOT cuando hubo remates observados pero xG no fue publicado (estimacion_modelo):
         rt_raw = propio.get("remates_totales")
@@ -4533,34 +4806,29 @@ def _resolver_ecuaciones_periodo(
                 if pct is None:
                     d[k_pct] = 0.0
                 continue
+            if (
+                tot is not None and tot > 0 and pct is not None
+                and comp is not None
+                and ((pct < 99.5 and abs(comp - tot) < 0.5) or comp > tot)
+            ):
+                comp = float(round((tot * pct) / 100.0))
+                d[k_comp] = comp
             if comp is not None and tot is not None and pct is None:
                 d[k_pct] = round((comp / tot) * 100.0, 1) if tot > 0 else 0.0
             elif tot is not None and pct is not None and comp is None:
                 d[k_comp] = float(round((tot * pct) / 100.0))
             elif comp is not None and pct is not None and tot is None:
-                d[k_tot] = float(round((comp * 100.0) / pct)) if pct > 0 else comp
+                # Para tercio final nunca inventar denominador a partir de conteo solo
+                if k_tot != "pases_tercio_final" or abs(comp - pct) > 0.5:
+                    d[k_tot] = float(round((comp * 100.0) / pct)) if pct > 0 else comp
 
-        # Caso especial pases en el tercio final cuando solo hay completados
-        if d.get("pases_tercio_final_completados") is not None and d.get("pases_tercio_final") is None:
-            pct_pases = d.get("pases_pct") or 75.0
-            comp_tf = d["pases_tercio_final_completados"] or 0.0
-            d["pases_tercio_final"] = (
-                float(max(comp_tf, round(comp_tf * 100.0 / pct_pases)))
-                if pct_pases > 0 else comp_tf
-            )
-            _marcar_est(d, "pases_tercio_final")
-
-        # Caso especial entradas cuando solo hay entradas_ganadas
+        # Caso especial entradas: solo reconstruir total si existe porcentaje real observado (>0)
         if d.get("entradas_ganadas") is not None and d.get("entradas") is None:
             eg = d["entradas_ganadas"] or 0.0
             pct_e = d.get("entradas_ganadas_pct")
             if pct_e is not None and pct_e > 0:
                 d["entradas"] = float(max(eg, round(eg * 100.0 / pct_e)))
-            else:
-                d["entradas"] = float(eg)
-                d["entradas_ganadas_pct"] = 100.0 if eg > 0 else 0.0
-                _marcar_est(d, "entradas_ganadas_pct")
-            _marcar_est(d, "entradas")
+                _marcar_est(d, "entradas")
 
         # 3f. Desglose de xG cuando la fuente publica xG total pero omite sub-tipos
         xg_val = d.get("xg")
@@ -4834,29 +5102,29 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
                     })
             bloque.no_disponibles = no_disp_per
 
-        # Actualizar procedencia por periodo y bando
-        mapa_p = matriz.procedencia.setdefault(p, {})
-        if not isinstance(mapa_p, dict):
-            mapa_p = {}
-            matriz.procedencia[p] = mapa_p
-        for lado in ("equipo", "rival"):
-            mapa_l = mapa_p.setdefault(lado, {})
-            for d in CATALOGO_METRICAS:
-                cl = d.clave
-                val_final = por_per[p][lado].get(cl)
-                val_nativo = nativos_por_per[p][lado].get(cl)
-                proc_ant = mapa_l.get(cl) or (proc_previa_top[lado].get(cl) if p == "FT" else None)
-                if val_final is None:
-                    mapa_l[cl] = PROC_SIN_DATO
-                elif val_nativo is not None:
-                    if proc_ant and proc_ant not in (PROC_SIN_DATO, "sin_dato", PROC_DERIVADO, "estimacion_modelo"):
-                        mapa_l[cl] = proc_ant
+            # Actualizar procedencia por periodo y bando (FT, 1T, 2T)
+            mapa_p = matriz.procedencia.setdefault(p, {})
+            if not isinstance(mapa_p, dict):
+                mapa_p = {}
+                matriz.procedencia[p] = mapa_p
+            for lado in ("equipo", "rival"):
+                mapa_l = mapa_p.setdefault(lado, {})
+                for d in CATALOGO_METRICAS:
+                    cl = d.clave
+                    val_final = por_per[p][lado].get(cl)
+                    val_nativo = nativos_por_per[p][lado].get(cl)
+                    proc_ant = mapa_l.get(cl) or (proc_previa_top[lado].get(cl) if p == "FT" else None)
+                    if val_final is None:
+                        mapa_l[cl] = PROC_SIN_DATO
+                    elif val_nativo is not None:
+                        if proc_ant and proc_ant not in (PROC_SIN_DATO, "sin_dato", PROC_DERIVADO, "estimacion_modelo"):
+                            mapa_l[cl] = proc_ant
+                        else:
+                            mapa_l[cl] = "fotmob"
+                    elif cl in estimados_por_per[p][lado]:
+                        mapa_l[cl] = "estimacion_modelo"
                     else:
-                        mapa_l[cl] = "fotmob"
-                elif cl in estimados_por_per[p][lado]:
-                    mapa_l[cl] = "estimacion_modelo"
-                else:
-                    mapa_l[cl] = PROC_DERIVADO
+                        mapa_l[cl] = PROC_DERIVADO
 
     # Sincronizar procedencia top-level con FT y registrar inconsistencias aritméticas
     for lado in ("equipo", "rival"):
@@ -5103,7 +5371,11 @@ class FuenteSofascore(FuenteXG):
         return res.oficiales[:limite]
 
     def escanear_oficiales(self, equipo: dict[str, Any], objetivo: int,
-                           incluir_amistosos: bool = False) -> ResultadoEscaneo:
+                           incluir_amistosos: bool = False,
+                           fecha_corte: Any = None,
+                           id_partido_excluir: Any = None,
+                           cutoff_timestamp: Any = None,
+                           exclude_match_ids: Any = None) -> ResultadoEscaneo:
         """
         Sofascore sí pagina el historial: /team/{id}/events/last/{pagina} devuelve
         bloques de partidos hacia atrás. Aquí sí se aprovecha la paginación real.
@@ -5332,7 +5604,11 @@ class FuenteFlashscore(FuenteXG):
         return res.oficiales[:limite]
 
     def escanear_oficiales(self, equipo: dict[str, Any], objetivo: int,
-                           incluir_amistosos: bool = False) -> ResultadoEscaneo:
+                           incluir_amistosos: bool = False,
+                           fecha_corte: Any = None,
+                           id_partido_excluir: Any = None,
+                           cutoff_timestamp: Any = None,
+                           exclude_match_ids: Any = None) -> ResultadoEscaneo:
         from fuente_flashscore import _parecido
         self.abrir()
         cand = {
@@ -5371,6 +5647,15 @@ class FuenteFlashscore(FuenteXG):
                     **({"marcador_desempate": item.get("marcador_desempate")} if item.get("marcador_desempate") else {}),
                 },
             )
+            if not filtrar_partido_por_cutoff(
+                pf.fecha,
+                pf.id_partido,
+                fecha_corte=fecha_corte,
+                cutoff_timestamp=cutoff_timestamp,
+                id_partido_excluir=id_partido_excluir,
+                exclude_match_ids=exclude_match_ids,
+            ):
+                continue
             if es_competicion_amistosa(torneo):
                 amistosos_res.append(pf)
                 continue

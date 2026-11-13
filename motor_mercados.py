@@ -544,8 +544,14 @@ def _contar_cronologia_doc(doc: Any, cc_extra: Any = None) -> tuple[int, bool]:
                     continue
                 m1 = p.get("marcador_1t")
                 ev = p.get("eventos_gol") or p.get("goles_minutos")
+                fg = p.get("franjas_goles")
+                marc = p.get("marcador") or {}
+                m_eq = marc.get("equipo") if isinstance(marc, dict) else p.get("goles_equipo")
+                m_rv = marc.get("rival") if isinstance(marc, dict) else p.get("goles_rival")
+                has_00_ev = isinstance(ev, list) and m_eq == 0 and m_rv == 0
+                has_fg = isinstance(fg, dict) and bool(fg)
                 has_m1 = isinstance(m1, dict) and (m1.get("equipo") is not None or m1.get("rival") is not None)
-                if has_m1 or (isinstance(ev, list) and len(ev) > 0) or p.get("goles_1t") is not None:
+                if has_m1 or (isinstance(ev, list) and len(ev) > 0) or has_00_ev or has_fg or bool(p.get("cronologia_fuente")) or p.get("goles_1t") is not None:
                     n_ev += 1
             return n_ev, True
     if isinstance(cc_extra, dict) and "_meta" in cc_extra:

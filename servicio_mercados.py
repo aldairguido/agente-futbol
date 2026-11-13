@@ -591,6 +591,10 @@ def resolver_enfrentamiento(
     fuente_obj: FuenteXG | None = None,
     progreso: Any = None,
     liga: dict[str, Any] | str | None = None,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
 ) -> dict[str, Any]:
     """
     Resuelve un enfrentamiento y devuelve los documentos de ambos equipos con sus
@@ -662,6 +666,14 @@ def resolver_enfrentamiento(
         kwargs["frescura_horas"] = frescura_horas
     if liga_final is not None:
         kwargs["liga"] = liga_final
+    if fecha_corte is not None:
+        kwargs["fecha_corte"] = fecha_corte
+    if id_partido_excluir is not None:
+        kwargs["id_partido_excluir"] = id_partido_excluir
+    if cutoff_timestamp is not None:
+        kwargs["cutoff_timestamp"] = cutoff_timestamp
+    if exclude_match_ids is not None:
+        kwargs["exclude_match_ids"] = exclude_match_ids
 
     etiqueta_liga = ""
     if isinstance(liga_final, dict) and liga_final.get("nombre"):
@@ -714,6 +726,20 @@ def resolver_enfrentamiento(
         equipo_visitante = str(par_b["nombre"])
         if par_b.get("id"):
             ctx_rival_para_b.setdefault("pares_misma_liga", []).insert(0, par_b)
+
+    # Si no se pasó cutoff explícito, detectar próximo cruce en calendario del local
+    # para garantizar cero lookahead en doc_b y filtrar fugas en ambos documentos.
+    if fecha_corte is None and cutoff_timestamp is None and id_partido_excluir is None:
+        for pf_item in (doc_a.get("partidos_futuros") or []):
+            if not isinstance(pf_item, dict):
+                continue
+            riv_nom = f"{pf_item.get('home_nombre', '')} {pf_item.get('away_nombre', '')}".strip().lower()
+            if equipo_visitante.lower() in riv_nom:
+                if pf_item.get("id_partido") and "id_partido_excluir" not in kwargs:
+                    kwargs["id_partido_excluir"] = str(pf_item["id_partido"])
+                if pf_item.get("fecha") and "fecha_corte" not in kwargs and "cutoff_timestamp" not in kwargs:
+                    kwargs["fecha_corte"] = str(pf_item["fecha"])[:10]
+                break
 
     doc_b, meta_b = None, None
     try:
@@ -816,6 +842,34 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
+    # Blindaje anti-fuga temporal sobre doc_a y doc_b antes de calcular patrones o cuotas
+    eff_corte = cutoff_timestamp if cutoff_timestamp is not None else fecha_corte
+    eff_excl = exclude_match_ids if exclude_match_ids is not None else id_partido_excluir
+    if eff_corte is None and eff_excl is None and contexto.get("partido_activo"):
+        eff_corte = contexto.get("fecha_partido")
+        eff_excl = contexto.get("id_partido")
+    if eff_corte is not None or eff_excl is not None:
+        from auditoria_historica import _filtrar_partidos_doc_cutoff
+        pts_a_f, fuga_a = _filtrar_partidos_doc_cutoff(
+            doc_a.get("partidos") or [],
+            fecha_corte=eff_corte if cutoff_timestamp is None else fecha_corte,
+            cutoff_timestamp=cutoff_timestamp,
+            id_partido_excluir=id_partido_excluir if exclude_match_ids is None else eff_excl,
+            exclude_match_ids=exclude_match_ids if exclude_match_ids is not None else eff_excl,
+        )
+        if fuga_a:
+            doc_a = dict(doc_a)
+            doc_a["partidos"] = pts_a_f
+        pts_b_f, fuga_b = _filtrar_partidos_doc_cutoff(
+            doc_b.get("partidos") or [],
+            fecha_corte=eff_corte if cutoff_timestamp is None else fecha_corte,
+            cutoff_timestamp=cutoff_timestamp,
+            id_partido_excluir=id_partido_excluir if exclude_match_ids is None else eff_excl,
+            exclude_match_ids=exclude_match_ids if exclude_match_ids is not None else eff_excl,
+        )
+        if fuga_b:
+            doc_b = dict(doc_b)
+            doc_b["partidos"] = pts_b_f
     if isinstance(liga_final, dict) and liga_final.get("nombre"):
         if res_puente.es_copa or liga_final.get("liga_forzada") or not contexto.get("competicion"):
             contexto["competicion"] = liga_final["nombre"]

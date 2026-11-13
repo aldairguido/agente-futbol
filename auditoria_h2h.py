@@ -443,6 +443,10 @@ def cargar_o_crear_auditoria(
     progreso: Any = None,
     rival: str | dict[str, Any] | None = None,
     liga: dict[str, Any] | str | None = None,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """
     Devuelve (auditoría, meta) del equipo:
@@ -520,7 +524,13 @@ def cargar_o_crear_auditoria(
                     or (pais_doc not in PAISES_EUROPA and pais_riv in PAISES_EUROPA)
                 )
             )
-            if not es_incoherente:
+            from auditoria_historica import _filtrar_partidos_doc_cutoff
+            _, mem_fuga = _filtrar_partidos_doc_cutoff(
+                doc_mem.get("partidos") or [],
+                fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+            )
+            if not es_incoherente and not mem_fuga:
                 res_mem = doc_mem.get("resumen") or {}
                 con_datos = res_mem.get("partidos_con_datos") or len(doc_mem.get("partidos") or [])
                 if con_datos >= limite:
@@ -548,6 +558,15 @@ def cargar_o_crear_auditoria(
                          "la página", "historial agotado")))
 
                 obsoleta, motivo_obsoleta = _es_auditoria_obsoleta(doc, limite)
+                from auditoria_historica import _filtrar_partidos_doc_cutoff
+                _, disk_fuga = _filtrar_partidos_doc_cutoff(
+                    doc.get("partidos") or [],
+                    fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                    cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+                )
+                if disk_fuga:
+                    obsoleta = True
+                    motivo_obsoleta = "contiene partidos iguales o posteriores a fecha_corte"
 
                 # Validar identidad del equipo en caché y coherencia geográfica/de liga
                 ok_id, motivo_id = _auditoria_corresponde_a_consulta(doc, equipo_efectivo, rival=rival_efectivo)
@@ -600,8 +619,17 @@ def cargar_o_crear_auditoria(
         else:
             meta["motivo_rescaneo"] = "no existe auditoría previa"
 
+    kw_cut: dict[str, Any] = {}
+    if fecha_corte is not None:
+        kw_cut["fecha_corte"] = fecha_corte
+    if id_partido_excluir is not None:
+        kw_cut["id_partido_excluir"] = id_partido_excluir
+    if cutoff_timestamp is not None:
+        kw_cut["cutoff_timestamp"] = cutoff_timestamp
+    if exclude_match_ids is not None:
+        kw_cut["exclude_match_ids"] = exclude_match_ids
     auditoria = auditar_equipo(equipo_efectivo, limite=limite, headless=headless, progreso=progreso,
-                               mejor_previo=previo, rival=rival_efectivo)
+                               mejor_previo=previo, rival=rival_efectivo, **kw_cut)
     if previo is not None and auditoria is previo:
         # Se conservó la anterior: no se reescribe nada, solo se reporta
         meta["origen"] = "conservada"

@@ -602,6 +602,84 @@ def _contar_partidos_con_datos(doc: dict[str, Any]) -> int:
     return total
 
 
+def _filtrar_partidos_doc_cutoff(
+    partidos: list[dict[str, Any]] | None,
+    *,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Filtra lista de dict de partidos usando `filtrar_partido_por_cutoff`."""
+    from fuentes_xg import filtrar_partido_por_cutoff
+    pts = list(partidos or [])
+    if fecha_corte is None and cutoff_timestamp is None and id_partido_excluir is None and exclude_match_ids is None:
+        return pts, False
+    filtrados = []
+    hubo_excluidos = False
+    for p in pts:
+        if not isinstance(p, dict):
+            continue
+        pid = p.get("id_partido") or p.get("id")
+        fec = p.get("fecha")
+        utc_t = p.get("utc_time") or (p.get("extra") or {}).get("utc_time") if isinstance(p.get("extra"), dict) else None
+        if filtrar_partido_por_cutoff(
+            fec, pid, utc_time=utc_t,
+            fecha_corte=fecha_corte,
+            cutoff_timestamp=cutoff_timestamp,
+            id_partido_excluir=id_partido_excluir,
+            exclude_match_ids=exclude_match_ids,
+        ):
+            filtrados.append(p)
+        else:
+            hubo_excluidos = True
+    return filtrados, hubo_excluidos
+
+
+def _llamar_escanear_oficiales(
+    fuente: Any,
+    equipo: dict[str, Any],
+    *,
+    objetivo: int,
+    incluir_amistosos: bool = False,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
+) -> Any:
+    """Invoca `escanear_oficiales` con cutoff si existe y posfiltra de respaldo."""
+    from fuentes_xg import filtrar_partido_por_cutoff
+    hay_cutoff = any(v is not None for v in (fecha_corte, id_partido_excluir, cutoff_timestamp, exclude_match_ids))
+    if not hay_cutoff:
+        return fuente.escanear_oficiales(equipo, objetivo=objetivo, incluir_amistosos=incluir_amistosos)
+    try:
+        esc = fuente.escanear_oficiales(
+            equipo,
+            objetivo=objetivo,
+            incluir_amistosos=incluir_amistosos,
+            fecha_corte=fecha_corte,
+            id_partido_excluir=id_partido_excluir,
+            cutoff_timestamp=cutoff_timestamp,
+            exclude_match_ids=exclude_match_ids,
+        )
+    except TypeError:
+        esc = fuente.escanear_oficiales(equipo, objetivo=objetivo, incluir_amistosos=incluir_amistosos)
+    if getattr(esc, "oficiales", None):
+        esc.oficiales = [
+            pf for pf in esc.oficiales
+            if filtrar_partido_por_cutoff(
+                getattr(pf, "fecha", None),
+                getattr(pf, "id_partido", None),
+                utc_time=(getattr(pf, "extra", None) or {}).get("utc_time") if isinstance(getattr(pf, "extra", None), dict) else None,
+                fecha_corte=fecha_corte,
+                cutoff_timestamp=cutoff_timestamp,
+                id_partido_excluir=id_partido_excluir,
+                exclude_match_ids=exclude_match_ids,
+            )
+        ]
+    return esc
+
+
 def _auditar_equipo_interno(
     nombre_equipo: str,
     limite: int = LIMITE_PARTIDOS_POR_DEFECTO,
@@ -614,6 +692,10 @@ def _auditar_equipo_interno(
     mejor_previo: dict[str, Any] | None = None,
     permitir_relleno_amistoso: bool = False,
     rival: str | dict[str, Any] | None = None,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
 ) -> dict[str, Any]:
     def avisar(msg: str) -> None:
         try:
@@ -737,8 +819,10 @@ def _auditar_equipo_interno(
         # ── Escaneo profundo hacia atrás, saltando amistosos ────────────────
         avisar(f"escaneando el calendario hacia atrás (objetivo: {objetivo_datos} "
                f"partidos oficiales con datos, máximo {limite} auditados)…")
-        escaneo = fuente_obj.escanear_oficiales(
-            equipo, objetivo=objetivo_datos, incluir_amistosos=incluir_amistosos)
+        escaneo = _llamar_escanear_oficiales(
+            fuente_obj, equipo, objetivo=objetivo_datos, incluir_amistosos=incluir_amistosos,
+            fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+            cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids)
 
         if not escaneo.oficiales and not escaneo.amistosos_reservados and getattr(fuente_obj, "nombre", "") == "fotmob":
             avisar(f"⚠️ {equipo.get('nombre')} sin historial en FotMob; consultando Flashscore en cascada…")
@@ -771,7 +855,10 @@ def _auditar_equipo_interno(
                         break
 
                 if eq_fs:
-                    esc_fs = fs_fallback.escanear_oficiales(eq_fs, objetivo=objetivo_datos, incluir_amistosos=incluir_amistosos)
+                    esc_fs = _llamar_escanear_oficiales(
+                        fs_fallback, eq_fs, objetivo=objetivo_datos, incluir_amistosos=incluir_amistosos,
+                        fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                        cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids)
                     if esc_fs.oficiales:
                         fuente_obj = fs_fallback
                         auditoria["fuente"] = "flashscore"
@@ -833,6 +920,14 @@ def _auditar_equipo_interno(
                 p_loc = str(getattr(partido, "local", "") or "").lower().strip()
                 p_vis = str(getattr(partido, "visitante", "") or "").lower().strip()
                 p_clave = (p_fec, p_loc, p_vis)
+                from fuentes_xg import filtrar_partido_por_cutoff
+                if not filtrar_partido_por_cutoff(
+                    p_fec, p_id,
+                    utc_time=(getattr(partido, "extra", None) or {}).get("utc_time") if isinstance(getattr(partido, "extra", None), dict) else None,
+                    fecha_corte=fecha_corte, cutoff_timestamp=cutoff_timestamp,
+                    id_partido_excluir=id_partido_excluir, exclude_match_ids=exclude_match_ids,
+                ):
+                    continue
 
                 # Deduplicación estricta por match_id y por (fecha, local, visitante)
                 if (p_id and p_id in procesados_ids) or (any(p_clave) and p_clave in procesados_claves):
@@ -892,8 +987,10 @@ def _auditar_equipo_interno(
             nuevo_objetivo = len(escaneo.oficiales) + faltantes + 5
             avisar(f"    ↻ backfill hacia atrás: solicitando hasta {nuevo_objetivo} "
                    f"oficiales para compensar {len(vacios)} partido(s) sin datos…")
-            escaneo = fuente_obj.escanear_oficiales(
-                equipo, objetivo=nuevo_objetivo, incluir_amistosos=incluir_amistosos
+            escaneo = _llamar_escanear_oficiales(
+                fuente_obj, equipo, objetivo=nuevo_objetivo, incluir_amistosos=incluir_amistosos,
+                fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
             )
             _actualizar_meta_escaneo(escaneo)
 
@@ -957,7 +1054,10 @@ def _auditar_equipo_interno(
                 fs_comp.abrir()
                 eq_fs = fs_comp.resolver_equipo(equipo.get("nombre") or nombre_equipo, rival_contexto=rival)
                 if eq_fs:
-                    esc_fs = fs_comp.escanear_oficiales(eq_fs, objetivo=objetivo_datos + 5, incluir_amistosos=False)
+                    esc_fs = _llamar_escanear_oficiales(
+                        fs_comp, eq_fs, objetivo=objetivo_datos + 5, incluir_amistosos=False,
+                        fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                        cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids)
                     for p_fs in esc_fs.oficiales:
                         if len(auditoria["partidos"]) >= limite or partidos_con_datos >= objetivo_datos:
                             break
@@ -1184,6 +1284,10 @@ def auditar_equipo(
     mejor_previo: dict[str, Any] | None = None,
     permitir_relleno_amistoso: bool = False,
     rival: str | dict[str, Any] | None = None,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
 ) -> dict[str, Any]:
     """
     Ejecuta la auditoría histórica completa de un equipo.
@@ -1279,7 +1383,12 @@ def auditar_equipo(
                     rival_meta=meta_ctx if tiene_ctx_real else None,
                 )
                 coherente_mem = pts_mem[0] >= 0 and pts_mem[1] > 0 and not (pts_mem[4] < 0 and tiene_ctx_real)
-                if coherente_mem:
+                _, mem_fuga = _filtrar_partidos_doc_cutoff(
+                    doc_mem.get("partidos") or [],
+                    fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                    cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+                )
+                if coherente_mem and not mem_fuga:
                     partidos_mem = doc_mem.get("partidos") or []
                     res_mem = doc_mem.get("resumen") or {}
                     con_datos_mem = res_mem.get("partidos_con_datos") or len(partidos_mem)
@@ -1294,6 +1403,15 @@ def auditar_equipo(
 
         try:
             from fuentes_xg import ejecutar_sync_seguro
+            kw_extra_cut: dict[str, Any] = {}
+            if fecha_corte is not None:
+                kw_extra_cut["fecha_corte"] = fecha_corte
+            if id_partido_excluir is not None:
+                kw_extra_cut["id_partido_excluir"] = id_partido_excluir
+            if cutoff_timestamp is not None:
+                kw_extra_cut["cutoff_timestamp"] = cutoff_timestamp
+            if exclude_match_ids is not None:
+                kw_extra_cut["exclude_match_ids"] = exclude_match_ids
             res = ejecutar_sync_seguro(
                 _auditar_equipo_interno,
                 nombre_equipo=nombre_equipo,
@@ -1307,10 +1425,19 @@ def auditar_equipo(
                 mejor_previo=mejor_previo,
                 permitir_relleno_amistoso=permitir_relleno_amistoso,
                 rival=rival,
+                **kw_extra_cut,
             )
         except Exception:
             doc_resiliencia = _cargar_cache_resiliencia(clave_cache_entidad, nombre_equipo, meta_ctx=meta_ctx) or _cargar_cache_resiliencia(slug_equipo, nombre_equipo, meta_ctx=meta_ctx)
             if doc_resiliencia is not None:
+                pts_r, fuga_r = _filtrar_partidos_doc_cutoff(
+                    doc_resiliencia.get("partidos") or [],
+                    fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+                    cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+                )
+                if fuga_r:
+                    doc_resiliencia = dict(doc_resiliencia)
+                    doc_resiliencia["partidos"] = pts_r
                 return doc_resiliencia
             raise
 
@@ -1943,6 +2070,7 @@ def reconstruir_marcador_mitades_partido(
 _METRICAS_XG_SIN_SINTETICO = frozenset({
     "xg", "xgot", "xg_juego_abierto", "xg_balon_parado",
     "xg_sin_penalti", "xgot_enfrentado", "xa_equipo", "goles_evitados",
+    "saques_puerta", "tiros_libres", "pases_entre_lineas",
 })
 
 
@@ -2018,9 +2146,18 @@ def _formatear_valor_metrica_45(
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "pases_tercio_final_pct":
-            comp = filas_map.get("pases_tercio_final_completados", {}).get(lado)
-            tot = filas_map.get("pases_tercio_final", {}).get(lado)
-            if comp is not None and tot is not None and tot > 0:
+            comp_f = filas_map.get("pases_tercio_final_completados") or {}
+            tot_f = filas_map.get("pases_tercio_final") or {}
+            comp = comp_f.get(lado)
+            tot = tot_f.get(lado)
+            # Evitar falsos "40/100 (40%)" heredados de fuentes sin denominador real
+            es_falso_100 = (
+                tot is not None and abs(float(tot) - 100.0) < 1e-6
+                and comp is not None and valor is not None
+                and abs(float(comp) - float(valor)) < 0.5
+                and not es_flashscore
+            )
+            if comp is not None and tot is not None and tot > 0 and not es_falso_100 and not _es_procedencia_sintetica(tot_f):
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "cruces_pct":
@@ -2030,16 +2167,26 @@ def _formatear_valor_metrica_45(
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "entradas_pct":
-            comp = filas_map.get("entradas_ganadas", {}).get(lado)
-            tot = filas_map.get("entradas", {}).get(lado)
-            if comp is not None and tot is not None and tot > 0:
-                pct = int(round(comp * 100.0 / tot))
+            comp_f = filas_map.get("entradas_ganadas") or {}
+            tot_f = filas_map.get("entradas") or {}
+            comp = comp_f.get(lado)
+            tot = tot_f.get(lado)
+            pct_e = (filas_map.get("entradas_ganadas_pct") or {}).get(lado)
+            es_falso_100_ent = (
+                comp is not None and tot is not None and not es_flashscore
+                and abs(float(comp) - float(tot)) < 1e-6 and float(comp) >= 5.0
+                and (pct_e is None or abs(float(pct_e) - 100.0) < 1e-6)
+            )
+            if comp is not None and tot is not None and tot > 0 and not es_falso_100_ent and not _es_procedencia_sintetica(tot_f):
+                pct = int(round(pct_e)) if pct_e is not None else int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
         elif clave == "pases_ratio":
             comp = filas_map.get("pases_completados", {}).get(lado)
             tot = filas_map.get("pases_totales", {}).get(lado) or filas_map.get("pases_total", {}).get(lado)
             pct = filas_map.get("pases_precision_pct", {}).get(lado) or filas_map.get("pases_pct", {}).get(lado)
             if comp is not None and tot is not None and tot > 0:
+                if pct is not None and ((float(pct) < 99.5 and abs(float(comp) - float(tot)) < 0.5) or float(comp) > float(tot)):
+                    comp = float(round(float(tot) * float(pct) / 100.0))
                 p_int = int(round(pct)) if pct is not None else int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({p_int}%)"
         elif clave in ("duelos_suelo_pct", "duelos_aereos_pct"):
@@ -2303,10 +2450,8 @@ def formatear_matriz_45_partido(
             row_solo_est = bool(tags_fila and any(_es_procedencia_sintetica(fila_ft, t) for t in tags_fila)) and not row_has_fm and not row_has_fs
 
             todos_sin_dato = all(s == "sin_dato" for s in [str_l_ft, str_v_ft, str_l_1t, str_v_1t, str_l_2t, str_v_2t])
-            if todos_sin_dato:
+            if todos_sin_dato or row_solo_est:
                 fuente_txt = "sin_dato"
-            elif row_solo_est or (clave == "saques_puerta" and ("est" in src_str_row or fila_ft.get("estimado"))):
-                fuente_txt = "Est."
             elif id_fm == "N/D" or not id_fm:
                 fuente_txt = "Flashscore" if (id_fs != "N/D" and bool(id_fs)) else "sin_dato"
             elif row_has_fs and row_has_fm:
@@ -2469,6 +2614,10 @@ def generar_informe_matrices_30(
     doc_local: dict[str, Any],
     doc_visita: dict[str, Any],
     ruta_md: str | None = None,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
 ) -> tuple[str, str]:
     """
     Genera el informe Markdown completo para Modalidad A (/auditar Local vs Visita):
@@ -2481,8 +2630,18 @@ def generar_informe_matrices_30(
     ahora = _ahora_lima()
     fecha_hoy = ahora.strftime("%Y-%m-%d")
 
-    partidos_local = [p for p in (doc_local.get("partidos") or []) if not p.get("es_amistoso")][:15]
-    partidos_visita = [p for p in (doc_visita.get("partidos") or []) if not p.get("es_amistoso")][:15]
+    pl_brutos, _ = _filtrar_partidos_doc_cutoff(
+        [p for p in (doc_local.get("partidos") or []) if not p.get("es_amistoso")],
+        fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+        cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+    )
+    pv_brutos, _ = _filtrar_partidos_doc_cutoff(
+        [p for p in (doc_visita.get("partidos") or []) if not p.get("es_amistoso")],
+        fecha_corte=fecha_corte, id_partido_excluir=id_partido_excluir,
+        cutoff_timestamp=cutoff_timestamp, exclude_match_ids=exclude_match_ids,
+    )
+    partidos_local = pl_brutos[:15]
+    partidos_visita = pv_brutos[:15]
     n_loc = len(partidos_local)
     n_vis = len(partidos_visita)
     total_entregados = n_loc + n_vis
