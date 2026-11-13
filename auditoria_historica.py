@@ -1551,6 +1551,11 @@ def exportar_auditoria(auditoria: dict[str, Any], directorio: str | None = None,
     _escribir_csv_ancho(auditoria, rutas["csv_matriz"])
     with open(rutas["markdown"], "w", encoding="utf-8") as f:
         f.write(generar_markdown(auditoria))
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(doc_local=auditoria)
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook exportar_auditoria omitido: {_e_banco}")
     return rutas
 
 
@@ -2521,6 +2526,11 @@ def generar_informe_matrices_30(
         ruta_md_base=ruta_md,
         max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
     )
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(doc_local=doc_local, doc_visitante=doc_visita)
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook matrices_30 omitido: {_e_banco}")
     return partes[0]["contenido"], ruta_md
 
 
@@ -2570,6 +2580,11 @@ def generar_informe_matrices_h2h(
         ruta_md_base=ruta_md,
         max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
     )
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(doc_local=doc_h2h_a, doc_visitante=doc_h2h_b)
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook matrices_h2h omitido: {_e_banco}")
     return partes[0]["contenido"], ruta_md
 
 
@@ -2617,6 +2632,11 @@ def generar_informe_matrices_equipo(
         ruta_md_base=ruta_md,
         max_bytes=MAX_BYTES_MARKDOWN_TELEGRAM,
     )
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(doc_local=doc_equipo)
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook matrices_equipo omitido: {_e_banco}")
     return partes[0]["contenido"], ruta_md
 
 

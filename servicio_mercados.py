@@ -2676,6 +2676,15 @@ def preparar_analisis(
             ],
         }, f, ensure_ascii=False, indent=1)
 
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(
+            doc_local=contexto.get("doc_local"),
+            doc_visitante=contexto.get("doc_visitante"),
+        )
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook /mercados omitido: {_e_banco}")
+
     _h2h_inf_tkt = construir_resumen_h2h_ticket(
         contexto.get("doc_local"),
         contexto.get("doc_visitante"),

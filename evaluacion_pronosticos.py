@@ -2927,6 +2927,13 @@ def preparar_evaluacion(pronosticos: list[dict[str, Any]] | None = None,
     huella = huella_de_resultados(resultados)
     id_ejecucion = identificador_ejecucion(informe, huella)
     rutas = guardar_informe(informe, nombre=f"evaluacion_{id_ejecucion}")
+    try:
+        from banco_historico import guardar_en_banco_no_bloqueante
+        guardar_en_banco_no_bloqueante(
+            resultados_evaluacion=list((resultados or {}).values())
+        )
+    except Exception as _e_banco:
+        print(f"[BANCO HISTORICO] ⚠️ Hook /evaluar omitido: {_e_banco}")
     if not norm_filtro:
         try:
             from agente_consciente import obtener_agente_consciente
