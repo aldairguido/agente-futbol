@@ -92,13 +92,31 @@ def _coincide_equipo(a: str, b: str) -> bool:
     )
 
 
-def _familia_mercado_norm(mercado: str) -> str:
-    """Clasifica un nombre de mercado en su familia estándar de evaluación."""
+def _es_equipo_especifico_mercado(mercado: str, equipo: str | None = None) -> bool:
+    """Detecta si el mercado corresponde a una línea individual de equipo (vs partido completo)."""
+    eq_txt = str(equipo or "").strip()
+    if eq_txt and eq_txt.lower() not in ("none", "null", "total", ""):
+        return True
     m = (mercado or "").lower()
-    if "total de goles" in m:
-        return "Total de goles"
+    if " - " in m:
+        return True
+    if any(k in m for k in ("corners_local", "corners_visitante", "local_corners", "visita_corners", "goles_local", "goles_visitante", "total_goles_local", "total_goles_visitante")):
+        return True
+    return False
+
+
+def _familia_mercado_norm(mercado: str, equipo: str | None = None) -> str:
+    """
+    Clasifica un nombre de mercado en su familia estándar de evaluación,
+    separando explícitamente mercados por equipo vs totales de partido
+    (ej. 'Córneres por equipo' vs 'Córneres partido').
+    """
+    m = (mercado or "").lower()
+    es_por_equipo = _es_equipo_especifico_mercado(mercado, equipo=equipo)
+    if "total de goles" in m or "goles por equipo" in m:
+        return "Goles por equipo" if es_por_equipo else "Goles totales partido"
     if "córner" in m or "corner" in m or "esquina" in m:
-        return "Córneres"
+        return "Córneres por equipo" if es_por_equipo else "Córneres partido"
     if "tarjeta" in m or "amarilla" in m or "roja" in m:
         return "Tarjetas"
     if "doble oportunidad" in m or m in ("1x", "x2", "12"):
@@ -118,6 +136,79 @@ def _familia_mercado_norm(mercado: str) -> str:
     if "fiesta" in m:
         return "Fiesta de goles"
     return mercado or "Otras"
+
+
+def _bootstrap_cluster_partidos(
+    filas_por_partido: dict[str, list[tuple[int, float]]],
+    B: int = 1000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Bootstrap por conglomerados de partido (match-cluster bootstrap).
+    Cada partido aporta su bloque de filas correlacionadas (yi, pi), evitando
+    tratar ~100 líneas del mismo encuentro como independientes.
+    """
+    import random as _rand
+
+    claves = [k for k, lst in filas_por_partido.items() if lst]
+    k_partidos = len(claves)
+    if k_partidos == 0:
+        return {
+            "partidos_unicos": 0,
+            "acierto_ic95_lo": None,
+            "acierto_ic95_hi": None,
+            "brecha_ic95_lo": None,
+            "brecha_ic95_hi": None,
+        }
+    agregados: list[tuple[int, int, float]] = []
+    for cl in claves:
+        rows = filas_por_partido[cl]
+        agregados.append((len(rows), sum(y for y, _ in rows), sum(p for _, p in rows)))
+
+    tot_n = sum(a[0] for a in agregados)
+    tot_w = sum(a[1] for a in agregados)
+    tot_p = sum(a[2] for a in agregados)
+    wr_obs = tot_w / tot_n if tot_n > 0 else 0.0
+    p_obs = tot_p / tot_n if tot_n > 0 else 0.0
+    brecha_obs = (wr_obs - p_obs) * 100.0
+
+    if k_partidos == 1:
+        return {
+            "partidos_unicos": 1,
+            "acierto_ic95_lo": wr_obs,
+            "acierto_ic95_hi": wr_obs,
+            "brecha_ic95_lo": brecha_obs,
+            "brecha_ic95_hi": brecha_obs,
+        }
+
+    rng = _rand.Random(seed)
+    wrs: list[float] = []
+    brechas: list[float] = []
+    for _ in range(B):
+        sn = 0
+        sw = 0
+        sp = 0.0
+        for __ in range(k_partidos):
+            n_c, w_c, p_c = agregados[rng.randrange(k_partidos)]
+            sn += n_c
+            sw += w_c
+            sp += p_c
+        if sn > 0:
+            wr_b = sw / sn
+            p_b = sp / sn
+            wrs.append(wr_b)
+            brechas.append((wr_b - p_b) * 100.0)
+    wrs.sort()
+    brechas.sort()
+    lo_idx = max(0, int(0.025 * len(wrs)))
+    hi_idx = min(len(wrs) - 1, int(0.975 * len(wrs)))
+    return {
+        "partidos_unicos": k_partidos,
+        "acierto_ic95_lo": round(wrs[lo_idx], 4),
+        "acierto_ic95_hi": round(wrs[hi_idx], 4),
+        "brecha_ic95_lo": round(brechas[lo_idx], 2),
+        "brecha_ic95_hi": round(brechas[hi_idx], 2),
+    }
 
 
 def _banda_probabilidad(p: float | None) -> str:
@@ -483,65 +574,138 @@ class AgenteConsciente:
                         "inicio_utc": pinfo.get("inicio_utc") or "",
                     })
 
-        # 2. Autoconciencia por Familia de Mercado (consolidando prefijos de equipos en su familia canónica)
-        por_familia_raw = mejor_datos.get("por_familia") or {}
+        # 2. Autoconciencia por Familia de Mercado + Bootstrap por conglomerado de partido
+        try:
+            from decision_cobertura import cargar_umbrales_cobertura
+            max_brecha_top5 = float(cargar_umbrales_cobertura().get("max_brecha_familia_top5_pp", -10.0))
+        except Exception:
+            max_brecha_top5 = -10.0
+
+        eval_rows = [
+            r for r in (mejor_datos.get("evaluaciones") or [])
+            if isinstance(r, dict)
+            and r.get("evaluable_binario")
+            and r.get("estado_liquidacion") in ("ganada", "perdida")
+        ]
         por_familia_consolidada: dict[str, dict[str, Any]] = {}
-        if isinstance(por_familia_raw, dict):
-            acum_fam: dict[str, dict[str, float]] = {}
-            for fam, st in por_familia_raw.items():
-                if not isinstance(st, dict):
-                    continue
-                n_ev = int(st.get("evaluables") or 0)
-                gan = int(st.get("ganadas") or 0)
-                per = int(st.get("perdidas") or 0)
-                prob_m = float(st.get("probabilidad_media") or 0.0)
-                if n_ev <= 0:
-                    continue
-                fam_canon = _familia_mercado_norm(fam)
-                reg = acum_fam.setdefault(
+        global_clusters: dict[str, list[tuple[int, float]]] = {}
+
+        if eval_rows:
+            fam_clusters: dict[str, dict[str, list[tuple[int, float]]]] = {}
+            fam_counts: dict[str, dict[str, float]] = {}
+            for idx_r, r in enumerate(eval_rows):
+                fam_canon = _familia_mercado_norm(str(r.get("mercado") or ""), equipo=r.get("equipo"))
+                pid = str(r.get("id_partido") or r.get("partido") or f"row_{idx_r}")
+                y = 1 if r.get("estado_liquidacion") == "ganada" else 0
+                p_r = float(r.get("probabilidad_original") or r.get("probabilidad") or 0.0)
+                reg = fam_counts.setdefault(
                     fam_canon,
                     {"evaluables": 0.0, "ganadas": 0.0, "perdidas": 0.0, "suma_p": 0.0},
                 )
-                reg["evaluables"] += n_ev
-                reg["ganadas"] += gan
-                reg["perdidas"] += per
-                reg["suma_p"] += prob_m * n_ev
+                reg["evaluables"] += 1
+                reg["ganadas"] += y
+                reg["perdidas"] += (1 - y)
+                reg["suma_p"] += p_r
+                fam_clusters.setdefault(fam_canon, {}).setdefault(pid, []).append((y, p_r))
+                global_clusters.setdefault(pid, []).append((y, p_r))
 
-            for fam_canon, reg in acum_fam.items():
+            for fam_canon, reg in fam_counts.items():
                 n_tot = int(reg["evaluables"])
                 gan_tot = int(reg["ganadas"])
                 per_tot = int(reg["perdidas"])
                 ac_obs = gan_tot / n_tot if n_tot > 0 else 0.0
                 p_med = reg["suma_p"] / n_tot if n_tot > 0 else 0.0
                 brecha = 100.0 * (ac_obs - p_med)
+                boot = _bootstrap_cluster_partidos(fam_clusters.get(fam_canon, {}))
+                veto_t5 = bool(n_tot >= 10 and brecha <= max_brecha_top5)
+                bajo_vig = bool(n_tot >= 5 and (brecha <= max_brecha_top5 or brecha < -4.0 or ac_obs < 0.80))
                 por_familia_consolidada[fam_canon] = {
                     "familia": fam_canon,
                     "evaluables": n_tot,
+                    "partidos_unicos": boot["partidos_unicos"],
                     "ganadas": gan_tot,
                     "perdidas": per_tot,
                     "acierto_observado": ac_obs,
                     "probabilidad_media": p_med,
                     "brecha_pp": brecha,
+                    "acierto_ic95_lo": boot["acierto_ic95_lo"],
+                    "acierto_ic95_hi": boot["acierto_ic95_hi"],
+                    "brecha_ic95_lo": boot["brecha_ic95_lo"],
+                    "brecha_ic95_hi": boot["brecha_ic95_hi"],
+                    "bajo_vigilancia": bajo_vig,
+                    "veto_top5": veto_t5,
                 }
+        else:
+            por_familia_raw = mejor_datos.get("por_familia") or {}
+            if isinstance(por_familia_raw, dict):
+                acum_fam: dict[str, dict[str, float]] = {}
+                for fam, st in por_familia_raw.items():
+                    if not isinstance(st, dict):
+                        continue
+                    n_ev = int(st.get("evaluables") or 0)
+                    gan = int(st.get("ganadas") or 0)
+                    per = int(st.get("perdidas") or 0)
+                    prob_m = float(st.get("probabilidad_media") or 0.0)
+                    if n_ev <= 0:
+                        continue
+                    fam_canon = _familia_mercado_norm(fam)
+                    reg = acum_fam.setdefault(
+                        fam_canon,
+                        {"evaluables": 0.0, "ganadas": 0.0, "perdidas": 0.0, "suma_p": 0.0},
+                    )
+                    reg["evaluables"] += n_ev
+                    reg["ganadas"] += gan
+                    reg["perdidas"] += per
+                    reg["suma_p"] += prob_m * n_ev
 
+                for fam_canon, reg in acum_fam.items():
+                    n_tot = int(reg["evaluables"])
+                    gan_tot = int(reg["ganadas"])
+                    per_tot = int(reg["perdidas"])
+                    ac_obs = gan_tot / n_tot if n_tot > 0 else 0.0
+                    p_med = reg["suma_p"] / n_tot if n_tot > 0 else 0.0
+                    brecha = 100.0 * (ac_obs - p_med)
+                    veto_t5 = bool(n_tot >= 10 and brecha <= max_brecha_top5)
+                    bajo_vig = bool(n_tot >= 5 and (brecha <= max_brecha_top5 or brecha < -4.0 or ac_obs < 0.80))
+                    por_familia_consolidada[fam_canon] = {
+                        "familia": fam_canon,
+                        "evaluables": n_tot,
+                        "partidos_unicos": None,
+                        "ganadas": gan_tot,
+                        "perdidas": per_tot,
+                        "acierto_observado": ac_obs,
+                        "probabilidad_media": p_med,
+                        "brecha_pp": brecha,
+                        "acierto_ic95_lo": None,
+                        "acierto_ic95_hi": None,
+                        "brecha_ic95_lo": None,
+                        "brecha_ic95_hi": None,
+                        "bajo_vigilancia": bajo_vig,
+                        "veto_top5": veto_t5,
+                    }
+
+        global_boot = _bootstrap_cluster_partidos(global_clusters) if global_clusters else {}
         familias_ordenadas = list(por_familia_consolidada.values())
 
-        # Mercados Estrella: muestra representativa (n >= 10) ordenados por acierto y buena calibración
+        # Mercados Estrella: muestra representativa (n >= 10) no vetados, ordenados por acierto y calibración
         mercados_con_muestra = [f for f in familias_ordenadas if f["evaluables"] >= 10]
         if not mercados_con_muestra:
             mercados_con_muestra = [f for f in familias_ordenadas if f["evaluables"] >= 3]
 
         mercados_estrella = sorted(
-            mercados_con_muestra,
+            [
+                f for f in mercados_con_muestra
+                if not f.get("veto_top5") and not f.get("bajo_vigilancia") and f["brecha_pp"] > max_brecha_top5
+            ],
             key=lambda x: (x["acierto_observado"], x["brecha_pp"], x["evaluables"]),
             reverse=True,
-        )[:4]
+        )[:5]
 
-        # Mercados en Vigilancia: aquellos donde brecha_pp < -4.0 o tasa de acierto < 0.80
+        # Mercados en Vigilancia: brecha <= -10 pp (veto Top 5) o brecha < -4.0 o tasa de acierto < 0.80
         mercados_vigilancia = sorted(
-            [f for f in mercados_con_muestra if f["brecha_pp"] < -4.0 or f["acierto_observado"] < 0.80],
-            key=lambda x: (x["acierto_observado"], x["brecha_pp"]),
-        )[:3]
+            [f for f in familias_ordenadas if f.get("bajo_vigilancia") or (f["evaluables"] >= 5 and (f["brecha_pp"] <= max_brecha_top5 or f["brecha_pp"] < -4.0 or f["acierto_observado"] < 0.80))],
+            key=lambda x: (x["brecha_pp"], x["acierto_observado"]),
+        )
 
         # 3. Autoconciencia por Periodo (FT / 1T / 2T) y Localía (casa / fuera / partido)
         por_periodo = mejor_datos.get("por_periodo") or {}
@@ -576,8 +740,14 @@ class AgenteConsciente:
             "brier": brier_val,
             "brier_climatologia": brier_clim,
             "brier_skill": brier_skill,
-            "partidos_unicos": int(evidencia.get("partidos_unicos") or len(partidos_resueltos)),
-            "evidencia_suficiente": bool(evidencia.get("evidencia_suficiente", False)) or (int(evidencia.get("partidos_unicos") or len(partidos_resueltos)) >= 30),
+            "partidos_unicos": int(global_boot.get("partidos_unicos") or evidencia.get("partidos_unicos") or len(partidos_resueltos)),
+            "partidos_registrados": len(partidos_dict) if isinstance(partidos_dict, dict) else len(partidos_resueltos),
+            "wr_ic95_lo": global_boot.get("acierto_ic95_lo"),
+            "wr_ic95_hi": global_boot.get("acierto_ic95_hi"),
+            "brecha_ic95_lo": global_boot.get("brecha_ic95_lo"),
+            "brecha_ic95_hi": global_boot.get("brecha_ic95_hi"),
+            "max_brecha_familia_top5_pp": max_brecha_top5,
+            "evidencia_suficiente": bool(evidencia.get("evidencia_suficiente", False)) or (int(global_boot.get("partidos_unicos") or evidencia.get("partidos_unicos") or len(partidos_resueltos)) >= 30),
             "minimo_partidos_exigido": int(evidencia.get("minimo_partidos_exigido") or 30),
             "partidos_resueltos": partidos_resueltos,
             "por_familia": por_familia_consolidada,
@@ -923,12 +1093,75 @@ class AgenteConsciente:
             "recuerdos_manuales": recuerdos_manuales,
         }
 
+    def evaluar_familia_conciencia(
+        self,
+        mercado: str,
+        equipo: str | None = None,
+        prob_bruta: float | None = None,
+    ) -> dict[str, Any]:
+        """
+        Devuelve estadísticas consolidadas por familia (con bootstrap por partido)
+        y calcula `prob_calibrada` usando la tasa empírica observada de la familia
+        o banda de calibración, además de señalar si la familia está `bajo_vigilancia`
+        o vetada del Top 5 (`veto_top5` si `brecha_pp <= max_brecha_familia_top5_pp`).
+        """
+        ev = getattr(self, "evaluacion_real", {}) or {}
+        fam = _familia_mercado_norm(mercado, equipo=equipo)
+        por_fam = (ev.get("por_familia") or {}).get(fam) or {}
+        n_fam = int(por_fam.get("evaluables") or 0)
+        ac_fam = por_fam.get("acierto_observado")
+        p_med_fam = por_fam.get("probabilidad_media")
+        brecha_fam = por_fam.get("brecha_pp")
+        try:
+            from decision_cobertura import cargar_umbrales_cobertura
+            max_brecha_top5 = float(cargar_umbrales_cobertura().get("max_brecha_familia_top5_pp", -10.0))
+        except Exception:
+            max_brecha_top5 = -10.0
+
+        veto_top5 = bool(por_fam.get("veto_top5", False)) or (
+            n_fam >= 10 and isinstance(brecha_fam, (int, float)) and float(brecha_fam) <= max_brecha_top5
+        )
+        bajo_vig = bool(por_fam.get("bajo_vigilancia", False)) or veto_top5
+
+        prob_cal = float(prob_bruta) if prob_bruta is not None else None
+        origen_cal = "sin_ajuste"
+        if prob_bruta is not None:
+            pb = float(prob_bruta)
+            if n_fam >= 15 and isinstance(ac_fam, (int, float)) and isinstance(p_med_fam, (int, float)) and float(p_med_fam) > 0.05:
+                prob_cal = round(max(0.01, min(0.98, pb * (float(ac_fam) / float(p_med_fam)))), 4)
+                origen_cal = f"familia:{fam}(n={n_fam})"
+            else:
+                banda_k = _banda_probabilidad(pb)
+                por_banda = (ev.get("bandas") or {}).get(banda_k) or {}
+                ac_b = por_banda.get("acierto_observado")
+                pm_b = por_banda.get("probabilidad_media")
+                n_b = int(por_banda.get("evaluables") or 0)
+                if n_b >= 15 and isinstance(ac_b, (int, float)) and isinstance(pm_b, (int, float)) and float(pm_b) > 0.05:
+                    prob_cal = round(max(0.01, min(0.98, pb * (float(ac_b) / float(pm_b)))), 4)
+                    origen_cal = f"banda:{banda_k}(n={n_b})"
+
+        return {
+            "familia": fam,
+            "evaluables": n_fam,
+            "partidos_unicos": por_fam.get("partidos_unicos"),
+            "acierto_observado": ac_fam,
+            "probabilidad_media": p_med_fam,
+            "brecha_pp": brecha_fam,
+            "brecha_ic95_lo": por_fam.get("brecha_ic95_lo"),
+            "brecha_ic95_hi": por_fam.get("brecha_ic95_hi"),
+            "bajo_vigilancia": bajo_vig,
+            "veto_top5": veto_top5,
+            "prob_calibrada": prob_cal,
+            "origen_calibracion": origen_cal,
+        }
+
     def evaluar_fiabilidad_seleccion(
         self,
         mercado: str,
         probabilidad: float,
         periodo: str = "FT",
         estado_estres: str = "mantiene",
+        equipo: str | None = None,
     ) -> dict[str, Any]:
         """
         Audita una selección individual (ej. de motor_mercados) contra la matriz
@@ -940,7 +1173,7 @@ class AgenteConsciente:
         Devuelve un `score_metacognitivo` (0-100) y una etiqueta de respaldo.
         """
         ev = getattr(self, "evaluacion_real", {}) or {}
-        familia = _familia_mercado_norm(mercado)
+        familia = _familia_mercado_norm(mercado, equipo=equipo)
         banda = _banda_probabilidad(probabilidad)
         per_norm = (periodo or "FT").strip().upper()
 
@@ -1443,10 +1676,18 @@ class AgenteConsciente:
             f"• *Nivel de Madurez (XP):* `{self.nivel_madurez} XP`",
             f"• *Motor Neuronal:* `{self.motor_neuronal.ultimo_modelo_exitoso}` "
             f"_(Pool rotativo de {len(self.motor_neuronal.modelos)} modelos)_",
-            f"• *Total Pronósticos Auditados:* `{self.total_experiencias}` selecciones "
-            f"en `{ev.get('partidos_unicos', 0)}` partidos oficiales",
+            f"• *Total Pronósticos Auditados:* `{self.total_experiencias}` líneas evaluables (agrupadas) "
+            f"en `{ev.get('partidos_unicos', 0)}` partidos evaluables (`{ev.get('partidos_registrados', ev.get('partidos_unicos', 0))}` registrados)",
             f"• *Aciertos / Fallos:* {self.aciertos} ganadas | {self.errores} perdidas",
-            f"• *Win Rate Histórico (p ≥ 70%):* `{self.win_rate:.1%}`",
+            (
+                f"• *Win Rate Histórico (p ≥ 70%):* `{self.win_rate:.1%}` "
+                + (
+                    f"(IC95% cluster por partido: `[{ev['wr_ic95_lo']*100:.1f}%, {ev['wr_ic95_hi']*100:.1f}%]` · "
+                    f"brecha `[{ev['brecha_ic95_lo']:+.1f}, {ev['brecha_ic95_hi']:+.1f}] pp`)"
+                    if ev.get("wr_ic95_lo") is not None and ev.get("brecha_ic95_lo") is not None
+                    else ""
+                )
+            ),
         ]
 
         wr_eq = ev.get("acierto_equilibrado_partido")
@@ -1464,21 +1705,26 @@ class AgenteConsciente:
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
         ])
 
-        # Autoconciencia por Familia de Mercado
+        # Autoconciencia por Familia de Mercado (con Córneres partido vs Córneres por equipo y IC95% cluster)
+        def _fmt_fam_meta(f_item: dict[str, Any]) -> str:
+            n_pt = f_item.get("partidos_unicos")
+            pt_str = f" · {n_pt}p" if n_pt else ""
+            lo, hi = f_item.get("brecha_ic95_lo"), f_item.get("brecha_ic95_hi")
+            ic_str = f" · IC95% [{lo:+.1f}, {hi:+.1f}] pp" if lo is not None and hi is not None else ""
+            return f"`{f_item['ganadas']}/{f_item['evaluables']}`{pt_str} | brecha `{f_item['brecha_pp']:+.1f} pp`{ic_str}"
+
         mkts_estrella = ev.get("mercados_estrella") or []
-        if mkts_estrella:
-            lineas.append("🏆 *AUTOCONCIENCIA POR MERCADO (TOP FIABILIDAD EMPÍRICA):*")
-            for m in mkts_estrella[:4]:
+        mkts_vig = ev.get("mercados_vigilancia") or []
+        if mkts_estrella or mkts_vig:
+            lineas.append("🏆 *AUTOCONCIENCIA POR MERCADO (BOOTSTRAP POR PARTIDO):*")
+            for m in mkts_estrella[:5]:
                 lineas.append(
-                    f"  🟢 *{m['familia']}:* `{m['acierto_observado']*100:.1f}%` "
-                    f"(`{m['ganadas']}/{m['evaluables']}` | brecha `{m['brecha_pp']:+.1f} pp`)"
+                    f"  🟢 *{m['familia']}:* `{m['acierto_observado']*100:.1f}%` ({_fmt_fam_meta(m)})"
                 )
-            mkts_vig = ev.get("mercados_vigilancia") or []
-            if mkts_vig:
-                vig = mkts_vig[0]
+            for vig in mkts_vig:
+                veto_tag = " [VETADO Top 5 ≤ -10 pp]" if vig.get("veto_top5") else " [bajo vigilancia]"
                 lineas.append(
-                    f"  🟡 *En vigilancia:* *{vig['familia']}* (`{vig['acierto_observado']*100:.1f}%`, "
-                    f"brecha `{vig['brecha_pp']:+.1f} pp`)"
+                    f"  🟡 *En vigilancia:* *{vig['familia']}* (`{vig['acierto_observado']*100:.1f}%` | {_fmt_fam_meta(vig)}){veto_tag}"
                 )
             lineas.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -1643,4 +1889,40 @@ def obtener_agente_consciente() -> AgenteConsciente:
     if _instancia_conciencia is None:
         _instancia_conciencia = AgenteConsciente()
     return _instancia_conciencia
+
+
+_CONCIENCIA_DISK_CACHE: tuple[tuple[int, float], AgenteConsciente] | None = None
+
+
+def evaluar_familia_conciencia_cached(
+    mercado: str,
+    equipo: str | None = None,
+    prob_bruta: float | None = None,
+) -> dict[str, Any]:
+    """
+    Consulta rápida en disco (sin llamadas HTTP/LLM) de autoconciencia por
+    familia, invalidando automáticamente cuando cambia algún evaluacion_*.json.
+    """
+    global _CONCIENCIA_DISK_CACHE
+    try:
+        eval_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "informes", "evaluacion")
+        archivos = [
+            os.path.join(eval_dir, f)
+            for f in os.listdir(eval_dir)
+            if f.startswith("evaluacion_") and f.endswith(".json")
+        ] if os.path.isdir(eval_dir) else []
+        sig = (len(archivos), max((os.path.getmtime(f) for f in archivos), default=0.0))
+    except Exception:
+        sig = (0, 0.0)
+
+    if _CONCIENCIA_DISK_CACHE is None or _CONCIENCIA_DISK_CACHE[0] != sig:
+        inst = AgenteConsciente.__new__(AgenteConsciente)
+        inst.nombre = "Buddy Bot"
+        inst.api_key = ""
+        inst.memoria_vivencial = []
+        inst.evaluacion_real = inst._cargar_evaluacion_real()
+        _CONCIENCIA_DISK_CACHE = (sig, inst)
+    return _CONCIENCIA_DISK_CACHE[1].evaluar_familia_conciencia(
+        mercado=mercado, equipo=equipo, prob_bruta=prob_bruta
+    )
 

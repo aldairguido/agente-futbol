@@ -1263,11 +1263,12 @@ def _organizar_sec1_para_cuadro(
         except Exception:
             p_1x2_mat = None
 
-    # Filtrar estrictamente con Gatekeeper (prohibiendo -6.5 Goles, -5.5 Goles, y 12 Sin Empate si P(X) >= 15%)
+    # Filtrar estrictamente con Gatekeeper (corners >=8/15, mitades >=10/15, etc.)
+    mot_gate = getattr(analisis, "motor", None) if analisis is not None else None
     validadas = []
     for s in (lista_sels or []):
         p = float(_v(s, "probabilidad", 0.0) or 0.0)
-        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat):
+        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat, motor=mot_gate):
             validadas.append(s)
 
     # Si vienen más de 18, acotar a las 18 más competitivas
@@ -1315,6 +1316,18 @@ def _organizar_sec1_para_cuadro(
         lin = _v(s, "linea", None)
         prob = float(_v(s, "probabilidad", 0.0) or 0.0)
         pct = f"{prob:.0%}"
+        try:
+            p_cal_att = _v(s, "prob_calibrada", None)
+            vig_att = bool(_v(s, "bajo_vigilancia", False) or _v(s, "veto_top5", False))
+            if p_cal_att is None:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                info_c = evaluar_familia_conciencia_cached(str(_v(s, "mercado") or ""), equipo=_v(s, "equipo", None), prob_bruta=prob)
+                p_cal_att = info_c.get("prob_calibrada")
+                vig_att = bool(info_c.get("bajo_vigilancia") or info_c.get("veto_top5"))
+            if vig_att and p_cal_att is not None:
+                pct = f"{prob:.0%} (cal {float(p_cal_att):.0%})"
+        except Exception:
+            pass
         per_s = str(_v(s, "periodo") or "FT").strip().upper()
         if per_s not in ("FT", "1T", "2T"):
             per_s = "FT"
@@ -2289,7 +2302,7 @@ def generar_cuadro_visual_partido(
         x_pill = 0.50
         for pill in cat_info["pildoras"][:4]:
             p_txt = f"{pill['lbl']}  {pill['pct']}"
-            p_w = min(0.18, max(0.10, len(p_txt) * 0.0072))
+            p_w = min(0.24, max(0.10, len(p_txt) * 0.0072))
             if x_pill + p_w > 0.98:
                 break
             rect_p = FancyBboxPatch((x_pill, y_c - 0.095), p_w, 0.08, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_sec1.transAxes)
@@ -2768,7 +2781,7 @@ def generar_cuadro_auditoria_15_partidos_png(
     n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
     n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
     n_base = max(15, n_tot_l, n_tot_v)
-    k_eval = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    k_eval = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
     k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 

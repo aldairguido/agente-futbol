@@ -345,6 +345,273 @@ def nb_pmf(k: int, mu: float, dispersion: float) -> float:
     return coef * (p ** r) * ((1 - p) ** k)
 
 
+
+_FACTOR_SOBREDISPERSION_NB = 1.05
+_EVENTOS_CRONOLOGIA_MITADES = frozenset({
+    "gol_1t", "gol_2t", "gol_ambos_tiempos",
+    "1t_1", "1t_x", "1t_2",
+})
+
+
+def _extraer_metrica_fila_ft(partido: dict[str, Any], claves: tuple[str, ...]) -> tuple[float | None, float | None]:
+    """Lee (equipo, rival) de periodos.FT.filas para `claves`; None nunca se convierte a 0."""
+    if not isinstance(partido, dict):
+        return None, None
+    filas = ((partido.get("periodos") or {}).get("FT") or {}).get("filas") or []
+    for f in filas:
+        if not isinstance(f, dict):
+            continue
+        cl = str(f.get("clave") or "").strip().lower()
+        if cl in claves:
+            eq_v = f.get("equipo")
+            rv_v = f.get("rival")
+            try:
+                eq_f = float(eq_v) if eq_v is not None else None
+            except (TypeError, ValueError):
+                eq_f = None
+            try:
+                rv_f = float(rv_v) if rv_v is not None else None
+            except (TypeError, ValueError):
+                rv_f = None
+            return eq_f, rv_f
+    return None, None
+
+
+def _contar_partidos_corners_doc(doc: Any, muestra: Any = None) -> tuple[int, int]:
+    """Devuelve (partidos_con_dato_real_corners, partidos_totales) sin contar None como 0."""
+    if isinstance(doc, dict) and isinstance(doc.get("partidos"), list) and len(doc.get("partidos")) > 0:
+        pts = doc.get("partidos") or []
+        n_con = 0
+        for p in pts:
+            if not isinstance(p, dict):
+                continue
+            eq_c, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+            if eq_c is not None:
+                n_con += 1
+        return n_con, len(pts)
+    if muestra is not None and hasattr(muestra, "dame"):
+        mc = muestra.dame("corners_favor")
+        n_c = int(getattr(mc, "n", 0) or 0)
+        n_tot = int(getattr(muestra, "partidos_general", 0) or 0)
+        return n_c, n_tot
+    return 0, 0
+
+
+def cobertura_corners_por_equipo(motor: Any, bando: str | None = None) -> dict[str, Any]:
+    """
+    Bloque 3 (3.2): Regla operativa (sin validación cronológica):
+    una línea de córneres solo entra al Top 5 o a Validadas si hay dato real
+    de córneres en al menos `min_partidos_corners_por_equipo` (8 de 15) por equipo.
+    """
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        min_c = int(cargar_umbrales_cobertura().get("min_partidos_corners_por_equipo", 8))
+    except Exception:
+        min_c = 8
+
+    if motor is None:
+        return {
+            "ok_top": True,
+            "ok_catalogo": True,
+            "min_requerido": min_c,
+            "n_local": min_c,
+            "total_local": 15,
+            "n_visitante": min_c,
+            "total_visitante": 15,
+            "n_min": min_c,
+            "den": 15,
+        }
+
+    doc_l = getattr(motor, "doc_local", None)
+    doc_v = getattr(motor, "doc_visitante", None)
+    muestras = getattr(motor, "muestras", {}) or {}
+    nc_l, nt_l = _contar_partidos_corners_doc(doc_l, muestras.get("local_general"))
+    nc_v, nt_v = _contar_partidos_corners_doc(doc_v, muestras.get("visitante_general"))
+
+    ok_top = (nc_l >= min_c) and (nc_v >= min_c)
+    ok_cat = ok_top or (
+        0 < nt_l < min_c and nc_l == nt_l
+        and 0 < nt_v < min_c and nc_v == nt_v
+    )
+    den = max(nt_l, nt_v) or 15
+    n_min_val = nc_l if (bando == "local" and nc_l < min_c) else (nc_v if (bando == "visitante" and nc_v < min_c) else min(nc_l, nc_v))
+    return {
+        "ok_top": ok_top,
+        "ok_catalogo": ok_cat,
+        "min_requerido": min_c,
+        "n_local": nc_l,
+        "total_local": nt_l,
+        "n_visitante": nc_v,
+        "total_visitante": nt_v,
+        "n_min": n_min_val,
+        "den": den,
+    }
+
+
+def _dispersion_corners_muestra(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+    bando: str | None = None,
+) -> dict[str, Any]:
+    """
+    Bloque 3 (3.1d): Calcula media, varianza muestral y var/media real sobre las
+    observaciones reales de córneres del partido (`bando=None`) o del equipo (`local`/`visitante`).
+    Si `n >= 8` y `var/media > 1.05`, activa cola Binomial Negativa.
+    """
+    vals: list[float] = []
+    if bando == "local":
+        for p in ((doc_local or {}).get("partidos") or []):
+            if isinstance(p, dict):
+                c_f, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is not None:
+                    vals.append(float(c_f))
+    elif bando == "visitante":
+        for p in ((doc_visitante or {}).get("partidos") or []):
+            if isinstance(p, dict):
+                c_f, _ = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is not None:
+                    vals.append(float(c_f))
+    else:
+        vistos: set[str] = set()
+        for lado, doc in (("L", doc_local), ("V", doc_visitante)):
+            eq_nom = str(((doc or {}).get("equipo") or {}).get("nombre") or lado).strip().lower()
+            for idx, p in enumerate((doc or {}).get("partidos") or []):
+                if not isinstance(p, dict):
+                    continue
+                c_f, c_c = _extraer_metrica_fila_ft(p, ("corners", "corners_favor"))
+                if c_f is None or c_c is None:
+                    continue
+                pid = str(p.get("id_partido") or "").strip()
+                if pid:
+                    key = f"id:{pid}"
+                else:
+                    riv = str(p.get("rival") or "").strip().lower()
+                    fec = str(p.get("fecha") or "").strip()
+                    key = f"{fec}:{min(eq_nom, riv)}:{max(eq_nom, riv)}:{lado}_{idx}"
+                if key in vistos:
+                    continue
+                vistos.add(key)
+                vals.append(float(c_f) + float(c_c))
+
+    n = len(vals)
+    if n < 2:
+        return {"n": n, "media": None, "varianza": None, "var_sobre_media": None, "sobredisperso": False}
+    media = sum(vals) / n
+    varianza = sum((x - media) ** 2 for x in vals) / (n - 1)
+    v_m = (varianza / media) if media > 0 else None
+    sobredisperso = bool(n >= 8 and v_m is not None and v_m > _FACTOR_SOBREDISPERSION_NB)
+    return {
+        "n": n,
+        "media": round(media, 4),
+        "varianza": round(varianza, 4),
+        "var_sobre_media": round(v_m, 4) if v_m is not None else None,
+        "sobredisperso": sobredisperso,
+    }
+
+
+def es_mercado_cronologia_mitades(s: Any) -> bool:
+    """Identifica selecciones dependientes de mitades/cronología real (1T, 2T, Ganador 1T, 1T/FT, Gol ambos tiempos)."""
+    def _vg(obj: Any, k: str, d: Any = None) -> Any:
+        return obj.get(k, d) if isinstance(obj, dict) else getattr(obj, k, d)
+
+    per = str(_vg(s, "periodo", "FT") or "FT").strip().upper()
+    if per in ("1T", "2T"):
+        return True
+    idm = str(_vg(s, "id_mercado", "") or "").strip().lower()
+    if idm in ("ganador_1t", "_1t_ft", "gol_ambos_tiempos"):
+        return True
+    ev = str(_vg(s, "evento", "") or "").strip().lower()
+    if ev in _EVENTOS_CRONOLOGIA_MITADES:
+        return True
+    if "1t" in ev and "ft" in ev:
+        return True
+    return False
+
+
+def _contar_cronologia_doc(doc: Any, cc_extra: Any = None) -> tuple[int, bool]:
+    """Devuelve (n_partidos_con_eventos, tiene_metadatos_o_partidos)."""
+    if isinstance(doc, dict):
+        cc = doc.get("cuadro_c_timeline")
+        if isinstance(cc, dict) and "_meta" in cc:
+            return int((cc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+        if isinstance(cc_extra, dict) and "_meta" in cc_extra:
+            return int((cc_extra.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+        pts = doc.get("partidos")
+        if isinstance(pts, list):
+            n_ev = 0
+            for p in pts:
+                if not isinstance(p, dict):
+                    continue
+                m1 = p.get("marcador_1t")
+                ev = p.get("eventos_gol") or p.get("goles_minutos")
+                has_m1 = isinstance(m1, dict) and (m1.get("equipo") is not None or m1.get("rival") is not None)
+                if has_m1 or (isinstance(ev, list) and len(ev) > 0) or p.get("goles_1t") is not None:
+                    n_ev += 1
+            return n_ev, True
+    if isinstance(cc_extra, dict) and "_meta" in cc_extra:
+        return int((cc_extra.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0), True
+    return 0, False
+
+
+def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
+    """
+    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) usando
+    estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`).
+    Deja pasar mocks mínimos sin `doc_local`/`doc_visitante` dicts (como `_DummyMotor`).
+    """
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        k_min = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    except Exception:
+        k_min = 10
+
+    if motor is None:
+        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+
+    doc_l = getattr(motor, "doc_local", None)
+    doc_v = getattr(motor, "doc_visitante", None)
+    cc_l_m = getattr(motor, "cuadro_c_local", None)
+    cc_v_m = getattr(motor, "cuadro_c_visita", None)
+
+    n_ev_l, has_l = _contar_cronologia_doc(doc_l, cc_l_m)
+    n_ev_v, has_v = _contar_cronologia_doc(doc_v, cc_v_m)
+    if not (has_l or has_v):
+        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+
+    k_eval = min(n_ev_l, n_ev_v) if (has_l and has_v) else (n_ev_l if has_l else n_ev_v)
+    ok = k_eval >= k_min
+    tiene_cc = (
+        (isinstance(doc_l, dict) and isinstance(doc_l.get("cuadro_c_timeline"), dict))
+        or (isinstance(doc_v, dict) and isinstance(doc_v.get("cuadro_c_timeline"), dict))
+        or isinstance(cc_l_m, dict)
+        or isinstance(cc_v_m, dict)
+    )
+    nt_l = len((doc_l or {}).get("partidos") or []) if isinstance(doc_l, dict) else 0
+    nt_v = len((doc_v or {}).get("partidos") or []) if isinstance(doc_v, dict) else 0
+    ok_analizar = ok or (not tiene_cc and max(nt_l, nt_v) < k_min)
+    return {
+        "ok": ok,
+        "ok_analizar": ok_analizar,
+        "k_eval": k_eval,
+        "n_ev_local": n_ev_l,
+        "n_ev_visitante": n_ev_v,
+        "k_min": k_min,
+        "aplica": True,
+    }
+
+
+def _reparto_mitades_sin_validar(motor: Any) -> bool:
+    """True si la división 1T/2T es 50/50 o carece de cronología verificada (Bloque 3.5)."""
+    if motor is None:
+        return False
+    tasas = getattr(motor, "tasas", None)
+    proc = str(getattr(tasas, "procedencia_tiempos", "") or "").lower()
+    if "50/50" in proc:
+        return True
+    cron = cronologia_mitades_verificada(motor)
+    return bool(cron.get("aplica") and not cron.get("ok"))
+
+
 def distribucion_conteo(mu: float | None, maximo: int = MAX_CONTEO,
                         parametros: Parametros | None = None,
                         k_nb: float | None = None) -> list[float]:
@@ -974,11 +1241,18 @@ def repartir_lambdas_por_tiempos(
             return lam_ft / 2.0, lam_ft / 2.0
         return lam_ft * (a / total), lam_ft * (b / total)
 
+    use_50_l = ((cruzado["local"]["1T"] or 0.0) + (cruzado["local"]["2T"] or 0.0)) <= 0
+    use_50_v = ((cruzado["visitante"]["1T"] or 0.0) + (cruzado["visitante"]["2T"] or 0.0)) <= 0
     l1, l2 = reparto(lam_ft_l, "local")
     v1, v2 = reparto(lam_ft_v, "visitante")
+    proc_txt = (
+        "reparto 50/50 sin validar (xG por mitades nulo)"
+        if (use_50_l or use_50_v)
+        else "xG cruzado por tiempos (inferido)"
+    )
     notas.append("Probabilidades por tiempo INFERIDAS del xG cruzado por mitades, "
                  "normalizadas para sumar FT; se asume independencia temporal entre mitades.")
-    return l1, v1, l2, v2, "xG cruzado por tiempos (inferido)", notas
+    return l1, v1, l2, v2, proc_txt, notas
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2409,6 +2683,14 @@ class MotorMercados:
 
     # 24. Total de córneres
     def _m_total_corners(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
+        cob = cobertura_corners_por_equipo(self, bando=None)
+        if not cob["ok_catalogo"]:
+            return ResultadoMercado(
+                idm, numero, nombre, estado="datos_insuficientes",
+                nota=(f"Córneres: datos insuficientes ({cob['n_min']}/{cob['den']}; "
+                      f"mínimo {cob['min_requerido']}/15 partidos con dato real por equipo)."),
+                detalle={"cobertura_corners": cob},
+            )
         mu_l = self._mu_corners("local")
         mu_v = self._mu_corners("visitante")
         ml_g = (self.muestras.get("local_general") or MuestraEquipo("")).metricas.get("corners_favor")
@@ -2424,8 +2706,24 @@ class MotorMercados:
         if not eventos:
             return ResultadoMercado(idm, numero, nombre, estado="datos_insuficientes",
                                     nota="No se pudo construir la distribución de córneres.")
-        sels: list[Seleccion] = []
+        mu_tot = mu_l + mu_v
+        disp = _dispersion_corners_muestra(self.doc_local, self.doc_visitante, bando=None)
+        k_emp = None
+        dist_activa = "poisson"
         base = eventos["poisson"]
+        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+            var_mod = mu_tot * float(disp["var_sobre_media"])
+            k_emp = _k_desde_media_varianza(mu_tot, var_mod)
+            if k_emp and not math.isinf(k_emp) and k_emp > 0:
+                dist_nb = distribucion_conteo(
+                    mu_tot,
+                    parametros=Parametros(distribucion_conteos="binomial_negativa", k_nb=k_emp),
+                    k_nb=k_emp,
+                )
+                base = {k: p for k, p in enumerate(dist_nb)}
+                dist_activa = "binomial_negativa"
+
+        sels: list[Seleccion] = []
         for linea in LINEAS_CORNERES:
             sels.append(self._sel(idm, nombre, f"corners_over_{linea}",
                                   f"más de {linea} córneres", "FT", None, linea,
@@ -2434,13 +2732,21 @@ class MotorMercados:
                 sels.append(self._sel(idm, nombre, f"corners_under_{linea}",
                                       f"menos de {linea} córneres", "FT", None, linea,
                                       prob_under(base, linea)))
+        tag_dist = (
+            f"Binomial Negativa (var/media={disp['var_sobre_media']:.2f}, k={k_emp:.2f})"
+            if dist_activa == "binomial_negativa"
+            else f"Poisson (var/media={disp['var_sobre_media']:.2f})" if disp.get("var_sobre_media") is not None else "Poisson"
+        )
         return ResultadoMercado(
             idm, numero, nombre, selecciones=sels,
-            nota=(f"Córneres: cruce bilateral de córneres propios con concedidos por el rival, "
-                  f"ajustado por factor de bloqueo interior y moduladores (μ_L={mu_l:.2f}, μ_V={mu_v:.2f}, total={mu_l+mu_v:.2f}). "
+            nota=(f"Córneres [{tag_dist}]: cruce bilateral de córneres propios con concedidos por el rival, "
+                  f"ajustado por factor de bloqueo interior y moduladores (μ_L={mu_l:.2f}, μ_V={mu_v:.2f}, total={mu_tot:.2f}). "
                   f"Difiere del Cuadro Especialista, que muestra la producción ofensiva unilateral del Doble ADN."),
             detalle={"mu_local": mu_l, "mu_visitante": mu_v,
-                     "mu_total": mu_l + mu_v})
+                     "mu_total": mu_tot, "distribucion_activa": dist_activa,
+                     "var_sobre_media": disp.get("var_sobre_media"),
+                     "k_nb_efectiva": round(k_emp, 4) if k_emp and not math.isinf(k_emp) else None,
+                     "cobertura_corners": cob})
 
     def _mu_corners(self, bando: str) -> float | None:
         """λ de córneres de un equipo: (propios + concedidos por el rival) / 2 ponderado por factor de bloqueo y guion."""
@@ -2573,15 +2879,36 @@ class MotorMercados:
 
     # 28-29. Córneres por equipo
     def _corners_equipo(self, numero: int, idm: str, nombre: str, bando: str) -> ResultadoMercado:
-        mu = self._mu_corners(bando)
         equipo = self.nombre_local if bando == "local" else self.nombre_visitante
+        cob = cobertura_corners_por_equipo(self, bando=bando)
+        if not cob["ok_catalogo"]:
+            return ResultadoMercado(
+                idm, numero, nombre, estado="datos_insuficientes",
+                nota=(f"Córneres {equipo}: datos insuficientes ({cob['n_min']}/{cob['den']}; "
+                      f"mínimo {cob['min_requerido']}/15 partidos con dato real)."),
+                detalle={"cobertura_corners": cob},
+            )
+        mu = self._mu_corners(bando)
         mg = (self.muestras.get(f"{bando}_general") or MuestraEquipo("")).metricas.get("corners_favor")
         p_ceros = mg.pct_ceros if (mg and hasattr(mg, "pct_ceros")) else 0.0
 
         if mu is None or mu < 0.75 or p_ceros > 0.30:
             return ResultadoMercado(idm, numero, nombre, estado="datos_insuficientes",
                                     nota="Faltan córneres o el equipo carece de cobertura oficial (mu < 0.75 o >30% sin registro).")
-        dist_p = distribucion_conteo(mu, parametros=Parametros(distribucion_conteos="poisson"))
+        disp = _dispersion_corners_muestra(self.doc_local, self.doc_visitante, bando=bando)
+        k_emp = None
+        dist_activa = "poisson"
+        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+            k_emp = _k_desde_media_varianza(mu, mu * float(disp["var_sobre_media"]))
+        if k_emp and not math.isinf(k_emp) and k_emp > 0:
+            dist_p = distribucion_conteo(
+                mu,
+                parametros=Parametros(distribucion_conteos="binomial_negativa", k_nb=k_emp),
+                k_nb=k_emp,
+            )
+            dist_activa = "binomial_negativa"
+        else:
+            dist_p = distribucion_conteo(mu, parametros=Parametros(distribucion_conteos="poisson"))
         dist = {k: p for k, p in enumerate(dist_p)}
         sels: list[Seleccion] = []
         for linea in LINEAS_CORNERES[:12]:
@@ -2592,10 +2919,18 @@ class MotorMercados:
                 sels.append(self._sel(idm, nombre, f"{bando}_corners_under_{linea}",
                                       f"{equipo}: menos de {linea} córneres", "FT", equipo, linea,
                                       prob_under(dist, linea)))
+        tag_dist = (
+            f"Binomial Negativa (var/media={disp['var_sobre_media']:.2f}, k={k_emp:.2f})"
+            if dist_activa == "binomial_negativa"
+            else f"Poisson (var/media={disp['var_sobre_media']:.2f})" if disp.get("var_sobre_media") is not None else "Poisson"
+        )
         return ResultadoMercado(
             idm, numero, nombre, selecciones=sels,
-            nota=(f"Córneres {equipo}: Poisson bilateral ponderado (μ={mu:.2f}), ajustado por resistencia defensiva rival y moduladores."),
-            detalle={"mu": mu},
+            nota=(f"Córneres {equipo} [{tag_dist}]: μ={mu:.2f}, ajustado por resistencia defensiva rival y moduladores."),
+            detalle={"mu": mu, "distribucion_activa": dist_activa,
+                     "var_sobre_media": disp.get("var_sobre_media"),
+                     "k_nb_efectiva": round(k_emp, 4) if k_emp and not math.isinf(k_emp) else None,
+                     "cobertura_corners": cob},
         )
 
     def _m_corners_local(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
@@ -2793,10 +3128,19 @@ def _linea_seleccion(seleccion: "Seleccion", umbral: float,
     """Una viñeta: «• Menos de 4.5 goles (FT): 88,5%»."""
     linea = f"• {etiqueta_corta(seleccion)} ({seleccion.periodo}): " \
             f"{formatear_pct(seleccion.probabilidad, umbral)}"
+    extras: list[str] = []
+    if getattr(seleccion, "bajo_vigilancia", False) and getattr(seleccion, "prob_calibrada", None) is not None:
+        extras.append(f"calibrada: {float(seleccion.prob_calibrada) * 100.0:.1f}%".replace(".", ","))
     mot = str(getattr(seleccion, "motivo", "") or "").lower()
+    if "reparto 50/50 sin validar" in mot:
+        extras.append("reparto 50/50 sin validar")
     if "sin calibración validada" in mot:
-        return f"{linea} — sin calibración validada"
-    return linea + sufijo
+        linea = f"{linea} — sin calibración validada"
+    elif sufijo:
+        linea = linea + sufijo
+    if extras:
+        linea = f"{linea} [{' · '.join(extras)}]"
+    return linea
 
 
 def agrupar_por_mercado(selecciones: list["Seleccion"]) -> list[tuple[str, list["Seleccion"]]]:
@@ -3832,8 +4176,16 @@ def es_seleccion_competitiva_ticket(
     if "-0.5 gol" in et or "menos de 0.5 gol" in et:
         return False
 
+    if motor is not None and es_mercado_cronologia_mitades(s):
+        if not cronologia_mitades_verificada(motor).get("ok", True):
+            return False
+
     # 1. CÓRNERES
     if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev:
+        if motor is not None:
+            bando_c = "local" if (eq and eq == eq_l or ev.startswith("local_")) else ("visitante" if (eq and eq == eq_v or ev.startswith("visitante_")) else None)
+            if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
+                return False
         if lin is None:
             return False
         lin_f = float(lin)
@@ -4134,7 +4486,7 @@ def filtrar_top_opciones_ticket(
     d_v = doc_visitante or getattr(motor, "doc_visitante", None)
     competitivas = [
         s for s in selecciones
-        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
         and not tiene_desvio_excesivo_calibracion(s, d_l, d_v, eq_l, eq_v)[0]
     ]
     if len(competitivas) <= max_opciones:
@@ -4291,9 +4643,11 @@ def seleccionar_top_5_jugadas_recomendadas(
     doc_v_m = getattr(motor, "doc_visitante", {}) if motor is not None else {}
     cc_l = (doc_l_m.get("cuadro_c_timeline") or {}) if isinstance(doc_l_m, dict) else {}
     cc_v = (doc_v_m.get("cuadro_c_timeline") or {}) if isinstance(doc_v_m, dict) else {}
-    n_ev_l = int((cc_l.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_l, dict) else 0
-    n_ev_v = int((cc_v.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_v, dict) else 0
-    k_eval_cron = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    cron_info_top = cronologia_mitades_verificada(motor)
+    n_ev_l = int(cron_info_top.get("n_ev_local", (cc_l.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_l, dict) else 0)
+    n_ev_v = int(cron_info_top.get("n_ev_visitante", (cc_v.get("_meta") or {}).get("n_partidos_con_eventos", 0)) if isinstance(cc_v, dict) else 0)
+    k_eval_cron = int(cron_info_top.get("k_eval", min(n_ev_l, n_ev_v))) if motor is not None else min(n_ev_l, n_ev_v)
+    cron_mitades_ok_top = bool(cron_info_top.get("ok", True))
 
     lam_b_l = float(rec.get("lambda_base_local") or lam_l)
     lam_b_v = float(rec.get("lambda_base_visita") or lam_v)
@@ -4470,13 +4824,35 @@ def seleccionar_top_5_jugadas_recomendadas(
     if isinstance(bloq_mot, (set, list, tuple)):
         for b_m in bloq_mot:
             mercados_mitad_bloq.add(str(b_m).lower())
-    sin_mitades_goles = ("goles" in mercados_mitad_bloq)
+    sin_mitades_goles = ("goles" in mercados_mitad_bloq) or (motor is not None and not cron_mitades_ok_top)
     if sin_mitades_goles:
         candidatas = [
             s for s in candidatas
-            if str(_v(s, "periodo") or "FT").strip().upper() not in ("1T", "2T")
-            and str(_v(s, "evento") or "").lower() not in ("gol_1t", "gol_2t")
+            if not es_mercado_cronologia_mitades(s)
         ]
+    if motor is not None:
+        _c_filt = []
+        for s in candidatas:
+            ev_s = str(_v(s, "evento") or "").lower()
+            m_s = str(_v(s, "mercado") or "").lower()
+            eq_s = _v(s, "equipo", None)
+            if ("corner" in ev_s or "corner" in m_s or "córner" in m_s):
+                bando_c = "local" if (eq_s == eq_l or ev_s.startswith("local_")) else ("visitante" if (eq_s == eq_v or ev_s.startswith("visitante_")) else None)
+                if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
+                    continue
+            try:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                cal_chk = evaluar_familia_conciencia_cached(
+                    str(_v(s, "mercado") or ""),
+                    equipo=str(eq_s) if eq_s and str(eq_s) not in ("None", "Total") else None,
+                    prob_bruta=float(_v(s, "probabilidad", 0.0) or 0.0),
+                )
+                if cal_chk.get("veto_top5"):
+                    continue
+            except Exception:
+                pass
+            _c_filt.append(s)
+        candidatas = _c_filt
     if "corners" in mercados_mitad_bloq:
         candidatas = [
             s for s in candidatas
@@ -4690,6 +5066,7 @@ def seleccionar_top_5_jugadas_recomendadas(
         if (
             not tiene_2t_05
             and not sin_mitades_goles
+            and cron_mitades_ok_top
             and not desactivar_prioridad_2t_copa
             and prom_p26 is not None
             and prom_p26 >= umbral_p26_val
@@ -5234,14 +5611,29 @@ def seleccionar_top_5_jugadas_recomendadas(
         except Exception:
             pass
 
+        cal_info_p: dict[str, Any] = {}
+        try:
+            from agente_consciente import evaluar_familia_conciencia_cached
+            eq_p = _v(s, "equipo", None)
+            cal_info_p = evaluar_familia_conciencia_cached(
+                str(_v(s, "mercado") or ""),
+                equipo=str(eq_p) if eq_p and str(eq_p) not in ("None", "Total") else None,
+                prob_bruta=prob,
+            )
+        except Exception:
+            cal_info_p = {}
+        p_cal_item = cal_info_p.get("prob_calibrada")
+        bajo_vig_item = bool(cal_info_p.get("bajo_vigilancia", False))
+        cal_badge_str = f" · Cal {float(p_cal_item) * 100.0:.1f}%" if (bajo_vig_item and p_cal_item is not None) else ""
+
         estado_raw = str(_v(s, "estado") or "mantiene")
         est_badge = "SÓLIDA" if estado_raw == "mantiene" else "SENSIBLE"
         if ev_pct is not None and stake_pct is not None:
-            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}% (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)"
+            badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · EV {ev_pct:+.1f}% · Stake: {stake_pct:.1f}%)"
+            etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (EV {ev_pct:+.1f}% | Cuota Mín: {cuota_minima:.2f} | Stake: {stake_pct:.1f}%)"
         else:
-            badge_completo = f"{prob * 100.0:.1f}% ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
-            etiqueta_valor_str = f"{prob * 100.0:.1f}% (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
+            badge_completo = f"{prob * 100.0:.1f}%{cal_badge_str} ({est_badge} · Cuota Mín: {cuota_minima:.2f})"
+            etiqueta_valor_str = f"{prob * 100.0:.1f}%{cal_badge_str} (Cuota Justa: {cuota_justa:.2f} | Cuota Mín: {cuota_minima:.2f})"
 
         podio.append({
             "rank": idx,
@@ -5251,6 +5643,11 @@ def seleccionar_top_5_jugadas_recomendadas(
             "etiqueta": _etiqueta_limpia(s),
             "probabilidad": prob,
             "probabilidad_pct": f"{prob * 100.0:.1f}%",
+            "prob_calibrada": p_cal_item,
+            "prob_calibrada_pct": f"{float(p_cal_item) * 100.0:.1f}%" if p_cal_item is not None else None,
+            "familia_conciencia": cal_info_p.get("familia"),
+            "brecha_conciencia_pp": cal_info_p.get("brecha_pp"),
+            "bajo_vigilancia": bajo_vig_item,
             "prob_base_poisson": round(prob_base_p * 100.0, 1),
             "prob_ajustada_ticket": round(prob * 100.0, 1),
             "cuota_justa": cuota_justa,
@@ -6288,11 +6685,34 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                                         params, aviso=avisar)
     requeridos_goles = [n for n, _ in escenarios_goles()]
     requeridos_conteos = [n for n, _ in escenarios_conteos()]
+    _cron_an = cronologia_mitades_verificada(motor)
+    _rep_5050 = _reparto_mitades_sin_validar(motor)
+    _cob_corn_g = cobertura_corners_por_equipo(motor, bando=None)
+    _cob_corn_l = cobertura_corners_por_equipo(motor, bando="local")
+    _cob_corn_v = cobertura_corners_por_equipo(motor, bando="visitante")
+
     selecciones: list[Seleccion] = []
     for res in mercados:
         for s in res.selecciones:
             if not s.estimable or s.probabilidad is None:
                 continue
+            if es_mercado_cronologia_mitades(s) and not _cron_an.get("ok_analizar", True):
+                continue
+            if res.id_mercado == "total_corners" and not _cob_corn_g.get("ok_catalogo", True):
+                continue
+            if res.id_mercado == "corners_local" and not _cob_corn_l.get("ok_catalogo", True):
+                continue
+            if res.id_mercado == "corners_visitante" and not _cob_corn_v.get("ok_catalogo", True):
+                continue
+            try:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                _cal_s = evaluar_familia_conciencia_cached(s.mercado, equipo=s.equipo, prob_bruta=float(s.probabilidad))
+                setattr(s, "prob_calibrada", _cal_s.get("prob_calibrada"))
+                setattr(s, "bajo_vigilancia", bool(_cal_s.get("bajo_vigilancia", False)))
+                setattr(s, "veto_top5", bool(_cal_s.get("veto_top5", False)))
+                setattr(s, "familia_conciencia", _cal_s.get("familia"))
+            except Exception:
+                pass
             esc = sensibilidad.get(_clave_a_texto(s.clave_unica), {})
             s.escenarios = esc
             if s.probabilidad <= params.umbral:
@@ -6311,6 +6731,10 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             s.estado = estado
             if motivo:
                 s.motivo = motivo
+            if _rep_5050 and es_mercado_cronologia_mitades(s):
+                mot_cur = str(getattr(s, "motivo", "") or "")
+                if "reparto 50/50 sin validar" not in mot_cur.lower():
+                    setattr(s, "motivo", f"{mot_cur}; reparto 50/50 sin validar".strip("; "))
             selecciones.append(s)
 
     # Deduplicado exacto de mercado/evento/periodo/equipo/línea

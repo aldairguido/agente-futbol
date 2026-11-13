@@ -972,7 +972,7 @@ def generar_reporte_xai_telegram(
     else:
         n_ev_v_tel = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
 
-    k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel) if (n_ev_l_tel > 0 and n_ev_v_tel > 0) else max(n_ev_l_tel, n_ev_v_tel)
+    k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel)
     from decision_cobertura import cargar_umbrales_cobertura
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
@@ -1327,7 +1327,7 @@ def generar_veredicto_tactico_partido(
     else:
         n_ev_v = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
 
-    k_eval_ver = min(n_ev_l, n_ev_v) if (n_ev_l > 0 and n_ev_v > 0) else max(n_ev_l, n_ev_v)
+    k_eval_ver = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
     k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
 
@@ -1377,8 +1377,9 @@ def generar_veredicto_tactico_partido(
     else:
         if k_eval_ver < k_min_cron:
             c4 = (
-                f"4. Dinámica de la segunda mitad: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
-                f"{etq_vol_2t} y {txt_p26}). Estimación respaldada en volumen de mitades (cronología por minuto no concluyente)."
+                f"4. Dinámica de la segunda mitad: {mkt_2t} al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"{etq_vol_2t} y {txt_p26}) [reparto mitades no validado en Sección 1/Top 5 por "
+                f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
         else:
             c4 = (

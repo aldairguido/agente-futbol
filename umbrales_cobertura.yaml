@@ -42,3 +42,9 @@ umbrales:
   # Regla 23 / Patrón 26: Umbral de poder de cierre en 2T (sesgo diésel)
   # Aísla el cuartil superior (P75 = 0.6041) de equipos con aceleración extrema en 2T
   umbral_p26_cierre_2t: 0.51  # regla operativa, sin validación cronológica
+
+  # Bloque 3 (3.2): Mínimo de partidos con dato real de córneres por equipo para Top 5 / Validadas
+  min_partidos_corners_por_equipo: 8  # regla operativa, sin validación cronológica
+
+  # Bloque 3 (3.3): Brecha histórica máxima permitida (pp) en /conciencia para entrar al Top 5
+  max_brecha_familia_top5_pp: -10.0  # regla operativa, sin validación cronológica

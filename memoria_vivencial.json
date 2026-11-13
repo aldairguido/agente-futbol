@@ -1,7 +1,7 @@
 {
     "madurez": 4475,
     "estado_adaptativo": "en calibración empírica (muestra en desarrollo)",
-    "identidad_base": "Agente cuantitativo en fase de calibración empírica (24/30 partidos únicos evaluados, 2040 aciertos / 395 fallos, win rate 83.8%). Brier Score: 0.1302 (climatología base: 0.1359). Especialidad preliminar en Hándicap, Total de goles. Priorizo la rigurosidad matemática y la recolección de muestra antes de atribuirme peritaje consolidado.",
+    "identidad_base": "Agente cuantitativo en fase de calibración empírica (24/30 partidos únicos evaluados, 2040 aciertos / 395 fallos, win rate 83.8%). Brier Score: 0.1302 (climatología base: 0.1359). Especialidad preliminar en Goles por equipo, Córneres partido. Priorizo la rigurosidad matemática y la recolección de muestra antes de atribuirme peritaje consolidado.",
     "resumen_empirico": {
         "evaluables": 2435,
         "ganadas": 2040,
@@ -12,14 +12,19 @@
         "evidencia_suficiente": false,
         "mercados_estrella": [
             {
+                "familia": "Goles por equipo",
+                "acierto": 0.9167,
+                "evaluables": 864
+            },
+            {
+                "familia": "Córneres partido",
+                "acierto": 0.8946,
+                "evaluables": 294
+            },
+            {
                 "familia": "Hándicap",
                 "acierto": 0.8942,
                 "evaluables": 104
-            },
-            {
-                "familia": "Total de goles",
-                "acierto": 0.8864,
-                "evaluables": 1338
             },
             {
                 "familia": "Tarjetas",
@@ -34,14 +39,24 @@
         ],
         "mercados_vigilancia": [
             {
+                "familia": "Córneres por equipo",
+                "acierto": 0.6414,
+                "brecha_pp": -27.33
+            },
+            {
+                "familia": "Ambos anotan",
+                "acierto": 0.6,
+                "brecha_pp": -15.78
+            },
+            {
                 "familia": "Gol en ambos tiempos",
                 "acierto": 0.7317,
                 "brecha_pp": -6.7
             },
             {
-                "familia": "Córneres",
-                "acierto": 0.7416,
-                "brecha_pp": -17.18
+                "familia": "Goles totales partido",
+                "acierto": 0.8312,
+                "brecha_pp": -6.48
             }
         ],
         "generado_en": "2026-10-18 01:19:18"
