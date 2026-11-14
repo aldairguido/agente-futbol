@@ -4308,6 +4308,116 @@ def evaluar_promocion_regla_futura(
     }
 
 
+def _macro_familia_ronda8(mercado: str) -> str:
+    """Agrupa un nombre de mercado en las 5 macro-familias de la tabla de Ronda 7/8."""
+    fam = _familia_de(str(mercado or ""))
+    f = str(fam or "").lower()
+    if any(k in f for k in ("1x2", "ganador", "doble oportunidad", "hándicap", "handicap", "sin empate")):
+        return "Resultado/DC/Hándicap"
+    if any(k in f for k in ("esquina", "córner", "corner")):
+        return "Córneres"
+    if any(k in f for k in ("tarjeta", "amarilla", "roja")):
+        return "Tarjetas"
+    if "equipo" in f or "anota en" in f or "ambos" in f or "primer" in f:
+        return "Goles Equipo/BTTS/1erGol"
+    if "goles" in f or "gol" in f or "mitad" in f or "tiempo" in f or "fiesta" in f:
+        return "Goles Partido/Mitades"
+    return fam or "Otras"
+
+
+def analizar_regresion_994209a_vs_5e8425f(
+    observaciones: list[dict[str, Any]],
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 1: Compara 994209a (`v9942`), 5e8425f (`v5e84`) y el archivo original (`arch`)
+    con bootstrap agrupado por partido sobre las mismas filas OOS de Ronda 7 Punto 3.
+    Desglosa por macro-familia y familia exacta, cuantifica el aporte porcentual de cada
+    familia al cambio de Brier y Log-Loss (`v9942 - v5e84`), y documenta los commits causales.
+    """
+    filtradas = [
+        o for o in observaciones
+        if isinstance(o, dict) and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+    ]
+    base_comp = evaluar_oos_comparativo_sin_diseno(filtradas, n_boot=n_boot, seed=seed)
+
+    por_macro_in: dict[str, list[tuple[str, int, dict[str, float]]]] = {}
+    por_macro_rows: dict[str, list[dict[str, Any]]] = {}
+    for o in filtradas:
+        mf = _macro_familia_ronda8(str(o.get("mercado") or ""))
+        por_macro_in.setdefault(mf, []).append(
+            (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        )
+        por_macro_rows.setdefault(mf, []).append(o)
+
+    tot_db_sum = 0.0
+    tot_dll_sum = 0.0
+    for o in filtradas:
+        pr = o.get("probs") or {}
+        if "v9942" in pr and "v5e84" in pr:
+            y = int(o["evento_ocurrio"])
+            tot_db_sum += ((float(pr["v9942"]) - y) ** 2) - ((float(pr["v5e84"]) - y) ** 2)
+            tot_dll_sum += log_loss_binario_valor(float(pr["v9942"]), y) - log_loss_binario_valor(float(pr["v5e84"]), y)
+
+    por_macro_familia: dict[str, dict[str, Any]] = {}
+    for _idx, (mf, rows_t) in enumerate(sorted(por_macro_in.items())):
+        st = bootstrap_brier_logloss_por_partido(rows_t, n_boot=n_boot, seed=seed)
+        raw_rows = por_macro_rows[mf]
+        sub_db = 0.0
+        sub_dll = 0.0
+        n_chg = 0
+        for r in raw_rows:
+            pr = r.get("probs") or {}
+            if "v9942" in pr and "v5e84" in pr:
+                y = int(r["evento_ocurrio"])
+                p9 = float(pr["v9942"])
+                p5 = float(pr["v5e84"])
+                if abs(p9 - p5) > 1e-6:
+                    n_chg += 1
+                sub_db += ((p9 - y) ** 2) - ((p5 - y) ** 2)
+                sub_dll += log_loss_binario_valor(p9, y) - log_loss_binario_valor(p5, y)
+        st["n_filas_cambiadas_9942_vs_5e84"] = n_chg
+        st["aporte_d_brier_pct"] = round((sub_db / tot_db_sum * 100.0), 2) if abs(tot_db_sum) > 1e-12 else 0.0
+        st["aporte_d_log_loss_pct"] = round((sub_dll / tot_dll_sum * 100.0), 2) if abs(tot_dll_sum) > 1e-12 else 0.0
+        por_macro_familia[mf] = st
+
+    return {
+        "n_filas": base_comp["total"]["n_filas"],
+        "n_partidos_unicos": base_comp["total"]["n_partidos_unicos"],
+        "total": base_comp["total"],
+        "por_macro_familia": por_macro_familia,
+        "por_familia": base_comp["por_familia"],
+        "atribucion_commits": {
+            "corners": {
+                "commit": "9593ba6",
+                "fecha_iso": "2026-11-13T04:16:01-05:00",
+                "mensaje": "feat(bloque-3): gate corners 8/15, NB sobredispersion, bootstrap /conciencia y gate mitades 10/15",
+                "archivos": ["motor_mercados.py", "umbrales_cobertura.yaml"],
+                "mecanismo": (
+                    "Introduce sobredispersión Binomial Negativa (`factor_sobredispersion_corners: 1.05` en "
+                    "`_dispersion_corners_muestra`, `_m_total_corners` y `_corners_equipo`) y el gate de "
+                    "cobertura `min_partidos_corners_por_equipo: 8` (que abstiene 104 filas en partidos sin "
+                    "8/15 muestras reales y suaviza colas extremas en 472/613 filas comunes)."
+                ),
+            },
+            "lambda": {
+                "commit": "c59c103",
+                "fecha_iso": "2026-11-13T03:45:08-05:00",
+                "mensaje": "feat(bloque-2): traza_lambda ordenada, parser 90-FT sin penaltis y aislamiento LLM",
+                "archivos": ["motor_patrones.py", "motor_mercados.py"],
+                "mecanismo": (
+                    "En `P13_Portero_Goles_Evitados` (`motor_patrones.py`), lee `goles_evitados` explícito "
+                    "cuando existe en la muestra, modificando `ratio_55` y `mult_sinc` en 6/85 partidos "
+                    "archivados (4/26 jobs OOS: Inter vs Club Brugge, Sabah FK vs Slavia Prague, "
+                    "RB Leipzig vs PSV Eindhoven y Lens vs Sporting CP)."
+                ),
+            },
+        },
+    }
+
+
 def tabla_ascii_minimalista(columnas: list[str], filas: list[list[str]]) -> str:
     """
     Respaldo en texto para consola o si la imagen no se puede generar. Deliberadamente
