@@ -43,7 +43,20 @@ BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
     "usar_gate_cronologia_mitades_10_15": False,
     "usar_calibracion_y_veto_conciencia": False,
     "usar_cuota_justa_114_top5": False,
+    "usar_guarda_doble_defensa_rota": False,
+    "usar_gate_goles_mitad_15_15": False,
+    "usar_kelly_conservador_min_3pct": False,
+    "usar_excluir_primer_gol_top5": False,
 }
+
+# Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
+_BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
+    "usar_cuota_justa_114_top5",
+    "usar_guarda_doble_defensa_rota",
+    "usar_gate_goles_mitad_15_15",
+    "usar_kelly_conservador_min_3pct",
+    "usar_excluir_primer_gol_top5",
+})
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
 
@@ -202,7 +215,7 @@ def banderas_comportamiento(
             for k in BANDERAS_COMPORTAMIENTO_DEFECTO:
                 nuevo[k] = (
                     False
-                    if (bool(activar_todas) and k == "usar_cuota_justa_114_top5")
+                    if (bool(activar_todas) and k in _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS)
                     else bool(activar_todas)
                 )
         for k, v in kwargs.items():

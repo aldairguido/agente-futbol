@@ -1558,6 +1558,8 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     es_gigante_visitante: Optional[bool] = None,
     traza_out: Optional[List[Dict[str, Any]]] = None,
     etapa_prefijo: str = "",
+    evitar_doble_defensa_rota_l: bool = False,
+    evitar_doble_defensa_rota_v: bool = False,
 ) -> Tuple[float, float, float, float]:
     """
     Implementa los Puntos 21, 22, 34, 35 y 40:
@@ -1624,6 +1626,11 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     factor_asedio_l = 1.18 if (tiene_asedio_verificado_l and posesion_proyectada_local >= 57.0 and (toques_area_local or 0.0) >= 22.0) else (
         1.15 if (tiene_asedio_verificado_l and posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0) else 1.0
     )
+
+    if evitar_doble_defensa_rota_l:
+        factor_def_rota_l = 1.0
+    if evitar_doble_defensa_rota_v:
+        factor_def_rota_v = 1.0
 
     # Punto 40: Prohibido apilar copa/eliminatoria con asedio/defensa rota (+68.75%):
     # Si es copa o torneo eliminatorio, el ajuste combinado está acotado estrictamente a <= 1.35x.

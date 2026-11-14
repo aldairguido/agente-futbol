@@ -27,15 +27,16 @@ def _cargar_ln() -> dict:
 
 def test_todas_las_banderas_conjunto_b_apagadas_por_defecto():
     u = dc.cargar_umbrales_cobertura()
-    assert len(dc.BANDERAS_COMPORTAMIENTO_DEFECTO) == 10
+    assert len(dc.BANDERAS_COMPORTAMIENTO_DEFECTO) == 14
     for clave in dc.BANDERAS_COMPORTAMIENTO_DEFECTO:
         assert u.get(clave) is False, f"{clave} debe estar en False por defecto"
         assert dc.bandera_activa(clave) is False
     assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.25, abs=1e-6)
 
+    excluidas = set(dc._BANDERAS_EXCLUIDAS_ACTIVAR_TODAS)
     with dc.banderas_comportamiento(activar_todas=True) as estado_on:
         for clave in dc.BANDERAS_COMPORTAMIENTO_DEFECTO:
-            esperado = False if clave == "usar_cuota_justa_114_top5" else True
+            esperado = False if clave in excluidas else True
             assert estado_on[clave] is esperado
             assert dc.bandera_activa(clave) is esperado
         assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.25, abs=1e-6)

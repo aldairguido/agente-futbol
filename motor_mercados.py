@@ -559,33 +559,111 @@ def _contar_cronologia_doc(doc: Any, cc_extra: Any = None) -> tuple[int, bool]:
     return 0, False
 
 
+def _contar_goles_mitad_doc(doc: Any) -> tuple[int, bool]:
+    """Cuenta partidos con marcador real por mitad (1T y 2T) en un doc de club (sin exigir minuto de gol)."""
+    if not isinstance(doc, dict):
+        return 0, False
+    partidos = doc.get("partidos")
+    if not isinstance(partidos, list) or not partidos:
+        return 0, False
+    n_con_mitad = 0
+    for p in partidos:
+        if not isinstance(p, dict):
+            continue
+        m1 = p.get("marcador_1t")
+        m2 = p.get("marcador_2t")
+        tiene_m1 = isinstance(m1, dict) and (
+            (m1.get("local") is not None and m1.get("visitante") is not None)
+            or (m1.get("equipo") is not None and m1.get("rival") is not None)
+        )
+        tiene_m2 = isinstance(m2, dict) and (
+            (m2.get("local") is not None and m2.get("visitante") is not None)
+            or (m2.get("equipo") is not None and m2.get("rival") is not None)
+        )
+        tiene_flat = (
+            p.get("goles_favor_1t") is not None
+            and p.get("goles_contra_1t") is not None
+            and p.get("goles_favor_2t") is not None
+            and p.get("goles_contra_2t") is not None
+        )
+        per = p.get("periodos") if isinstance(p.get("periodos"), dict) else {}
+        tiene_per = False
+        if isinstance(per.get("1T"), dict) and isinstance(per.get("2T"), dict):
+            def _per_ok(hd: dict[str, Any]) -> bool:
+                hm = hd.get("marcador")
+                if isinstance(hm, dict) and ((hm.get("equipo") is not None and hm.get("rival") is not None) or (hm.get("local") is not None and hm.get("visitante") is not None)):
+                    return True
+                for fl in (hd.get("filas") or []):
+                    if isinstance(fl, dict) and str(fl.get("clave") or "").strip().lower() in ("goles", "goals", "goles_favor"):
+                        if fl.get("equipo") is not None and fl.get("rival") is not None:
+                            return True
+                return False
+            tiene_per = _per_ok(per["1T"]) and _per_ok(per["2T"])
+        if (tiene_m1 and tiene_m2) or tiene_flat or tiene_per:
+            n_con_mitad += 1
+    return n_con_mitad, True
+
+
 def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
     """
-    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) usando
-    estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`).
-    Deja pasar mocks mínimos sin `doc_local`/`doc_visitante` dicts (como `_DummyMotor`).
+    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) por minutos
+    usando estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`), y reporta además
+    la cobertura real de goles por mitad (15/15). Bajo `usar_gate_goles_mitad_15_15`,
+    evalúa el gate por disponibilidad de goles por mitad (15/15) sin exigir minutos.
     """
     try:
-        from decision_cobertura import cargar_umbrales_cobertura
-        k_min = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+        from decision_cobertura import bandera_activa, cargar_umbrales_cobertura
+        umbr = cargar_umbrales_cobertura()
+        k_min = int(umbr.get("min_partidos_cronologia_verificada", 10))
+        k_gm_req = int(umbr.get("min_partidos_goles_mitad", 15))
+        usar_gm = bool(bandera_activa("usar_gate_goles_mitad_15_15"))
     except Exception:
         k_min = 10
+        k_gm_req = 15
+        usar_gm = False
 
     if motor is None:
-        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+        return {
+            "ok": True,
+            "ok_analizar": True,
+            "k_eval": k_min,
+            "k_min": k_min,
+            "aplica": False,
+            "n_goles_mitad_local": k_gm_req,
+            "n_goles_mitad_visitante": k_gm_req,
+            "n_goles_mitad_min": k_gm_req,
+            "goles_mitad_15_15_ok": True,
+            "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
+        }
 
     doc_l = getattr(motor, "doc_local", None)
     doc_v = getattr(motor, "doc_visitante", None)
     cc_l_m = getattr(motor, "cuadro_c_local", None)
     cc_v_m = getattr(motor, "cuadro_c_visita", None)
 
+    n_gm_l, has_gm_l = _contar_goles_mitad_doc(doc_l)
+    n_gm_v, has_gm_v = _contar_goles_mitad_doc(doc_v)
+    n_gm_min = min(n_gm_l, n_gm_v) if (has_gm_l and has_gm_v) else (n_gm_l if has_gm_l else (n_gm_v if has_gm_v else 0))
+    gm_ok = bool((has_gm_l or has_gm_v) and n_gm_min >= k_gm_req)
+
     n_ev_l, has_l = _contar_cronologia_doc(doc_l, cc_l_m)
     n_ev_v, has_v = _contar_cronologia_doc(doc_v, cc_v_m)
     if not (has_l or has_v):
-        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+        return {
+            "ok": gm_ok if (usar_gm and (has_gm_l or has_gm_v)) else True,
+            "ok_analizar": gm_ok if (usar_gm and (has_gm_l or has_gm_v)) else True,
+            "k_eval": n_gm_min if usar_gm else k_min,
+            "k_min": k_gm_req if usar_gm else k_min,
+            "aplica": bool(usar_gm and (has_gm_l or has_gm_v)),
+            "n_goles_mitad_local": n_gm_l,
+            "n_goles_mitad_visitante": n_gm_v,
+            "n_goles_mitad_min": n_gm_min,
+            "goles_mitad_15_15_ok": gm_ok,
+            "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
+        }
 
     k_eval = min(n_ev_l, n_ev_v) if (has_l and has_v) else (n_ev_l if has_l else n_ev_v)
-    ok = k_eval >= k_min
+    ok_min = k_eval >= k_min
     tiene_cc = (
         (isinstance(doc_l, dict) and isinstance(doc_l.get("cuadro_c_timeline"), dict))
         or (isinstance(doc_v, dict) and isinstance(doc_v.get("cuadro_c_timeline"), dict))
@@ -594,15 +672,28 @@ def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
     )
     nt_l = len((doc_l or {}).get("partidos") or []) if isinstance(doc_l, dict) else 0
     nt_v = len((doc_v or {}).get("partidos") or []) if isinstance(doc_v, dict) else 0
-    ok_analizar = ok or (not tiene_cc and max(nt_l, nt_v) < k_min)
+    ok_analizar_min = ok_min or (not tiene_cc and max(nt_l, nt_v) < k_min)
+
+    if usar_gm and (has_gm_l or has_gm_v):
+        ok_eff = gm_ok
+        ok_an_eff = gm_ok
+    else:
+        ok_eff = ok_min
+        ok_an_eff = ok_analizar_min
+
     return {
-        "ok": ok,
-        "ok_analizar": ok_analizar,
-        "k_eval": k_eval,
+        "ok": ok_eff,
+        "ok_analizar": ok_an_eff,
+        "k_eval": n_gm_min if usar_gm else k_eval,
         "n_ev_local": n_ev_l,
         "n_ev_visitante": n_ev_v,
-        "k_min": k_min,
+        "k_min": k_gm_req if usar_gm else k_min,
         "aplica": True,
+        "n_goles_mitad_local": n_gm_l,
+        "n_goles_mitad_visitante": n_gm_v,
+        "n_goles_mitad_min": n_gm_min,
+        "goles_mitad_15_15_ok": gm_ok,
+        "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
     }
 
 
@@ -2142,6 +2233,17 @@ class MotorMercados:
             _comp_freno = str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or "")
             _cob_asedio = bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None)
             try:
+                from decision_cobertura import bandera_activa as _ba_dr
+                _ev_dr_l = False
+                _ev_dr_v = False
+                if _ba_dr("usar_guarda_doble_defensa_rota"):
+                    for _st_dr in (_traza or []):
+                        if isinstance(_st_dr, dict) and _st_dr.get("regla") == "copa_asedio_defensa_rota":
+                            _mot_dr = str(_st_dr.get("motivo") or "")
+                            if "def_rota_V=x" in _mot_dr and "def_rota_V=x1.00" not in _mot_dr:
+                                _ev_dr_l = True
+                            if "def_rota_L=x" in _mot_dr and "def_rota_L=x1.00" not in _mot_dr:
+                                _ev_dr_v = True
                 lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
                     lam_base_local=float(lam_l),
                     lam_base_visita=float(lam_v),
@@ -2163,6 +2265,8 @@ class MotorMercados:
                     cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
                     traza_out=_traza_post_sinc,
                     etapa_prefijo="post_sinc_mercados",
+                    evitar_doble_defensa_rota_l=_ev_dr_l,
+                    evitar_doble_defensa_rota_v=_ev_dr_v,
                 )
             except TypeError:
                 lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
@@ -4313,6 +4417,7 @@ def es_seleccion_competitiva_ticket(
     eq_v: str = "Visitante",
     p_1x2: tuple[float, float, float] | None = None,
     motor: Any = None,
+    incluir_primer_gol: bool = True,
 ) -> bool:
     """
     Sección 8.4 (Auditoría 30/10/2026):
@@ -4440,7 +4545,9 @@ def es_seleccion_competitiva_ticket(
         return False
 
     # 5. GOLES PARTIDO (FT, 1T, 2T, BTTS, Primer Gol)
-    if "ambos_marcan" in ev or "btts" in ev or "primer_gol" in ev:
+    if "primer_gol" in ev:
+        return bool(incluir_primer_gol) and (per == "FT")
+    if "ambos_marcan" in ev or "btts" in ev:
         return per == "FT"
     if lin is not None:
         lin_f = float(lin)
@@ -4736,12 +4843,26 @@ def calcular_ev_y_stake_calibrado(
                 stake_pct = 0.0
                 estado_stake = "sin_stake_bajo_vigilancia"
             elif ev_calibrado > 0:
+                from decision_cobertura import bandera_activa as _ba_k3, cargar_umbrales_cobertura as _cu_k3
                 b_kelly = max(0.05, c_val - 1.0)
                 q_kelly = 1.0 - p_cal
-                f_quarter = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
-                stake_sugerido = round(max(min_stake, min(0.08, f_quarter)), 4)
-                stake_pct = round(stake_sugerido * 100.0, 1)
-                estado_stake = "activo"
+                f_quarter_cal = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
+                if _ba_k3("usar_kelly_conservador_min_3pct"):
+                    f_quarter_bruta = (((b_kelly * prob_b) - (1.0 - prob_b)) / b_kelly) * 0.25
+                    f_quarter = min(f_quarter_bruta, f_quarter_cal)
+                    tope_k = float(_cu_k3().get("stake_max_conservador_kelly", 0.03) or 0.03)
+                    if f_quarter <= 0.0:
+                        stake_sugerido = 0.0
+                        stake_pct = 0.0
+                        estado_stake = "sin_valor_bruto_o_calibrado"
+                    else:
+                        stake_sugerido = round(max(min_stake, min(tope_k, f_quarter)), 4)
+                        stake_pct = round(stake_sugerido * 100.0, 1)
+                        estado_stake = "activo"
+                else:
+                    stake_sugerido = round(max(min_stake, min(0.08, f_quarter_cal)), 4)
+                    stake_pct = round(stake_sugerido * 100.0, 1)
+                    estado_stake = "activo"
             else:
                 stake_sugerido = 0.0
                 stake_pct = 0.0
@@ -4984,10 +5105,12 @@ def seleccionar_top_5_jugadas_recomendadas(
         return False
 
     import copy as _copy
+    from decision_cobertura import bandera_activa as _ba_pg
+    _incluir_pg_top5 = not bool(_ba_pg("usar_excluir_primer_gol_top5"))
     candidatas = [
         (dict(s) if isinstance(s, dict) else _copy.copy(s))
         for s in selecciones
-        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, incluir_primer_gol=_incluir_pg_top5)
         and float(_v(s, "probabilidad", 0.0) or 0.0) >= 0.70
         and not _es_linea_trivial_top5(s)
     ]
