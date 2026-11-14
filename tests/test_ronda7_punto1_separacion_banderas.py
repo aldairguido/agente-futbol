@@ -35,8 +35,12 @@ def test_todas_las_banderas_conjunto_b_apagadas_por_defecto():
 
     with dc.banderas_comportamiento(activar_todas=True) as estado_on:
         for clave in dc.BANDERAS_COMPORTAMIENTO_DEFECTO:
-            assert estado_on[clave] is True
-            assert dc.bandera_activa(clave) is True
+            esperado = False if clave == "usar_cuota_justa_114_top5" else True
+            assert estado_on[clave] is esperado
+            assert dc.bandera_activa(clave) is esperado
+        assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.25, abs=1e-6)
+    with dc.banderas_comportamiento(activar_todas=True, usar_cuota_justa_114_top5=True) as estado_114:
+        assert estado_114["usar_cuota_justa_114_top5"] is True
         assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.14, abs=1e-6)
 
     # Al salir del contexto vuelven a False

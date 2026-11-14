@@ -120,7 +120,7 @@ def test_punto2_tabla_impacto_diseno_soloA_vs_AB():
             assert _1x2_pct(an.motor.matriz_ft) == exp["1x2"]
             assert len(top5) == exp["top5_len"]
 
-    with banderas_comportamiento(activar_todas=True):
+    with banderas_comportamiento(activar_todas=True, usar_cuota_justa_114_top5=True):
         for clave, dl, dv, el, ev, comp in casos:
             an, t, top5, _ = _ejecutar_caso(dl, dv, el, ev, comp)
             exp = esperado_AB[clave]
@@ -145,7 +145,7 @@ def test_punto2_traza_exacta_turkey_belgium_355_a_298():
         assert _1x2_pct(an_a.motor.matriz_ft)[2] == 81.70
         assert any("Belgium Gana" in str(x.get("etiqueta")) for x in top5_a)
 
-    with banderas_comportamiento(activar_todas=True):
+    with banderas_comportamiento(activar_todas=True, usar_cuota_justa_114_top5=True):
         an_ab, t_ab, top5_ab, _ = _ejecutar_caso(dl, dv, "Turquía", "Belgium")
         traza_ab = {f"{s['etapa']}:{s['regla']}": s for s in an_ab.motor.traza_lambda}
         assert round(float(traza_ab["doble_adn:doble_adn_60_40"]["lam_v_despues"]), 2) == 1.87

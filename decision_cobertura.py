@@ -200,7 +200,11 @@ def banderas_comportamiento(
         nuevo = dict(prev)
         if activar_todas is not None:
             for k in BANDERAS_COMPORTAMIENTO_DEFECTO:
-                nuevo[k] = bool(activar_todas)
+                nuevo[k] = (
+                    False
+                    if (bool(activar_todas) and k == "usar_cuota_justa_114_top5")
+                    else bool(activar_todas)
+                )
         for k, v in kwargs.items():
             if k in BANDERAS_COMPORTAMIENTO_DEFECTO:
                 nuevo[k] = bool(v)
