@@ -3747,6 +3747,94 @@ def evaluar_oos_comparativo_sin_diseno(
     }
 
 
+def fisher_exact_dos_colas(k1: int, n1: int, k2: int, n2: int) -> float:
+    """Test exacto de Fisher bilateral sobre tabla 2x2 [[k1, n1-k1], [k2, n2-k2]]."""
+    if n1 <= 0 or n2 <= 0:
+        return 1.0
+    r1 = int(n1)
+    r2 = int(n2)
+    c1 = int(k1) + int(k2)
+    n_tot = r1 + r2
+    if c1 <= 0 or c1 >= n_tot:
+        return 1.0
+    denom = math.comb(n_tot, c1)
+    if denom <= 0:
+        return 1.0
+
+    def _prob_hiper(x: int) -> float:
+        return (math.comb(r1, x) * math.comb(r2, c1 - x)) / denom
+
+    p_obs = _prob_hiper(int(k1))
+    x_min = max(0, c1 - r2)
+    x_max = min(r1, c1)
+    p_sum = sum(_prob_hiper(x) for x in range(x_min, x_max + 1) if _prob_hiper(x) <= p_obs + 1e-12)
+    return float(min(1.0, max(0.0, p_sum)))
+
+
+def benjamini_hochberg(p_values: list[float]) -> list[float]:
+    """Ajuste FDR Benjamini-Hochberg (q-valores ajustados por multiplicidad)."""
+    m = len(p_values)
+    if m == 0:
+        return []
+    orden = sorted(enumerate(p_values), key=lambda kv: float(kv[1]))
+    q_ord = [1.0] * m
+    acum = 1.0
+    for idx in range(m - 1, -1, -1):
+        _, pval = orden[idx]
+        rango = idx + 1
+        q = min(acum, min(1.0, float(pval) * m / rango))
+        q_ord[idx] = q
+        acum = q
+    out = [1.0] * m
+    for idx, (orig_i, _) in enumerate(orden):
+        out[orig_i] = round(q_ord[idx], 6)
+    return out
+
+
+def resumir_hipotesis_bh(
+    observaciones: list[dict[str, Any]],
+    alfa_fdr: float = 0.05,
+) -> list[dict[str, Any]]:
+    """
+    Evalúa cada regla-objetivo (`regla`, `objetivo`, `activo`, `evento_ocurrio`)
+    frente a su tasa base con Fisher bilateral y control Benjamini-Hochberg.
+    """
+    grupos: dict[tuple[str, str], list[tuple[bool, int]]] = {}
+    for row in observaciones:
+        clave = (str(row.get("regla") or ""), str(row.get("objetivo") or ""))
+        grupos.setdefault(clave, []).append((bool(row.get("activo")), int(row["evento_ocurrio"])))
+
+    filas: list[dict[str, Any]] = []
+    for (regla, objetivo), pares in sorted(grupos.items()):
+        act = [y for a, y in pares if a]
+        inact = [y for a, y in pares if not a]
+        n_eval = len(pares)
+        n_act = len(act)
+        k_act = sum(act)
+        k_base = sum(y for _, y in pares)
+        tasa_act = (k_act / n_act) if n_act > 0 else None
+        tasa_base = (k_base / n_eval) if n_eval > 0 else None
+        pval = fisher_exact_dos_colas(k_act, n_act, sum(inact), len(inact)) if (n_act > 0 and inact) else 1.0
+        filas.append({
+            "regla": regla,
+            "objetivo": objetivo,
+            "n_evaluables": n_eval,
+            "n_activaciones": n_act,
+            "aciertos_activada": k_act,
+            "tasa_activada": None if tasa_act is None else round(tasa_act, 4),
+            "aciertos_base": k_base,
+            "tasa_base": None if tasa_base is None else round(tasa_base, 4),
+            "p_valor": round(pval, 6),
+        })
+
+    qs = benjamini_hochberg([f["p_valor"] for f in filas])
+    for f, q in zip(filas, qs):
+        f["bh_q"] = q
+        f["significativa_bh"] = bool(q < alfa_fdr)
+        f["estado_validacion"] = "validada_bh" if f["significativa_bh"] else "hipótesis, no validada"
+    return filas
+
+
 def _hash_canonico_oos(payload_sin_hash: dict[str, Any]) -> str:
     crudo = json.dumps(payload_sin_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(crudo.encode("utf-8")).hexdigest()

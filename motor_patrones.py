@@ -1358,6 +1358,20 @@ def evaluar_micropatrones_combinatorios(
         "resumen_corto": mp04_resumen if mp04_act else "",
     })
 
+    _origenes_mp = {
+        "MP01_ASEDIO_2T_LOCAL": "Derivado post-hoc de Italy 3-1 France (12/11/2026: Italia xG 2T 2.04, GO 2T 3 vs Francia 1.20->0.43)",
+        "MP02_FRENO_CORNERS_VISITA": "Derivado post-hoc de Turkey 1-2 Belgium y Italy 3-1 France (corners visita <= 3 y concesion local <= 5)",
+        "MP03_1T_CONTENIDO_EXPLOSION_2T": "Derivado post-hoc de Italy 3-1 France y Turkey 1-2 Belgium (1T xG <= 0.70 y ratio 2T/1T >= 1.30)",
+        "MP04_DOMINIO_ESTERIL_VS_MURO": "Umbral heuristico de sesion (posesion >= 57%, remates >= 10, xG/rem < 0.11 vs despejes >= 20 o GeV >= 0.15)",
+    }
+    for _mp_item in patrones:
+        _mp_item["estado_validacion"] = "hipótesis, no validada"
+        _mp_item["validada_cronologicamente"] = False
+        _mp_item["origen_umbrales"] = _origenes_mp.get(
+            str(_mp_item.get("codigo") or ""),
+            "Umbral heuristico sin validacion cronologica",
+        )
+
     activos = [p for p in patrones if p["activo"]]
     favor_agg = sorted({s for p in activos for s in p.get("senales_favor", [])})
     contra_agg = sorted({s for p in activos for s in p.get("senales_contra", [])})
