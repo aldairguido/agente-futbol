@@ -39,6 +39,8 @@ import hashlib
 import json
 import os
 import re
+import math
+import random
 import statistics
 import sys
 import unicodedata
@@ -3568,6 +3570,180 @@ def liquidar_todas_lineas_fixture(
             "regla_no_definida": n_regla,
             "brier": brier.get("brier"),
         },
+    }
+
+
+IDS_PARTIDOS_DISENO = frozenset({"5181796", "5181797"})
+
+
+def _norm_txt_eval(valor: Any) -> str:
+    txt = unicodedata.normalize("NFKD", str(valor or ""))
+    txt = "".join(c for c in txt if not unicodedata.combining(c))
+    return " ".join(txt.lower().split())
+
+
+def es_partido_de_diseno(partido: Any = None, id_partido: Any = None) -> bool:
+    """Identifica los dos partidos usados para diseño (Turkey-Belgium e Italy-France)."""
+    pid = str(id_partido or "").strip()
+    if pid in IDS_PARTIDOS_DISENO:
+        return True
+    p_norm = _norm_txt_eval(partido)
+    if not p_norm:
+        return False
+    es_tb = ("turkey" in p_norm or "turquia" in p_norm) and ("belgium" in p_norm or "belgica" in p_norm)
+    es_if = ("italy" in p_norm or "italia" in p_norm) and ("france" in p_norm or "francia" in p_norm)
+    return bool(es_tb or es_if)
+
+
+def log_loss_binario_valor(p: float, y: int, eps: float = 1e-6) -> float:
+    """Log-loss binario acotado en [eps, 1 - eps]."""
+    p_clip = min(1.0 - eps, max(eps, float(p)))
+    y_i = int(y)
+    return -(math.log(p_clip) if y_i == 1 else math.log(1.0 - p_clip))
+
+
+def bootstrap_brier_logloss_por_partido(
+    observaciones: list[tuple[str, int, dict[str, float]]],
+    n_boot: int = 2000,
+    seed: int = 20261114,
+) -> dict[str, Any]:
+    """
+    Bootstrap agrupado por `id_partido` (bloque = partido único) sobre observaciones
+    emparejadas `(match_id, y_binario, {version: prob})`.
+    """
+    por_partido: dict[str, list[tuple[int, dict[str, float]]]] = {}
+    versiones: list[str] = []
+    for mid, y, probs in observaciones:
+        if not mid or probs is None:
+            continue
+        if not versiones:
+            versiones = list(probs.keys())
+        por_partido.setdefault(str(mid), []).append((int(y), probs))
+
+    mids = sorted(por_partido.keys())
+    n_partidos = len(mids)
+    n_filas = sum(len(v) for v in por_partido.values())
+    if n_partidos == 0 or not versiones:
+        return {
+            "n_partidos_unicos": 0,
+            "n_filas": 0,
+            "suficiente_n30": False,
+            "nota_muestra": f"Sin datos evaluables (< MIN_PARTIDOS_PARA_CALIBRAR={MIN_PARTIDOS_PARA_CALIBRAR}).",
+            "versiones": {},
+            "diferencias": {},
+        }
+
+    # Precomputo de sumas por partido para bootstrap rápido y determinista
+    sumas_brier: dict[str, dict[str, float]] = {v: {} for v in versiones}
+    sumas_ll: dict[str, dict[str, float]] = {v: {} for v in versiones}
+    conteos_m: dict[str, int] = {}
+    for mid in mids:
+        items = por_partido[mid]
+        conteos_m[mid] = len(items)
+        for v in versiones:
+            sumas_brier[v][mid] = sum((float(pr[v]) - y) ** 2 for y, pr in items)
+            sumas_ll[v][mid] = sum(log_loss_binario_valor(float(pr[v]), y) for y, pr in items)
+
+    res_ver: dict[str, dict[str, Any]] = {}
+    for v in versiones:
+        b_punt = sum(sumas_brier[v].values()) / n_filas
+        ll_punt = sum(sumas_ll[v].values()) / n_filas
+        res_ver[v] = {
+            "brier": round(b_punt, 6),
+            "log_loss": round(ll_punt, 6),
+            "brier_ic95": None,
+            "log_loss_ic95": None,
+        }
+
+    pares_diff: list[tuple[str, str]] = []
+    for idx_i, va in enumerate(versiones):
+        for vb in versiones[idx_i + 1 :]:
+            pares_diff.append((vb, va))  # vb - va (< 0 favorece a vb)
+
+    if n_partidos >= 2 and n_boot >= 10:
+        rng = random.Random(seed)
+        boots_b: dict[str, list[float]] = {v: [] for v in versiones}
+        boots_ll: dict[str, list[float]] = {v: [] for v in versiones}
+        for _ in range(n_boot):
+            muestra = rng.choices(mids, k=n_partidos)
+            tot_n = sum(conteos_m[m] for m in muestra)
+            for v in versiones:
+                boots_b[v].append(sum(sumas_brier[v][m] for m in muestra) / tot_n)
+                boots_ll[v].append(sum(sumas_ll[v][m] for m in muestra) / tot_n)
+
+        lo_i = max(0, int(round(0.025 * (n_boot - 1))))
+        hi_i = min(n_boot - 1, int(round(0.975 * (n_boot - 1))))
+        for v in versiones:
+            sb = sorted(boots_b[v])
+            sl = sorted(boots_ll[v])
+            res_ver[v]["brier_ic95"] = [round(sb[lo_i], 6), round(sb[hi_i], 6)]
+            res_ver[v]["log_loss_ic95"] = [round(sl[lo_i], 6), round(sl[hi_i], 6)]
+
+        res_diff: dict[str, dict[str, Any]] = {}
+        for vb, va in pares_diff:
+            db_punt = res_ver[vb]["brier"] - res_ver[va]["brier"]
+            dll_punt = res_ver[vb]["log_loss"] - res_ver[va]["log_loss"]
+            sdb = sorted(boots_b[vb][k] - boots_b[va][k] for k in range(n_boot))
+            sdl = sorted(boots_ll[vb][k] - boots_ll[va][k] for k in range(n_boot))
+            res_diff[f"{vb} - {va}"] = {
+                "d_brier": round(db_punt, 6),
+                "d_brier_ic95": [round(sdb[lo_i], 6), round(sdb[hi_i], 6)],
+                "d_log_loss": round(dll_punt, 6),
+                "d_log_loss_ic95": [round(sdl[lo_i], 6), round(sdl[hi_i], 6)],
+            }
+    else:
+        res_diff = {}
+
+    suficiente = n_partidos >= MIN_PARTIDOS_PARA_CALIBRAR
+    nota = (
+        f"Muestra OOS válida: {n_partidos} partidos distintos (>= {MIN_PARTIDOS_PARA_CALIBRAR})."
+        if suficiente
+        else f"MUESTRA PEQUEÑA (POCOS PARTIDOS): solo {n_partidos} partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR={MIN_PARTIDOS_PARA_CALIBRAR}); IC95% amplio e insuficiente para afirmar mejora poblacional estable."
+    )
+    return {
+        "n_partidos_unicos": n_partidos,
+        "n_filas": n_filas,
+        "suficiente_n30": suficiente,
+        "nota_muestra": nota,
+        "versiones": res_ver,
+        "diferencias": res_diff,
+    }
+
+
+def evaluar_oos_comparativo_sin_diseno(
+    observaciones: list[dict[str, Any]],
+    n_boot: int = 2000,
+    seed: int = 20261114,
+) -> dict[str, Any]:
+    """
+    Evalúa Brier y Log-Loss OOS (total y por familia) excluyendo estrictamente los
+    partidos de diseño (Turkey-Belgium e Italy-France), con bootstrap por partido.
+    """
+    filtradas = [
+        o for o in observaciones
+        if not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+    ]
+    excluido_diseno = len(observaciones) - len(filtradas)
+    tuplas_total = [
+        (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        for o in filtradas
+    ]
+    total = bootstrap_brier_logloss_por_partido(tuplas_total, n_boot=n_boot, seed=seed)
+
+    por_fam_in: dict[str, list[tuple[str, int, dict[str, float]]]] = {}
+    for o in filtradas:
+        fam = _familia_de(str(o.get("mercado") or ""))
+        por_fam_in.setdefault(fam, []).append(
+            (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        )
+    por_familia = {
+        fam: bootstrap_brier_logloss_por_partido(rows, n_boot=n_boot, seed=seed + idx + 1)
+        for idx, (fam, rows) in enumerate(sorted(por_fam_in.items()))
+    }
+    return {
+        "filas_excluidas_diseno": excluido_diseno,
+        "total": total,
+        "por_familia": por_familia,
     }
 
 
