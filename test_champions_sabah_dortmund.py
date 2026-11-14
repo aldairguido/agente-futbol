@@ -94,8 +94,9 @@ def test_formateo_partido_y_longitud():
     }
     linea = formatear_linea_partido_15(1, partido_largo)
     print(f"  • Línea formateada: '{linea}' (longitud: {len(linea)})")
-    assert len(linea) <= 58, f"La línea excede 58 caracteres ({len(linea)}): {linea}"
-    assert "UCL Qual." in linea, f"El torneo debió ser abreviado a 'UCL Qual.': {linea}"
+    assert "Fenerbahçe Spor Kulübü" in linea, f"No debe truncar el nombre del local: {linea}"
+    assert "Lugano Football Club" in linea, f"No debe truncar el nombre del visitante: {linea}"
+    assert "UEFA Champions League Qualification" in linea or "UCL Qual." in linea
     print("  ✅ [TEST 3 OK] Truncamiento y abreviaciones verificadas.")
 
 

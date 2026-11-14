@@ -19,10 +19,11 @@ from utilidades_seguridad import _safe_float, _safe_int, _SafeFloat, _SafeInt
 float = _SafeFloat
 int = _SafeInt
 
+from contextlib import contextmanager
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from auditoria_comparable import construir_vista_comparable
 
@@ -30,6 +31,21 @@ from auditoria_comparable import construir_vista_comparable
 RUTA_UMBRALES_COBERTURA = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "umbrales_cobertura.yaml"
 )
+
+BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
+    "usar_anclaje_coef_torneo": False,
+    "usar_tope_dcn_18_pct": False,
+    "usar_tensor_65_35_y_diesel": False,
+    "usar_micropatrones_combinatorios": False,
+    "usar_gatekeeper_multisenal_top5": False,
+    "usar_sobredispersion_nb_corners": False,
+    "usar_gate_corners_8_15": False,
+    "usar_gate_cronologia_mitades_10_15": False,
+    "usar_calibracion_y_veto_conciencia": False,
+    "usar_cuota_justa_114_top5": False,
+}
+
+_OVERRIDES_BANDERAS: Dict[str, bool] = {}
 
 DEFAULTS_UMBRALES = {
     "min_partidos_oficiales": 15,
@@ -44,6 +60,29 @@ DEFAULTS_UMBRALES = {
     "max_desvio_frecuencia_observada_pts": 10.0,
     "bloqueo_recorte_independiente_calibracion": True,
     "techo_lambda_ataque_bajo": 1.10,
+    "min_partidos_corners_por_equipo": 8,
+    "min_muestra_corners_dispersion": 5,
+    "factor_dispersion_nb_corners": 1.05,
+    "min_eval_familia_veto_top5": 10,
+    "brecha_veto_top5_pp": -10.0,
+    "max_brecha_familia_top5_pp": -10.0,
+    "ev_minimo_calibrado": 0.0,
+    "fraccion_kelly": 0.25,
+    "stake_max_pct": 5.0,
+    "techo_ajuste_red_dcn_pct": 18.0,
+    "peso_condicion_tensor": 0.65,
+    "peso_general_tensor": 0.35,
+    "peso_torneo_actual_coef": 0.70,
+    "peso_promedio_15p_coef": 0.30,
+    "ratio_coef_shared_min": 0.90,
+    "ratio_coef_shared_max": 1.10,
+    "peso_prob_modelo_gatekeeper": 0.60,
+    "peso_tasa_empirica_gatekeeper": 0.40,
+    "umbral_promocion_empirica_top5": 0.85,
+    "min_corners_visita_freno": 3.0,
+    "max_corners_concedidos_local_freno": 5.0,
+    **BANDERAS_COMPORTAMIENTO_DEFECTO,
+    "flags_comportamiento": dict(BANDERAS_COMPORTAMIENTO_DEFECTO),
 }
 
 CATALOGO_MERCADOS = [
@@ -66,29 +105,119 @@ CATALOGO_MERCADOS = [
 
 def cargar_umbrales_cobertura(ruta: Optional[str] = None) -> Dict[str, Any]:
     """
-    Carga umbrales_cobertura.yaml sin dependencias externas.
+    Carga umbrales_cobertura.yaml sin dependencias externas (soporta enteros/decimales
+    negativos, booleanos, bloque flags_comportamiento y overrides de sesión).
     """
     path = ruta or RUTA_UMBRALES_COBERTURA
     umbrales = dict(DEFAULTS_UMBRALES)
-    if not os.path.isfile(path):
-        return umbrales
+    umbrales["flags_comportamiento"] = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            contenido = f.read()
 
-    with open(path, "r", encoding="utf-8") as f:
-        contenido = f.read()
+        en_flags = False
+        for linea in contenido.splitlines():
+            raw_no_comment = linea.split("#")[0].rstrip()
+            if not raw_no_comment.strip():
+                continue
+            indent = len(raw_no_comment) - len(raw_no_comment.lstrip(" "))
+            linea_limpia = raw_no_comment.strip()
+            if linea_limpia == "flags_comportamiento:":
+                en_flags = True
+                continue
+            if indent == 0 and ":" in linea_limpia:
+                en_flags = False
+            if ":" not in linea_limpia:
+                continue
+            k, v = linea_limpia.split(":", 1)
+            k = k.strip()
+            v = v.strip()
+            if v == "":
+                continue
+            val_parsed: Any = None
+            if re.match(r"^-?\d+$", v):
+                val_parsed = int(v)
+            elif re.match(r"^-?\d+\.\d+$", v):
+                val_parsed = float(v)
+            elif v.lower() in ("true", "false"):
+                val_parsed = v.lower() == "true"
+            if val_parsed is not None:
+                if en_flags or k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                    umbrales["flags_comportamiento"][k] = bool(val_parsed)
+                    umbrales[k] = bool(val_parsed)
+                else:
+                    umbrales[k] = val_parsed
 
-    for linea in contenido.splitlines():
-        linea_limpia = linea.split("#")[0].strip()
-        if not linea_limpia or ":" not in linea_limpia:
-            continue
-        k, v = linea_limpia.split(":", 1)
-        k = k.strip()
-        v = v.strip()
-        if re.match(r"^\d+$", v):
-            umbrales[k] = int(v)
-        elif re.match(r"^\d+\.\d+$", v):
-            umbrales[k] = float(v)
+    if _OVERRIDES_BANDERAS:
+        for fk, fv in _OVERRIDES_BANDERAS.items():
+            bval = bool(fv)
+            umbrales["flags_comportamiento"][fk] = bval
+            umbrales[fk] = bval
 
     return umbrales
+
+
+def obtener_banderas_comportamiento(
+    umbrales: Optional[Dict[str, Any]] = None,
+) -> Dict[str, bool]:
+    """Devuelve el mapa efectivo de banderas de comportamiento (todas False por defecto)."""
+    u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
+    res = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
+    flags_sub = u.get("flags_comportamiento") if isinstance(u.get("flags_comportamiento"), dict) else {}
+    for k in res:
+        if k in _OVERRIDES_BANDERAS:
+            res[k] = bool(_OVERRIDES_BANDERAS[k])
+        elif k in u and isinstance(u.get(k), bool):
+            res[k] = bool(u[k])
+        elif k in flags_sub and isinstance(flags_sub.get(k), bool):
+            res[k] = bool(flags_sub[k])
+    return res
+
+
+def bandera_activa(nombre: str, umbrales: Optional[Dict[str, Any]] = None) -> bool:
+    """Consulta segura de una bandera de comportamiento (apagada por defecto)."""
+    if nombre in _OVERRIDES_BANDERAS:
+        return bool(_OVERRIDES_BANDERAS[nombre])
+    return bool(obtener_banderas_comportamiento(umbrales).get(nombre, False))
+
+
+def establecer_overrides_banderas(overrides: Optional[Dict[str, bool]] = None) -> None:
+    """Fija overrides en memoria para comparar (ii) solo A vs (iii) A+B."""
+    _OVERRIDES_BANDERAS.clear()
+    if overrides:
+        for k, v in overrides.items():
+            if k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                _OVERRIDES_BANDERAS[k] = bool(v)
+
+
+@contextmanager
+def banderas_comportamiento(
+    activar_todas: Optional[bool] = None, **kwargs: bool
+) -> Iterator[Dict[str, bool]]:
+    """Context manager reversible para evaluar conmutadores Set B sin editar YAML."""
+    prev = dict(_OVERRIDES_BANDERAS)
+    try:
+        nuevo = dict(prev)
+        if activar_todas is not None:
+            for k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                nuevo[k] = bool(activar_todas)
+        for k, v in kwargs.items():
+            if k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                nuevo[k] = bool(v)
+        _OVERRIDES_BANDERAS.clear()
+        _OVERRIDES_BANDERAS.update(nuevo)
+        yield obtener_banderas_comportamiento()
+    finally:
+        _OVERRIDES_BANDERAS.clear()
+        _OVERRIDES_BANDERAS.update(prev)
+
+
+def obtener_umbral_cuota_justa_top5(umbrales: Optional[Dict[str, Any]] = None) -> float:
+    """Devuelve 1.14 solo si usar_cuota_justa_114_top5 está activa; por defecto usa 1.25 (o YAML)."""
+    u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
+    if bandera_activa("usar_cuota_justa_114_top5", u):
+        return 1.14
+    return float(u.get("min_cuota_justa_no_trivial_top5", 1.25))
 
 
 @dataclass

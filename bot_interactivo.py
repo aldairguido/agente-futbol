@@ -331,6 +331,7 @@ def cmd_estado(message):
     texto = (
         "🤖 *AGENTE CUANTITATIVO AUTÓNOMO — ESTADO DEL MOTOR*\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• *Versión Activa:* `{__import__('utilidades_seguridad').obtener_sello_build()}`\n"
         f"• *Estado del Demonio:* 🟢 Online (Listener Activo)\n"
         f"• *Núcleo Agéntico:* 🧠 Antigravity ReAct + 4 Sub-Agentes Activos\n"
         f"• *Barrido en curso:* {estado_barrido}\n"
@@ -917,7 +918,9 @@ def cmd_auditar(message):
 
 def _hilo_ejecutar_auditoria_cruce(chat_id: int | str, eq_local: str, eq_visita: str,
                                    limite: int = 15, minimo: int | None = None,
-                                   liga: dict[str, Any] | None = None) -> None:
+                                   liga: dict[str, Any] | None = None,
+                                   fecha_corte: Any = None,
+                                   id_partido_excluir: Any = None) -> None:
     """Ejecuta la auditoría de 30 matrices (Modalidad A: 15 Local + 15 Visita)."""
     global auditoria_en_curso
     try:
@@ -939,17 +942,34 @@ def _hilo_ejecutar_auditoria_cruce(chat_id: int | str, eq_local: str, eq_visita:
             base_vis = _inferir_meta_rival_desde_texto(eq_visita) or {"nombre": eq_visita}
             rival_loc = {**base_vis, **liga}
 
+        kw_cruce: dict[str, Any] = {}
+        if fecha_corte is not None:
+            kw_cruce["fecha_corte"] = fecha_corte
+        if id_partido_excluir is not None:
+            kw_cruce["id_partido_excluir"] = id_partido_excluir
         doc_local = ah.auditar_equipo(eq_local, limite=limite, minimo_con_datos=minimo,
-                                      headless=True, progreso=progreso, rival=rival_loc)
+                                      headless=True, progreso=progreso, rival=rival_loc, **kw_cruce)
+        # Detectar próximo cruce programado si el llamador no dio fecha_corte
+        if fecha_corte is None and id_partido_excluir is None:
+            for pf_it in (doc_local.get("partidos_futuros") or []):
+                if not isinstance(pf_it, dict):
+                    continue
+                txt_riv = f"{pf_it.get('home_nombre', '')} {pf_it.get('away_nombre', '')}".lower()
+                if eq_visita.lower() in txt_riv:
+                    if pf_it.get("id_partido"):
+                        kw_cruce["id_partido_excluir"] = str(pf_it["id_partido"])
+                    if pf_it.get("fecha"):
+                        kw_cruce["fecha_corte"] = str(pf_it["fecha"])[:10]
+                    break
         rival_vis: Any = doc_local.get("equipo") or eq_local
         if liga and isinstance(rival_vis, dict):
             rival_vis = {**rival_vis, **liga}
         elif liga:
             rival_vis = dict(liga)
         doc_visita = ah.auditar_equipo(eq_visita, limite=limite, minimo_con_datos=minimo,
-                                       headless=True, progreso=progreso, rival=rival_vis)
+                                       headless=True, progreso=progreso, rival=rival_vis, **kw_cruce)
 
-        contenido_md, ruta_md = ah.generar_informe_matrices_30(doc_local, doc_visita)
+        contenido_md, ruta_md = ah.generar_informe_matrices_30(doc_local, doc_visita, **kw_cruce)
 
         res_loc = doc_local.get("resumen", {})
         res_vis = doc_visita.get("resumen", {})

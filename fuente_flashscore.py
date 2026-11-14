@@ -1083,10 +1083,44 @@ def _candidatos_flashscore(nombre: str, pais_esperado: str | None = None,
     import urllib.parse
     import urllib.request
 
-    consultas = [nombre]
+    consultas: list[str] = []
+    vistas_q: set[str] = set()
+
+    def _add_q(q_txt: str) -> None:
+        qt = str(q_txt or "").strip()
+        if qt and qt.lower() not in vistas_q:
+            vistas_q.add(qt.lower())
+            consultas.append(qt)
+
+    _add_q(nombre)
+    es_sel_conocida = False
+    try:
+        from resolvedor_entidades import (
+            obtener_seleccion_nacional,
+            obtener_nombre_fotmob,
+            obtener_nombre_flashscore,
+        )
+        sel_nat = obtener_seleccion_nacional(nombre)
+        if sel_nat:
+            es_sel_conocida = True
+            _add_q(sel_nat[0])
+            for al in (sel_nat[2] or []):
+                _add_q(al)
+        _add_q(obtener_nombre_fotmob(nombre))
+        _add_q(obtener_nombre_flashscore(nombre))
+    except Exception:
+        pass
+
     palabras = str(nombre).split()
     if len(palabras) > 1:
-        consultas += [" ".join(palabras[:2]), palabras[0]]
+        _add_q(" ".join(palabras[:2]))
+        _add_q(palabras[0])
+
+    consultas_eval = list(consultas)
+    _REGIONES_SELECCION = {
+        "europe", "world", "south america", "north central america",
+        "africa", "asia", "oceania", "worldwide",
+    }
 
     def es_filial(nom: str) -> bool:
         return any(x in nom for x in (" U19", " U20", " U21", " U23", " W", "Women",
@@ -1128,12 +1162,14 @@ def _candidatos_flashscore(nombre: str, pais_esperado: str | None = None,
             genero = str((d.get("gender") or {}).get("name") or "")
             if genero and genero != "Men":
                 continue
-            pn = puntos_nombre(nom, nombre)
+            pn = max(puntos_nombre(nom, c_ev) for c_ev in consultas_eval)
             if pn == 0:
                 continue
             pais_api = str((d.get("defaultCountry") or {}).get("name") or "")
             pp = 0
-            if pais_esperado:
+            if es_sel_conocida and normalizar(pais_api) in _REGIONES_SELECCION:
+                pp = 2
+            elif pais_esperado:
                 na, ne = normalizar(pais_api), normalizar(pais_esperado)
                 if na == ne:
                     pp = 3
@@ -1146,7 +1182,7 @@ def _candidatos_flashscore(nombre: str, pais_esperado: str | None = None,
                        "nombre": nom, "pais": pais_api, "puntos": pn * 10 + pp}
             if clave not in vistos or vistos[clave]["puntos"] < entrada["puntos"]:
                 vistos[clave] = entrada
-        if any(v["puntos"] >= 33 for v in vistos.values()):
+        if any(v["puntos"] >= 32 for v in vistos.values()):
             break
 
     return sorted(vistos.values(), key=lambda v: -v["puntos"])[:maximo]
@@ -1309,6 +1345,55 @@ class ListadoEquipoFlashscore:
             except Exception:
                 import time as _t
                 _t.sleep(2)
+            # Cargar filas adicionales hacia atras si hubiera pocos partidos (p. ej. al excluir amistosos)
+            try:
+                for _ in range(2):
+                    n_filas = len(pag.query_selector_all("[class*='event__match']"))
+                    if n_filas >= 30:
+                        break
+                    btn_mas = pag.locator("[class*='event__more']").first
+                    if btn_mas.count() > 0 and btn_mas.is_visible():
+                        btn_mas.click(timeout=4000)
+                        pag.wait_for_timeout(1200)
+                    else:
+                        break
+            except Exception:
+                pass
+
+            # Extraer encabezados reales de competicion (headerLeague__title / event__title--name) en orden DOM
+            try:
+                torneos_por_id = pag.evaluate("""() => {
+                    const mapa = {};
+                    let actual = '';
+                    const nods = document.querySelectorAll("[class*='headerLeague__wrapper'], [class*='event__header'], [class*='event__match']");
+                    for (const el of nods) {
+                        const cls = String(el.className || '');
+                        if (cls.includes('event__match')) {
+                            const mid = String(el.id || '').replace('g_1_', '');
+                            if (mid) mapa[mid] = actual;
+                            continue;
+                        }
+                        const tEl = el.querySelector("[class*='headerLeague__title'], [class*='event__title--name']");
+                        let txt = tEl ? String(tEl.innerText || '').trim() : '';
+                        if (!txt) {
+                            const lineas = String(el.innerText || '').split('\\n').map(s => s.trim()).filter(Boolean);
+                            for (const ln of lineas) {
+                                if (ln.endsWith(':') || ln.toLowerCase() === 'standings' || ln.toLowerCase() === 'clasificacion') continue;
+                                txt = ln;
+                                break;
+                            }
+                        }
+                        if (txt) actual = txt;
+                    }
+                    return mapa;
+                }""") or {}
+            except Exception:
+                torneos_por_id = {}
+
+            _TOKENS_ESTADO_PREFIJO = {
+                "pen", "aet", "et", "wo", "awd", "abn", "canc", "postp",
+                "after pen.", "after et", "ap", "tp",
+            }
             for fila in pag.query_selector_all("[class*='event__match']"):
                 if len(partidos) >= self.max_partidos:
                     break
@@ -1317,6 +1402,9 @@ class ListadoEquipoFlashscore:
                 except Exception:
                     continue
                 lineas = [l.strip() for l in texto.split("\n") if l.strip()]
+                estado_extra = ""
+                if len(lineas) >= 5 and lineas[1].lower() in _TOKENS_ESTADO_PREFIJO:
+                    estado_extra = lineas.pop(1)
                 if len(lineas) < 4:
                     continue
                 mid = None
@@ -1333,18 +1421,25 @@ class ListadoEquipoFlashscore:
                         mid = m.group(1)
                 if not mid:
                     continue
-                numeros = [l for l in lineas[3:] if l.isdigit()]
-                if len(numeros) < 2:
+                goles_l_90, goles_v_90, marcador_desemp = resolver_marcador_reglamentario_flashscore(
+                    lineas[3:], estado_extra=estado_extra
+                )
+                if goles_l_90 is None or goles_v_90 is None:
                     continue
                 fecha = _parsear_fecha_listado(lineas[0], estado_fecha)
                 if not fecha:
                     continue
-                partidos.append({
+                partido_item = {
                     "id": mid, "fecha": fecha,
+                    "torneo": torneos_por_id.get(mid, ""),
+                    "estado_extra": estado_extra,
                     "local": lineas[1], "visitante": lineas[2],
-                    "goles_local": int(numeros[0]),
-                    "goles_visitante": int(numeros[1]),
-                })
+                    "goles_local": int(goles_l_90),
+                    "goles_visitante": int(goles_v_90),
+                }
+                if marcador_desemp:
+                    partido_item["marcador_desempate"] = marcador_desemp
+                partidos.append(partido_item)
 
         try:
             if contexto is not None:
@@ -1452,6 +1547,78 @@ def _parsear_fecha_listado(texto: str, estado: dict[str, Any]) -> str:
         return ""
 
 
+_ESTADOS_DESEMPATE_90 = {
+    "pen", "pen.", "aet", "et", "after pen.", "after et", "ap", "tp",
+    "t.p.", "penaltis", "prórroga", "prorroga", "p",
+}
+
+
+def resolver_marcador_reglamentario_flashscore(
+    lineas_score: list[str],
+    estado_extra: str = "",
+) -> tuple[int | None, int | None, str | None]:
+    """
+    Extrae el marcador reglamentario 90'-FT de un bloque de Flashscore.
+
+    Si el partido se definió por penaltis o prórroga (p. ej. "Pen", "AET",
+    `lineas_score = ["5", "2", "(1)", "(1)"]` en Bosnia & Herzegovina vs Italy),
+    devuelve el marcador reglamentario `(1, 1, "5-2 (Pen)")` para no contaminar
+    las tasas de goles ni el cómputo de 2T con tandas de penaltis o prórroga.
+    En partidos normales de 90' (incluso abultados como France 4-6 England),
+    devuelve `(goles_local, goles_visitante, None)` sin alterar el marcador.
+    """
+    tokens = [str(l).strip() for l in (lineas_score or []) if str(l).strip()]
+    est_norm = str(estado_extra or "").strip().lower()
+    hay_estado_desemp = est_norm in _ESTADOS_DESEMPATE_90
+    tokens_filtrados: list[str] = []
+    for tok in tokens:
+        if tok.lower() in _ESTADOS_DESEMPATE_90:
+            hay_estado_desemp = True
+            if not estado_extra:
+                estado_extra = tok
+            continue
+        tokens_filtrados.append(tok)
+
+    numeros_planos = [int(tok) for tok in tokens_filtrados if tok.isdigit()]
+    numeros_parentesis: list[int] = []
+    for tok in tokens_filtrados:
+        m_par = re.fullmatch(r"\((\d+)\)", tok)
+        if m_par:
+            numeros_parentesis.append(int(m_par.group(1)))
+            continue
+        m_par_duo = re.fullmatch(r"\((\d+)\s*[-:]\s*(\d+)\)", tok)
+        if m_par_duo:
+            numeros_parentesis.extend([int(m_par_duo.group(1)), int(m_par_duo.group(2))])
+
+    if len(numeros_planos) < 2 and len(numeros_parentesis) < 2:
+        for tok in tokens_filtrados:
+            m_gl = re.search(r"(\d+)\s*[-:]\s*(\d+)", tok)
+            if m_gl:
+                numeros_planos = [int(m_gl.group(1)), int(m_gl.group(2))]
+                break
+
+    if hay_estado_desemp and len(numeros_parentesis) >= 2:
+        desemp = (
+            f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra or 'Pen/AET'})"
+            if len(numeros_planos) >= 2
+            else str(estado_extra or "Pen/AET")
+        )
+        return numeros_parentesis[0], numeros_parentesis[1], desemp
+
+    if len(numeros_planos) >= 2:
+        desemp = (
+            f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra})"
+            if hay_estado_desemp and estado_extra
+            else None
+        )
+        return numeros_planos[0], numeros_planos[1], desemp
+
+    if len(numeros_parentesis) >= 2:
+        return numeros_parentesis[0], numeros_parentesis[1], (estado_extra or None)
+
+    return None, None, None
+
+
 def candidatos_desde_feed_hh(
     id_flashscore: str, cliente: ClienteFlashscore | None = None
 ) -> list[dict[str, Any]]:
@@ -1496,16 +1663,24 @@ def candidatos_desde_feed_hh(
         gv = None
         kl = items.get("KL", "").strip()
         km = items.get("KM", "").strip()
+        # Si Flashscore empaqueta marcador con desempate entre paréntesis (p. ej. "1 (4)"),
+        # extraer solo los goles enteros reglamentarios iniciales si no son tanda aislada.
+        m_kl_par = re.match(r"^(\d+)\s*\(\d+\)$", kl)
+        m_km_par = re.match(r"^(\d+)\s*\(\d+\)$", km)
         if kl.isdigit():
             gl = int(kl)
+        elif m_kl_par:
+            gl = int(m_kl_par.group(1))
         elif ":" in kl:
             partes = kl.split(":")
-            if partes[0].isdigit():
-                gl = int(partes[0])
-            if partes[1].isdigit():
-                gv = int(partes[1])
+            if partes[0].strip().isdigit():
+                gl = int(partes[0].strip())
+            if len(partes) > 1 and partes[1].strip().isdigit():
+                gv = int(partes[1].strip())
         if km.isdigit():
             gv = int(km)
+        elif m_km_par:
+            gv = int(m_km_par.group(1))
 
         nom_l = items.get("KJ", "").strip().lstrip("*")
         nom_v = items.get("KK", "").strip().lstrip("*")

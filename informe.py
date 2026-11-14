@@ -472,7 +472,7 @@ def _extraer_probabilidades_red_general(analisis: Any) -> dict[str, Any]:
     }
 
 
-def construir_filas_ticket_valor(
+def _construir_filas_ticket_valor_legacy_5e8(
     analisis: Any,
     cuotas_flashscore: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
@@ -550,6 +550,131 @@ def construir_filas_ticket_valor(
             "ev_pct": ev_pct,
             "ev_str": (f"+{ev_pct:.1f}%" if ev_pct is not None and ev_pct > 0
                        else (f"{ev_pct:.1f}%" if ev_pct is not None else "N/D")),
+            "tiene_valor": tiene_valor,
+            "recomendacion": recomendacion,
+        })
+
+    return filas
+
+
+
+def construir_filas_ticket_valor(
+    analisis: Any,
+    cuotas_flashscore: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Cruza las probabilidades de la Red Neuronal General (15 partidos) con las cuotas
+    de Flashscore y calcula Cuota Justa, Cuota Mínima +EV, Stake Kelly (0.25x), Valor Esperado (EV) y Recomendación.
+    """
+    info = _extraer_probabilidades_red_general(analisis)
+    eq_l = info["equipo_local"]
+    eq_v = info["equipo_visitante"]
+    cuotas = dict(cuotas_flashscore or {})
+    dropping_odds = bool(cuotas.get("dropping_odds"))
+    alerta_drop = " [ALERTA DROPPING ODDS]" if dropping_odds else ""
+
+    c_loc = cuotas.get("local")
+    c_emp = cuotas.get("empate")
+    c_vis = cuotas.get("visitante")
+
+    # Derivar cuotas equivalentes de Doble Oportunidad (1X, X2, 12) si existen cuotas 1X2 reales
+    c_1x = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+            if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else cuotas.get("1x"))
+    c_x2 = (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+            if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else cuotas.get("x2"))
+    c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+            if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
+
+    from decision_cobertura import bandera_activa as _ba_inf
+    if not _ba_inf("usar_calibracion_y_veto_conciencia"):
+        return _construir_filas_ticket_valor_legacy_5e8(analisis, cuotas_flashscore)
+    from motor_mercados import calcular_ev_y_stake_calibrado
+
+    definiciones = [
+        (f"1 — Victoria {eq_l}", "Ganador del partido", info["p_local"], c_loc),
+        ("X — Empate", "Ganador del partido", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", "Ganador del partido", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", "Doble oportunidad", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", "Doble oportunidad", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", info["p_12"], c_12),
+    ]
+
+    filas: list[dict[str, Any]] = []
+    for nombre_mkt, mkt_canon, prob_bot, cuota_fs in definiciones:
+        prob_f = max(0.001, min(0.999, float(prob_bot or 0.0)))
+        cuota_fs_val = round(float(cuota_fs), 2) if isinstance(cuota_fs, (int, float)) and cuota_fs > 1.0 else None
+        ev_info = calcular_ev_y_stake_calibrado(mkt_canon, prob_f, cuota_fs_val, min_stake=0.0)
+
+        p_cal_f = float(ev_info["prob_calibrada"]) if ev_info["prob_calibrada"] is not None else prob_f
+        bajo_vig_f = bool(ev_info["bajo_vigilancia"])
+        cuota_justa = ev_info["cuota_justa"]
+        cuota_justa_cal = ev_info["cuota_justa_calibrada"]
+        cuota_minima = ev_info["cuota_minima"]
+        cuota_minima_cal = ev_info["cuota_minima_calibrada"]
+        b_min = max(0.01, cuota_minima_cal - 1.0)
+        f_star_min = max(0.0, (p_cal_f * cuota_minima_cal - 1.0) / b_min)
+        stake_kelly_min_pct = 0.0 if bajo_vig_f else round(0.25 * f_star_min * 100.0, 1)
+
+        if cuota_fs_val is not None:
+            ev_bruto_pct = ev_info["ev_bruto_pct"]
+            ev_cal_pct = ev_info["ev_calibrado_pct"]
+            ev_pct = ev_cal_pct
+            tiene_valor = bool(ev_cal_pct is not None and ev_cal_pct > 0)
+            stake_kelly_pct = float(ev_info["stake_pct"] or 0.0)
+
+            if bajo_vig_f:
+                recomendacion = (
+                    f"VIGILANCIA (EV cal {ev_cal_pct:+.1f}% | bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake: 0.0%{alerta_drop}"
+                )
+            elif tiene_valor and ev_cal_pct >= 5.0 and p_cal_f >= 0.45:
+                recomendacion = (
+                    f"VALOR ALTO (EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+                )
+            elif tiene_valor:
+                recomendacion = (
+                    f"VALOR (EV {ev_cal_pct:+.1f}% cal / bruto {ev_bruto_pct:+.1f}%) · "
+                    f"Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+                )
+            else:
+                recomendacion = (
+                    f"SIN VALOR CAL (EV cal {ev_cal_pct:+.1f}% | bruto {ev_bruto_pct:+.1f}%){alerta_drop}"
+                )
+        else:
+            ev_bruto_pct = None
+            ev_cal_pct = None
+            ev_pct = None
+            tiene_valor = False
+            stake_kelly_pct = 0.0 if bajo_vig_f else None
+            if bajo_vig_f:
+                recomendacion = f"Cuota Mín cal: {cuota_minima_cal:.2f} (Sin stake: bajo vigilancia){alerta_drop}"
+            else:
+                recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
+
+        filas.append({
+            "mercado": nombre_mkt,
+            "prob_bot": prob_f,
+            "prob_bot_str": f"{prob_f * 100.0:.1f}%",
+            "prob_calibrada": p_cal_f,
+            "prob_calibrada_str": f"{p_cal_f * 100.0:.1f}%",
+            "bajo_vigilancia": bajo_vig_f,
+            "cuota_justa": cuota_justa,
+            "cuota_justa_str": f"{cuota_justa:.2f}",
+            "cuota_justa_calibrada": cuota_justa_cal,
+            "cuota_minima": cuota_minima,
+            "cuota_minima_str": f"{cuota_minima:.2f}",
+            "cuota_minima_calibrada": cuota_minima_cal,
+            "cuota_flashscore": cuota_fs_val,
+            "cuota_flashscore_str": f"{cuota_fs_val:.2f}" if cuota_fs_val is not None else "N/D",
+            "ev_bruto_pct": ev_bruto_pct,
+            "ev_calibrado_pct": ev_cal_pct,
+            "ev_pct": ev_pct,
+            "ev_str": (f"+{ev_pct:.1f}% (bruto {ev_bruto_pct:+.1f}%)" if ev_pct is not None and ev_pct > 0
+                       else (f"{ev_pct:.1f}% (bruto {ev_bruto_pct:+.1f}%)" if ev_pct is not None else "N/D")),
+            "stake_sugerido": (round(float(stake_kelly_pct) / 100.0, 4) if stake_kelly_pct is not None else None),
+            "stake_pct": stake_kelly_pct,
+            "estado_stake": ev_info["estado_stake"],
             "tiene_valor": tiene_valor,
             "recomendacion": recomendacion,
         })
@@ -679,6 +804,11 @@ def generar_ticket_valor_png(
         fontsize=8.5, color="#475569", style="italic", family="sans-serif",
     )
 
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+    fig.text(
+        0.98, 0.012, _obtener_sello_build(),
+        ha="right", fontsize=8.0, color="#475569", fontweight="bold", family="sans-serif",
+    )
     plt.savefig(destino, dpi=160, bbox_inches="tight", facecolor=fig.get_facecolor())
     plt.close(fig)
     return str(destino)
@@ -852,8 +982,8 @@ def redactar_analisis_3_parrafos(
         doc_visitante=doc_visitante,
     )
     if bloque_xai:
-        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}"
-    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}"
+        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
+    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
 
 
 def generar_bloque_narrativo_xai_desde_analisis(
@@ -916,7 +1046,15 @@ def generar_bloque_narrativo_xai_desde_analisis(
         if isinstance(rec.get("mu_visita_fuera"), dict):
             d_vis_V.update(rec["mu_visita_fuera"])
 
-        P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+        if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
+            P_L = dict(rec["patrones_55_local"])
+            P_V = dict(rec["patrones_55_visita"])
+        else:
+            P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+            if isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict):
+                _etq_m = "Doble ADN pond."
+                P_L["_muestra_etiqueta"] = _etq_m
+                P_V["_muestra_etiqueta"] = _etq_m
 
         probs_1x2 = _extraer_probabilidades_red_general(analisis)
         # Sincronización estricta C1: 1X2 en Telegram idéntico a motor.matriz_ft
@@ -960,6 +1098,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
             ratings_visita=ratings_V_v,
             top5_podio=top5_v,
             selecciones_sec1=sec1_v,
+            motor=motor,
         )
     except Exception:
         return ""

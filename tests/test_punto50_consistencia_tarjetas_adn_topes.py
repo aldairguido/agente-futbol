@@ -7,17 +7,16 @@ from motor_mercados import es_seleccion_competitiva_ticket
 
 
 def test_equivalencia_continental_ligas():
-    # UEFA selecciones
-    assert son_ligas_equivalentes("UEFA Nations League", "Europe") is True
-    assert son_ligas_equivalentes("UEFA nations league", "Europe") is True
-    assert son_ligas_equivalentes("UEFA Euro", "Europe") is True
-    assert son_ligas_equivalentes("Eurocopa", "Europe") is True
-    assert son_ligas_equivalentes("World Cup Qualification UEFA", "Europe") is True
-    assert son_ligas_equivalentes("Eliminatorias UEFA", "Europe") is True
+    # Regla 1.6 (Ronda 5+6): Regiones genéricas ('Europe', 'South America') NO sustituyen nombres reales de torneo
+    assert son_ligas_equivalentes("UEFA Nations League", "Europe") is False
+    assert son_ligas_equivalentes("UEFA nations league", "Europe") is False
+    assert son_ligas_equivalentes("Copa América", "South America") is False
 
-    # CONMEBOL selecciones
-    assert son_ligas_equivalentes("Copa América", "South America") is True
-    assert son_ligas_equivalentes("Eliminatorias CONMEBOL", "South America") is True
+    # Torneos reales de selecciones con variantes de idioma/formato sí son equivalentes
+    assert son_ligas_equivalentes("UEFA Nations League", "UEFA Nations League - League A") is True
+    assert son_ligas_equivalentes("UEFA Euro", "Eurocopa") is True
+    assert son_ligas_equivalentes("World Cup Qualification UEFA", "Eliminatorias UEFA") is True
+    assert son_ligas_equivalentes("Eliminatorias CONMEBOL", "World Cup - Clasificación CONMEBOL") is True
 
     # Ligas domésticas idénticas o discrepantes
     assert son_ligas_equivalentes("Brasileirão Série A", "Campeonato Brasileiro Série A") is True

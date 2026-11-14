@@ -179,36 +179,50 @@ class RazonadorCuantitativo:
         print(f"\n🧠 [RAZONADOR CUANTITATIVO] Evaluando ineficiencias de mercado (+EV) para: {partido_nombre}")
         print(f"  🧠 [ESTADO CONSCIENTE]: {self.conciencia.estado_adaptativo.upper()} | Madurez (XP): {self.conciencia.nivel_madurez}")
 
-        decision_candidata: dict[str, Any] = {}
+        import copy as _copy
+        from agente_consciente import sanitizar_respuesta_llm_texto
 
-        # ── 1. Intento con Pool Neuronal Multi-Modelo de Google Gemini ────────
-        if self.api_key and not self._gemini_desactivado and isinstance(payload_omnisciente, dict) and payload_omnisciente:
+        # ── 1. Motor Cuantitativo Formal de Poisson (SIEMPRE AUTORITATIVO) ───
+        payload_seguro = _copy.deepcopy(payload_omnisciente) if isinstance(payload_omnisciente, dict) else {}
+        decision_candidata: dict[str, Any] = self._motor_cuantitativo_matematico(payload_seguro)
+        snap_cuantitativo = _copy.deepcopy(decision_candidata)
+
+        # ── 2. Explicación Narrativa Auxiliar vía Gemini (AISLAMIENTO ESTRICTO)
+        # El LLM NUNCA puede alterar probabilidades, cuotas, stakes, lambdas,
+        # umbrales ni selecciones: solo aporta prosa explicativa opcional.
+        if self.api_key and not self._gemini_desactivado and payload_seguro:
             try:
-                contenido_raw = self.conciencia.analizar_con_conciencia(payload_omnisciente)
+                contenido_raw = self.conciencia.analizar_con_conciencia(_copy.deepcopy(payload_seguro))
                 contenido_str = (contenido_raw or "").strip()
-                if contenido_str.startswith("```json"):
-                    contenido_str = contenido_str[7:]
-                if contenido_str.startswith("```"):
-                    contenido_str = contenido_str[3:]
-                if contenido_str.endswith("```"):
-                    contenido_str = contenido_str[:-3]
-                contenido_str = contenido_str.strip()
-
                 if contenido_str and not contenido_str.startswith("[ERROR"):
-                    raw_json = json.loads(contenido_str)
-                    if isinstance(raw_json, dict):
-                        decision_candidata = _coercionar_decision_llm(raw_json)
-                        decision_candidata["motor"] = f"Google Gemini ({self.conciencia.modelo})"
-                else:
-                    print("  ⚡ [POOL GEMINI OFFLINE EN ESTE TURNO]: Conmutando al Motor Matemático Formal de Poisson.")
+                    if contenido_str.startswith("```json"):
+                        contenido_str = contenido_str[7:]
+                    if contenido_str.startswith("```"):
+                        contenido_str = contenido_str[3:]
+                    if contenido_str.endswith("```"):
+                        contenido_str = contenido_str[:-3]
+                    contenido_str = contenido_str.strip()
+                    narrativa_txt = contenido_str
+                    try:
+                        raw_json = json.loads(contenido_str)
+                        if isinstance(raw_json, dict) and raw_json.get("justificacion_tecnica"):
+                            narrativa_txt = str(raw_json.get("justificacion_tecnica"))
+                    except Exception:
+                        pass
+                    texto_limpio, _ = sanitizar_respuesta_llm_texto(narrativa_txt)
+                    decision_candidata["narrativa_llm_auxiliar"] = texto_limpio
             except Exception as e:
-                print(f"  ⚡ [CONMUTACIÓN A MOTOR FORMAL]: {e}. Operando con Motor Matemático de Poisson.")
+                print(f"  ⚡ [NARRATIVA LLM OMITIDA]: {e}. Operando 100% con Motor Matemático de Poisson.")
 
-        # ── 2. Fallback / Motor Cuantitativo Formal de Poisson (100% Nativo) ─
-        if not decision_candidata or decision_candidata.get("decision_final") != "APROBADO":
-            decision_matematica = self._motor_cuantitativo_matematico(payload_omnisciente)
-            if not decision_candidata or decision_matematica.get("decision_final") == "APROBADO":
-                decision_candidata = decision_matematica
+        # Reafirmar inmutabilidad de campos cuantitativos frente a cualquier efecto colateral
+        for _campo_prot in (
+            "decision_final", "mercado_elegido", "seleccion", "cuota",
+            "probabilidad_real_estimada", "probabilidad_implicita",
+            "valor_esperado_ev", "stake_sugerido", "motor", "guardrails_superados",
+        ):
+            if _campo_prot in snap_cuantitativo:
+                decision_candidata[_campo_prot] = snap_cuantitativo[_campo_prot]
+        decision_candidata["llm_solo_explicativo"] = True
 
         decision_candidata["estado_consciente"] = self.conciencia.estado_adaptativo
         decision_candidata["nivel_madurez"] = self.conciencia.nivel_madurez

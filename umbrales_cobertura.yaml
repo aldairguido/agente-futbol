@@ -40,5 +40,40 @@ umbrales:
   techo_lambda_ataque_bajo: 1.10  # regla operativa, sin validación cronológica
 
   # Regla 23 / Patrón 26: Umbral de poder de cierre en 2T (sesgo diésel)
-  # Aísla el cuartil superior (P75 = 0.6041) de equipos con aceleración extrema en 2T
   umbral_p26_cierre_2t: 0.51  # regla operativa, sin validación cronológica
+
+  # Parámetros Set B (solo activos bajo bandera explícita) — regla operativa, sin validación cronológica
+  min_partidos_corners_por_equipo: 8  # regla operativa, sin validación cronológica
+  min_muestra_corners_dispersion: 5  # regla operativa, sin validación cronológica
+  factor_dispersion_nb_corners: 1.05  # regla operativa, sin validación cronológica
+  min_eval_familia_veto_top5: 10  # regla operativa, sin validación cronológica
+  brecha_veto_top5_pp: -10.0  # regla operativa, sin validación cronológica
+  max_brecha_familia_top5_pp: -10.0  # regla operativa, sin validación cronológica
+  ev_minimo_calibrado: 0.0  # regla operativa, sin validación cronológica
+  fraccion_kelly: 0.25  # regla operativa, sin validación cronológica
+  stake_max_pct: 5.0  # regla operativa, sin validación cronológica
+  techo_ajuste_red_dcn_pct: 18.0  # regla operativa, sin validación cronológica
+  peso_condicion_tensor: 0.65  # regla operativa, sin validación cronológica
+  peso_general_tensor: 0.35  # regla operativa, sin validación cronológica
+  peso_torneo_actual_coef: 0.70  # regla operativa, sin validación cronológica
+  peso_promedio_15p_coef: 0.30  # regla operativa, sin validación cronológica
+  ratio_coef_shared_min: 0.90  # regla operativa, sin validación cronológica
+  ratio_coef_shared_max: 1.10  # regla operativa, sin validación cronológica
+  peso_prob_modelo_gatekeeper: 0.60  # regla operativa, sin validación cronológica
+  peso_tasa_empirica_gatekeeper: 0.40  # regla operativa, sin validación cronológica
+  umbral_promocion_empirica_top5: 0.85  # regla operativa, sin validación cronológica
+  min_corners_visita_freno: 3.0  # hipótesis, no validada
+  max_corners_concedidos_local_freno: 5.0  # hipótesis, no validada
+
+# Banderas de comportamiento Set (B) — TODAS APAGADAS POR DEFECTO hasta validación prospectiva >= 30 partidos
+flags_comportamiento:
+  usar_anclaje_coef_torneo: false  # regla operativa, sin validación cronológica
+  usar_tope_dcn_18_pct: false  # regla operativa, sin validación cronológica
+  usar_tensor_65_35_y_diesel: false  # regla operativa, sin validación cronológica
+  usar_micropatrones_combinatorios: false  # hipótesis, no validada
+  usar_gatekeeper_multisenal_top5: false  # regla operativa, sin validación cronológica
+  usar_sobredispersion_nb_corners: false  # regla operativa, sin validación cronológica
+  usar_gate_corners_8_15: false  # regla operativa, sin validación cronológica
+  usar_gate_cronologia_mitades_10_15: false  # regla operativa, sin validación cronológica
+  usar_calibracion_y_veto_conciencia: false  # regla operativa, sin validación cronológica
+  usar_cuota_justa_114_top5: false  # regla operativa, sin validación cronológica

@@ -1318,6 +1318,8 @@ def generar_cuadro_visual_h2h_2024_2026(
                  color="#475569", style="italic")
 
     ruta_salida_png.parent.mkdir(parents=True, exist_ok=True)
+    from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
+    fig.text(0.99, 0.004, _obtener_sello_build(), ha="right", fontsize=7.4, color="#475569", fontweight="bold")
     fig.savefig(ruta_salida_png, dpi=180)
     plt.close(fig)
     return ruta_salida_png

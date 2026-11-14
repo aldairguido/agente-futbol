@@ -34,14 +34,19 @@
         ],
         "mercados_vigilancia": [
             {
-                "familia": "Gol en ambos tiempos",
-                "acierto": 0.7317,
-                "brecha_pp": -6.7
-            },
-            {
                 "familia": "Córneres",
                 "acierto": 0.7416,
                 "brecha_pp": -17.18
+            },
+            {
+                "familia": "Ambos anotan",
+                "acierto": 0.6,
+                "brecha_pp": -15.78
+            },
+            {
+                "familia": "Gol en ambos tiempos",
+                "acierto": 0.7317,
+                "brecha_pp": -6.7
             }
         ],
         "generado_en": "2026-10-18 01:19:18"
