@@ -660,3 +660,29 @@ def evaluar_decision_cobertura(
             "n_mercados_totales": len(CATALOGO_MERCADOS),
         },
     )
+
+
+def obtener_politica_regla_futura(
+    umbrales: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Devuelve la política formal de gobierno (Ronda 7 Punto 7) para aprobar
+    cualquier cambio futuro de comportamiento en el motor.
+    """
+    u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
+    return {
+        "min_partidos_modo_sombra": int(u.get("min_partidos_modo_sombra", 30) or 30),
+        "exigir_datos_no_diseno": bool(u.get("exigir_datos_no_diseno", True)),
+        "exigir_brier_y_logloss_con_ic_por_partido": bool(
+            u.get("exigir_brier_y_logloss_con_ic_por_partido", True)
+        ),
+        "exigir_bandera_apagada_por_defecto": bool(
+            u.get("exigir_bandera_apagada_por_defecto", True)
+        ),
+        "exigir_modo_sombra_dual_en_libro": bool(
+            u.get("exigir_modo_sombra_dual_en_libro", True)
+        ),
+        "prohibir_regla_ad_hoc_por_partido": bool(
+            u.get("prohibir_regla_ad_hoc_por_partido", True)
+        ),
+    }

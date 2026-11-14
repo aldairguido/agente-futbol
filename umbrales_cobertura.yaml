@@ -85,3 +85,12 @@ flags_comportamiento:
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica
 min_partidos_goles_mitad: 15  # regla operativa, sin validación cronológica
+
+# Regla Futura de Promoción de Cambios de Comportamiento (Ronda 7 Punto 7)
+regla_futura:
+  min_partidos_modo_sombra: 30  # regla operativa, sin validación cronológica
+  exigir_datos_no_diseno: true
+  exigir_brier_y_logloss_con_ic_por_partido: true
+  exigir_bandera_apagada_por_defecto: true
+  exigir_modo_sombra_dual_en_libro: true
+  prohibir_regla_ad_hoc_por_partido: true

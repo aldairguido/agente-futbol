@@ -190,9 +190,10 @@ class SnapshotPronostico:
     estado_cobertura: str | None = None
     motivo_abstencion: str | None = None
     decision_cobertura: dict[str, Any] | None = None
+    modo_sombra: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
-        return {
+        out = {
             "esquema": "pronostico-v1",
             "id_trabajo": self.id_trabajo,
             "equipos": self.equipos,
@@ -212,6 +213,9 @@ class SnapshotPronostico:
             "decision_cobertura": self.decision_cobertura,
             "inmutable": True,
         }
+        if self.modo_sombra is not None:
+            out["modo_sombra"] = self.modo_sombra
+        return out
 
 
 def ruta_snapshot(id_trabajo: str, directorio: str | None = None) -> str:
@@ -235,7 +239,8 @@ def guardar_snapshot(snapshot: SnapshotPronostico | dict[str, Any],
 
 
 def snapshot_desde_analisis(preparado: dict[str, Any],
-                            publicado_en: str | None = None) -> SnapshotPronostico:
+                            publicado_en: str | None = None,
+                            modo_sombra: dict[str, Any] | None = None) -> SnapshotPronostico:
     """
     Construye el snapshot a partir del resultado de `preparar_analisis`.
     Guarda TODAS las selecciones estimables (incluidas las inferiores al umbral)
@@ -328,6 +333,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         umbral_publicado=umbral,
         referencia=preparado.get("rutas", {}).get("informe", ""),
         origen="nuevo",
+        modo_sombra=modo_sombra if modo_sombra is not None else preparado.get("modo_sombra"),
     )
 
 
@@ -3944,6 +3950,361 @@ def registrar_en_ledger_oos(
         "sha256": nuevo["sha256"],
         "prev_sha256": nuevo["prev_sha256"],
         "ruta": ruta,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 9b. MODO SOMBRA DUAL EN EL LIBRO Y REGLA FUTURA DE PROMOCIÓN (RONDA 7 PUNTO 7)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def construir_modo_sombra_desde_analisis(
+    analisis_base: Any,
+    analisis_sombra: Any,
+    banderas_candidatas: dict[str, bool],
+    version_base: str = "soloA",
+    version_sombra: str = "candidata",
+) -> dict[str, Any]:
+    """
+    Construye el registro dual inmutable (`base` publicada vs `sombra` candidata) para
+    guardar ambas versiones en el libro sin alterar el pronóstico publicado.
+    """
+    def _resumen_lam(an: Any) -> dict[str, Any]:
+        mot = getattr(an, "motor", None)
+        tas = getattr(mot, "tasas", None)
+        if tas is None:
+            return {}
+        return {
+            "local_ft": getattr(tas, "lambda_local_ft", None),
+            "visitante_ft": getattr(tas, "lambda_visitante_ft", None),
+            "local_1t": getattr(tas, "lambda_local_1t", None),
+            "visitante_1t": getattr(tas, "lambda_visitante_1t", None),
+            "local_2t": getattr(tas, "lambda_local_2t", None),
+            "visitante_2t": getattr(tas, "lambda_visitante_2t", None),
+        }
+
+    def _mapa_probs(an: Any) -> dict[tuple[str, str, str, Any], dict[str, Any]]:
+        out: dict[tuple[str, str, str, Any], dict[str, Any]] = {}
+        for rm in (getattr(an, "mercados", None) or []):
+            for s in (getattr(rm, "selecciones", None) or []):
+                if not getattr(s, "estimable", False) or getattr(s, "probabilidad", None) is None:
+                    continue
+                lin = getattr(s, "linea", None)
+                k = (
+                    str(getattr(s, "evento", "") or ""),
+                    str(getattr(s, "periodo", "FT") or "FT").strip().upper(),
+                    str(getattr(s, "equipo", None) or ""),
+                    None if lin is None else round(float(lin), 4),
+                )
+                out[k] = {
+                    "mercado": getattr(s, "mercado", None),
+                    "evento": k[0],
+                    "periodo": k[1],
+                    "equipo": getattr(s, "equipo", None),
+                    "linea": lin,
+                    "prob": round(float(s.probabilidad), 6),
+                }
+        return out
+
+    m_base = _mapa_probs(analisis_base)
+    m_somb = _mapa_probs(analisis_sombra)
+    comparaciones: list[dict[str, Any]] = []
+    for k, b in m_base.items():
+        s = m_somb.get(k)
+        comparaciones.append({
+            "mercado": b["mercado"],
+            "evento": b["evento"],
+            "periodo": b["periodo"],
+            "equipo": b["equipo"],
+            "linea": b["linea"],
+            "prob_base": b["prob"],
+            "prob_sombra": s["prob"] if s is not None else None,
+        })
+    for k, s in m_somb.items():
+        if k not in m_base:
+            comparaciones.append({
+                "mercado": s["mercado"],
+                "evento": s["evento"],
+                "periodo": s["periodo"],
+                "equipo": s["equipo"],
+                "linea": s["linea"],
+                "prob_base": None,
+                "prob_sombra": s["prob"],
+            })
+
+    return {
+        "esquema": "sombra-v1",
+        "publicado": version_base,
+        "version_base": version_base,
+        "version_sombra": version_sombra,
+        "banderas_candidatas": {str(k): bool(v) for k, v in (banderas_candidatas or {}).items()},
+        "retroalimenta_modelo": False,
+        "lambdas_base": _resumen_lam(analisis_base),
+        "lambdas_sombra": _resumen_lam(analisis_sombra),
+        "n_selecciones_comparables": sum(
+            1 for c in comparaciones if c["prob_base"] is not None and c["prob_sombra"] is not None
+        ),
+        "comparaciones": comparaciones,
+    }
+
+
+def ejecutar_analisis_modo_sombra(
+    doc_local: Any,
+    doc_visitante: Any,
+    equipo_local: str,
+    equipo_visitante: str,
+    banderas_candidatas: dict[str, bool],
+    **analizar_kwargs: Any,
+) -> dict[str, Any]:
+    """
+    Ejecuta el análisis oficial (`soloA`, banderas apagadas) y una corrida sombra con
+    `banderas_candidatas` activadas en memoria, retornando ambas versiones sin alterar
+    la versión publicada.
+    """
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    with banderas_comportamiento(activar_todas=False):
+        an_base = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)
+    with banderas_comportamiento(activar_todas=False, **{k: bool(v) for k, v in banderas_candidatas.items()}):
+        an_sombra = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)
+
+    sombra = construir_modo_sombra_desde_analisis(
+        an_base,
+        an_sombra,
+        banderas_candidatas=banderas_candidatas,
+    )
+    return {
+        "analisis_base": an_base,
+        "analisis_sombra": an_sombra,
+        "modo_sombra": sombra,
+    }
+
+
+def adjuntar_modo_sombra_preparado(
+    preparado: dict[str, Any],
+    banderas_candidatas: dict[str, bool] | None = None,
+) -> dict[str, Any] | None:
+    """
+    Adjunta en `preparado['modo_sombra']` la evaluación paralela sombra usando el
+    mismo contexto del partido ya resuelto, sin modificar `preparado['analisis']`.
+    """
+    if not isinstance(preparado, dict):
+        return None
+    if isinstance(preparado.get("modo_sombra"), dict):
+        return preparado["modo_sombra"]
+    analisis = preparado.get("analisis")
+    if analisis is None or bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False)):
+        return None
+    ctx = preparado.get("contexto") or {}
+    dl = ctx.get("doc_local")
+    dv = ctx.get("doc_visitante")
+    if not isinstance(dl, dict) or not isinstance(dv, dict):
+        return None
+
+    from decision_cobertura import banderas_comportamiento, BANDERAS_COMPORTAMIENTO_DEFECTO
+    import motor_mercados as mm
+
+    meta = getattr(analisis, "metadatos", None) or {}
+    eq_l = str(meta.get("equipo_local") or ctx.get("equipo_local") or "Local")
+    eq_v = str(meta.get("equipo_visitante") or ctx.get("equipo_visitante") or "Visitante")
+    cands = dict(banderas_candidatas) if banderas_candidatas else {
+        k: True
+        for k in BANDERAS_COMPORTAMIENTO_DEFECTO
+        if k != "usar_cuota_justa_114_top5"
+    }
+    params = getattr(analisis, "parametros", None)
+    kw: dict[str, Any] = {
+        "fecha_partido": meta.get("fecha_partido") or ctx.get("fecha_partido"),
+        "competicion": meta.get("competicion") or ctx.get("competicion"),
+        "condicion_local": meta.get("condicion_local") or ctx.get("condicion_local") or "casa",
+        "condicion_visitante": meta.get("condicion_visitante") or ctx.get("condicion_visitante") or "fuera",
+    }
+    if params is not None:
+        kw["parametros"] = params
+    with banderas_comportamiento(activar_todas=False, **cands):
+        an_sombra = mm.analizar(dl, dv, eq_l, eq_v, **kw)
+    sombra = construir_modo_sombra_desde_analisis(
+        analisis,
+        an_sombra,
+        banderas_candidatas=cands,
+    )
+    preparado["modo_sombra"] = sombra
+    return sombra
+
+
+def registrar_sombra_en_ledger_oos(
+    registro_base: dict[str, Any],
+    *,
+    probabilidad_base: float | None = None,
+    probabilidad_sombra: float | None = None,
+    nombre_bandera: str = "",
+    lambdas_base: dict[str, Any] | None = None,
+    lambdas_sombra: dict[str, Any] | None = None,
+    ruta_ledger: str | None = None,
+) -> dict[str, Any]:
+    """
+    Registra en el ledger SHA256 OOS ambas versiones (`base` y `sombra`) manteniendo
+    `retroalimenta_modelo=False` y marcando si el partido pertenece al conjunto de diseño.
+    """
+    reg = dict(registro_base or {})
+    id_p = reg.get("id_partido")
+    partido = reg.get("partido")
+    reg["modo_sombra"] = {
+        "nombre_bandera": str(nombre_bandera or ""),
+        "probabilidad_base": probabilidad_base if probabilidad_base is not None else reg.get("probabilidad_base"),
+        "probabilidad_sombra": probabilidad_sombra,
+        "lambdas_base": lambdas_base,
+        "lambdas_sombra": lambdas_sombra,
+        "es_partido_diseno": es_partido_de_diseno(partido, id_p),
+    }
+    return registrar_en_ledger_oos(reg, ruta_ledger=ruta_ledger)
+
+
+_PATRON_ADHOC_NOMBRES = ("_unico", "_partido_unico", "ad_hoc", "turkey_belgium", "italia_francia", "italy_france")
+
+
+def evaluar_promocion_regla_futura(
+    observaciones_sombra: list[dict[str, Any]],
+    nombre_bandera: str,
+    *,
+    partidos_diseno_adicionales: tuple[str, ...] | list[str] | set[str] = (),
+    nombre_regla_propuesta: str = "",
+    min_partidos: int | None = None,
+    n_boot: int = 2000,
+    seed: int = 20261114,
+    exigir_ic95_estricto: bool = False,
+) -> dict[str, Any]:
+    """
+    Gatekeeper formal de la Regla Futura (Ronda 7 Punto 7). Exige para activar
+    cualquier bandera de comportamiento:
+      1. Bandera declarada en BANDERAS_COMPORTAMIENTO_DEFECTO y apagada por defecto (False).
+      2. Prohibición explícita de reglas ad-hoc codificadas desde un único partido.
+      3. Exclusión de los partidos de diseño (TB, IF y adicionales declarados).
+      4. Registro dual en modo sombra (probabilidades `base` y `sombra`) durante al menos
+         30 partidos únicos (`min_partidos_modo_sombra`).
+      5. Mejora verificada de Brier Y Log-Loss (`sombra` vs `base`) con IC95% por partido.
+    """
+    from decision_cobertura import (
+        BANDERAS_COMPORTAMIENTO_DEFECTO,
+        cargar_umbrales_cobertura,
+        obtener_politica_regla_futura,
+    )
+
+    u = cargar_umbrales_cobertura()
+    pol = obtener_politica_regla_futura(u)
+    min_p = int(min_partidos if min_partidos is not None else pol["min_partidos_modo_sombra"])
+
+    razones: list[str] = []
+    bandera_declarada = nombre_bandera in BANDERAS_COMPORTAMIENTO_DEFECTO
+    apagada_por_defecto = (
+        bandera_declarada and (BANDERAS_COMPORTAMIENTO_DEFECTO.get(nombre_bandera) is False)
+    )
+    if not bandera_declarada:
+        razones.append(f"bandera_no_declarada:{nombre_bandera}")
+    elif not apagada_por_defecto:
+        razones.append(f"bandera_no_apagada_por_defecto:{nombre_bandera}")
+
+    import unicodedata as _ud_rf
+    def _norm_rf(val: Any) -> str:
+        return " ".join(
+            _ud_rf.normalize("NFKD", str(val or ""))
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .lower()
+            .split()
+        )
+
+    nom_reg = _norm_rf(nombre_regla_propuesta or nombre_bandera)
+    if any(tok in nom_reg for tok in _PATRON_ADHOC_NOMBRES):
+        razones.append(f"regla_adhoc_prohibida:{nombre_regla_propuesta or nombre_bandera}")
+
+    diseno_extra = {_norm_rf(x) for x in (partidos_diseno_adicionales or ()) if x}
+    filtradas: list[dict[str, Any]] = []
+    n_excl_diseno = 0
+    n_sin_doble_version = 0
+    partidos_brutos_observados: set[str] = set()
+    for ob in observaciones_sombra:
+        if not isinstance(ob, dict):
+            continue
+        pid = ob.get("id_partido")
+        pnom = ob.get("partido")
+        pid_k = str(pid or pnom or "")
+        if pid_k:
+            partidos_brutos_observados.add(pid_k)
+        if es_partido_de_diseno(pnom, pid) or (
+            _norm_rf(pnom) in diseno_extra or _norm_rf(pid) in diseno_extra
+        ):
+            n_excl_diseno += 1
+            continue
+        probs = ob.get("probs") or {}
+        if "base" not in probs or "sombra" not in probs or probs.get("base") is None or probs.get("sombra") is None:
+            n_sin_doble_version += 1
+            continue
+        filtradas.append(ob)
+
+    if len(partidos_brutos_observados) <= 1:
+        razones.append("prohibido_codificar_regla_de_un_solo_partido")
+    if n_sin_doble_version > 0:
+        razones.append(f"registros_sin_modo_sombra_dual:{n_sin_doble_version}")
+
+    comp = evaluar_oos_comparativo_sin_diseno(filtradas, n_boot=n_boot, seed=seed)
+    tot = comp.get("total") or {}
+    n_part = int(tot.get("n_partidos_unicos", 0) or 0)
+    n_filas = int(tot.get("n_filas", 0) or 0)
+    vers = tot.get("versiones") or {}
+    v_base = vers.get("base") or {}
+    v_somb = vers.get("sombra") or {}
+    diffs = tot.get("diferencias") or {}
+    diff_sb = diffs.get("sombra - base") or next(iter(diffs.values()), {}) if diffs else {}
+
+    b_ant = v_base.get("brier")
+    b_des = v_somb.get("brier")
+    ll_ant = v_base.get("log_loss")
+    ll_des = v_somb.get("log_loss")
+    d_brier = diff_sb.get("d_brier")
+    d_brier_ic = diff_sb.get("d_brier_ic95")
+    d_ll = diff_sb.get("d_log_loss")
+    d_ll_ic = diff_sb.get("d_log_loss_ic95")
+
+    if n_part < min_p:
+        razones.append(f"muestra_sombra_insuficiente:{n_part}<{min_p}")
+    if d_brier is None or float(d_brier) >= 0.0:
+        razones.append(f"brier_no_mejora:{d_brier}")
+    if d_ll is None or float(d_ll) >= 0.0:
+        razones.append(f"log_loss_no_mejora:{d_ll}")
+    if exigir_ic95_estricto:
+        if not d_brier_ic or float(d_brier_ic[1]) >= 0.0:
+            razones.append(f"ic95_brier_cruza_cero:{d_brier_ic}")
+        if not d_ll_ic or float(d_ll_ic[1]) >= 0.0:
+            razones.append(f"ic95_log_loss_cruza_cero:{d_ll_ic}")
+
+    aprobada = len(razones) == 0
+    return {
+        "bandera": nombre_bandera,
+        "bandera_declarada": bandera_declarada,
+        "apagada_por_defecto": apagada_por_defecto,
+        "aprobada_para_activar": aprobada,
+        "politica_estado": "aprobada" if aprobada else "bloqueada",
+        "razones_bloqueo": razones,
+        "min_partidos_requerido": min_p,
+        "n_partidos_unicos": n_part,
+        "n_filas_sombra": n_filas,
+        "n_excluidos_diseno": n_excl_diseno + int(comp.get("filas_excluidas_diseno", 0) or 0),
+        "n_sin_doble_version": n_sin_doble_version,
+        "brier_antes": b_ant,
+        "brier_despues": b_des,
+        "brier_antes_ic95": v_base.get("brier_ic95"),
+        "brier_despues_ic95": v_somb.get("brier_ic95"),
+        "d_brier": d_brier,
+        "d_brier_ic95": d_brier_ic,
+        "log_loss_antes": ll_ant,
+        "log_loss_despues": ll_des,
+        "log_loss_antes_ic95": v_base.get("log_loss_ic95"),
+        "log_loss_despues_ic95": v_somb.get("log_loss_ic95"),
+        "d_log_loss": d_ll,
+        "d_log_loss_ic95": d_ll_ic,
+        "comparativo_oos": comp,
+        "politica_regla_futura": pol,
     }
 
 

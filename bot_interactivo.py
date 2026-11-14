@@ -1601,6 +1601,10 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
         # publicadas. El pasado no se reescribe: si ya existe, no se toca.
         try:
             import evaluacion_pronosticos as evaluacion
+            try:
+                evaluacion.adjuntar_modo_sombra_preparado(preparado)
+            except Exception as _e_somb:
+                print(f"[BOT TELEGRAM] ⚠️ Modo sombra no bloqueante omitido: {_e_somb}")
             snapshot = evaluacion.snapshot_desde_analisis(preparado)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
             print(f"[BOT TELEGRAM] 🗂️  Snapshot de pronóstico guardado: {ruta_snap} "
