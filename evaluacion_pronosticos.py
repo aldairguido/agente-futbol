@@ -4418,6 +4418,127 @@ def analizar_regresion_994209a_vs_5e8425f(
     }
 
 
+ETAPAS_CADENA_LAMBDA: tuple[str, ...] = (
+    "1_lambda_plano",
+    "2_mas_moduladores",
+    "3_mas_finalizacion",
+    "4_mas_doble_adn",
+    "5_mas_red_45_dcn",
+    "6_mas_reglas",
+)
+
+
+def extraer_lambdas_etapas_cadena(traza_lambda: list[dict[str, Any]], lam_final: tuple[float, float] | None = None) -> dict[str, tuple[float, float]]:
+    """
+    Extrae las 6 etapas canónicas de la cadena de λ a partir de `traza_lambda` sin
+    modificar el comportamiento del motor:
+      1. `1_lambda_plano` (`tasas_goles_plano`)
+      2. `2_mas_moduladores` (`moduladores_tacticos`)
+      3. `3_mas_finalizacion` (`lambda_efectivo_finalizacion`)
+      4. `4_mas_doble_adn` (`doble_adn_60_40` / `ajuste_coef_liga_tier`)
+      5. `5_mas_red_45_dcn` (`red_recursiva_45_dcn_bucle`)
+      6. `6_mas_reglas` (`final_ft`: techos, defensa rota, fortín, sincronización 55 patrones, etc.)
+    """
+    traza = list(traza_lambda or [])
+
+    def _get_rule(rule_names: tuple[str, ...], fallback: tuple[float, float]) -> tuple[float, float]:
+        hits = [st for st in traza if isinstance(st, dict) and st.get("regla") in rule_names]
+        if hits:
+            ult = hits[-1]
+            l_val = ult.get("lam_l_despues", ult.get("L1"))
+            v_val = ult.get("lam_v_despues", ult.get("V1"))
+            if l_val is not None and v_val is not None:
+                return (float(l_val), float(v_val))
+        return fallback
+
+    fb = (float(lam_final[0]), float(lam_final[1])) if lam_final is not None else (1.0, 1.0)
+    s1 = _get_rule(("tasas_goles_plano",), fb)
+    s2 = _get_rule(("moduladores_tacticos",), s1)
+    s3 = _get_rule(("lambda_efectivo_finalizacion",), s2)
+    s4_adn = _get_rule(("doble_adn_60_40",), s3)
+    s4 = _get_rule(("ajuste_coef_liga_tier",), s4_adn)
+    s5 = _get_rule(("red_recursiva_45_dcn_bucle",), s4)
+    if lam_final is not None:
+        s6 = (float(lam_final[0]), float(lam_final[1]))
+    elif traza:
+        ult = traza[-1]
+        s6 = (
+            float(ult.get("lam_l_despues", ult.get("L1", s5[0]))),
+            float(ult.get("lam_v_despues", ult.get("V1", s5[1]))),
+        )
+    else:
+        s6 = s5
+    return {
+        "1_lambda_plano": s1,
+        "2_mas_moduladores": s2,
+        "3_mas_finalizacion": s3,
+        "4_mas_doble_adn": s4,
+        "5_mas_red_45_dcn": s5,
+        "6_mas_reglas": s6,
+    }
+
+
+def analizar_ablacion_cadena_lambda_oos(
+    observaciones: list[dict[str, Any]],
+    *,
+    etapas: tuple[str, ...] = ETAPAS_CADENA_LAMBDA,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 2: Evalúa con bootstrap por partido (IC95%) el Brier y Log-Loss de cada
+    una de las 6 etapas de la cadena de λ sobre los partidos OOS (excluyendo partidos de
+    diseño), e identifica qué transiciones paso a paso mejoran (`d < 0`) o empeoran (`d > 0`).
+    No altera ningún peso, umbral ni comportamiento del motor.
+    """
+    filtradas = [
+        o for o in observaciones
+        if isinstance(o, dict) and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+    ]
+    tuplas = [
+        (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        for o in filtradas
+    ]
+    boot = bootstrap_brier_logloss_por_partido(tuplas, n_boot=n_boot, seed=seed)
+    diffs = boot.get("diferencias") or {}
+    pasos: list[dict[str, Any]] = []
+    etapas_presentes = [e for e in etapas if e in (boot.get("versiones") or {})]
+    for i in range(1, len(etapas_presentes)):
+        prev_e = etapas_presentes[i - 1]
+        cur_e = etapas_presentes[i]
+        d = diffs.get(f"{cur_e} - {prev_e}") or {}
+        db = d.get("d_brier")
+        dll = d.get("d_log_loss")
+        db_ic = d.get("d_brier_ic95")
+        dll_ic = d.get("d_log_loss_ic95")
+        pasos.append({
+            "etapa_anterior": prev_e,
+            "etapa_actual": cur_e,
+            "d_brier": db,
+            "d_brier_ic95": db_ic,
+            "veredicto_brier": "mejora" if (db is not None and db < 0) else ("empeora" if (db is not None and db > 0) else "neutro"),
+            "ic95_brier_excluye_cero": bool(db_ic and (db_ic[1] < 0 or db_ic[0] > 0)),
+            "d_log_loss": dll,
+            "d_log_loss_ic95": dll_ic,
+            "veredicto_log_loss": "mejora" if (dll is not None and dll < 0) else ("empeora" if (dll is not None and dll > 0) else "neutro"),
+            "ic95_log_loss_excluye_cero": bool(dll_ic and (dll_ic[1] < 0 or dll_ic[0] > 0)),
+        })
+
+    mejor_brier = min(etapas_presentes, key=lambda e: boot["versiones"][e]["brier"]) if etapas_presentes else None
+    mejor_logloss = min(etapas_presentes, key=lambda e: boot["versiones"][e]["log_loss"]) if etapas_presentes else None
+    acum = diffs.get(f"{etapas_presentes[-1]} - {etapas_presentes[0]}") if len(etapas_presentes) >= 2 else None
+
+    return {
+        "n_filas": boot["n_filas"],
+        "n_partidos_unicos": boot["n_partidos_unicos"],
+        "versiones": boot["versiones"],
+        "transiciones_paso_a_paso": pasos,
+        "delta_acumulado_total": acum,
+        "mejor_etapa_brier": mejor_brier,
+        "mejor_etapa_log_loss": mejor_logloss,
+    }
+
+
 def tabla_ascii_minimalista(columnas: list[str], filas: list[list[str]]) -> str:
     """
     Respaldo en texto para consola o si la imagen no se puede generar. Deliberadamente
