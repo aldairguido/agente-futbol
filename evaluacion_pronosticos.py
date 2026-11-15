@@ -5102,23 +5102,51 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
     pts_col = (doc_col.get("partidos") or [])[:15]
     pts_chi = (doc_chi.get("partidos") or [])[:15]
 
-    def _grupos_casa_fuera(pts: list[dict[str, Any]], offset_mat: int = 0) -> dict[str, Any]:
+    def _grupos_casa_fuera(pts: list[dict[str, Any]], nombre_eq: str, offset_mat: int = 0) -> dict[str, Any]:
         casa, fuera = [], []
+        amistosos_detectados: list[dict[str, Any]] = []
+        fechas_imposibles_detectadas: list[dict[str, Any]] = []
         for idx, p in enumerate(pts, 1):
             cond = str(p.get("condicion") or "").lower()
+            es_local = cond in ("casa", "local", "h", "home")
             marc = p.get("marcador") or {}
-            txt_m = f"{marc.get('equipo')}-{marc.get('rival')}"
+            gf = marc.get("equipo")
+            gc = marc.get("rival")
+            txt_m = f"{gf}-{gc}"
+            rival_str = str(p.get("rival") or "")
+            if es_local:
+                marc_lv = f"{gf}-{gc}"
+                duelo_lv = f"{nombre_eq} {gf}-{gc} {rival_str}"
+            else:
+                marc_lv = f"{gc}-{gf}"
+                duelo_lv = f"{rival_str} {gc}-{gf} {nombre_eq}"
+            torneo_str = str(p.get("torneo") or "").replace("\n", " ").strip()
+            fecha_str = str(p.get("fecha") or "")
+            id_fotmob = str(p.get("id_partido") or p.get("id") or "")
+            if not id_fotmob and p.get("url") and "#" in str(p.get("url")):
+                id_fotmob = str(p.get("url")).split("#")[-1].strip()
             item_info = {
                 "idx_equipo": idx,
                 "idx_matriz": idx + offset_mat,
-                "fecha": str(p.get("fecha") or ""),
-                "rival": str(p.get("rival") or ""),
+                "id_fotmob": id_fotmob,
+                "url": str(p.get("url") or ""),
+                "fecha": fecha_str,
+                "rival": rival_str,
                 "marcador_eq_riv": txt_m,
-                "torneo": str(p.get("torneo") or "").replace("\n", " ").strip(),
+                "marcador_local_visitante": marc_lv,
+                "duelo_local_vs_visitante": duelo_lv,
+                "torneo": torneo_str,
                 "condicion": cond,
-                "etiqueta": "Local" if cond in ("casa", "local", "h", "home") else "Visita",
+                "etiqueta": "Local" if es_local else "Visita",
             }
-            if cond in ("casa", "local", "h", "home"):
+            t_low = torneo_str.lower()
+            if "friendly" in t_low or "amistoso" in t_low or "friendlies" in t_low:
+                amistosos_detectados.append(item_info)
+            if ("qualification" in t_low or "eliminatoria" in t_low) and fecha_str.startswith("2026-"):
+                fechas_imposibles_detectadas.append(item_info)
+            if not fecha_str or fecha_str >= "2026-11-12":
+                fechas_imposibles_detectadas.append(item_info)
+            if es_local:
                 casa.append(item_info)
             else:
                 fuera.append(item_info)
@@ -5126,12 +5154,16 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             "n_total": len(pts),
             "n_casa_local": len(casa),
             "n_fuera_visita": len(fuera),
+            "cero_amistosos": len(amistosos_detectados) == 0,
+            "amistosos_detectados": amistosos_detectados,
+            "cero_fechas_imposibles": len(fechas_imposibles_detectadas) == 0,
+            "fechas_imposibles_detectadas": fechas_imposibles_detectadas,
             "partidos_casa_local": casa,
             "partidos_fuera_visita": fuera,
         }
 
-    grupos_col = _grupos_casa_fuera(pts_col, offset_mat=0)
-    grupos_chi = _grupos_casa_fuera(pts_chi, offset_mat=15)
+    grupos_col = _grupos_casa_fuera(pts_col, "Colombia", offset_mat=0)
+    grupos_chi = _grupos_casa_fuera(pts_chi, "Chile", offset_mat=15)
 
     # Ejecución en modo A+B (configuración donde el ticket imprimió PortRiv -11.9% y Finaliz -8.2%)
     with banderas_comportamiento(activar_todas=True):
@@ -5334,8 +5366,135 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             "total_recibidos_chile": cc_chi.get("total_recibidos"),
             "anotados_por_franja_chile": cc_chi.get("anotados"),
             "recibidos_por_franja_chile": cc_chi.get("recibidos"),
+            "ids_matriz_con_mitades": [d["idx_matriz"] for d in detalle_mitades_chi if d["mitades_validas_en_matriz"]],
+            "ids_matriz_sin_mitades": [d["idx_matriz"] for d in detalle_mitades_chi if not d["mitades_validas_en_matriz"]],
+            "ids_equipo_con_mitades": [d["idx_chile"] for d in detalle_mitades_chi if d["mitades_validas_en_matriz"]],
             "detalle_15p_chile": detalle_mitades_chi,
         },
+    }
+
+
+def generar_lista_5a_desde_30_matrices(
+    doc_col: dict[str, Any] | None = None,
+    doc_chi: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 2: Genera por código la lista completa de los 30 partidos de Colombia (1..15)
+    y Chile (16..30) exclusivamente desde las 30 matrices (`cache_fotmob_colombia_COL_False_False.json`
+    y `cache_fotmob_chile_CHL_False_False.json`), con fecha, marcador (perspectiva equipo y
+    perspectiva local-visitante), torneo e ID FotMob (`id_partido`).
+    Verifica que no existan amistosos (`cero_amistosos=True`) ni fechas imposibles
+    (`cero_fechas_imposibles=True`), y devuelve la lista exacta de IDs de matriz con mitades
+    válidas del Cuadro C de Chile (`[16, 17, 18, 21, 23, 26, 27, 29, 30]`).
+    """
+    from auditoria_historica import reconstruir_marcador_mitades_partido
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    if doc_col is None:
+        with open(os.path.join(base_dir, "cache", "cache_fotmob_colombia_COL_False_False.json"), "r", encoding="utf-8") as f:
+            doc_col = json.load(f)
+    if doc_chi is None:
+        with open(os.path.join(base_dir, "cache", "cache_fotmob_chile_CHL_False_False.json"), "r", encoding="utf-8") as f:
+            doc_chi = json.load(f)
+
+    pts_col = (doc_col.get("partidos") or [])[:15]
+    pts_chi = (doc_chi.get("partidos") or [])[:15]
+
+    def _extraer_15(pts: list[dict[str, Any]], nombre_eq: str, offset: int) -> dict[str, Any]:
+        todos: list[dict[str, Any]] = []
+        casa: list[dict[str, Any]] = []
+        fuera: list[dict[str, Any]] = []
+        amistosos: list[dict[str, Any]] = []
+        fechas_imposibles: list[dict[str, Any]] = []
+        ids_con_mitades: list[int] = []
+        ids_sin_mitades: list[int] = []
+
+        for idx, p in enumerate(pts, 1):
+            idx_mat = idx + offset
+            cond = str(p.get("condicion") or "").lower()
+            es_local = cond in ("casa", "local", "h", "home")
+            marc = p.get("marcador") or {}
+            gf = marc.get("equipo")
+            gc = marc.get("rival")
+            rival = str(p.get("rival") or "")
+            torneo = str(p.get("torneo") or "").replace("\n", " ").strip()
+            fecha = str(p.get("fecha") or "")
+            id_fm = str(p.get("id_partido") or p.get("id") or "")
+            if not id_fm and p.get("url") and "#" in str(p.get("url")):
+                id_fm = str(p.get("url")).split("#")[-1].strip()
+
+            ge_1t, gr_1t, ge_2t, gr_2t, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+            if ok_m:
+                ids_con_mitades.append(idx_mat)
+            else:
+                ids_sin_mitades.append(idx_mat)
+
+            per_ft = ((p.get("periodos") or {}).get("FT") or {}).get("filas") or []
+            xg_row = next((r for r in per_ft if isinstance(r, dict) and r.get("clave") == "xg"), {})
+            xg_eq = xg_row.get("equipo")
+            xg_riv = xg_row.get("rival")
+
+            item = {
+                "idx_matriz": idx_mat,
+                "idx_equipo": idx,
+                "equipo": nombre_eq,
+                "id_fotmob": id_fm,
+                "url": str(p.get("url") or ""),
+                "fecha": fecha,
+                "condicion": cond,
+                "etiqueta": "Local" if es_local else "Visita",
+                "rival": rival,
+                "marcador_eq_riv": f"{gf}-{gc}",
+                "marcador_local_visitante": f"{gf}-{gc}" if es_local else f"{gc}-{gf}",
+                "duelo_local_vs_visitante": (
+                    f"{nombre_eq} {gf}-{gc} {rival}" if es_local else f"{rival} {gc}-{gf} {nombre_eq}"
+                ),
+                "xg_eq_riv": (xg_eq, xg_riv),
+                "torneo": torneo,
+                "tiene_mitades_matriz": bool(ok_m),
+                "mitades_1t_eq_riv": f"{ge_1t}-{gr_1t}" if ok_m else None,
+                "mitades_2t_eq_riv": f"{ge_2t}-{gr_2t}" if ok_m else None,
+            }
+            todos.append(item)
+            if es_local:
+                casa.append(item)
+            else:
+                fuera.append(item)
+
+            t_low = torneo.lower()
+            if "friendly" in t_low or "amistoso" in t_low or "friendlies" in t_low:
+                amistosos.append(item)
+            if ("qualification" in t_low or "eliminatoria" in t_low) and fecha.startswith("2026-"):
+                fechas_imposibles.append(item)
+            if not fecha or fecha >= "2026-11-12":
+                fechas_imposibles.append(item)
+
+        return {
+            "equipo": nombre_eq,
+            "n_total": len(todos),
+            "n_casa_local": len(casa),
+            "n_fuera_visita": len(fuera),
+            "cero_amistosos": len(amistosos) == 0,
+            "amistosos": amistosos,
+            "cero_fechas_imposibles": len(fechas_imposibles) == 0,
+            "fechas_imposibles": fechas_imposibles,
+            "ids_matriz_con_mitades": ids_con_mitades,
+            "ids_matriz_sin_mitades": ids_sin_mitades,
+            "partidos_todos": todos,
+            "partidos_casa_local": casa,
+            "partidos_fuera_visita": fuera,
+        }
+
+    col_res = _extraer_15(pts_col, "Colombia", 0)
+    chi_res = _extraer_15(pts_chi, "Chile", 15)
+    return {
+        "fuente_unica": "30_matrices_cache_fotmob_colombia_y_chile",
+        "colombia": col_res,
+        "chile": chi_res,
+        "cero_amistosos_30_matrices": bool(col_res["cero_amistosos"] and chi_res["cero_amistosos"]),
+        "cero_fechas_imposibles_30_matrices": bool(col_res["cero_fechas_imposibles"] and chi_res["cero_fechas_imposibles"]),
+        "cuadro_c_chile_ids_con_mitades": chi_res["ids_matriz_con_mitades"],
+        "cuadro_c_chile_ids_sin_mitades": chi_res["ids_matriz_sin_mitades"],
     }
 
 
