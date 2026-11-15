@@ -4718,6 +4718,165 @@ def evaluar_bandera_11_aislada_y_propuesta_conjunto_a(
     }
 
 
+FECHA_FIJACION_UMBRALES_BLOQUE3_ISO = "2026-11-13T04:16:01-05:00"
+COMMIT_FIJACION_UMBRALES_BLOQUE3 = "9593ba6281c5ab926a67d4f4bfdc334890982297"
+
+CATALOGO_UMBRALES_NO_OOS: dict[str, dict[str, Any]] = {
+    "gate_corners_8_15": {
+        "umbral": "8/15 (min_partidos_corners_por_equipo: 8)",
+        "bandera": "usar_gate_corners_8_15",
+        "commit": "9593ba6",
+        "commit_full": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "fecha_fijacion_iso": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+        "archivos": ["umbrales_cobertura.yaml", "motor_mercados.py", "decision_cobertura.py"],
+        "datos_origen": (
+            "Post-mortem de Turkey 1-2 Belgium (2026-11-12, fallo Córneres +7.5 ~85% con 5 córneres reales) "
+            "e Italy 3-1 France (2026-11-12, fallo France +3.5 Córneres), más inspección retrospectiva de "
+            "cobertura de córneres en los 24 partidos liquidados de oct-2026 (2 partidos con <8/15 muestras)."
+        ),
+        "rotulo_yaml": "regla operativa, sin validación cronológica",
+    },
+    "gate_mitades_10_15": {
+        "umbral": "10/15 (min_partidos_cronologia_verificada: 10)",
+        "bandera": "usar_gate_cronologia_mitades_10_15",
+        "commit": "9593ba6",
+        "commit_full": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "fecha_fijacion_iso": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+        "archivos": ["umbrales_cobertura.yaml", "decision_cobertura.py"],
+        "datos_origen": (
+            "Post-mortem de Turkey 1-2 Belgium (2026-11-12, fallo +0.5 gol 2T 77% con 2T 0-0) "
+            "y auditoría de cronología 1T/2T en las matrices de FotMob/Flashscore."
+        ),
+        "rotulo_yaml": "regla operativa, sin validación cronológica",
+    },
+    "veto_conciencia_menos_10_pp": {
+        "umbral": "-10 pp (brecha_veto_top5_pp: -10.0 / max_brecha_familia_top5_pp: -10.0 con min_eval_familia_veto_top5: 10)",
+        "bandera": "usar_calibracion_y_veto_conciencia",
+        "commit": "9593ba6",
+        "commit_full": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "fecha_fijacion_iso": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+        "archivos": ["umbrales_cobertura.yaml", "evaluacion_pronosticos.py", "motor_mercados.py"],
+        "datos_origen": (
+            "Inspección retrospectiva de las brechas por familia en evaluacion_20261018_093622.json "
+            "(24 partidos liquidados del 14 al 18 de octubre de 2026, donde Córneres y 1X2/Doble oportunidad "
+            "mostraban brecha negativa > 10 pp) combinada con los fallos del 12/11/2026."
+        ),
+        "rotulo_yaml": "regla operativa, sin validación cronológica",
+    },
+    "factor_nb_105_corners": {
+        "umbral": "factor NB 1.05 (factor_sobredispersion_corners: 1.05 con min_muestra_corners_dispersion: 5)",
+        "bandera": "usar_sobredispersion_nb_corners",
+        "commit": "9593ba6",
+        "commit_full": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "fecha_fijacion_iso": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+        "archivos": ["umbrales_cobertura.yaml", "motor_mercados.py", "decision_cobertura.py"],
+        "datos_origen": (
+            "Sobredispersión empírica de córneres observada en Turkey 1-2 Belgium (2026-11-12), "
+            "Italy 3-1 France (2026-11-12) y los 24 partidos liquidados de octubre de 2026."
+        ),
+        "rotulo_yaml": "regla operativa, sin validación cronológica",
+    },
+}
+
+
+def _normalizar_fecha_iso_comparacion(valor: str | None) -> str:
+    """Normaliza una fecha/timestamp ISO a prefijo `YYYY-MM-DDTHH:MM:SS` comparable lexicográficamente."""
+    s = str(valor or "").strip()
+    if not s:
+        return ""
+    if len(s) == 10 and s[4] == "-" and s[7] == "-":
+        return f"{s}T00:00:00"
+    # Recorta offset de zona horaria o microsegundos para comparación uniforme en horario local/ISO
+    m = re.match(r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})", s)
+    if m:
+        return m.group(1).replace(" ", "T")
+    return s[:19]
+
+
+def auditar_umbrales_no_oos_por_fecha(
+    observaciones: list[dict[str, Any]],
+    *,
+    fecha_fijacion_iso: str = FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 4: Separa las observaciones de partidos liquidados en `antes_de_fijacion`
+    (< `fecha_fijacion_iso`) y `despues_de_fijacion` (>= `fecha_fijacion_iso`), excluyendo
+    partidos de diseño (`Turkey-Belgium`, `Italy-France`), y rehace la comparación Brier /
+    Log-Loss con IC95% por partido únicamente sobre los partidos posteriores a la fecha en
+    que se fijaron los 4 gates (`8/15`, `10/15`, `-10 pp`, `factor NB 1.05`).
+    """
+    corte_norm = _normalizar_fecha_iso_comparacion(fecha_fijacion_iso)
+    obs_no_diseno = [
+        o for o in observaciones
+        if isinstance(o, dict) and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+    ]
+    obs_antes: list[dict[str, Any]] = []
+    obs_despues: list[dict[str, Any]] = []
+    partidos_antes: set[str] = set()
+    partidos_despues: set[str] = set()
+
+    for o in obs_no_diseno:
+        ts_raw = (
+            o.get("liquidado_en")
+            or o.get("publicado_en")
+            or o.get("generado_en")
+            or o.get("fecha_partido")
+            or ""
+        )
+        ts_norm = _normalizar_fecha_iso_comparacion(str(ts_raw))
+        pid = str(o.get("id_partido") or o.get("partido") or "")
+        if ts_norm and ts_norm >= corte_norm:
+            obs_despues.append(o)
+            partidos_despues.add(pid)
+        else:
+            obs_antes.append(o)
+            partidos_antes.add(pid)
+
+    comp_antes = (
+        evaluar_oos_comparativo_sin_diseno(obs_antes, n_boot=n_boot, seed=seed)
+        if obs_antes
+        else {"total": {"n_filas": 0, "n_partidos_unicos": 0, "versiones": {}, "diferencias": {}}, "por_familia": {}}
+    )
+    if obs_despues:
+        comp_despues = evaluar_oos_comparativo_sin_diseno(obs_despues, n_boot=n_boot, seed=seed)
+        estado_despues = "evaluado" if len(partidos_despues) >= 5 else "muestra_posterior_insuficiente"
+    else:
+        comp_despues = {
+            "total": {
+                "n_filas": 0,
+                "n_partidos_unicos": 0,
+                "versiones": {},
+                "diferencias": {},
+                "brier": None,
+                "log_loss": None,
+                "ic95": None,
+            },
+            "por_familia": {},
+        }
+        estado_despues = "muestra_posterior_vacia"
+
+    return {
+        "fecha_fijacion_iso": fecha_fijacion_iso,
+        "commit_fijacion": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "catalogo_umbrales": dict(CATALOGO_UMBRALES_NO_OOS),
+        "antes_de_fijacion": {
+            "n_filas": len(obs_antes),
+            "n_partidos_unicos": len(partidos_antes),
+            "partidos": sorted(partidos_antes),
+            "comparacion": comp_antes,
+        },
+        "despues_de_fijacion": {
+            "estado": estado_despues,
+            "n_filas": len(obs_despues),
+            "n_partidos_unicos": len(partidos_despues),
+            "partidos": sorted(partidos_despues),
+            "comparacion": comp_despues,
+        },
+    }
+
+
 def tabla_ascii_minimalista(columnas: list[str], filas: list[list[str]]) -> str:
     """
     Respaldo en texto para consola o si la imagen no se puede generar. Deliberadamente
