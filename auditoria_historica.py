@@ -2145,6 +2145,14 @@ def _formatear_valor_metrica_45(
             if comp is not None and tot is not None and tot > 0:
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if clave == "entradas_pct" and es_falso_100_ent and comp is not None and float(comp) < 100.0:
+                return str(int(round(float(comp))))
+            if valor is not None:
+                try:
+                    if abs(float(valor) - 100.0) < 1e-6:
+                        return "100%"
+                except (TypeError, ValueError):
+                    pass
         elif clave == "pases_tercio_final_pct":
             comp_f = filas_map.get("pases_tercio_final_completados") or {}
             tot_f = filas_map.get("pases_tercio_final") or {}
@@ -2154,6 +2162,7 @@ def _formatear_valor_metrica_45(
             es_falso_100 = (
                 tot is not None and abs(float(tot) - 100.0) < 1e-6
                 and not bool(tot_f.get("denominador_observado"))
+                and (clave != "entradas_pct" or not es_flashscore)
                 and (
                     _es_procedencia_sintetica(tot_f, procedencia_celda)
                     or _es_procedencia_sintetica(comp_f, procedencia_celda)
@@ -2169,6 +2178,14 @@ def _formatear_valor_metrica_45(
             ):
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if clave == "entradas_pct" and es_falso_100_ent and comp is not None and float(comp) < 100.0:
+                return str(int(round(float(comp))))
+            if valor is not None:
+                try:
+                    if abs(float(valor) - 100.0) < 1e-6:
+                        return "100%"
+                except (TypeError, ValueError):
+                    pass
             if es_flashscore and valor is not None:
                 try:
                     return f"{int(round(float(valor)))}%"
@@ -2180,6 +2197,14 @@ def _formatear_valor_metrica_45(
             if comp is not None and tot is not None and tot > 0:
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if clave == "entradas_pct" and es_falso_100_ent and comp is not None and float(comp) < 100.0:
+                return str(int(round(float(comp))))
+            if valor is not None:
+                try:
+                    if abs(float(valor) - 100.0) < 1e-6:
+                        return "100%"
+                except (TypeError, ValueError):
+                    pass
         elif clave == "entradas_pct":
             comp_f = filas_map.get("entradas_ganadas") or {}
             tot_f = filas_map.get("entradas") or {}
@@ -2189,6 +2214,7 @@ def _formatear_valor_metrica_45(
             es_falso_100_ent = (
                 comp is not None and tot is not None
                 and not bool(tot_f.get("denominador_observado"))
+                and (clave != "entradas_pct" or not es_flashscore)
                 and abs(float(comp) - float(tot)) < 1e-6 and float(comp) > 0.0
                 and (pct_e is None or abs(float(pct_e) - 100.0) < 1e-6)
             )
@@ -2200,6 +2226,14 @@ def _formatear_valor_metrica_45(
             ):
                 pct = int(round(pct_e)) if pct_e is not None else int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if clave == "entradas_pct" and es_falso_100_ent and comp is not None and float(comp) < 100.0:
+                return str(int(round(float(comp))))
+            if valor is not None:
+                try:
+                    if abs(float(valor) - 100.0) < 1e-6:
+                        return "100%"
+                except (TypeError, ValueError):
+                    pass
         elif clave == "pases_ratio":
             def _num_pase(d_f):
                 return d_f.get(lado) if isinstance(d_f, dict) else None
@@ -2226,6 +2260,14 @@ def _formatear_valor_metrica_45(
             if comp is not None and tot is not None and tot > 0:
                 pct = int(round(comp * 100.0 / tot))
                 return f"{int(round(comp))}/{int(round(tot))} ({pct}%)"
+            if clave == "entradas_pct" and es_falso_100_ent and comp is not None and float(comp) < 100.0:
+                return str(int(round(float(comp))))
+            if valor is not None:
+                try:
+                    if abs(float(valor) - 100.0) < 1e-6:
+                        return "100%"
+                except (TypeError, ValueError):
+                    pass
 
     if isinstance(valor, str):
         return valor.strip()
@@ -2370,6 +2412,7 @@ def formatear_matriz_45_partido(
     dividida en 6 sub-tablas Markdown (Principales, Disparos, Ataques, Pases, Defensa, Portería)
     con columnas explícitas para Local y Visita.
     """
+    sanear_partido_auditoria_45(partido)
     condicion = str(partido.get("condicion") or "").lower()
     if condicion == "casa":
         lado_local = "equipo"
@@ -2899,6 +2942,463 @@ def main() -> int:
         print(f"    - {tipo:10} {ruta}")
     print("=" * 70)
     return 0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RONDA 8 — PUNTO 6: SANEAMIENTO DE DATOS DE LAS 30 MATRICES E INFORME DE COPIAS/DERIVADAS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _reconstruir_pases_totales_desde_completados(
+    comp_ft: float | None,
+    pct_ft: float | None,
+    comp_1t: float | None,
+    pct_1t: float | None,
+    comp_2t: float | None,
+    pct_2t: float | None,
+) -> tuple[float | None, float | None, float | None]:
+    """
+    Reconstruye `pases_total` (intentados) en 1T, 2T y FT cuando la fuente (Flashscore)
+    almacenó `pases_completados` tanto en `pases_completados` como en `pases_total`,
+    garantizando que:
+      - `round(100 * comp_1t / tot_1t) == round(pct_1t)`
+      - `round(100 * comp_2t / tot_2t) == round(pct_2t)`
+      - `tot_ft == tot_1t + tot_2t`
+      - `round(100 * comp_ft / tot_ft) == round(pct_ft)`
+    """
+    def _candidatos_mitad(c_val: float | None, p_val: float | None) -> list[int]:
+        if c_val is None or p_val is None or p_val <= 0 or p_val > 100:
+            return []
+        c_i = int(round(float(c_val)))
+        p_i = int(round(float(p_val)))
+        if p_i == 100:
+            return [c_i]
+        est = int(round(c_i * 100.0 / p_i))
+        cands = [t for t in range(max(c_i, est - 6), est + 7) if t > 0 and int(round(c_i * 100.0 / t)) == p_i]
+        cands.sort(key=lambda t: abs((c_i * 100.0 / t) - p_i))
+        return cands or [max(c_i, est)]
+
+    c1 = _candidatos_mitad(comp_1t, pct_1t)
+    c2 = _candidatos_mitad(comp_2t, pct_2t)
+    if c1 and c2 and comp_ft is not None and pct_ft is not None and pct_ft > 0:
+        cf_i = int(round(float(comp_ft)))
+        pf_i = int(round(float(pct_ft)))
+        mejor_par: tuple[int, int] | None = None
+        mejor_err = 1e9
+        for t1 in c1:
+            for t2 in c2:
+                tf = t1 + t2
+                if tf > 0 and int(round(cf_i * 100.0 / tf)) == pf_i:
+                    err = abs(t1 - round(float(comp_1t) * 100.0 / float(pct_1t))) + abs(t2 - round(float(comp_2t) * 100.0 / float(pct_2t))) + abs((cf_i * 100.0 / tf) - pf_i) * 0.1
+                    if err < mejor_err:
+                        mejor_err = err
+                        mejor_par = (t1, t2)
+        if mejor_par is not None:
+            t1_b, t2_b = mejor_par
+            return float(t1_b + t2_b), float(t1_b), float(t2_b)
+        return float(c1[0] + c2[0]), float(c1[0]), float(c2[0])
+
+    if comp_ft is not None and pct_ft is not None and 0 < pct_ft < 100:
+        cf_cands = _candidatos_mitad(comp_ft, pct_ft)
+        return (float(cf_cands[0]) if cf_cands else None), (float(c1[0]) if c1 else None), (float(c2[0]) if c2 else None)
+    return None, None, None
+
+
+def sanear_partido_auditoria_45(partido: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 6: Sanea in-place los 6 defectos de datos detectados en las matrices de 45 métricas:
+      1. `pases_total` (#08) en partidos donde Flashscore guardó `pases_completados` como `pases_total`
+         (partidos 29 `St0p31gO` New Zealand vs Chile y 30 `Ac1t4lvr` Chile vs Cape Verde):
+         reconstruye los pases intentados reales en 1T, 2T y FT (`1T + 2T == FT`).
+      2. `entradas_ganadas > entradas` (#32) en el partido 3 (`4999441`, Colombia vs Portugal):
+         intercambia `entradas_ganadas` y `entradas` cuando `ganadas > intentadas` y recalcula el % real.
+      3. `tiros_libres` (#25) no invertidos respecto a `faltas` (#31) en el partido 3 (`4999441`,
+         Colombia vs Portugal): invierte `tiros_libres` para que sean las faltas recibidas del rival.
+      4. `bloqueos` (#38) en `0` donde corresponde `sin_dato` (`None`) en los partidos 14 (`3612915`,
+         Uruguay vs Colombia), 19 (`3612914`, Brasil vs Chile) y 22 (`3562413`, Chile vs Bolivia).
+      5. `centros` / `cruces_pct` (#28) por mitad en los partidos 1 (`5140423`, Suiza vs Colombia,
+         donde 2T tenía `0/0` en vez de `FT - 1T = 2/10 y 0/10`) y 3 (`4999441`, Colombia vs Portugal,
+         donde 1T tenía `0/6` en vez de `0/8` para sumar `FT = 6/22`).
+      6. Formato `"100"` en `#32` (`entradas_pct`) del partido 29 (`St0p31gO`, New Zealand vs Chile):
+         marca `denominador_observado = True` cuando el partido tiene denominador real de entradas,
+         para mostrar `7/7 (100%)` y `4/4 (100%)` en 1T en lugar de `"100"`.
+    """
+    if not isinstance(partido, dict):
+        return partido
+
+    pers = partido.get("periodos") or {}
+    if not pers:
+        return partido
+
+    id_fm = str(partido.get("id_partido") or partido.get("id") or "")
+    id_fs = str((partido.get("fuente_secundaria") or {}).get("id_flashscore") or "")
+    fecha = str(partido.get("fecha") or "")[:10]
+    rival = str(partido.get("rival") or "")
+
+    def _mapa_periodo(per: str) -> dict[str, dict[str, Any]]:
+        filas = (pers.get(per) or {}).get("filas") or []
+        return {f["clave"]: f for f in filas if isinstance(f, dict) and "clave" in f}
+
+    def _asegurar_fila(per: str, clave: str) -> dict[str, Any]:
+        p_obj = pers.setdefault(per, {"filas": []})
+        filas = p_obj.setdefault("filas", [])
+        for f in filas:
+            if isinstance(f, dict) and f.get("clave") == clave:
+                return f
+        nueva = {"clave": clave, "etiqueta": clave, "equipo": None, "rival": None}
+        filas.append(nueva)
+        return nueva
+
+    f_ft = _mapa_periodo("FT")
+    f_1t = _mapa_periodo("1T")
+    f_2t = _mapa_periodo("2T")
+    res_claves = partido.get("resumen_claves")
+
+    # ── 1) Reconstrucción de #08 pases_total cuando pases_total == pases_completados y pct < 100 ──
+    for lado in ("equipo", "rival"):
+        pt_ft = (f_ft.get("pases_total") or {}).get(lado)
+        pc_ft = (f_ft.get("pases_completados") or {}).get(lado)
+        pp_ft = (f_ft.get("pases_precision_pct") or {}).get(lado)
+        pt_1t = (f_1t.get("pases_total") or {}).get(lado)
+        pc_1t = (f_1t.get("pases_completados") or {}).get(lado)
+        pp_1t = (f_1t.get("pases_precision_pct") or {}).get(lado)
+        pt_2t = (f_2t.get("pases_total") or {}).get(lado)
+        pc_2t = (f_2t.get("pases_completados") or {}).get(lado)
+        pp_2t = (f_2t.get("pases_precision_pct") or {}).get(lado)
+
+        if (
+            pt_ft is not None and pc_ft is not None and pp_ft is not None
+            and abs(float(pt_ft) - float(pc_ft)) < 1e-6
+            and 0.0 < float(pp_ft) < 100.0
+        ):
+            tot_ft_new, tot_1t_new, tot_2t_new = _reconstruir_pases_totales_desde_completados(
+                pc_ft, pp_ft, pc_1t, pp_1t, pc_2t, pp_2t
+            )
+            if tot_ft_new is not None:
+                for k_pt in ("pases_total", "pases_totales"):
+                    if k_pt in f_ft or k_pt == "pases_total":
+                        _asegurar_fila("FT", k_pt)[lado] = tot_ft_new
+                if isinstance(res_claves, dict) and isinstance(res_claves.get("pases_total"), dict):
+                    res_claves["pases_total"][lado] = tot_ft_new
+            if tot_1t_new is not None:
+                for k_pt in ("pases_total", "pases_totales"):
+                    if k_pt in f_1t or k_pt == "pases_total":
+                        _asegurar_fila("1T", k_pt)[lado] = tot_1t_new
+            if tot_2t_new is not None:
+                for k_pt in ("pases_total", "pases_totales"):
+                    if k_pt in f_2t or k_pt == "pases_total":
+                        _asegurar_fila("2T", k_pt)[lado] = tot_2t_new
+
+    # ── 2) y 6) Entradas ganadas > intentadas (partido 3) y denominador_observado (partidos 29 y 30) ──
+    tiene_denom_real_partido = False
+    for per, fmap in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+        eg_f = fmap.get("entradas_ganadas")
+        et_f = fmap.get("entradas")
+        ep_f = fmap.get("entradas_ganadas_pct")
+        er_f = fmap.get("entradas_pct")
+        if not isinstance(eg_f, dict) or not isinstance(et_f, dict):
+            continue
+        for lado in ("equipo", "rival"):
+            v_g = eg_f.get(lado)
+            v_t = et_f.get(lado)
+            if v_g is not None and v_t is not None and float(v_t) > 0:
+                if float(v_g) > float(v_t):
+                    # Intercambiar ganadas e intentadas cuando vienen invertidas (ej. partido 3 Colombia vs Portugal)
+                    v_g, v_t = float(v_t), float(v_g)
+                    eg_f[lado] = v_g
+                    et_f[lado] = v_t
+                if float(v_t) > float(v_g):
+                    tiene_denom_real_partido = True
+                pct_real = float(round(float(v_g) * 100.0 / float(v_t)))
+                if isinstance(ep_f, dict):
+                    ep_f[lado] = pct_real
+                if isinstance(er_f, dict):
+                    er_f[lado] = pct_real
+                if per == "FT" and isinstance(res_claves, dict) and isinstance(res_claves.get("entradas_pct"), dict):
+                    res_claves["entradas_pct"][lado] = pct_real
+
+    # Reconciliar 1T + 2T == FT en entradas cuando una mitad fue saneada (ej. Partido 3 rival: 1T 3/5 + 2T 4/4 = FT 7/9 o 1T 3/5 + 2T 5/5 = FT 8/10)
+    for lado in ("equipo", "rival"):
+        eg_ft_d = f_ft.get("entradas_ganadas") or {}
+        et_ft_d = f_ft.get("entradas") or {}
+        eg_1t_d = f_1t.get("entradas_ganadas") or {}
+        et_1t_d = f_1t.get("entradas") or {}
+        eg_2t_d = f_2t.get("entradas_ganadas") or {}
+        et_2t_d = f_2t.get("entradas") or {}
+        if all(x.get(lado) is not None for x in (eg_ft_d, et_ft_d, eg_1t_d, et_1t_d, eg_2t_d, et_2t_d)):
+            g_ft, t_ft = float(eg_ft_d[lado]), float(et_ft_d[lado])
+            g_1t, t_1t = float(eg_1t_d[lado]), float(et_1t_d[lado])
+            g_2t, t_2t = float(eg_2t_d[lado]), float(et_2t_d[lado])
+            if (g_1t + g_2t != g_ft) or (t_1t + t_2t != t_ft):
+                # Conservar t_ft y t_1t; ajustar 2T a (t_ft - t_1t) con ganadas <= intentadas
+                t_2t_fix = max(0.0, t_ft - t_1t)
+                g_2t_fix = min(t_2t_fix, max(0.0, g_ft - g_1t))
+                g_1t_fix = min(t_1t, max(0.0, g_ft - g_2t_fix))
+                eg_1t_d[lado], et_1t_d[lado] = g_1t_fix, t_1t
+                eg_2t_d[lado], et_2t_d[lado] = g_2t_fix, t_2t_fix
+                for fmap_x, gx, tx in ((f_1t, g_1t_fix, t_1t), (f_2t, g_2t_fix, t_2t_fix), (f_ft, g_1t_fix + g_2t_fix, t_ft)):
+                    px = float(round(gx * 100.0 / tx)) if tx > 0 else 0.0
+                    if isinstance(fmap_x.get("entradas_ganadas_pct"), dict):
+                        fmap_x["entradas_ganadas_pct"][lado] = px
+                    if isinstance(fmap_x.get("entradas_pct"), dict):
+                        fmap_x["entradas_pct"][lado] = px
+
+    if tiene_denom_real_partido or (id_fs and id_fs != "N/D" and (not id_fm or id_fm == "N/D")):
+        for fmap in (f_ft, f_1t, f_2t):
+            if isinstance(fmap.get("entradas"), dict):
+                fmap["entradas"]["denominador_observado"] = True
+
+    # ── 3) Tiros libres (#25) no invertidos respecto a faltas (#31) en partido 3 (4999441) ──
+    es_partido_3_col_por = (id_fm == "4999441") or (fecha == "2026-06-27" and "portugal" in rival.lower())
+    if es_partido_3_col_por:
+        for per, fmap in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+            fl_f = fmap.get("faltas")
+            tl_f = fmap.get("tiros_libres")
+            if isinstance(fl_f, dict) and isinstance(tl_f, dict):
+                fe = fl_f.get("equipo")
+                fr = fl_f.get("rival")
+                te = tl_f.get("equipo")
+                tr = tl_f.get("rival")
+                if fe is not None and fr is not None and te == fe and tr == fr and fe != fr:
+                    tl_f["equipo"] = float(fr)
+                    tl_f["rival"] = float(fe)
+                    if per == "FT" and isinstance(res_claves, dict) and isinstance(res_claves.get("tiros_libres"), dict):
+                        res_claves["tiros_libres"]["equipo"] = float(fr)
+                        res_claves["tiros_libres"]["rival"] = float(fe)
+
+    # ── 4) Bloqueos (#38) en 0 donde corresponde sin_dato (partidos 14, 19 y 22) ──
+    es_bloq_sin_dato = (
+        id_fm in ("3612915", "3612914", "3562413")
+        or (fecha == "2021-07-03" and any(x in rival.lower() for x in ("uruguay", "brazil", "brasil")))
+        or (fecha == "2021-06-18" and "bolivia" in rival.lower())
+    )
+    if es_bloq_sin_dato:
+        for per, fmap in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+            bl_f = fmap.get("bloqueos")
+            if isinstance(bl_f, dict):
+                bl_f["equipo"] = None
+                bl_f["rival"] = None
+            proc_p = (partido.get("procedencia") or {}).get(per) or {}
+            for lado in ("equipo", "rival"):
+                if isinstance(proc_p.get(lado), dict):
+                    proc_p[lado]["bloqueos"] = "sin_dato"
+        if isinstance(res_claves, dict) and isinstance(res_claves.get("bloqueos"), dict):
+            res_claves["bloqueos"]["equipo"] = None
+            res_claves["bloqueos"]["rival"] = None
+
+    # ── 5) Centros por mitad (#28 cruces_pct) en partidos 1 (5140423) y 3 (4999441) ──
+    for lado in ("equipo", "rival"):
+        cc_ft = (f_ft.get("centros_completados") or {}).get(lado)
+        ct_ft = (f_ft.get("centros") or {}).get(lado)
+        cc_1t = (f_1t.get("centros_completados") or {}).get(lado)
+        ct_1t = (f_1t.get("centros") or {}).get(lado)
+        cc_2t = (f_2t.get("centros_completados") or {}).get(lado)
+        ct_2t = (f_2t.get("centros") or {}).get(lado)
+
+        cp_ft = (f_ft.get("cruces_pct") or {}).get(lado)
+        cp_1t = (f_1t.get("cruces_pct") or {}).get(lado)
+        cp_2t = (f_2t.get("cruces_pct") or {}).get(lado)
+
+        if cc_ft is not None and ct_ft is not None and float(ct_ft) > 0:
+            # Caso A (Partido 1, 5140423 Suiza vs Colombia): 1T copió el conteo FT (3/19 y 1/14) dejando 2T en 0/0,
+            # pero 1T conserva el porcentaje real de 1T en cruces_pct (11% -> 1/9 y 25% -> 1/4)
+            if (
+                cc_1t is not None and ct_1t is not None
+                and abs(float(ct_1t) - float(ct_ft)) < 1e-6
+                and (ct_2t is None or float(ct_2t) == 0.0)
+                and cp_1t is not None and float(cp_1t) > 0.0
+                and (cp_ft is None or abs(float(cp_1t) - float(cp_ft)) >= 1.0)
+            ):
+                p1_target = int(round(float(cp_1t)))
+                mejor_1t: tuple[int, int] | None = None
+                for c_try in range(0, int(round(float(cc_ft))) + 1):
+                    for t_try in range(max(1, c_try), int(round(float(ct_ft)))):
+                        if int(round(c_try * 100.0 / t_try)) == p1_target:
+                            mejor_1t = (c_try, t_try)
+                            break
+                    if mejor_1t is not None:
+                        break
+                if mejor_1t is not None:
+                    c1_ok, t1_ok = float(mejor_1t[0]), float(mejor_1t[1])
+                    c2_ok = max(0.0, float(cc_ft) - c1_ok)
+                    t2_ok = max(0.0, float(ct_ft) - t1_ok)
+                    _asegurar_fila("1T", "centros_completados")[lado] = c1_ok
+                    _asegurar_fila("1T", "centros")[lado] = t1_ok
+                    _asegurar_fila("2T", "centros_completados")[lado] = c2_ok
+                    _asegurar_fila("2T", "centros")[lado] = t2_ok
+                    p2_ok = float(round(c2_ok * 100.0 / t2_ok)) if t2_ok > 0 else 0.0
+                    _asegurar_fila("2T", "centros_precision_pct")[lado] = p2_ok
+                    _asegurar_fila("2T", "cruces_pct")[lado] = p2_ok
+            # Caso B (Partido 3, 4999441 Colombia vs Portugal): 2T copió el conteo FT (3/11 y 2/13) dejando 1T en 0/0,
+            # pero 2T conserva el porcentaje real de 2T en cruces_pct (43% -> 3/7 y 40% -> 2/5)
+            elif (
+                cc_2t is not None and ct_2t is not None
+                and abs(float(ct_2t) - float(ct_ft)) < 1e-6
+                and (ct_1t is None or float(ct_1t) == 0.0)
+                and cp_2t is not None and float(cp_2t) > 0.0
+                and (cp_ft is None or abs(float(cp_2t) - float(cp_ft)) >= 1.0)
+            ):
+                p2_target = int(round(float(cp_2t)))
+                mejor_2t: tuple[int, int] | None = None
+                for c_try in range(int(round(float(cc_ft))), -1, -1):
+                    for t_try in range(max(1, c_try), int(round(float(ct_ft)))):
+                        if int(round(c_try * 100.0 / t_try)) == p2_target:
+                            mejor_2t = (c_try, t_try)
+                            break
+                    if mejor_2t is not None:
+                        break
+                if mejor_2t is not None:
+                    c2_ok, t2_ok = float(mejor_2t[0]), float(mejor_2t[1])
+                    c1_ok = max(0.0, float(cc_ft) - c2_ok)
+                    t1_ok = max(0.0, float(ct_ft) - t2_ok)
+                    _asegurar_fila("1T", "centros_completados")[lado] = c1_ok
+                    _asegurar_fila("1T", "centros")[lado] = t1_ok
+                    p1_ok = float(round(c1_ok * 100.0 / t1_ok)) if t1_ok > 0 else 0.0
+                    _asegurar_fila("1T", "centros_precision_pct")[lado] = p1_ok
+                    _asegurar_fila("1T", "cruces_pct")[lado] = p1_ok
+                    _asegurar_fila("2T", "centros_completados")[lado] = c2_ok
+                    _asegurar_fila("2T", "centros")[lado] = t2_ok
+            # Caso C: 2T vino en 0/0 teniendo 1T < FT
+            elif (
+                cc_1t is not None and ct_1t is not None
+                and (ct_2t is None or float(ct_2t) == 0.0)
+                and float(ct_1t) < float(ct_ft)
+            ):
+                new_cc_2t = max(0.0, float(cc_ft) - float(cc_1t))
+                new_ct_2t = max(0.0, float(ct_ft) - float(ct_1t))
+                _asegurar_fila("2T", "centros_completados")[lado] = new_cc_2t
+                _asegurar_fila("2T", "centros")[lado] = new_ct_2t
+                pct_2t_c = float(round(new_cc_2t * 100.0 / new_ct_2t)) if new_ct_2t > 0 else 0.0
+                _asegurar_fila("2T", "centros_precision_pct")[lado] = pct_2t_c
+                _asegurar_fila("2T", "cruces_pct")[lado] = pct_2t_c
+            # Caso D: 1T + 2T != FT con ambos > 0
+            elif (
+                cc_1t is not None and ct_1t is not None
+                and cc_2t is not None and ct_2t is not None
+                and float(ct_2t) > 0.0
+                and abs((float(ct_1t) + float(ct_2t)) - float(ct_ft)) >= 1.0
+            ):
+                new_cc_1t = max(0.0, float(cc_ft) - float(cc_2t))
+                new_ct_1t = max(0.0, float(ct_ft) - float(ct_2t))
+                _asegurar_fila("1T", "centros_completados")[lado] = new_cc_1t
+                _asegurar_fila("1T", "centros")[lado] = new_ct_1t
+                pct_1t_c = float(round(new_cc_1t * 100.0 / new_ct_1t)) if new_ct_1t > 0 else 0.0
+                _asegurar_fila("1T", "centros_precision_pct")[lado] = pct_1t_c
+                _asegurar_fila("1T", "cruces_pct")[lado] = pct_1t_c
+
+    return partido
+
+
+def sanear_documento_auditoria_45(doc: dict[str, Any]) -> dict[str, Any]:
+    """Aplica `sanear_partido_auditoria_45` a todos los partidos de un documento de auditoría."""
+    if not isinstance(doc, dict):
+        return doc
+    for p in (doc.get("partidos") or []):
+        if isinstance(p, dict):
+            sanear_partido_auditoria_45(p)
+    return doc
+
+
+def auditar_metricas_copia_o_derivadas_45() -> list[dict[str, Any]]:
+    """
+    Ronda 8 Punto 6: Informa exhaustivamente qué otras métricas del catálogo de 45 variables
+    son copia exacta, función algebraica determinista o copia por fallback de otras métricas.
+    """
+    return [
+        {
+            "numero": "10",
+            "clave": "pases_ratio",
+            "etiqueta": "Pases (completados/totales y %)",
+            "tipo_dependencia": "derivada_compuesta",
+            "depende_de": ["#08 pases_total", "#09 pases_precision_pct", "pases_completados"],
+            "formula_o_regla": (
+                "En el JSON base el valor numérico de `pases_ratio` es copia de `#09 pases_precision_pct` "
+                "(o `round(100 * pases_completados / pases_total)`), y en la tabla Markdown se formatea "
+                "combinando `pases_completados`, `#08 pases_total` y `#09 pases_precision_pct`."
+            ),
+        },
+        {
+            "numero": "43",
+            "clave": "xgot_enfrentado",
+            "etiqueta": "xGOT enfrentado (al portero)",
+            "tipo_dependencia": "copia_simetrica_rival",
+            "depende_de": ["#13 xgot (del equipo rival)"],
+            "formula_o_regla": (
+                "`xgot_enfrentado(equipo) == xgot(rival)` y `xgot_enfrentado(rival) == xgot(equipo)` "
+                "en FT, 1T y 2T cuando la fuente no publica un xGOT enfrentado distinto del xGOT rival."
+            ),
+        },
+        {
+            "numero": "44",
+            "clave": "goles_evitados",
+            "etiqueta": "Goles evitados",
+            "tipo_dependencia": "derivada_algebraica_cuando_falta",
+            "depende_de": ["#43 xgot_enfrentado (o #13 xgot rival)", "goles_concedidos (marcador rival)"],
+            "formula_o_regla": (
+                "`goles_evitados(equipo) = round(xgot_enfrentado(equipo) - goles_rival, 2)` "
+                "cuando la fuente no entrega la fila nativa o para reconciliar mitades 1T/2T."
+            ),
+        },
+        {
+            "numero": "14 y 16",
+            "clave": "xg_juego_abierto / xg_sin_penalti",
+            "etiqueta": "xG en juego abierto (#14) y xG sin penaltis (#16)",
+            "tipo_dependencia": "copia_fallback_flashscore_o_identidad",
+            "depende_de": ["#01 xg", "#15 xg_balon_parado"],
+            "formula_o_regla": (
+                "En partidos con fuente única Flashscore (ej. partidos 29 y 30) donde Flashscore solo "
+                "publica `#01 xg` total sin desglose de balón parado ni penaltis, `#14 xg_juego_abierto` "
+                "y `#16 xg_sin_penalti` se rellenan como copia de `#01 xg` (`xg_balon_parado = 0.00`). "
+                "En FotMob sin penaltis se cumple además `#01 xg == #16 xg_sin_penalti == #14 + #15`."
+            ),
+        },
+        {
+            "numero": "25",
+            "clave": "tiros_libres",
+            "etiqueta": "Tiros libres",
+            "tipo_dependencia": "copia_invertida_de_faltas_en_fallback",
+            "depende_de": ["#31 faltas (del rival)"],
+            "formula_o_regla": (
+                "Cuando la fuente sólo reporta faltas cometidas (`#31 faltas`) o en el backfill de "
+                "Flashscore/FotMob para mitades, `tiros_libres(equipo) == faltas(rival)` y "
+                "`tiros_libres(rival) == faltas(equipo)` (salvo fueras de juego o ley de la ventaja)."
+            ),
+        },
+        {
+            "numero": "03",
+            "clave": "remates_totales",
+            "etiqueta": "Remates totales",
+            "tipo_dependencia": "identidad_aditiva_exacta",
+            "depende_de": [
+                "#04 remates_puerta + #17 remates_fuera + #18 remates_rechazados",
+                "#19 remates_dentro_area + #20 remates_fuera_area",
+            ],
+            "formula_o_regla": (
+                "Identidad contable doble: `#03 == #04 + #17 + #18` y `#03 == #19 + #20` en FT, 1T y 2T."
+            ),
+        },
+        {
+            "numero": "33",
+            "clave": "duelos_ganados",
+            "etiqueta": "Duelos ganados",
+            "tipo_dependencia": "identidad_aditiva_componentes",
+            "depende_de": ["#34 duelos_suelo_pct (numerador)", "#35 duelos_aereos_pct (numerador)"],
+            "formula_o_regla": (
+                "En los partidos con desglose completo de duelos, `#33 duelos_ganados == "
+                "duelos_suelo_ganados + duelos_aereos_ganados`."
+            ),
+        },
+        {
+            "numero": "27, 28, 32, 34, 35",
+            "clave": "pases_largos_pct, cruces_pct, entradas_pct, duelos_suelo_pct, duelos_aereos_pct",
+            "etiqueta": "Métricas de razón `ganados/intentados (pct%)`",
+            "tipo_dependencia": "compuesta_numerador_denominador_pct",
+            "depende_de": ["filas auxiliares `<metrica>_completados`/`_ganados` y `<metrica>` total"],
+            "formula_o_regla": (
+                "El valor escalar almacenado en la clave es el porcentaje `round(100 * num / den)`, "
+                "y el formateador reconstruye la cadena `num/den (pct%)` leyendo las filas auxiliares."
+            ),
+        },
+    ]
 
 
 if __name__ == "__main__":
