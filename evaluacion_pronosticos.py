@@ -4325,11 +4325,83 @@ def _macro_familia_ronda8(mercado: str) -> str:
     return fam or "Otras"
 
 
+def normalizar_etiquetas_probs_modelos(probs: dict[str, Any]) -> dict[str, float]:
+    """
+    Valida y normaliza las etiquetas de los modelos entre Ronda 7 y Ronda 8
+    (`5e8425f` <-> `v5e84`, `994209a` <-> `v9942`, `A+B` <-> `AB`), impidiendo
+    que el mismo modelo tenga valores contradictorios bajo alias distintos.
+    """
+    out: dict[str, float] = {}
+    for k, v in (probs or {}).items():
+        if v is not None:
+            out[str(k)] = float(v)
+    pares = (("5e8425f", "v5e84"), ("994209a", "v9942"), ("A+B", "AB"))
+    for canon, alias in pares:
+        if canon in out and alias in out and abs(out[canon] - out[alias]) > 1e-6:
+            raise ValueError(
+                f"Conflicto de probabilidad entre alias '{canon}' ({out[canon]}) y '{alias}' ({out[alias]})."
+            )
+    return out
+
+
+def verificar_no_inversion_etiquetas_modelos(observaciones: list[dict[str, Any]]) -> dict[str, Any]:
+    """
+    Detector anti-inversión de etiquetas entre `5e8425f`/`994209a` y `soloA`/`A+B`.
+    En las filas de Córneres OOS donde actúa la sobredispersión Binomial Negativa (`1.05`,
+    introducida en `9593ba6`), `994209a` y `A+B` suavizan las colas extremas respecto a
+    `5e8425f` y `soloA`, reduciendo la probabilidad media y el Log-Loss de Córneres
+    (`~0.8311 -> ~0.7063`). Si las etiquetas están intercambiadas (`LogLoss(994209a) > LogLoss(5e8425f)`
+    o `LogLoss(A+B) > LogLoss(soloA)` en Córneres), lanza `ValueError`.
+    """
+    filas_corners = [
+        o for o in (observaciones or [])
+        if isinstance(o, dict)
+        and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+        and _macro_familia_ronda8(str(o.get("mercado") or "")) == "Córneres"
+    ]
+    res: dict[str, Any] = {"n_filas_corners_verificadas": len(filas_corners), "pares_verificados": {}}
+    if not filas_corners:
+        return res
+
+    pares_check = [
+        (("5e8425f", "v5e84"), ("994209a", "v9942"), "994209a vs 5e8425f"),
+        (("soloA",), ("A+B", "AB"), "A+B vs soloA"),
+    ]
+    for base_keys, nb_keys, nombre_par in pares_check:
+        ll_base_vals: list[float] = []
+        ll_nb_vals: list[float] = []
+        for r in filas_corners:
+            pr = r.get("probs") or {}
+            p_b = next((pr[k] for k in base_keys if k in pr and pr[k] is not None), None)
+            p_n = next((pr[k] for k in nb_keys if k in pr and pr[k] is not None), None)
+            if p_b is not None and p_n is not None and abs(float(p_b) - float(p_n)) > 1e-6:
+                y = int(r["evento_ocurrio"])
+                ll_base_vals.append(log_loss_binario_valor(float(p_b), y))
+                ll_nb_vals.append(log_loss_binario_valor(float(p_n), y))
+        if len(ll_base_vals) >= 3:
+            m_base = sum(ll_base_vals) / len(ll_base_vals)
+            m_nb = sum(ll_nb_vals) / len(ll_nb_vals)
+            res["pares_verificados"][nombre_par] = {
+                "n_cambiadas": len(ll_base_vals),
+                "log_loss_base_sin_nb": round(m_base, 6),
+                "log_loss_con_nb": round(m_nb, 6),
+                "d_log_loss": round(m_nb - m_base, 6),
+            }
+            if m_nb > m_base + 1e-6:
+                raise ValueError(
+                    f"Inversión de etiquetas detectada en {nombre_par}: "
+                    f"LogLoss(con_NB)={m_nb:.6f} > LogLoss(sin_NB)={m_base:.6f}. "
+                    f"Las columnas base y NB/Conjunto B están intercambiadas."
+                )
+    return res
+
+
 def analizar_regresion_994209a_vs_5e8425f(
     observaciones: list[dict[str, Any]],
     *,
     n_boot: int = 2000,
     seed: int = 42,
+    verificar_etiquetas: bool = True,
 ) -> dict[str, Any]:
     """
     Ronda 8 Punto 1: Compara 994209a (`v9942`), 5e8425f (`v5e84`) y el archivo original (`arch`)
@@ -4338,9 +4410,11 @@ def analizar_regresion_994209a_vs_5e8425f(
     familia al cambio de Brier y Log-Loss (`v9942 - v5e84`), y documenta los commits causales.
     """
     filtradas = [
-        o for o in observaciones
+        {**o, "probs": normalizar_etiquetas_probs_modelos(o.get("probs") or {})}
+        for o in observaciones
         if isinstance(o, dict) and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
     ]
+    verif_etq = verificar_no_inversion_etiquetas_modelos(filtradas) if verificar_etiquetas else {}
     base_comp = evaluar_oos_comparativo_sin_diseno(filtradas, n_boot=n_boot, seed=seed)
 
     por_macro_in: dict[str, list[tuple[str, int, dict[str, float]]]] = {}
@@ -4356,10 +4430,12 @@ def analizar_regresion_994209a_vs_5e8425f(
     tot_dll_sum = 0.0
     for o in filtradas:
         pr = o.get("probs") or {}
-        if "v9942" in pr and "v5e84" in pr:
+        p9_v = pr.get("v9942", pr.get("994209a"))
+        p5_v = pr.get("v5e84", pr.get("5e8425f"))
+        if p9_v is not None and p5_v is not None:
             y = int(o["evento_ocurrio"])
-            tot_db_sum += ((float(pr["v9942"]) - y) ** 2) - ((float(pr["v5e84"]) - y) ** 2)
-            tot_dll_sum += log_loss_binario_valor(float(pr["v9942"]), y) - log_loss_binario_valor(float(pr["v5e84"]), y)
+            tot_db_sum += ((float(p9_v) - y) ** 2) - ((float(p5_v) - y) ** 2)
+            tot_dll_sum += log_loss_binario_valor(float(p9_v), y) - log_loss_binario_valor(float(p5_v), y)
 
     por_macro_familia: dict[str, dict[str, Any]] = {}
     for _idx, (mf, rows_t) in enumerate(sorted(por_macro_in.items())):
@@ -4370,10 +4446,12 @@ def analizar_regresion_994209a_vs_5e8425f(
         n_chg = 0
         for r in raw_rows:
             pr = r.get("probs") or {}
-            if "v9942" in pr and "v5e84" in pr:
+            p9_v = pr.get("v9942", pr.get("994209a"))
+            p5_v = pr.get("v5e84", pr.get("5e8425f"))
+            if p9_v is not None and p5_v is not None:
                 y = int(r["evento_ocurrio"])
-                p9 = float(pr["v9942"])
-                p5 = float(pr["v5e84"])
+                p9 = float(p9_v)
+                p5 = float(p5_v)
                 if abs(p9 - p5) > 1e-6:
                     n_chg += 1
                 sub_db += ((p9 - y) ** 2) - ((p5 - y) ** 2)
@@ -4386,24 +4464,27 @@ def analizar_regresion_994209a_vs_5e8425f(
     return {
         "n_filas": base_comp["total"]["n_filas"],
         "n_partidos_unicos": base_comp["total"]["n_partidos_unicos"],
+        "verificacion_etiquetas": verif_etq,
         "total": base_comp["total"],
         "por_macro_familia": por_macro_familia,
         "por_familia": base_comp["por_familia"],
         "atribucion_commits": {
             "corners": {
                 "commit": "9593ba6",
+                "commit_full": "9593ba63401d55b32388b754bd44bdc7ef8b0709",
                 "fecha_iso": "2026-11-13T04:16:01-05:00",
                 "mensaje": "feat(bloque-3): gate corners 8/15, NB sobredispersion, bootstrap /conciencia y gate mitades 10/15",
                 "archivos": ["motor_mercados.py", "umbrales_cobertura.yaml"],
                 "mecanismo": (
                     "Introduce sobredispersión Binomial Negativa (`factor_sobredispersion_corners: 1.05` en "
                     "`_dispersion_corners_muestra`, `_m_total_corners` y `_corners_equipo`) y el gate de "
-                    "cobertura `min_partidos_corners_por_equipo: 8` (que abstiene 104 filas en partidos sin "
+                    "cobertura `min_partidos_corners_por_equipo: 8` (que abstiene 130 filas en 4 partidos sin "
                     "8/15 muestras reales y suaviza colas extremas en 472/613 filas comunes)."
                 ),
             },
             "lambda": {
                 "commit": "c59c103",
+                "commit_full": "c59c1036590a3ef0a3dc926bff05d854412532c5",
                 "fecha_iso": "2026-11-13T03:45:08-05:00",
                 "mensaje": "feat(bloque-2): traza_lambda ordenada, parser 90-FT sin penaltis y aislamiento LLM",
                 "archivos": ["motor_patrones.py", "motor_mercados.py"],
@@ -4719,7 +4800,7 @@ def evaluar_bandera_11_aislada_y_propuesta_conjunto_a(
 
 
 FECHA_FIJACION_UMBRALES_BLOQUE3_ISO = "2026-11-13T04:16:01-05:00"
-COMMIT_FIJACION_UMBRALES_BLOQUE3 = "9593ba6281c5ab926a67d4f4bfdc334890982297"
+COMMIT_FIJACION_UMBRALES_BLOQUE3 = "9593ba63401d55b32388b754bd44bdc7ef8b0709"
 
 CATALOGO_UMBRALES_NO_OOS: dict[str, dict[str, Any]] = {
     "gate_corners_8_15": {
@@ -5255,6 +5336,250 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             "recibidos_por_franja_chile": cc_chi.get("recibidos"),
             "detalle_15p_chile": detalle_mitades_chi,
         },
+    }
+
+
+
+
+CRONOLOGIA_COMMITS_VERIFICADA: list[dict[str, str]] = [
+    {
+        "orden": "1",
+        "commit_short": "5e8425f",
+        "commit_full": "5e8425f45ea6d3296523160cbb7a133f2c53f550",
+        "fecha_iso": "2026-11-12T08:55:39-05:00",
+        "rol": "Baseline pre-Entrega 1 (0 banderas del Conjunto B)",
+        "mensaje": "fix(punto-50): consistencia lambda tarjetas seccion 1 veredicto adn topes y uefa",
+    },
+    {
+        "orden": "2",
+        "commit_short": "c59c103",
+        "commit_full": "c59c1036590a3ef0a3dc926bff05d854412532c5",
+        "fecha_iso": "2026-11-13T03:45:08-05:00",
+        "rol": "Entrega 1 Bloque 2 (P13_Portero_Goles_Evitados cambia λ en 4/26 jobs OOS)",
+        "mensaje": "feat(bloque-2): traza_lambda ordenada, parser 90-FT sin penaltis y aislamiento LLM",
+    },
+    {
+        "orden": "3",
+        "commit_short": "9593ba6",
+        "commit_full": "9593ba63401d55b32388b754bd44bdc7ef8b0709",
+        "fecha_iso": "2026-11-13T04:16:01-05:00",
+        "rol": "Entrega 1 Bloque 3 (factor NB 1.05 en Córneres + gates 8/15, 10/15 y -10 pp)",
+        "mensaje": "feat(bloque-3): gate corners 8/15, NB sobredispersion, bootstrap /conciencia y gate mitades 10/15",
+    },
+    {
+        "orden": "4",
+        "commit_short": "994209a",
+        "commit_full": "994209a6b3b9a854067c3d53a12835a8c2eecb8a",
+        "fecha_iso": "2026-11-13T05:09:18-05:00",
+        "rol": "Cierre de Entrega 1 (Bloques 0 a 6)",
+        "mensaje": "feat(bloque-6): banco historico persistente, coherencia 1T+2T=FT, cobertura Italia/Francia y hooks",
+    },
+    {
+        "orden": "5",
+        "commit_short": "fbb6dc0",
+        "commit_full": "fbb6dc03886e6f3740f89610acc4eb5f798192a4",
+        "fecha_iso": "2026-11-13T14:51:19-05:00",
+        "rol": "Merge de Entrega 1 + Entrega 2 a main (POSTERIOR a 5e8425f y 994209a, nunca previo)",
+        "mensaje": "Merge fix/ronda-5-6-entrega-1: Entrega 1 y 2 completas (Fases 0 a 7 y auditoria forense Italia vs Francia)",
+    },
+    {
+        "orden": "6",
+        "commit_short": "c2a1a34",
+        "commit_full": "c2a1a34fe73f3885cf0d8d352b91e93c1e522cc7",
+        "fecha_iso": "2026-11-14T09:46:02-05:00",
+        "rol": "Cierre de Ronda 7 (separa Conjunto A activo y Conjunto B detrás de 14 banderas apagadas)",
+        "mensaje": "Ronda 7 Punto 7: regla futura de promocion >=30 partidos OOS y modo sombra dual en el libro",
+    },
+]
+
+
+def obtener_especificacion_columnas_modelos() -> dict[str, dict[str, Any]]:
+    """
+    Retorna para cada una de las 5 columnas (`arch`, `5e8425f`, `994209a`, `soloA`, `A+B`)
+    su hash exacto de 40 caracteres, fecha de commit y diccionario explícito de las 14
+    banderas de comportamiento (`BANDERAS_COMPORTAMIENTO_DEFECTO`).
+    """
+    from decision_cobertura import BANDERAS_COMPORTAMIENTO_DEFECTO
+
+    todas_apagadas = {k: False for k in BANDERAS_COMPORTAMIENTO_DEFECTO}
+    todas_encendidas = {k: True for k in BANDERAS_COMPORTAMIENTO_DEFECTO}
+    banderas_994209a = {
+        k: (k in {
+            "usar_gate_corners_8_15",
+            "usar_gate_cronologia_mitades_10_15",
+            "usar_calibracion_y_veto_conciencia",
+            "usar_sobredispersion_nb_corners",
+        })
+        for k in BANDERAS_COMPORTAMIENTO_DEFECTO
+    }
+    banderas_ab_ronda7 = {
+        k: (k not in {
+            "usar_cuota_justa_114_top5",
+            "usar_guarda_doble_defensa_rota",
+            "usar_gate_goles_mitad_15_15",
+            "usar_kelly_conservador_min_3pct",
+            "usar_excluir_primer_gol_top5",
+        })
+        for k in BANDERAS_COMPORTAMIENTO_DEFECTO
+    }
+
+    return {
+        "arch": {
+            "columna": "arch",
+            "alias_codigo": "arch",
+            "hash_exacto": "evaluacion_9393a7b9017a5365 (pronósticos archivados oct-2026 previos a 5e8425f)",
+            "fecha_iso": "2026-10-18T09:36:22-05:00",
+            "banderas_activas": dict(todas_apagadas),
+            "n_banderas_true": 0,
+            "descripcion": "Probabilidad original emitida y guardada en disco al momento del pronóstico.",
+        },
+        "5e8425f": {
+            "columna": "5e8425f",
+            "alias_codigo": "v5e84",
+            "hash_exacto": "5e8425f45ea6d3296523160cbb7a133f2c53f550",
+            "fecha_iso": "2026-11-12T08:55:39-05:00",
+            "banderas_activas": dict(todas_apagadas),
+            "n_banderas_true": 0,
+            "descripcion": "Reejecución determinista en el commit base 5e8425f (pre-Entrega 1).",
+        },
+        "994209a": {
+            "columna": "994209a",
+            "alias_codigo": "v9942",
+            "hash_exacto": "994209a6b3b9a854067c3d53a12835a8c2eecb8a",
+            "fecha_iso": "2026-11-13T05:09:18-05:00",
+            "banderas_activas": banderas_994209a,
+            "n_banderas_true": sum(1 for v in banderas_994209a.values() if v),
+            "descripcion": "Reejecución determinista en el cierre de Entrega 1 (994209a: incluye c59c103 y 9593ba6).",
+        },
+        "soloA": {
+            "columna": "soloA",
+            "alias_codigo": "soloA",
+            "hash_exacto": "c2a1a34fe73f3885cf0d8d352b91e93c1e522cc7",
+            "fecha_iso": "2026-11-14T09:46:02-05:00",
+            "banderas_activas": dict(todas_apagadas),
+            "n_banderas_true": 0,
+            "descripcion": "Rama desde 5e8425f con Conjunto A (saneamiento/formato) y todas las banderas del Conjunto B en False.",
+        },
+        "A+B": {
+            "columna": "A+B",
+            "alias_codigo": "AB",
+            "hash_exacto": "c2a1a34fe73f3885cf0d8d352b91e93c1e522cc7 (equivalente funcional a fbb6dc03886e6f3740f89610acc4eb5f798192a4)",
+            "fecha_iso": "2026-11-14T09:46:02-05:00",
+            "banderas_activas": banderas_ab_ronda7,
+            "n_banderas_true": sum(1 for v in banderas_ab_ronda7.values() if v),
+            "descripcion": "Conjunto A + Conjunto B activado (Entrega 1 + Entrega 2 completas).",
+        },
+    }
+
+
+def conciliar_ronda7_vs_ronda8(
+    ruta_datos: str | None = None,
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 1: Concilia las tablas de Ronda 7 y Ronda 8 sobre exactamente las mismas
+    filas OOS (`n=1376` en la intersección de los 4 modelos reejecutados y `n=1506` en la
+    intersección `5e8425f ∩ soloA` sin el gate 8/15 de córneres).
+    Ejecuta tanto `evaluar_oos_comparativo_sin_diseno` (Ronda 7) como
+    `analizar_regresion_994209a_vs_5e8425f` (Ronda 8) sobre el mismo conjunto de filas,
+    verifica la ausencia de inversión de etiquetas y corrige la cronología de commits.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    ruta = ruta_datos or os.path.join(base_dir, "datos", "oos_conciliacion_ronda7_ronda8.json")
+    with open(ruta, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+
+    filas_1506_raw = list(payload.get("filas_1506") or [])
+    filas_1376: list[dict[str, Any]] = []
+    filas_1506_base: list[dict[str, Any]] = []
+
+    for r in filas_1506_raw:
+        pr = r.get("probs") or {}
+        if all(k in pr for k in ("arch", "5e8425f", "994209a", "soloA", "A+B")):
+            item_1376 = dict(r)
+            item_1376["probs"] = {
+                "arch": float(pr["arch"]),
+                "5e8425f": float(pr["5e8425f"]),
+                "994209a": float(pr["994209a"]),
+                "soloA": float(pr["soloA"]),
+                "A+B": float(pr["A+B"]),
+                "v5e84": float(pr["5e8425f"]),
+                "v9942": float(pr["994209a"]),
+                "AB": float(pr["A+B"]),
+            }
+            filas_1376.append(item_1376)
+        if all(k in pr for k in ("arch", "5e8425f", "soloA")):
+            item_1506 = dict(r)
+            item_1506["probs"] = {
+                "arch": float(pr["arch"]),
+                "5e8425f": float(pr["5e8425f"]),
+                "soloA": float(pr["soloA"]),
+                "v5e84": float(pr["5e8425f"]),
+            }
+            filas_1506_base.append(item_1506)
+
+    ids_1376 = [str(r["row_id"]) for r in filas_1376]
+    ids_1506 = [str(r["row_id"]) for r in filas_1506_base]
+    sha_1376 = hashlib.sha256("\n".join(ids_1376).encode("utf-8")).hexdigest()
+    sha_1506 = hashlib.sha256("\n".join(ids_1506).encode("utf-8")).hexdigest()
+
+    verif_etiquetas = verificar_no_inversion_etiquetas_modelos(filas_1376)
+
+    res_ronda7_1376 = evaluar_oos_comparativo_sin_diseno(filas_1376, n_boot=n_boot, seed=seed)
+    res_ronda8_1376 = analizar_regresion_994209a_vs_5e8425f(filas_1376, n_boot=n_boot, seed=seed)
+    res_ronda7_1506 = evaluar_oos_comparativo_sin_diseno(filas_1506_base, n_boot=n_boot, seed=seed)
+
+    paridad_exacta = (
+        res_ronda7_1376["total"]["versiones"] == res_ronda8_1376["total"]["versiones"]
+        and res_ronda7_1376["total"]["diferencias"] == res_ronda8_1376["total"]["diferencias"]
+    )
+
+    espec_cols = obtener_especificacion_columnas_modelos()
+    for col_key, info in espec_cols.items():
+        info["n_interseccion_4_modelos"] = len(filas_1376)
+        info["sha256_ids_1376"] = sha_1376
+        info["n_interseccion_base_1506"] = len(filas_1506_base) if col_key in ("arch", "5e8425f", "soloA") else None
+        info["sha256_ids_1506"] = sha_1506 if col_key in ("arch", "5e8425f", "soloA") else None
+
+    return {
+        "especificacion_columnas": espec_cols,
+        "cronologia_commits": list(CRONOLOGIA_COMMITS_VERIFICADA),
+        "interseccion_1376": {
+            "n_filas": len(filas_1376),
+            "n_partidos_unicos": res_ronda7_1376["total"]["n_partidos_unicos"],
+            "sha256_row_ids": sha_1376,
+            "primeros_5_row_ids": ids_1376[:5],
+            "ultimos_5_row_ids": ids_1376[-5:],
+            "row_ids": ids_1376,
+            "ronda7_evaluar_oos": res_ronda7_1376,
+            "ronda8_analizar_regresion": res_ronda8_1376,
+            "paridad_exacta_ronda7_vs_ronda8": paridad_exacta,
+        },
+        "interseccion_1506_base_sin_gate_corners": {
+            "n_filas": len(filas_1506_base),
+            "n_partidos_unicos": res_ronda7_1506["total"]["n_partidos_unicos"],
+            "n_filas_corners_abstenidas_en_9942_y_AB": len(filas_1506_base) - len(filas_1376),
+            "sha256_row_ids": sha_1506,
+            "primeros_5_row_ids": ids_1506[:5],
+            "ultimos_5_row_ids": ids_1506[-5:],
+            "row_ids": ids_1506,
+            "ronda7_evaluar_oos": res_ronda7_1506,
+        },
+        "verificacion_no_inversion": verif_etiquetas,
+        "explicacion_causa_intercambio": (
+            "Las funciones reales en código (`evaluar_oos_comparativo_sin_diseno` de Ronda 7 y "
+            "`analizar_regresion_994209a_vs_5e8425f` de Ronda 8) devuelven exactamente los mismos "
+            "valores sobre las 1376 filas comunes (`5e8425f`: Brier 0.194422, LogLoss 0.672389; "
+            "`994209a`: Brier 0.190509, LogLoss 0.615002; `soloA`: Brier 0.193777, LogLoss 0.670603; "
+            "`A+B`: Brier 0.190662, LogLoss 0.614583) y sobre las 1506 filas sin el gate 8/15 "
+            "(`arch`: Brier 0.185737, LogLoss 0.623771; `5e8425f`: Brier 0.192854, LogLoss 0.666887; "
+            "`soloA`: Brier 0.192264, LogLoss 0.665255). El intercambio en el texto del informe de "
+            "Ronda 8 ocurrió al redactar la tabla final desde un resumen de compactación de contexto "
+            "que permutó las cabeceras `5e8425f`<->`994209a` y `soloA`<->`A+B` y mezcló los denominadores "
+            "`n=1376` y `n=1506`."
+        ),
     }
 
 
