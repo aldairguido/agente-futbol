@@ -50,6 +50,7 @@ BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
 }
 _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_filtro_ruido_ic_factores_dcn": False,
+    "usar_reescalado_sin_inversion_signo_dcn": False,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -60,6 +61,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_kelly_conservador_min_3pct",
     "usar_excluir_primer_gol_top5",
     "usar_filtro_ruido_ic_factores_dcn",
+    "usar_reescalado_sin_inversion_signo_dcn",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}

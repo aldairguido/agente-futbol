@@ -5208,6 +5208,11 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
     finaliz_info["factor_ticket_ab_reescalado_pct"] = float(((rec_ab.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_ab.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_finalizacion", 0.0))
     port_riv_info["factor_con_filtro_ruido_pct"] = float(((rec_sin_ruido.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_sin_ruido.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_porteria_rival", 0.0))
     finaliz_info["factor_con_filtro_ruido_pct"] = float(((rec_sin_ruido.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_sin_ruido.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_finalizacion", 0.0))
+    with banderas_comportamiento(activar_todas=True, usar_reescalado_sin_inversion_signo_dcn=True):
+        analisis_sin_inv = analizar(doc_col, doc_chi, "Colombia", "Chile", condicion_local="casa", condicion_visitante="fuera")
+        rec_sin_inv = analisis_sin_inv.motor.recursivo
+    port_riv_info["factor_sin_inversion_signo_pct"] = float(((rec_sin_inv.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_porteria_rival", 0.0))
+    finaliz_info["factor_sin_inversion_signo_pct"] = float(((rec_sin_inv.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_finalizacion", 0.0))
 
     # (c) Auditoría de cada línea >= 70% y qué filtro la quitó de Sección 1 / Top 5
     def _auditar_lineas_70(analisis_obj: Any, top5_list: list[dict[str, Any]], sec1_list: list[dict[str, Any]], modo_tag: str) -> list[dict[str, Any]]:
@@ -5740,6 +5745,117 @@ def conciliar_ronda7_vs_ronda8(
             "`n=1376` y `n=1506`."
         ),
     }
+
+
+def auditar_punto_5b_y_tabla_impacto_ronda9(regenerar: bool = False) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 3 — 5(b):
+      1. Calcula IC95 de PortRiv y Finaliz con `n` = valores no nulos reales de cada serie
+         (excluyendo celdas `estimacion_modelo` y `sin_dato`).
+      2. Aísla y corrige tras la bandera `usar_reescalado_sin_inversion_signo_dcn` (apagada
+         por defecto: `False`) el reescalado aditivo de la Caja Azul que invertía el signo
+         de `Finaliz` (+0.9% -> -8.2%).
+      3. Documenta el valor por defecto de `usar_filtro_ruido_ic_factores_dcn` (`False`) y
+         entrega la tabla de impacto en `TB` (Turkey-Belgium), `IF` (Italy-France),
+         `LN` (Londrina-Náutico) y `Colombia-Chile`.
+    """
+    from pathlib import Path
+    from decision_cobertura import (
+        _BANDERAS_AUXILIARES_DEFECTO,
+        bandera_activa,
+        banderas_comportamiento,
+    )
+    raiz = Path(__file__).resolve().parent
+    ruta_cache = raiz / "datos" / "ronda9_punto3_tabla_impacto_5b.json"
+    if ruta_cache.exists() and not regenerar:
+        datos = json.loads(ruta_cache.read_text(encoding="utf-8"))
+        datos["valor_defecto_usar_filtro_ruido_ic_factores_dcn"] = bool(_BANDERAS_AUXILIARES_DEFECTO["usar_filtro_ruido_ic_factores_dcn"])
+        datos["valor_defecto_usar_reescalado_sin_inversion_signo_dcn"] = bool(_BANDERAS_AUXILIARES_DEFECTO["usar_reescalado_sin_inversion_signo_dcn"])
+        datos["activo_en_runtime_por_defecto_filtro_ruido"] = bool(bandera_activa("usar_filtro_ruido_ic_factores_dcn"))
+        datos["activo_en_runtime_por_defecto_sin_inversion"] = bool(bandera_activa("usar_reescalado_sin_inversion_signo_dcn"))
+        return datos
+    from motor_mercados import analizar
+    from servicio_mercados import obtener_top5_y_seccion1_filtrados
+    r5_docs = json.loads((raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))["docs"]
+    doc_lon = json.loads((raiz / "cache" / "cache_fotmob_londrina_BRA_False_False.json").read_text(encoding="utf-8"))
+    doc_nau = json.loads((raiz / "cache" / "cache_fotmob_nautico_BRA_False_False.json").read_text(encoding="utf-8"))
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    partidos_ref = [
+        ("TB", "Turkey", "Belgium", r5_docs["turkey"], r5_docs["belgium"]),
+        ("IF", "Italy", "France", r5_docs["italy"], r5_docs["france"]),
+        ("LN", "Londrina", "Nautico", doc_lon, doc_nau),
+        ("Colombia-Chile", "Colombia", "Chile", doc_col, doc_chi),
+    ]
+
+    modos = [
+        ("soloA_defecto", {"activar_todas": False, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("soloA_filtro_y_sin_inversion", {"activar_todas": False, "usar_filtro_ruido_ic_factores_dcn": True, "usar_reescalado_sin_inversion_signo_dcn": True}),
+        ("AB_defecto", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("AB_sin_inversion_signo", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": True}),
+        ("AB_filtro_y_sin_inversion", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": True, "usar_reescalado_sin_inversion_signo_dcn": True}),
+    ]
+
+    tabla_impacto: dict[str, dict[str, Any]] = {}
+    ic_colombia_chile: dict[str, Any] = {}
+
+    for cod, eq_l, eq_v, d_l, d_v in partidos_ref:
+        tabla_impacto[cod] = {}
+        for modo_nom, kw_flags in modos:
+            with banderas_comportamiento(**kw_flags):
+                an = analizar(d_l, d_v, eq_l, eq_v, condicion_local="casa", condicion_visitante="fuera")
+                rec = an.motor.recursivo
+                ct = rec.get("cruces_tacticos") or {}
+                f_crudos_l = dict(ct.get("factores_crudos_local") or {})
+                f_caja_l = dict(ct.get("factores_local") or {})
+                f_caja_v = dict(ct.get("factores_visita") or {})
+                mat = rec.get("matriz_prob") or [[1.0]]
+                import numpy as _np_ti
+                m_arr = _np_ti.asarray(mat, dtype=float)
+                p1 = round(float(_np_ti.sum(_np_ti.tril(m_arr, -1))) * 100.0, 1)
+                px = round(float(_np_ti.sum(_np_ti.diag(m_arr))) * 100.0, 1)
+                p2 = round(float(_np_ti.sum(_np_ti.triu(m_arr, 1))) * 100.0, 1)
+                top5, sec1, _ = obtener_top5_y_seccion1_filtrados(an)
+                if top5:
+                    t0 = top5[0]
+                    p_t0 = float(t0.get("prob_pct") or t0.get("prob") or t0.get("probabilidad") or 0.0)
+                    if p_t0 <= 1.0:
+                        p_t0 *= 100.0
+                    top1_str = f"{t0.get('etiqueta', '')} ({p_t0:.1f}%)"
+                else:
+                    top1_str = "SIN_TOP1"
+                tabla_impacto[cod][modo_nom] = {
+                    "lambda_base": (rec.get("lambda_base_local"), rec.get("lambda_base_visita")),
+                    "lambda_final": (rec.get("lambda_local_recursivo"), rec.get("lambda_visita_recursivo")),
+                    "1x2_pct": (p1, px, p2),
+                    "factores_crudos_local": f_crudos_l,
+                    "factores_caja_azul_local": f_caja_l,
+                    "factores_caja_azul_visita": f_caja_v,
+                    "top1": top1_str,
+                    "n_top5": len(top5),
+                    "n_sec1": len(sec1),
+                }
+                if cod == "Colombia-Chile" and modo_nom == "AB_defecto":
+                    ic_l = rec.get("ic_factores_local") or {}
+                    ic_colombia_chile = {
+                        "PortRiv_local": ic_l.get("F_porteria_rival"),
+                        "Finaliz_local": ic_l.get("F_finalizacion"),
+                    }
+
+    out_res = {
+        "valor_defecto_usar_filtro_ruido_ic_factores_dcn": bool(_BANDERAS_AUXILIARES_DEFECTO["usar_filtro_ruido_ic_factores_dcn"]),
+        "valor_defecto_usar_reescalado_sin_inversion_signo_dcn": bool(_BANDERAS_AUXILIARES_DEFECTO["usar_reescalado_sin_inversion_signo_dcn"]),
+        "activo_en_runtime_por_defecto_filtro_ruido": bool(bandera_activa("usar_filtro_ruido_ic_factores_dcn")),
+        "activo_en_runtime_por_defecto_sin_inversion": bool(bandera_activa("usar_reescalado_sin_inversion_signo_dcn")),
+        "ic_colombia_chile": ic_colombia_chile,
+        "tabla_impacto": tabla_impacto,
+    }
+    try:
+        ruta_cache.write_text(json.dumps(out_res, indent=2, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass
+    return out_res
 
 
 if __name__ == "__main__":

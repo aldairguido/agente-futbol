@@ -1,0 +1,918 @@
+{
+  "valor_defecto_usar_filtro_ruido_ic_factores_dcn": false,
+  "valor_defecto_usar_reescalado_sin_inversion_signo_dcn": false,
+  "activo_en_runtime_por_defecto_filtro_ruido": false,
+  "activo_en_runtime_por_defecto_sin_inversion": false,
+  "ic_colombia_chile": {
+    "PortRiv_local": {
+      "factor_sin_reescalar_pct": -3.9,
+      "boot_media_pct": -1.06,
+      "boot_se_pct": 4.84,
+      "boot_ic95_pct": [
+        -5.9,
+        6.0
+      ],
+      "insumo": "goles_evitados_rival",
+      "insumo_cond_valores": [
+        0.49,
+        1.02,
+        -1.6
+      ],
+      "insumo_cond_media": -0.03,
+      "insumo_cond_se": 0.7998,
+      "insumo_cond_ic95": [
+        -1.5976,
+        1.5376
+      ],
+      "insumo_cond_n": 3,
+      "insumo_15p_valores": [
+        0.49,
+        2.64,
+        1.02,
+        -1.6,
+        -1.0
+      ],
+      "insumo_15p_media": 0.31,
+      "insumo_15p_se": 0.7526,
+      "insumo_15p_ic95": [
+        -1.1652,
+        1.7852
+      ],
+      "insumo_15p_n": 5,
+      "supera_ruido": false
+    },
+    "Finaliz_local": {
+      "factor_sin_reescalar_pct": 0.9,
+      "boot_media_pct": 0.31,
+      "boot_se_pct": 3.46,
+      "boot_ic95_pct": [
+        -5.51,
+        5.42
+      ],
+      "insumo": "xgot_menos_xg",
+      "insumo_cond_valores": [
+        0.65,
+        -1.09,
+        0.41,
+        1.39,
+        -0.64,
+        -0.1
+      ],
+      "insumo_cond_media": 0.1033,
+      "insumo_cond_se": 0.3682,
+      "insumo_cond_ic95": [
+        -0.6183,
+        0.8249
+      ],
+      "insumo_cond_n": 6,
+      "insumo_15p_valores": [
+        -0.24,
+        0.65,
+        -1.09,
+        0.41,
+        -0.25,
+        -0.41,
+        -0.49,
+        1.39,
+        -0.54,
+        -0.64,
+        -0.1
+      ],
+      "insumo_15p_media": -0.1191,
+      "insumo_15p_se": 0.2088,
+      "insumo_15p_ic95": [
+        -0.5283,
+        0.2901
+      ],
+      "insumo_15p_n": 11,
+      "supera_ruido": false,
+      "insumo_g_menos_xg": {
+        "cond_valores": [
+          -1.04,
+          -1.7,
+          0.02,
+          2.75,
+          0.1,
+          1.29
+        ],
+        "cond_media": 0.2367,
+        "cond_se": 0.655,
+        "cond_ic95": [
+          -1.0472,
+          1.5206
+        ],
+        "cond_n": 6,
+        "15p_valores": [
+          -1.09,
+          -1.04,
+          -1.7,
+          0.02,
+          1.39,
+          -1.02,
+          -0.18,
+          2.75,
+          -0.45,
+          0.1,
+          1.29
+        ],
+        "15p_media": 0.0064,
+        "15p_se": 0.4,
+        "15p_ic95": [
+          -0.7777,
+          0.7904
+        ],
+        "15p_n": 11
+      }
+    }
+  },
+  "tabla_impacto": {
+    "TB": {
+      "soloA_defecto": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_final": [
+          1.04,
+          3.55
+        ],
+        "1x2_pct": [
+          7.2,
+          9.4,
+          83.4
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -6.3,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": -10.4,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 0.3,
+          "F_fragilidad_rival": -7.5
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -1.8,
+          "F_creacion": 8.0,
+          "F_finalizacion": 12.2,
+          "F_porteria_rival": 13.8,
+          "F_fragilidad_rival": 12.8
+        },
+        "top1": "1X2: Belgium Gana (FT) (81.7%)",
+        "n_top5": 5,
+        "n_sec1": 17
+      },
+      "soloA_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.45
+        ],
+        "1x2_pct": [
+          16.2,
+          16.1,
+          67.7
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -6.3,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "top1": "Doble Oportunidad X2: Empate o Belgium (FT) (82.8%)",
+        "n_top5": 4,
+        "n_sec1": 12
+      },
+      "AB_defecto": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.98
+        ],
+        "1x2_pct": [
+          11.4,
+          12.8,
+          75.8
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -6.3,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": -7.5,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": -1.3,
+          "F_fragilidad_rival": -4.6
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -1.8,
+          "F_creacion": 8.0,
+          "F_finalizacion": 12.2,
+          "F_porteria_rival": 13.8,
+          "F_fragilidad_rival": 12.8
+        },
+        "top1": "1X2: Belgium Gana (FT) (74.3%)",
+        "n_top5": 4,
+        "n_sec1": 8
+      },
+      "AB_sin_inversion_signo": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_final": [
+          1.12,
+          2.98
+        ],
+        "1x2_pct": [
+          11.7,
+          12.9,
+          75.4
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -6.3,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": 15.0,
+          "F_porteria_rival": 15.0,
+          "F_fragilidad_rival": 15.0
+        },
+        "top1": "1X2: Belgium Gana (FT) (73.9%)",
+        "n_top5": 4,
+        "n_sec1": 8
+      },
+      "AB_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.62
+        ],
+        "1x2_pct": [
+          14.5,
+          15.0,
+          70.5
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 1.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": -6.3,
+          "F_porteria_rival": 3.2,
+          "F_fragilidad_rival": 2.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "top1": "Córneres Totales (FT): -12.5 Córn. (70.3%)",
+        "n_top5": 1,
+        "n_sec1": 4
+      }
+    },
+    "IF": {
+      "soloA_defecto": {
+        "lambda_base": [
+          1.23,
+          1.72
+        ],
+        "lambda_final": [
+          1.03,
+          2.33
+        ],
+        "1x2_pct": [
+          15.9,
+          17.0,
+          67.1
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": -3.8,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.0,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -4.1
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": -3.8,
+          "F_creacion": -2.5,
+          "F_finalizacion": -0.6,
+          "F_porteria_rival": -2.6,
+          "F_fragilidad_rival": -6.8
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 3.8,
+          "F_creacion": 3.9,
+          "F_finalizacion": 9.6,
+          "F_porteria_rival": 9.5,
+          "F_fragilidad_rival": 8.7
+        },
+        "top1": "Doble Oportunidad X2: Empate o France (FT) (84.1%)",
+        "n_top5": 5,
+        "n_sec1": 11
+      },
+      "soloA_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.23,
+          1.72
+        ],
+        "lambda_final": [
+          0.98,
+          2.08
+        ],
+        "1x2_pct": [
+          17.9,
+          18.5,
+          63.6
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": -3.8,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.0,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -4.1
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": -3.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": -12.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 3.8,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 5.8
+        },
+        "top1": "Doble Oportunidad X2: Empate o France (FT) (82.1%)",
+        "n_top5": 5,
+        "n_sec1": 9
+      },
+      "AB_defecto": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_final": [
+          1.31,
+          1.79
+        ],
+        "1x2_pct": [
+          28.7,
+          22.0,
+          49.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.6,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -4.1
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": -2.5,
+          "F_finalizacion": -0.0,
+          "F_porteria_rival": -2.6,
+          "F_fragilidad_rival": -6.7
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 3.1,
+          "F_creacion": 1.6,
+          "F_finalizacion": 7.2,
+          "F_porteria_rival": -0.3,
+          "F_fragilidad_rival": 6.2
+        },
+        "top1": "Córneres Totales (FT): -11.5 Córn. (76.1%)",
+        "n_top5": 3,
+        "n_sec1": 5
+      },
+      "AB_sin_inversion_signo": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_final": [
+          1.31,
+          1.79
+        ],
+        "1x2_pct": [
+          28.7,
+          22.0,
+          49.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.6,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -4.1
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.6,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -12.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 3.1,
+          "F_creacion": 0.0,
+          "F_finalizacion": 8.9,
+          "F_porteria_rival": -2.0,
+          "F_fragilidad_rival": 7.8
+        },
+        "top1": "Córneres Totales (FT): -11.5 Córn. (76.1%)",
+        "n_top5": 3,
+        "n_sec1": 5
+      },
+      "AB_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_final": [
+          1.26,
+          1.58
+        ],
+        "1x2_pct": [
+          31.3,
+          23.2,
+          45.5
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": 0.1,
+          "F_finalizacion": 2.6,
+          "F_porteria_rival": -0.0,
+          "F_fragilidad_rival": -4.1
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": -3.1,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": -12.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 3.1,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "top1": "Córneres Totales (FT): -11.5 Córn. (76.1%)",
+        "n_top5": 2,
+        "n_sec1": 3
+      }
+    },
+    "LN": {
+      "soloA_defecto": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_final": [
+          1.14,
+          0.85
+        ],
+        "1x2_pct": [
+          42.4,
+          30.3,
+          27.3
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -5.7,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": -12.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": -4.2,
+          "F_fragilidad_rival": -0.8
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -0.7,
+          "F_creacion": -5.8,
+          "F_finalizacion": -11.9,
+          "F_porteria_rival": -3.5,
+          "F_fragilidad_rival": -0.8
+        },
+        "top1": "Goles Nautico (FT): -1.5 Goles (79.1%)",
+        "n_top5": 2,
+        "n_sec1": 7
+      },
+      "soloA_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_final": [
+          1.43,
+          0.6
+        ],
+        "1x2_pct": [
+          56.9,
+          27.8,
+          15.3
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -5.7,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 5.0
+        },
+        "top1": "Goles Nautico (FT): -1.5 Goles (87.8%)",
+        "n_top5": 3,
+        "n_sec1": 9
+      },
+      "AB_defecto": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_final": [
+          1.14,
+          0.86
+        ],
+        "1x2_pct": [
+          42.2,
+          30.2,
+          27.6
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -5.7,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": -12.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": -4.2,
+          "F_fragilidad_rival": -0.8
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -0.7,
+          "F_creacion": -5.6,
+          "F_finalizacion": -11.6,
+          "F_porteria_rival": -3.3,
+          "F_fragilidad_rival": -0.6
+        },
+        "top1": "Córneres Totales (FT): -12.5 Córn. (76.5%)",
+        "n_top5": 2,
+        "n_sec1": 7
+      },
+      "AB_sin_inversion_signo": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_final": [
+          1.38,
+          0.6
+        ],
+        "1x2_pct": [
+          56.1,
+          27.6,
+          16.3
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -5.7,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -0.7,
+          "F_creacion": 0.0,
+          "F_finalizacion": -12.0,
+          "F_porteria_rival": 2.3,
+          "F_fragilidad_rival": 5.0
+        },
+        "top1": "Córneres Totales (FT): -12.5 Córn. (76.5%)",
+        "n_top5": 2,
+        "n_sec1": 10
+      },
+      "AB_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_final": [
+          1.1,
+          0.6
+        ],
+        "1x2_pct": [
+          47.1,
+          33.4,
+          19.6
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 0.7,
+          "F_creacion": 1.8,
+          "F_finalizacion": -5.7,
+          "F_porteria_rival": 5.2,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 6.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": 0.0,
+          "F_creacion": 0.0,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 5.0
+        },
+        "top1": "Córneres Totales (FT): -12.5 Córn. (76.5%)",
+        "n_top5": 1,
+        "n_sec1": 5
+      }
+    },
+    "Colombia-Chile": {
+      "soloA_defecto": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.0,
+          30.7,
+          27.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -3.9,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": -7.7,
+          "F_finalizacion": -10.2,
+          "F_porteria_rival": -11.4,
+          "F_fragilidad_rival": 4.5
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -3.9,
+          "F_creacion": 1.1,
+          "F_finalizacion": 6.8,
+          "F_porteria_rival": -0.9,
+          "F_fragilidad_rival": -3.1
+        },
+        "top1": "Goles Chile (FT): -1.5 Goles (80.2%)",
+        "n_top5": 1,
+        "n_sec1": 11
+      },
+      "soloA_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.81
+        ],
+        "1x2_pct": [
+          42.3,
+          30.8,
+          26.9
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -3.9,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -3.9,
+          "F_creacion": -1.8,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": -3.8,
+          "F_fragilidad_rival": -6.0
+        },
+        "top1": "Goles Totales (FT): -2.5 Goles (70.2%)",
+        "n_top5": 2,
+        "n_sec1": 12
+      },
+      "AB_defecto": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.0,
+          30.7,
+          27.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -3.9,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": -6.7,
+          "F_finalizacion": -9.2,
+          "F_porteria_rival": -12.0,
+          "F_fragilidad_rival": 3.1
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -3.9,
+          "F_creacion": 1.1,
+          "F_finalizacion": 6.8,
+          "F_porteria_rival": -0.9,
+          "F_fragilidad_rival": -3.1
+        },
+        "top1": "SIN_TOP1",
+        "n_top5": 0,
+        "n_sec1": 12
+      },
+      "AB_sin_inversion_signo": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.0,
+          30.7,
+          27.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -3.9,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -12.0,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -3.9,
+          "F_creacion": -1.8,
+          "F_finalizacion": 15.0,
+          "F_porteria_rival": -3.8,
+          "F_fragilidad_rival": -6.0
+        },
+        "top1": "SIN_TOP1",
+        "n_top5": 0,
+        "n_sec1": 12
+      },
+      "AB_filtro_y_sin_inversion": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.0,
+          30.7,
+          27.2
+        ],
+        "factores_crudos_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.9,
+          "F_porteria_rival": -3.9,
+          "F_fragilidad_rival": 3.8
+        },
+        "factores_caja_azul_local": {
+          "F_posesion_progresiva": 3.9,
+          "F_creacion": 3.3,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": 0.0,
+          "F_fragilidad_rival": 0.0
+        },
+        "factores_caja_azul_visita": {
+          "F_posesion_progresiva": -3.9,
+          "F_creacion": -1.8,
+          "F_finalizacion": 0.0,
+          "F_porteria_rival": -3.8,
+          "F_fragilidad_rival": -6.0
+        },
+        "top1": "SIN_TOP1",
+        "n_top5": 0,
+        "n_sec1": 12
+      }
+    }
+  }
+}

@@ -305,6 +305,23 @@ def _valor_metrica(partido: Dict[str, Any], clave: str) -> Optional[float]:
     return None
 
 
+def _valor_metrica_observado_real(partido: Dict[str, Any], clave: str) -> Optional[float]:
+    """
+    Devuelve el valor estrictamente observado en la matriz (excluyendo celdas cuya
+    `procedencia` sea `'estimacion_modelo'` o `'sin_dato'`).
+    Garantiza que `n` sea el conteo de datos no nulos reales de cada serie y nunca el
+    conteo total de partidos.
+    """
+    fuente = _partido_fuente(partido)
+    proc_root = fuente.get("procedencia") or partido.get("procedencia") or {}
+    proc_ft_eq = ((proc_root.get("FT") or {}).get("equipo") if isinstance(proc_root, dict) else None) or {}
+    proc_eq = (proc_root.get("equipo") if isinstance(proc_root, dict) else None) or {}
+    tag_proc = str(proc_ft_eq.get(clave) or proc_eq.get(clave) or "").strip().lower()
+    if tag_proc in ("estimacion_modelo", "sin_dato"):
+        return None
+    return _valor_metrica(partido, clave)
+
+
 def _valor_metrica_periodo(partido: Dict[str, Any], clave: str, corte: str,
                            bando: str = "equipo") -> Optional[float]:
     """Valor real de una métrica en un periodo concreto ('1T'/'2T'/'FT') y bando ('equipo'/'rival')."""
@@ -764,6 +781,7 @@ def reescalar_factores_a_delta(
     fijos: Optional[Tuple[str, ...]] = None,
     pisos: Optional[Dict[str, float]] = None,
     techos: Optional[Dict[str, float]] = None,
+    evitar_inversion_signo: Optional[bool] = None,
 ) -> Dict[str, float]:
     """
     Acota cada uno de los 5 factores latentes estrictamente en [-12.0%, +15.0%]
@@ -774,15 +792,37 @@ def reescalar_factores_a_delta(
     Progresiva de suma cero, para que Local y Visita nunca reciban ambos bono).
     `pisos` / `techos`: restricciones de signo y magnitud táctica (p. ej. FragRiv > 0
     si el rival concede xGOTc >= 1.50).
+    `evitar_inversion_signo` / bandera `usar_reescalado_sin_inversion_signo_dcn`:
+    cuando está activa, impide que el reparto aditivo del residuo invierta el signo
+    (o mueva en dirección opuesta) a un factor táctico crudo (p. ej. evita que
+    `F_finalizacion = +0.9%` pase a `-8.2%` cuando `delta_pct_real < 0`).
     """
+    if evitar_inversion_signo is None:
+        try:
+            from decision_cobertura import bandera_activa as _ba_reesc
+            evitar_inversion_signo = bool(_ba_reesc("usar_reescalado_sin_inversion_signo_dcn"))
+        except Exception:
+            evitar_inversion_signo = False
+
     claves = ["F_posesion_progresiva", "F_creacion", "F_finalizacion", "F_porteria_rival", "F_fragilidad_rival"]
     idx_fijos = {i for i, k in enumerate(claves) if fijos and k in fijos}
-    pisos_dict = pisos or {}
-    techos_dict = techos or {}
+    pisos_dict = dict(pisos or {})
+    techos_dict = dict(techos or {})
+    raw_vals = {k: round(float(_safe_float(factores.get(k), 0.0)), 1) for k in claves}
+
+    if evitar_inversion_signo:
+        for i, k in enumerate(claves):
+            v_r = raw_vals[k]
+            if v_r > 0.0:
+                pisos_dict[k] = max(0.0, pisos_dict.get(k, 0.0))
+            elif v_r < 0.0:
+                techos_dict[k] = min(0.0, techos_dict.get(k, 0.0))
+            else:
+                idx_fijos.add(i)
 
     vals = []
     for k in claves:
-        v = _safe_float(factores.get(k), 0.0)
+        v = raw_vals[k]
         piso = max(-12.0, pisos_dict.get(k, -12.0))
         techo = min(15.0, techos_dict.get(k, 15.0))
         vals.append(round(float(np.clip(v, piso, techo)), 1))
@@ -797,6 +837,8 @@ def reescalar_factores_a_delta(
         libres = []
         for i, k in enumerate(claves):
             if i in idx_fijos:
+                continue
+            if evitar_inversion_signo and (raw_vals[k] * dif) <= 0.0:
                 continue
             piso = max(-12.0, pisos_dict.get(k, -12.0))
             techo = min(15.0, techos_dict.get(k, 15.0))
@@ -820,6 +862,8 @@ def reescalar_factores_a_delta(
             if i in idx_fijos:
                 continue
             k = claves[i]
+            if evitar_inversion_signo and (raw_vals[k] * residuo) <= 0.0:
+                continue
             piso = max(-12.0, pisos_dict.get(k, -12.0))
             techo = min(15.0, techos_dict.get(k, 15.0))
             nuevo = round(vals[i] + residuo, 1)
@@ -2093,7 +2137,7 @@ def calcular_ic_factores_dcn_partido(
 
     gev_V_all, gev_V_fuera = [], []
     for p in pts_V:
-        v_ge = _valor_metrica(p, "goles_evitados")
+        v_ge = _valor_metrica_observado_real(p, "goles_evitados")
         if v_ge is not None:
             gev_V_all.append(float(v_ge))
             cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
@@ -2102,7 +2146,7 @@ def calcular_ic_factores_dcn_partido(
 
     gev_L_all, gev_L_casa = [], []
     for p in pts_L:
-        v_ge = _valor_metrica(p, "goles_evitados")
+        v_ge = _valor_metrica_observado_real(p, "goles_evitados")
         if v_ge is not None:
             gev_L_all.append(float(v_ge))
             cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
@@ -2110,26 +2154,81 @@ def calcular_ic_factores_dcn_partido(
                 gev_L_casa.append(float(v_ge))
 
     fin_L_all, fin_L_casa = [], []
+    g_xg_L_all, g_xg_L_casa = [], []
     for p in pts_L:
-        v_xg = _valor_metrica(p, "xg")
-        v_xgot = _valor_metrica(p, "xgot")
+        v_xg = _valor_metrica_observado_real(p, "xg")
+        v_xgot = _valor_metrica_observado_real(p, "xgot")
+        gf_p, _ = _goles_equipo(p)
+        cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
         if v_xg is not None and v_xgot is not None:
             d_f = float(v_xgot) - float(v_xg)
             fin_L_all.append(d_f)
-            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
             if cond_p in ("casa", "local", "h", "home"):
                 fin_L_casa.append(d_f)
+        if v_xg is not None and gf_p is not None:
+            d_g = float(gf_p) - float(v_xg)
+            g_xg_L_all.append(d_g)
+            if cond_p in ("casa", "local", "h", "home"):
+                g_xg_L_casa.append(d_g)
 
     fin_V_all, fin_V_fuera = [], []
+    g_xg_V_all, g_xg_V_fuera = [], []
     for p in pts_V:
-        v_xg = _valor_metrica(p, "xg")
-        v_xgot = _valor_metrica(p, "xgot")
+        v_xg = _valor_metrica_observado_real(p, "xg")
+        v_xgot = _valor_metrica_observado_real(p, "xgot")
+        gf_p, _ = _goles_equipo(p)
+        cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
         if v_xg is not None and v_xgot is not None:
             d_f = float(v_xgot) - float(v_xg)
             fin_V_all.append(d_f)
-            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
             if cond_p in ("fuera", "visita", "visitante", "a", "away"):
                 fin_V_fuera.append(d_f)
+        if v_xg is not None and gf_p is not None:
+            d_g = float(gf_p) - float(v_xg)
+            g_xg_V_all.append(d_g)
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                g_xg_V_fuera.append(d_g)
+
+    def _limpiar_partido_obs_boot(p: Dict[str, Any]) -> Dict[str, Any]:
+        src = _partido_fuente(p)
+        proc_root = src.get("procedencia") or p.get("procedencia") or {}
+        proc_ft_eq = ((proc_root.get("FT") or {}).get("equipo") if isinstance(proc_root, dict) else None) or {}
+        proc_eq = (proc_root.get("equipo") if isinstance(proc_root, dict) else None) or {}
+        if not proc_ft_eq and not proc_eq:
+            return p
+        periodos_orig = src.get("periodos") or {}
+        periodos_new = {}
+        for c_k, c_v in periodos_orig.items():
+            if not isinstance(c_v, dict):
+                periodos_new[c_k] = c_v
+                continue
+            filas_new = []
+            for fila in (c_v.get("filas") or []):
+                if not isinstance(fila, dict):
+                    filas_new.append(fila)
+                    continue
+                k_f = str(fila.get("clave") or "")
+                tag_p = str(proc_ft_eq.get(k_f) or proc_eq.get(k_f) or "").strip().lower()
+                if tag_p in ("estimacion_modelo", "sin_dato"):
+                    f_copy = dict(fila)
+                    f_copy["equipo"] = None
+                    filas_new.append(f_copy)
+                else:
+                    filas_new.append(fila)
+            c_copy = dict(c_v)
+            c_copy["filas"] = filas_new
+            periodos_new[c_k] = c_copy
+        src_new = dict(src)
+        src_new["periodos"] = periodos_new
+        p_new = dict(p)
+        if "_partido" in p_new and isinstance(p_new["_partido"], dict):
+            p_new["_partido"] = src_new
+        else:
+            p_new["periodos"] = periodos_new
+        return p_new
+
+    pts_L_boot = [_limpiar_partido_obs_boot(p) for p in pts_L]
+    pts_V_boot = [_limpiar_partido_obs_boot(p) for p in pts_V]
 
     claves_f = (
         "F_posesion_progresiva",
@@ -2140,14 +2239,14 @@ def calcular_ic_factores_dcn_partido(
     )
     boot_L: Dict[str, List[float]] = {k: [] for k in claves_f}
     boot_V: Dict[str, List[float]] = {k: [] for k in claves_f}
-    if len(pts_L) >= 5 and len(pts_V) >= 5 and n_boot > 0:
-        nL = len(pts_L)
-        nV = len(pts_V)
+    if len(pts_L_boot) >= 5 and len(pts_V_boot) >= 5 and n_boot > 0:
+        nL = len(pts_L_boot)
+        nV = len(pts_V_boot)
         for _ in range(n_boot):
             idx_L = rng.integers(0, nL, size=nL)
             idx_V = rng.integers(0, nV, size=nV)
-            sub_L = [pts_L[int(i)] for i in idx_L]
-            sub_V = [pts_V[int(i)] for i in idx_V]
+            sub_L = [pts_L_boot[int(i)] for i in idx_L]
+            sub_V = [pts_V_boot[int(i)] for i in idx_V]
             mu_b_L = calcular_doble_adn_con_shrinkage(sub_L, estados_L, "casa", perfil_local)
             mu_b_V = calcular_doble_adn_con_shrinkage(sub_V, estados_V, "fuera", perfil_visita)
             c_b = calcular_los_6_cruces_tacticos(
@@ -2165,6 +2264,8 @@ def calcular_ic_factores_dcn_partido(
         serie_cond: List[float],
         serie_15p: List[float],
         nombre_insumo: str,
+        serie_g_xg_cond: Optional[List[float]] = None,
+        serie_g_xg_15p: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
         mu_c, se_c, lo_c, hi_c, n_c = _ic_media(serie_cond)
         mu_g, se_g, lo_g, hi_g, n_g = _ic_media(serie_15p)
@@ -2177,28 +2278,46 @@ def calcular_ic_factores_dcn_partido(
             lo_b = hi_b = mu_b = round(float(val_puntual), 2)
             se_b = 0.0
         excluye_0_boot = (lo_b > 0.0) or (hi_b < 0.0)
-        excluye_0_cond = (lo_c is not None and hi_c is not None and ((lo_c > 0.0) or (hi_c < 0.0))) if n_c >= 2 else True
-        excluye_0_15p = (lo_g is not None and hi_g is not None and ((lo_g > 0.0) or (hi_g < 0.0))) if n_g >= 2 else True
+        excluye_0_cond = (lo_c is not None and hi_c is not None and ((lo_c > 0.0) or (hi_c < 0.0))) if n_c >= 2 else False
+        excluye_0_15p = (lo_g is not None and hi_g is not None and ((lo_g > 0.0) or (hi_g < 0.0))) if n_g >= 2 else False
         if nombre_insumo:
             supera_ruido = bool(excluye_0_boot and (excluye_0_cond or excluye_0_15p) and abs(val_puntual) > 0.05)
         else:
             supera_ruido = bool(excluye_0_boot and abs(val_puntual) > 0.05)
-        return {
+        info_out: Dict[str, Any] = {
             "factor_sin_reescalar_pct": round(float(val_puntual), 2),
             "boot_media_pct": mu_b,
             "boot_se_pct": se_b,
             "boot_ic95_pct": [lo_b, hi_b],
             "insumo": nombre_insumo,
+            "insumo_cond_valores": [round(float(x), 4) for x in serie_cond],
             "insumo_cond_media": mu_c,
             "insumo_cond_se": se_c,
             "insumo_cond_ic95": [lo_c, hi_c] if lo_c is not None else None,
             "insumo_cond_n": n_c,
+            "insumo_15p_valores": [round(float(x), 4) for x in serie_15p],
             "insumo_15p_media": mu_g,
             "insumo_15p_se": se_g,
             "insumo_15p_ic95": [lo_g, hi_g] if lo_g is not None else None,
             "insumo_15p_n": n_g,
             "supera_ruido": supera_ruido,
         }
+        if serie_g_xg_cond is not None and serie_g_xg_15p is not None:
+            mu_gc, se_gc, lo_gc, hi_gc, n_gc = _ic_media(serie_g_xg_cond)
+            mu_gg, se_gg, lo_gg, hi_gg, n_gg = _ic_media(serie_g_xg_15p)
+            info_out["insumo_g_menos_xg"] = {
+                "cond_valores": [round(float(x), 4) for x in serie_g_xg_cond],
+                "cond_media": mu_gc,
+                "cond_se": se_gc,
+                "cond_ic95": [lo_gc, hi_gc] if lo_gc is not None else None,
+                "cond_n": n_gc,
+                "15p_valores": [round(float(x), 4) for x in serie_g_xg_15p],
+                "15p_media": mu_gg,
+                "15p_se": se_gg,
+                "15p_ic95": [lo_gg, hi_gg] if lo_gg is not None else None,
+                "15p_n": n_gg,
+            }
+        return info_out
 
     f0_L = factores_pre_L or {}
     f0_V = factores_pre_V or {}
@@ -2209,8 +2328,8 @@ def calcular_ic_factores_dcn_partido(
             out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], gev_V_fuera, gev_V_all, "goles_evitados_rival")
             out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], gev_L_casa, gev_L_all, "goles_evitados_rival")
         elif k == "F_finalizacion":
-            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], fin_L_casa, fin_L_all, "xgot_menos_xg")
-            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], fin_V_fuera, fin_V_all, "xgot_menos_xg")
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], fin_L_casa, fin_L_all, "xgot_menos_xg", g_xg_L_casa, g_xg_L_all)
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], fin_V_fuera, fin_V_all, "xgot_menos_xg", g_xg_V_fuera, g_xg_V_all)
         else:
             out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], [], [], "")
             out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], [], [], "")
@@ -2446,9 +2565,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,
     )
 
-    f_l = cruces_6["factores_local"]
     f_l = dict(cruces_6["factores_local"])
     f_v = dict(cruces_6["factores_visita"])
+    cruces_6["factores_crudos_local"] = dict(f_l)
+    cruces_6["factores_crudos_visita"] = dict(f_v)
     ic_factores_L, ic_factores_V = calcular_ic_factores_dcn_partido(
         partidos_15_local, partidos_15_visita, estados_L, estados_V,
         mu_L_casa, mu_V_fuera, perfil_local, perfil_visita, rL, rV,

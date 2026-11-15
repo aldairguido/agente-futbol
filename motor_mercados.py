@@ -2337,7 +2337,8 @@ class MotorMercados:
                             from decision_cobertura import bandera_activa as _ba_mm_ic
                             _ic_l_mm = resultado.get("ic_factores_local") or {}
                             _fij_l_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_l_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn") else [])
-                            fl_new = reescalar_factores_a_delta(fl_old, delta_pct_l_21, fijos=tuple(_fij_l_mm))
+                            _fl_base_mm = (ct.get("factores_crudos_local") or fl_old) if _ba_mm_ic("usar_reescalado_sin_inversion_signo_dcn") else fl_old
+                            fl_new = reescalar_factores_a_delta(_fl_base_mm, delta_pct_l_21, fijos=tuple(_fij_l_mm))
                             if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn"):
                                 for _k_ic, _v_ic in _ic_l_mm.items():
                                     if not _v_ic.get("supera_ruido", False):
@@ -2347,7 +2348,8 @@ class MotorMercados:
                             from decision_cobertura import bandera_activa as _ba_mm_ic_v
                             _ic_v_mm = resultado.get("ic_factores_visita") or {}
                             _fij_v_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_v_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn") else [])
-                            fv_new = reescalar_factores_a_delta(fv_old, delta_pct_v_21, fijos=tuple(_fij_v_mm))
+                            _fv_base_mm = (ct.get("factores_crudos_visita") or fv_old) if _ba_mm_ic_v("usar_reescalado_sin_inversion_signo_dcn") else fv_old
+                            fv_new = reescalar_factores_a_delta(_fv_base_mm, delta_pct_v_21, fijos=tuple(_fij_v_mm))
                             if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn"):
                                 for _k_ic, _v_ic in _ic_v_mm.items():
                                     if not _v_ic.get("supera_ruido", False):
