@@ -2053,6 +2053,170 @@ def calcular_los_6_cruces_tacticos(
     }
 
 
+def calcular_ic_factores_dcn_partido(
+    partidos_15_local: Optional[List[Dict[str, Any]]],
+    partidos_15_visita: Optional[List[Dict[str, Any]]],
+    estados_L: Dict[str, Any],
+    estados_V: Dict[str, Any],
+    mu_L_casa: Dict[str, Any],
+    mu_V_fuera: Dict[str, Any],
+    perfil_local: Dict[str, Any],
+    perfil_visita: Dict[str, Any],
+    rL: Dict[str, Any],
+    rV: Dict[str, Any],
+    factores_pre_L: Optional[Dict[str, float]] = None,
+    factores_pre_V: Optional[Dict[str, float]] = None,
+    n_boot: int = 400,
+    seed: int = 20261114,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """
+    Ronda 8 Punto 5(b): Calcula intervalos de confianza al 95% (IC95 por partido y bootstrap)
+    para los factores tácticos de los 6 cruces (especialmente F_porteria_rival y F_finalizacion)
+    y para la métrica subyacente (goles_evitados del rival y xgot - xg del atacante).
+    Un factor solo supera el ruido (`supera_ruido=True`) si su IC95 excluye el 0
+    tanto en la métrica subyacente por partido como en el bootstrap de los 6 cruces.
+    """
+    rng = np.random.default_rng(seed)
+    pts_L = [p for p in (partidos_15_local or []) if isinstance(p, dict)]
+    pts_V = [p for p in (partidos_15_visita or []) if isinstance(p, dict)]
+
+    def _ic_media(vals: List[float]) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], int]:
+        arr = [float(x) for x in vals if isinstance(x, (int, float)) and not math.isnan(float(x))]
+        n = len(arr)
+        if n == 0:
+            return None, None, None, None, 0
+        mu = float(np.mean(arr))
+        if n < 2:
+            return round(mu, 4), 0.0, round(mu, 4), round(mu, 4), n
+        se = float(np.std(arr, ddof=1) / math.sqrt(n))
+        return round(mu, 4), round(se, 4), round(mu - 1.96 * se, 4), round(mu + 1.96 * se, 4), n
+
+    gev_V_all, gev_V_fuera = [], []
+    for p in pts_V:
+        v_ge = _valor_metrica(p, "goles_evitados")
+        if v_ge is not None:
+            gev_V_all.append(float(v_ge))
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                gev_V_fuera.append(float(v_ge))
+
+    gev_L_all, gev_L_casa = [], []
+    for p in pts_L:
+        v_ge = _valor_metrica(p, "goles_evitados")
+        if v_ge is not None:
+            gev_L_all.append(float(v_ge))
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("casa", "local", "h", "home"):
+                gev_L_casa.append(float(v_ge))
+
+    fin_L_all, fin_L_casa = [], []
+    for p in pts_L:
+        v_xg = _valor_metrica(p, "xg")
+        v_xgot = _valor_metrica(p, "xgot")
+        if v_xg is not None and v_xgot is not None:
+            d_f = float(v_xgot) - float(v_xg)
+            fin_L_all.append(d_f)
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("casa", "local", "h", "home"):
+                fin_L_casa.append(d_f)
+
+    fin_V_all, fin_V_fuera = [], []
+    for p in pts_V:
+        v_xg = _valor_metrica(p, "xg")
+        v_xgot = _valor_metrica(p, "xgot")
+        if v_xg is not None and v_xgot is not None:
+            d_f = float(v_xgot) - float(v_xg)
+            fin_V_all.append(d_f)
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                fin_V_fuera.append(d_f)
+
+    claves_f = (
+        "F_posesion_progresiva",
+        "F_creacion",
+        "F_finalizacion",
+        "F_porteria_rival",
+        "F_fragilidad_rival",
+    )
+    boot_L: Dict[str, List[float]] = {k: [] for k in claves_f}
+    boot_V: Dict[str, List[float]] = {k: [] for k in claves_f}
+    if len(pts_L) >= 5 and len(pts_V) >= 5 and n_boot > 0:
+        nL = len(pts_L)
+        nV = len(pts_V)
+        for _ in range(n_boot):
+            idx_L = rng.integers(0, nL, size=nL)
+            idx_V = rng.integers(0, nV, size=nV)
+            sub_L = [pts_L[int(i)] for i in idx_L]
+            sub_V = [pts_V[int(i)] for i in idx_V]
+            mu_b_L = calcular_doble_adn_con_shrinkage(sub_L, estados_L, "casa", perfil_local)
+            mu_b_V = calcular_doble_adn_con_shrinkage(sub_V, estados_V, "fuera", perfil_visita)
+            c_b = calcular_los_6_cruces_tacticos(
+                mu_b_L, mu_b_V, estados_L, estados_V,
+                perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,
+            )
+            for k in claves_f:
+                boot_L[k].append(float(c_b["factores_local"].get(k, 0.0)))
+                boot_V[k].append(float(c_b["factores_visita"].get(k, 0.0)))
+
+    def _armar_info_factor(
+        k: str,
+        val_puntual: float,
+        vals_boot: List[float],
+        serie_cond: List[float],
+        serie_15p: List[float],
+        nombre_insumo: str,
+    ) -> Dict[str, Any]:
+        mu_c, se_c, lo_c, hi_c, n_c = _ic_media(serie_cond)
+        mu_g, se_g, lo_g, hi_g, n_g = _ic_media(serie_15p)
+        if vals_boot:
+            lo_b = round(float(np.percentile(vals_boot, 2.5)), 2)
+            hi_b = round(float(np.percentile(vals_boot, 97.5)), 2)
+            se_b = round(float(np.std(vals_boot, ddof=1)), 2)
+            mu_b = round(float(np.mean(vals_boot)), 2)
+        else:
+            lo_b = hi_b = mu_b = round(float(val_puntual), 2)
+            se_b = 0.0
+        excluye_0_boot = (lo_b > 0.0) or (hi_b < 0.0)
+        excluye_0_cond = (lo_c is not None and hi_c is not None and ((lo_c > 0.0) or (hi_c < 0.0))) if n_c >= 2 else True
+        excluye_0_15p = (lo_g is not None and hi_g is not None and ((lo_g > 0.0) or (hi_g < 0.0))) if n_g >= 2 else True
+        if nombre_insumo:
+            supera_ruido = bool(excluye_0_boot and (excluye_0_cond or excluye_0_15p) and abs(val_puntual) > 0.05)
+        else:
+            supera_ruido = bool(excluye_0_boot and abs(val_puntual) > 0.05)
+        return {
+            "factor_sin_reescalar_pct": round(float(val_puntual), 2),
+            "boot_media_pct": mu_b,
+            "boot_se_pct": se_b,
+            "boot_ic95_pct": [lo_b, hi_b],
+            "insumo": nombre_insumo,
+            "insumo_cond_media": mu_c,
+            "insumo_cond_se": se_c,
+            "insumo_cond_ic95": [lo_c, hi_c] if lo_c is not None else None,
+            "insumo_cond_n": n_c,
+            "insumo_15p_media": mu_g,
+            "insumo_15p_se": se_g,
+            "insumo_15p_ic95": [lo_g, hi_g] if lo_g is not None else None,
+            "insumo_15p_n": n_g,
+            "supera_ruido": supera_ruido,
+        }
+
+    f0_L = factores_pre_L or {}
+    f0_V = factores_pre_V or {}
+    out_L: Dict[str, Dict[str, Any]] = {}
+    out_V: Dict[str, Dict[str, Any]] = {}
+    for k in claves_f:
+        if k == "F_porteria_rival":
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], gev_V_fuera, gev_V_all, "goles_evitados_rival")
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], gev_L_casa, gev_L_all, "goles_evitados_rival")
+        elif k == "F_finalizacion":
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], fin_L_casa, fin_L_all, "xgot_menos_xg")
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], fin_V_fuera, fin_V_all, "xgot_menos_xg")
+        else:
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], [], [], "")
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], [], [], "")
+    return out_L, out_V
+
+
 def calcular_indice_bloqueo_cerrojo(
     xgot_atacante: float,
     xg_atacante: float,
@@ -2283,7 +2447,31 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     )
 
     f_l = cruces_6["factores_local"]
-    f_v = cruces_6["factores_visita"]
+    f_l = dict(cruces_6["factores_local"])
+    f_v = dict(cruces_6["factores_visita"])
+    ic_factores_L, ic_factores_V = calcular_ic_factores_dcn_partido(
+        partidos_15_local, partidos_15_visita, estados_L, estados_V,
+        mu_L_casa, mu_V_fuera, perfil_local, perfil_visita, rL, rV,
+        factores_pre_L=f_l, factores_pre_V=f_v,
+        n_boot=40 if (partidos_15_local and partidos_15_visita) else 0,
+    )
+    fijos_ruido_L: List[str] = ["F_posesion_progresiva"]
+    fijos_ruido_V: List[str] = ["F_posesion_progresiva"]
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf, _inf in ic_factores_L.items():
+            if not _inf.get("supera_ruido", False):
+                f_l[_kf] = 0.0
+                if _kf not in fijos_ruido_L:
+                    fijos_ruido_L.append(_kf)
+        for _kf, _inf in ic_factores_V.items():
+            if not _inf.get("supera_ruido", False):
+                f_v[_kf] = 0.0
+                if _kf not in fijos_ruido_V:
+                    fijos_ruido_V.append(_kf)
+        if not ic_factores_L.get("F_porteria_rival", {}).get("supera_ruido", False):
+            cruces_6["ajuste_portero_local"] = 0.0
+        if not ic_factores_V.get("F_porteria_rival", {}).get("supera_ruido", False):
+            cruces_6["ajuste_portero_visita"] = 0.0
     comp_L["ajuste_portero"] = cruces_6["ajuste_portero_local"]
     comp_V["ajuste_portero"] = cruces_6["ajuste_portero_visita"]
     comp_L["regalo_errores"] = cruces_6["regalo_errores_local"]
@@ -2751,8 +2939,16 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     if f_v.get("F_fragilidad_rival", 0.0) <= -1.0:
         techos_V["F_fragilidad_rival"] = -1.5
 
-    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=("F_posesion_progresiva",), pisos=pisos_L)
-    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=("F_posesion_progresiva",), techos=techos_V)
+    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=tuple(fijos_ruido_L), pisos=pisos_L)
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf in fijos_ruido_L:
+            if _kf != "F_posesion_progresiva" and not ic_factores_L.get(_kf, {}).get("supera_ruido", False):
+                f_l[_kf] = 0.0
+    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=tuple(fijos_ruido_V), techos=techos_V)
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf in fijos_ruido_V:
+            if _kf != "F_posesion_progresiva" and not ic_factores_V.get(_kf, {}).get("supera_ruido", False):
+                f_v[_kf] = 0.0
 
     pct_tot_L = round(float(sum(f_l.values())), 1)
     pct_tot_V = round(float(sum(f_v.values())), 1)
@@ -2860,4 +3056,10 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         "seg_gol_V": float(tV.get("Avg_Seconds_Between_Goals", 3500.0)),
         "cerrojo_L_activo": cerrojo_L_activo,
         "cerrojo_V_activo": cerrojo_V_activo,
+        "n_cond_local": n_cond_adn_L,
+        "n_cond_visita": n_cond_adn_V,
+        "meta_condicion_local": {"n_en_condicion": n_cond_adn_L},
+        "meta_condicion_visita": {"n_en_condicion": n_cond_adn_V},
+        "ic_factores_local": ic_factores_L,
+        "ic_factores_visita": ic_factores_V,
     }

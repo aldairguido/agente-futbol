@@ -2107,8 +2107,10 @@ class MotorMercados:
                 info_contexto=ctx_av,
                 contexto_partido=ctx_av,
             )
-            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
             _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
             if isinstance(pat_l, dict):
                 pat_l["_muestra_etiqueta"] = _etq_adn
@@ -2116,8 +2118,10 @@ class MotorMercados:
             if isinstance(pat_v, dict):
                 pat_v["_muestra_etiqueta"] = _etq_adn
                 pat_v["_n_muestra_adn"] = _nv_adn
-            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
             _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
             if isinstance(pat_l, dict):
                 pat_l["_muestra_etiqueta"] = _etq_adn
@@ -2330,10 +2334,24 @@ class MotorMercados:
                         fl_old = ct.get("factores_local") or {}
                         fv_old = ct.get("factores_visita") or {}
                         if fl_old:
-                            fl_new = reescalar_factores_a_delta(fl_old, delta_pct_l_21, fijos=("F_posesion_progresiva",))
+                            from decision_cobertura import bandera_activa as _ba_mm_ic
+                            _ic_l_mm = resultado.get("ic_factores_local") or {}
+                            _fij_l_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_l_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn") else [])
+                            fl_new = reescalar_factores_a_delta(fl_old, delta_pct_l_21, fijos=tuple(_fij_l_mm))
+                            if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn"):
+                                for _k_ic, _v_ic in _ic_l_mm.items():
+                                    if not _v_ic.get("supera_ruido", False):
+                                        fl_new[_k_ic] = 0.0
                             ct["factores_local"] = fl_new
                         if fv_old:
-                            fv_new = reescalar_factores_a_delta(fv_old, delta_pct_v_21, fijos=("F_posesion_progresiva",))
+                            from decision_cobertura import bandera_activa as _ba_mm_ic_v
+                            _ic_v_mm = resultado.get("ic_factores_visita") or {}
+                            _fij_v_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_v_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn") else [])
+                            fv_new = reescalar_factores_a_delta(fv_old, delta_pct_v_21, fijos=tuple(_fij_v_mm))
+                            if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn"):
+                                for _k_ic, _v_ic in _ic_v_mm.items():
+                                    if not _v_ic.get("supera_ruido", False):
+                                        fv_new[_k_ic] = 0.0
                             ct["factores_visita"] = fv_new
                 except Exception:
                     pass

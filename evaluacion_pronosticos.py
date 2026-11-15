@@ -4980,5 +4980,283 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def auditar_colombia_chile_ronda8() -> dict[str, Any]:
+    """
+    Ronda 8 Punto 5: Auditoría forense íntegra de Colombia vs Chile (12/11):
+      (a) n real y lista de partidos de cada grupo casa/fuera (Colombia: 7 Local / 8 Visita;
+          Chile: 6 Local / 9 Visita; corrige N=8 y N=6 hardcodeados en lecturas Doble ADN).
+      (b) PortRiv (-11.9%) y Finaliz (-8.2%) con intervalo de confianza al 95% (por partido
+          y bootstrap); si no superan el ruido (IC95 contiene 0), no mueven el λ.
+      (c) Filtro exacto que quitó cada línea >= 70% (1X 72.8%, 1T Menos de 1.5 75.7%/72.5%,
+          etc.) y coherencia de cifra entre Matriz, Veredicto y Top 5.
+      (d) Cuadro C de Chile: 9 goles a favor (3 en 1T + 6 en 2T) y 11 en contra (7 en 1T +
+          4 en 2T) según mitades de la matriz (no 7 y 9), y número real de partidos evaluables
+          (9/15 con mitades verificadas en matriz, 7/15 con minutos + mitades; no 13/15).
+    """
+    import os
+    from auditoria_historica import reconstruir_marcador_mitades_partido
+    from cuadro_especialista import (
+        _organizar_sec1_para_cuadro,
+        _generar_lecturas_doble_adn,
+        bloque_para_lado,
+        construir_perfil_especialista_equipo,
+    )
+    from decision_cobertura import banderas_comportamiento
+    from motor_inferencia import (
+        calcular_cuadro_b_tendencias_15p,
+        calcular_cuadro_c_timeline_15min,
+        generar_veredicto_tactico_partido,
+    )
+    from motor_mercados import MotorMercados, analizar, seleccionar_top_5_jugadas_recomendadas
+    from servicio_mercados import obtener_top5_y_seccion1_filtrados
+
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    ruta_col = os.path.join(base_dir, "cache", "cache_fotmob_colombia_COL_False_False.json")
+    ruta_chi = os.path.join(base_dir, "cache", "cache_fotmob_chile_CHL_False_False.json")
+    with open(ruta_col, "r", encoding="utf-8") as f:
+        doc_col = json.load(f)
+    with open(ruta_chi, "r", encoding="utf-8") as f:
+        doc_chi = json.load(f)
+
+    pts_col = (doc_col.get("partidos") or [])[:15]
+    pts_chi = (doc_chi.get("partidos") or [])[:15]
+
+    def _grupos_casa_fuera(pts: list[dict[str, Any]], offset_mat: int = 0) -> dict[str, Any]:
+        casa, fuera = [], []
+        for idx, p in enumerate(pts, 1):
+            cond = str(p.get("condicion") or "").lower()
+            marc = p.get("marcador") or {}
+            txt_m = f"{marc.get('equipo')}-{marc.get('rival')}"
+            item_info = {
+                "idx_equipo": idx,
+                "idx_matriz": idx + offset_mat,
+                "fecha": str(p.get("fecha") or ""),
+                "rival": str(p.get("rival") or ""),
+                "marcador_eq_riv": txt_m,
+                "torneo": str(p.get("torneo") or "").replace("\n", " ").strip(),
+                "condicion": cond,
+                "etiqueta": "Local" if cond in ("casa", "local", "h", "home") else "Visita",
+            }
+            if cond in ("casa", "local", "h", "home"):
+                casa.append(item_info)
+            else:
+                fuera.append(item_info)
+        return {
+            "n_total": len(pts),
+            "n_casa_local": len(casa),
+            "n_fuera_visita": len(fuera),
+            "partidos_casa_local": casa,
+            "partidos_fuera_visita": fuera,
+        }
+
+    grupos_col = _grupos_casa_fuera(pts_col, offset_mat=0)
+    grupos_chi = _grupos_casa_fuera(pts_chi, offset_mat=15)
+
+    # Ejecución en modo A+B (configuración donde el ticket imprimió PortRiv -11.9% y Finaliz -8.2%)
+    with banderas_comportamiento(activar_todas=True):
+        analisis_ab = analizar(doc_col, doc_chi, "Colombia", "Chile", condicion_local="casa", condicion_visitante="fuera")
+        motor_ab = analisis_ab.motor
+        rec_ab = motor_ab.recursivo
+        top5_ab, sec1_ab, _ = obtener_top5_y_seccion1_filtrados(analisis_ab)
+
+    # Ejecución con filtro de ruido IC95 activado (factores que no superan el ruido no mueven λ)
+    with banderas_comportamiento(
+        activar_todas=True,
+        usar_filtro_ruido_ic_factores_dcn=True,
+    ):
+        analisis_sin_ruido = analizar(doc_col, doc_chi, "Colombia", "Chile", condicion_local="casa", condicion_visitante="fuera")
+        motor_sin_ruido = analisis_sin_ruido.motor
+        rec_sin_ruido = motor_sin_ruido.recursivo
+
+    # Ejecución en modo por defecto (solo A)
+    with banderas_comportamiento(activar_todas=False):
+        analisis_a = analizar(doc_col, doc_chi, "Colombia", "Chile", condicion_local="casa", condicion_visitante="fuera")
+        motor_a = analisis_a.motor
+        rec_a = motor_a.recursivo
+        top5_a, sec1_a, _ = obtener_top5_y_seccion1_filtrados(analisis_a)
+
+    # Verificar que _generar_lecturas_doble_adn usa N=7 y N=9 reales (y no N=8 y N=6)
+    bl_l = bloque_para_lado(motor_ab, "local")
+    bl_v = bloque_para_lado(motor_ab, "visitante")
+    perf_l = construir_perfil_especialista_equipo(bl_l)
+    perf_v = construir_perfil_especialista_equipo(bl_v)
+    perf_l["n_partidos_cond"] = grupos_col["n_casa_local"]
+    perf_v["n_partidos_cond"] = grupos_chi["n_fuera_visita"]
+    lecturas_adn = _generar_lecturas_doble_adn(
+        "Colombia", "Chile", "Local", "Visita", perf_l, perf_v, rec_ab,
+        1.53, 1.48, 0.53, 0.72, 0.80, 0.96, 1.00, 1.25,
+    )
+
+    # (b) Intervalos de confianza de PortRiv y Finaliz
+    ic_l_ab = rec_ab.get("ic_factores_local") or {}
+    port_riv_info = dict(ic_l_ab.get("F_porteria_rival") or {})
+    finaliz_info = dict(ic_l_ab.get("F_finalizacion") or {})
+    port_riv_info["factor_ticket_ab_reescalado_pct"] = float(((rec_ab.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_ab.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_porteria_rival", 0.0))
+    finaliz_info["factor_ticket_ab_reescalado_pct"] = float(((rec_ab.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_ab.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_finalizacion", 0.0))
+    port_riv_info["factor_con_filtro_ruido_pct"] = float(((rec_sin_ruido.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_sin_ruido.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_porteria_rival", 0.0))
+    finaliz_info["factor_con_filtro_ruido_pct"] = float(((rec_sin_ruido.get("cruces_tacticos", {}).get("factores_red_neuronal_local") or rec_sin_ruido.get("cruces_tacticos", {}).get("factores_local")) or {}).get("F_finalizacion", 0.0))
+
+    # (c) Auditoría de cada línea >= 70% y qué filtro la quitó de Sección 1 / Top 5
+    def _auditar_lineas_70(analisis_obj: Any, top5_list: list[dict[str, Any]], sec1_list: list[dict[str, Any]], modo_tag: str) -> list[dict[str, Any]]:
+        from motor_mercados import tiene_desvio_excesivo_calibracion, _clave_a_texto
+        sels_filt = list(getattr(analisis_obj, "selecciones_filtradas", None) or getattr(analisis_obj, "selecciones", None) or [])
+        claves_filt = {getattr(s, "clave_unica", None) for s in sels_filt}
+        sels_todas = list(sels_filt)
+        for _rm in (getattr(analisis_obj, "mercados", None) or []):
+            for _sm in (getattr(_rm, "selecciones", None) or []):
+                if getattr(_sm, "clave_unica", None) not in claves_filt and (getattr(_sm, "probabilidad", None) or 0.0) >= 0.70:
+                    sels_todas.append(_sm)
+        top5_etqs = {str(x.get("etiqueta") or "") for x in (top5_list or [])}
+        sec1_etqs = {str((x.get("etiqueta") if isinstance(x, dict) else getattr(x, "etiqueta", "")) or "") for x in (sec1_list or [])}
+        lineas_70 = []
+        for s in sels_todas:
+            prob = float(getattr(s, "probabilidad", 0.0) or 0.0)
+            if prob < 0.70:
+                continue
+            etq = str(getattr(s, "etiqueta", "") or "")
+            est = str(getattr(s, "estado", "") or "")
+            estimable = bool(getattr(s, "estimable", True))
+            en_sec1 = (est == "mantiene" and estimable) or (etq in sec1_etqs)
+            en_top5 = etq in top5_etqs
+            filtros_sec1 = []
+            filtros_top5 = []
+            if not estimable:
+                filtros_sec1.append(f"Gate de cobertura ({getattr(s, 'motivo_no_estimable', 'no_estimable')})")
+                filtros_top5.append(f"Gate de cobertura ({getattr(s, 'motivo_no_estimable', 'no_estimable')})")
+            if getattr(s, "clave_unica", None) not in claves_filt:
+                filtros_sec1.append("Gate de cobertura / cronología 10/15 o córneres 8/15")
+                filtros_top5.append("Gate de cobertura / cronología 10/15 o córneres 8/15")
+            _esc_map = getattr(s, "escenarios", None) or (getattr(analisis_obj, "sensibilidad", None) or {}).get(_clave_a_texto(getattr(s, "clave_unica", ())), {})
+            _esc_vals = [float(v) for v in (_esc_map or {}).values() if v is not None]
+            p_min = (min(_esc_vals) * 100.0) if _esc_vals else (prob * 100.0)
+            if est == "sensible" or (_esc_vals and min(_esc_vals) <= 0.70):
+                filtros_sec1.append(f"Sensibilidad 9 escenarios (estado='{est or 'sensible'}', min_escenario={p_min:.1f}% <= 70.0%)")
+            _mot = analisis_obj.motor
+            excede_desv, desv, frec_obs = tiene_desvio_excesivo_calibracion(
+                s, _mot.doc_local, _mot.doc_visitante, _mot.nombre_local, _mot.nombre_visitante
+            )
+            cal_val = not bool(excede_desv)
+            if excede_desv and desv is not None and not any("Sensibilidad 9 escenarios" in x for x in filtros_sec1):
+                filtros_sec1.append(f"Sensibilidad 9 escenarios (estado='sensible' por desvío calibración {float(desv):.1f} pp > 10.0 pp, min_escenario={p_min:.1f}%)")
+            if not cal_val and desv is not None:
+                filtros_top5.append(
+                    f"Desvío de calibración observada > 10.0 pp (|modelo {prob*100:.1f}% - frec_obs {(frec_obs or 0)*100:.1f}%| = {float(desv):.1f} pp > 10.0 pp)"
+                )
+            if frec_obs is not None and float(frec_obs) < 0.55:
+                filtros_top5.append(f"Frecuencia empírica combinada < 55.0% ({float(frec_obs)*100:.1f}%)")
+            cuota_j = 1.0 / prob if prob > 0 else 99.0
+            if cuota_j < 1.25:
+                filtros_top5.append(f"Filtro anti-trivialidad Top 5 (cuota_justa={cuota_j:.2f} < 1.25, prob={prob*100:.1f}% > 80.0%)")
+            if not en_top5 and not filtros_top5:
+                filtros_top5.append("Desplazada por límite de cupo por categoría/correlación en el Podio Top 5")
+            lineas_70.append({
+                "modo": modo_tag,
+                "mercado": str(getattr(s, "mercado", "") or ""),
+                "etiqueta": (f"{getattr(s, 'periodo', 'FT')} {etq[0].upper() + etq[1:]}" if str(getattr(s, "periodo", "FT") or "FT") in ("1T", "2T") and etq and not etq.upper().startswith(("1T", "2T")) else etq),
+                "etiqueta_raw": etq,
+                "periodo": str(getattr(s, "periodo", "FT") or "FT"),
+                "prob_pct": round(prob * 100.0, 1),
+                "estado_sensibilidad": est,
+                "en_seccion1": en_sec1,
+                "en_top5": en_top5,
+                "filtro_quito_seccion1": "; ".join(filtros_sec1) if not en_sec1 else None,
+                "filtro_quito_top5": "; ".join(filtros_top5) if not en_top5 else None,
+            })
+        return lineas_70
+
+    lineas_70_a = _auditar_lineas_70(analisis_a, top5_a, sec1_a, "solo_A")
+    lineas_70_ab = _auditar_lineas_70(analisis_ab, top5_ab, sec1_ab, "A+B")
+
+    # Coherencia Matriz vs Veredicto vs Top 5 / Sección 1
+    mat_ft = motor_a.matriz_ft
+    p1_m = sum(mat_ft[i][j] for i in range(len(mat_ft)) for j in range(len(mat_ft[0])) if i > j)
+    px_m = sum(mat_ft[i][j] for i in range(len(mat_ft)) for j in range(len(mat_ft[0])) if i == j)
+    p2_m = sum(mat_ft[i][j] for i in range(len(mat_ft)) for j in range(len(mat_ft[0])) if i < j)
+    p_1x_matriz_pct = round((p1_m + px_m) * 100.0, 1)
+
+    cb_col = calcular_cuadro_b_tendencias_15p(pts_col, "Colombia")
+    cb_chi = calcular_cuadro_b_tendencias_15p(pts_chi, "Chile")
+    cc_col = calcular_cuadro_c_timeline_15min(pts_col, "Colombia")
+    cc_chi = calcular_cuadro_c_timeline_15min(pts_chi, "Chile")
+
+    veredicto_sin_top = generar_veredicto_tactico_partido(
+        "Colombia", "Chile",
+        rec_a.get("patrones_55_local") or {},
+        rec_a.get("patrones_55_visita") or {},
+        {"local": p1_m, "empate": px_m, "visita": p2_m},
+        cb_col, cb_chi, cc_col, cc_chi,
+        top5_podio=[],
+        selecciones_sec1=sec1_a,
+        motor=motor_a,
+    )
+    veredicto_con_top = generar_veredicto_tactico_partido(
+        "Colombia", "Chile",
+        rec_a.get("patrones_55_local") or {},
+        rec_a.get("patrones_55_visita") or {},
+        {"local": p1_m, "empate": px_m, "visita": p2_m},
+        cb_col, cb_chi, cc_col, cc_chi,
+        top5_podio=top5_a,
+        selecciones_sec1=sec1_a,
+        motor=motor_a,
+    )
+    filas_sec1_cuadro = _organizar_sec1_para_cuadro(analisis_a, sec1_a, "Colombia", "Chile", matriz_prob=mat_ft, top5_podio=top5_a)
+    fila_hc_sec1 = next((r for r in filas_sec1_cuadro if r["categoria"] == "HÁNDICAP / 1X2 / DC"), {})
+
+    # (d) Cuadro C de Chile: desglose exacto por partido según mitades y según eventos
+    detalle_mitades_chi = []
+    for idx, p in enumerate(pts_chi, 1):
+        ge_1t, gr_1t, ge_2t, gr_2t, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+        marc = p.get("marcador") or {}
+        evs = p.get("eventos_gol") or []
+        detalle_mitades_chi.append({
+            "idx_chile": idx,
+            "idx_matriz": idx + 15,
+            "fecha": p.get("fecha"),
+            "rival": p.get("rival"),
+            "ft_gf": marc.get("equipo"),
+            "ft_gc": marc.get("rival"),
+            "mitades_validas_en_matriz": ok_m,
+            "gf_1t": ge_1t,
+            "gc_1t": gr_1t,
+            "gf_2t": ge_2t,
+            "gc_2t": gr_2t,
+            "tiene_eventos_minuto": bool(evs) or (marc.get("equipo") == 0 and marc.get("rival") == 0),
+        })
+
+    return {
+        "punto_5a_grupos_casa_fuera": {
+            "colombia": grupos_col,
+            "chile": grupos_chi,
+            "lectura_control_y_asedio_corregida": lecturas_adn[0] if lecturas_adn else "",
+            "etiqueta_muestra_patrones": (rec_ab.get("patrones_55_local") or {}).get("_muestra_etiqueta"),
+        },
+        "punto_5b_factores_con_ic": {
+            "PortRiv_local": port_riv_info,
+            "Finaliz_local": finaliz_info,
+            "lambda_local_ab_sin_filtro_ruido": rec_ab.get("lambda_local_final"),
+            "lambda_local_ab_con_filtro_ruido": rec_sin_ruido.get("lambda_local_final"),
+            "factores_local_ab_sin_filtro": (rec_ab.get("cruces_tacticos") or {}).get("factores_local"),
+            "factores_local_ab_con_filtro": (rec_sin_ruido.get("cruces_tacticos") or {}).get("factores_local"),
+        },
+        "punto_5c_filtros_y_coherencia": {
+            "prob_1x_matriz_pct": p_1x_matriz_pct,
+            "lineas_70_solo_A": lineas_70_a,
+            "lineas_70_A_mas_B": lineas_70_ab,
+            "veredicto_sin_top_c1": veredicto_sin_top.splitlines()[2] if len(veredicto_sin_top.splitlines()) > 2 else "",
+            "veredicto_con_top_c1": veredicto_con_top.splitlines()[2] if len(veredicto_con_top.splitlines()) > 2 else "",
+            "fila_handicap_1x2_dc_sec1": fila_hc_sec1,
+        },
+        "punto_5d_cuadro_c_chile": {
+            "meta_chile": cc_chi.get("_meta"),
+            "meta_colombia": cc_col.get("_meta"),
+            "total_anotados_chile": cc_chi.get("total_anotados"),
+            "total_recibidos_chile": cc_chi.get("total_recibidos"),
+            "anotados_por_franja_chile": cc_chi.get("anotados"),
+            "recibidos_por_franja_chile": cc_chi.get("recibidos"),
+            "detalle_15p_chile": detalle_mitades_chi,
+        },
+    }
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

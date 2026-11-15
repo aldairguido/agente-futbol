@@ -48,6 +48,9 @@ BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
     "usar_kelly_conservador_min_3pct": False,
     "usar_excluir_primer_gol_top5": False,
 }
+_BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
+    "usar_filtro_ruido_ic_factores_dcn": False,
+}
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
 _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
@@ -56,6 +59,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_gate_goles_mitad_15_15",
     "usar_kelly_conservador_min_3pct",
     "usar_excluir_primer_gol_top5",
+    "usar_filtro_ruido_ic_factores_dcn",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
@@ -199,7 +203,7 @@ def establecer_overrides_banderas(overrides: Optional[Dict[str, bool]] = None) -
     _OVERRIDES_BANDERAS.clear()
     if overrides:
         for k, v in overrides.items():
-            if k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+            if k in BANDERAS_COMPORTAMIENTO_DEFECTO or k in _BANDERAS_AUXILIARES_DEFECTO:
                 _OVERRIDES_BANDERAS[k] = bool(v)
 
 
@@ -219,7 +223,7 @@ def banderas_comportamiento(
                     else bool(activar_todas)
                 )
         for k, v in kwargs.items():
-            if k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+            if k in BANDERAS_COMPORTAMIENTO_DEFECTO or k in _BANDERAS_AUXILIARES_DEFECTO:
                 nuevo[k] = bool(v)
         _OVERRIDES_BANDERAS.clear()
         _OVERRIDES_BANDERAS.update(nuevo)

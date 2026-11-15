@@ -1226,7 +1226,11 @@ def obtener_top5_y_seccion1_filtrados(
     tiene_res_sec1 = any(_clasificar_cat(s) == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
     if not tiene_res_sec1 and top5_podio:
         for item_t5 in top5_podio:
-            if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+            if (
+                int(item_t5.get("slot", 0) or 0) == 1
+                and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70
+                and str(item_t5.get("categoria_podio") or "") == "RESULTADO / DOBLE OPORTUNIDAD"
+            ):
                 et_t5 = str(item_t5.get("etiqueta") or "")
                 ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
                 mantiene_raw.append({

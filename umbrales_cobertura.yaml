@@ -81,6 +81,7 @@ flags_comportamiento:
   usar_gate_goles_mitad_15_15: false  # regla operativa, sin validación cronológica
   usar_kelly_conservador_min_3pct: false  # regla operativa, sin validación cronológica
   usar_excluir_primer_gol_top5: false  # regla operativa, sin validación cronológica
+  usar_filtro_ruido_ic_factores_dcn: false  # regla operativa, sin validación cronológica
 
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica

@@ -691,6 +691,23 @@ def construir_perfil_especialista_equipo(bloque_equipo: dict[str, Any], ratio_ti
         "contexto": bloque_equipo.get("contexto", "global"),
         "condicion": bloque_equipo.get("condicion"),
         "n_partidos": bloque_equipo.get("n_partidos", 15),
+        "n_partidos_cond": (
+            bloque_equipo.get("n_partidos_cond")
+            if bloque_equipo.get("n_partidos_cond") is not None
+            else (
+                sum(
+                    1 for _p in (bloque_equipo.get("partidos") or [])
+                    if isinstance(_p, dict) and str((_p.get("_partido") or _p).get("condicion") or _p.get("condicion") or "").lower() in (
+                        ("casa", "local", "h", "home")
+                        if str(bloque_equipo.get("condicion") or "").lower() in ("casa", "local", "h", "home")
+                        else ("fuera", "visita", "visitante", "a", "away")
+                    )
+                )
+                if str(bloque_equipo.get("condicion") or "").lower() in ("casa", "local", "h", "home", "fuera", "visita", "visitante", "a", "away")
+                and (bloque_equipo.get("partidos") or [])
+                else None
+            )
+        ),
         "metricas_sin_dato": list(bloque_equipo.get("metricas_sin_dato") or []),
         "ratings_0_100": {
             "Overall_Hybrid_Rating": overall,
@@ -1306,8 +1323,20 @@ def _generar_lecturas_doble_adn(
     aereo_V = _val(mu_v, "duelos_aereos_pct", mv, "duelos_aereos_pct", 49.0)
 
     # 1. Control y Asedio (Casa vs Visita) con etiquetado explícito de muestra
-    n_casa_l = perfil_local.get("n_partidos_cond", 8)
-    n_fuera_v = perfil_vis.get("n_partidos_cond", 6)
+    n_casa_l = int(
+        res_red.get("n_cond_local")
+        or ((res_red.get("meta_condicion_local") or {}).get("n_en_condicion"))
+        or perfil_local.get("n_partidos_cond")
+        or perfil_local.get("n_partidos")
+        or 8
+    )
+    n_fuera_v = int(
+        res_red.get("n_cond_visita")
+        or ((res_red.get("meta_condicion_visita") or {}).get("n_en_condicion"))
+        or perfil_vis.get("n_partidos_cond")
+        or perfil_vis.get("n_partidos")
+        or 6
+    )
     v1 = (
         f"Control y Asedio ([{cond_l} N={n_casa_l}] vs [{cond_v} N={n_fuera_v}]): {eq_L} registra {pos_L:.1f}% pos., "
         f"{toq_L:.1f} toques en área y {cor_L:.1f} córn. frente a {eq_V} con {pos_V:.1f}% pos., "
@@ -1572,7 +1601,11 @@ def _organizar_sec1_para_cuadro(
     # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
     if not agrupado.get("HÁNDICAP / 1X2 / DC") and top5_podio:
         for item_t5 in top5_podio:
-            if int(item_t5.get("slot", 0) or 0) == 1 and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70:
+            if (
+                int(item_t5.get("slot", 0) or 0) == 1
+                and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70
+                and str(item_t5.get("categoria_podio") or "") == "RESULTADO / DOBLE OPORTUNIDAD"
+            ):
                 et_t5 = str(item_t5.get("etiqueta") or "")
                 prob_t5 = float(item_t5.get("probabilidad", 0.72))
                 ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_L.lower() in et_t5.lower() else "2"))
@@ -2635,6 +2668,20 @@ def generar_cuadro_desde_analisis(
 
     perfil_l = construir_perfil_especialista_equipo(bloques["local"], ratio_tier=ratio_tier_l)
     perfil_v = construir_perfil_especialista_equipo(bloques["visitante"], ratio_tier=ratio_tier_v)
+    if pts_l:
+        _n_cl = sum(
+            1 for _p in pts_l[:15]
+            if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home")
+        )
+        if _n_cl > 0:
+            perfil_l["n_partidos_cond"] = _n_cl
+    if pts_v:
+        _n_fv = sum(
+            1 for _p in pts_v[:15]
+            if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away")
+        )
+        if _n_fv > 0:
+            perfil_v["n_partidos_cond"] = _n_fv
 
     from decision_cobertura import bandera_activa as _ba_ce_mit_ctx
     if _ba_ce_mit_ctx("usar_tensor_65_35_y_diesel"):
@@ -3031,8 +3078,11 @@ def generar_cuadro_auditoria_15_partidos_png(
 
         _xai_rec_v = getattr(motor_obj, "xai_factores", None) or {}
         if isinstance(_xai_rec_v.get("mu_local_casa"), dict) and isinstance(pat_l_v, dict):
-            _nl_v = int(((getattr(motor_obj, "recursivo", None) or {}).get("meta_condicion_local") or {}).get("n_en_condicion") or len(lista_L) or 15)
-            _nv_v = int(((getattr(motor_obj, "recursivo", None) or {}).get("meta_condicion_visita") or {}).get("n_en_condicion") or len(lista_V) or 15)
+            _rec_v_dict = getattr(motor_obj, "recursivo", None) or {}
+            _nl_c_fallback = sum(1 for _p in (lista_L or []) if isinstance(_p, dict) and str(_p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+            _nl_v = int(_rec_v_dict.get("n_cond_local") or (_rec_v_dict.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_fallback or len(lista_L) or 15)
+            _nv_c_fallback = sum(1 for _p in (lista_V or []) if isinstance(_p, dict) and str(_p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+            _nv_v = int(_rec_v_dict.get("n_cond_visita") or (_rec_v_dict.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_fallback or len(lista_V) or 15)
             pat_l_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
             pat_v_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
         texto_veredicto = generar_veredicto_tactico_partido(

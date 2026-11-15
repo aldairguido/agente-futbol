@@ -623,7 +623,97 @@ def calcular_cuadro_c_timeline(
         if gf_i == 0 and gc_i == 0:
             n_con_eventos += 1
 
+    n_con_eventos_raw = n_con_eventos
+    n_con_mitades = n_con_eventos
+    n_con_eventos_y_mitades = n_con_eventos
+    gf_1t_mit = sum(conteo[fr]["anotados"] for fr in ("00_15", "16_30", "31_45"))
+    gf_2t_mit = sum(conteo[fr]["anotados"] for fr in ("46_60", "61_75", "76_90"))
+    gc_1t_mit = sum(conteo[fr]["recibidos"] for fr in ("00_15", "16_30", "31_45"))
+    gc_2t_mit = sum(conteo[fr]["recibidos"] for fr in ("46_60", "61_75", "76_90"))
+    tiene_matrices_45 = any(
+        isinstance(it, dict)
+        and isinstance(it.get("periodos"), dict)
+        and "resumen_claves" in it and len(((it["periodos"].get("FT") or {}).get("filas") or [])) >= 10
+        for it in lista
+    )
+    if tiene_matrices_45:
+        try:
+            from auditoria_historica import reconstruir_marcador_mitades_partido
+            conteo_mit: Dict[str, Dict[str, int]] = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
+            n_mit_ok = 0
+            n_ev_mit_ok = 0
+            gf1_m, gf2_m, gc1_m, gc2_m = 0, 0, 0, 0
+            hubo_descarte_mit = False
+            for it in lista:
+                if not isinstance(it, dict):
+                    continue
+                ge_1t, gr_1t, ge_2t, gr_2t, ok_m, _ = reconstruir_marcador_mitades_partido(it, "equipo", "rival")
+                if not ok_m:
+                    hubo_descarte_mit = True
+                    continue
+                n_mit_ok += 1
+                gf1_m += int(ge_1t or 0)
+                gf2_m += int(ge_2t or 0)
+                gc1_m += int(gr_1t or 0)
+                gc2_m += int(gr_2t or 0)
+                evs_it = it.get("eventos_gol") or it.get("goles_detalle") or it.get("goal_events")
+                if isinstance(evs_it, list) and evs_it:
+                    cond_it = str(it.get("condicion") or "casa").lower()
+                    es_loc_it = cond_it in ("casa", "local", "l", "home")
+                    tmp_it = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
+                    a_it, r_it, inv_it = 0, 0, False
+                    for ev in evs_it:
+                        if not isinstance(ev, dict):
+                            inv_it = True
+                            break
+                        fr_e, es_90 = _parsear_minuto_reglamentario(ev)
+                        if not es_90:
+                            continue
+                        if fr_e is None:
+                            inv_it = True
+                            break
+                        lado_e = str(ev.get("lado") or ev.get("bando") or "").lower()
+                        if lado_e in ("equipo", "favor", "propio") or (lado_e == "local" and es_loc_it) or (lado_e in ("visita", "visitante", "away") and not es_loc_it):
+                            tmp_it[fr_e]["anotados"] += 1
+                            a_it += 1
+                        else:
+                            tmp_it[fr_e]["recibidos"] += 1
+                            r_it += 1
+                    if not inv_it and a_it == int((ge_1t or 0) + (ge_2t or 0)) and r_it == int((gr_1t or 0) + (gr_2t or 0)):
+                        n_ev_mit_ok += 1
+                        for fr in franjas:
+                            conteo_mit[fr]["anotados"] += tmp_it[fr]["anotados"]
+                            conteo_mit[fr]["recibidos"] += tmp_it[fr]["recibidos"]
+                        continue
+                if int((ge_1t or 0) + (ge_2t or 0)) == 0 and int((gr_1t or 0) + (gr_2t or 0)) == 0:
+                    n_ev_mit_ok += 1
+                else:
+                    hubo_descarte_mit = True
+                    conteo_mit["31_45"]["anotados"] += int(ge_1t or 0)
+                    conteo_mit["31_45"]["recibidos"] += int(gr_1t or 0)
+                    conteo_mit["76_90"]["anotados"] += int(ge_2t or 0)
+                    conteo_mit["76_90"]["recibidos"] += int(gr_2t or 0)
+            n_con_mitades = n_mit_ok
+            n_con_eventos_y_mitades = n_ev_mit_ok
+            gf_1t_mit, gf_2t_mit, gc_1t_mit, gc_2t_mit = gf1_m, gf2_m, gc1_m, gc2_m
+            if hubo_descarte_mit and n_mit_ok > 0:
+                for fr in franjas:
+                    conteo[fr]["anotados"] = conteo_mit[fr]["anotados"]
+                    conteo[fr]["recibidos"] = conteo_mit[fr]["recibidos"]
+                n_con_eventos = n_mit_ok
+        except Exception:
+            pass
+
     conteo["_meta"] = {
+        "n_partidos_con_mitades": n_con_mitades,
+        "n_partidos_con_eventos_y_mitades": n_con_eventos_y_mitades,
+        "n_partidos_con_eventos_raw": n_con_eventos_raw,
+        "goles_1t_favor_mitades": gf_1t_mit,
+        "goles_2t_favor_mitades": gf_2t_mit,
+        "goles_favor_mitades": gf_1t_mit + gf_2t_mit,
+        "goles_1t_contra_mitades": gc_1t_mit,
+        "goles_2t_contra_mitades": gc_2t_mit,
+        "goles_contra_mitades": gc_1t_mit + gc_2t_mit,
         "n_partidos_totales": len(lista),
         "n_partidos_con_eventos": n_con_eventos,
         "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista)),
@@ -1127,12 +1217,12 @@ def generar_veredicto_tactico_partido(
     dc_code = "1X" if es_fav_local else "X2"
     p_dc_base = (p_loc + p_emp) * 100.0 if es_fav_local else (p_emp + p_vis) * 100.0
     jugada_1_nombre = f"Doble Oportunidad {dc_code}: Empate o {eq_fav}" if not es_fav_local else f"Doble Oportunidad {dc_code}: {eq_fav} o Empate"
-    jugada_1_prob = min(92.0, max(72.0, p_dc_base - 4.5))
+    jugada_1_prob = p_dc_base
     if top5_podio and len(top5_podio) > 0:
         j1 = top5_podio[0]
         jugada_1_nombre = str(j1.get("etiqueta") or jugada_1_nombre)
         jugada_1_prob = _safe_float(j1.get("probabilidad"), jugada_1_prob / 100.0) * 100.0
-        p_dc_base = _safe_float(j1.get("prob_base_poisson"), p_dc_base)
+        p_dc_base = _safe_float(j1.get("prob_base_poisson"), jugada_1_prob)
 
     # 2. Franja crítica en Cuadro C (Timeline de 15 min)
     pares_franjas = [
