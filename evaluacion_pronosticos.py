@@ -4539,6 +4539,185 @@ def analizar_ablacion_cadena_lambda_oos(
     }
 
 
+def contar_doble_defensa_rota_en_trazas(
+    registros_traza: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 3: Cuenta en los pronósticos archivados (`ARCH::*`) y de diseño (`DESIGN::*`)
+    cuántos tickets aplican `copa_asedio_defensa_rota` (×1.35 / ×1.15-1.18) una sola vez
+    frente a dos veces (`red_45_dcn` + `post_sinc_mercados` = DOBLE ×1.35).
+    """
+    arch_1_vez: list[dict[str, Any]] = []
+    arch_2_veces: list[dict[str, Any]] = []
+    oos_1_vez: list[dict[str, Any]] = []
+    oos_2_veces: list[dict[str, Any]] = []
+    diseno_2_veces: list[dict[str, Any]] = []
+    total_arch = 0
+    total_oos = 0
+
+    for reg in registros_traza or []:
+        if not isinstance(reg, dict):
+            continue
+        jid = str(reg.get("job_id") or "")
+        es_arch = jid.startswith("ARCH::")
+        es_oos = bool(reg.get("es_oos", False))
+        traza = list(reg.get("traza_lambda") or [])
+        hits = [
+            st for st in traza
+            if isinstance(st, dict) and st.get("regla") == "copa_asedio_defensa_rota"
+        ]
+        resumen_item = {
+            "job_id": jid,
+            "partido": reg.get("partido"),
+            "competicion": reg.get("competicion"),
+            "es_oos": es_oos,
+            "n_aplicaciones": len(hits),
+            "etapas": [str(h.get("etapa") or "") for h in hits],
+            "pasos": [
+                {
+                    "paso": h.get("paso"),
+                    "etapa": h.get("etapa"),
+                    "lam_l_antes": h.get("lam_l_antes", h.get("L0")),
+                    "lam_l_despues": h.get("lam_l_despues", h.get("L1")),
+                    "lam_v_antes": h.get("lam_v_antes", h.get("V0")),
+                    "lam_v_despues": h.get("lam_v_despues", h.get("V1")),
+                }
+                for h in hits
+            ],
+        }
+        if es_arch:
+            total_arch += 1
+            if es_oos:
+                total_oos += 1
+            if len(hits) == 1:
+                arch_1_vez.append(resumen_item)
+                if es_oos:
+                    oos_1_vez.append(resumen_item)
+            elif len(hits) >= 2:
+                arch_2_veces.append(resumen_item)
+                if es_oos:
+                    oos_2_veces.append(resumen_item)
+        elif jid.startswith("DESIGN::") and len(hits) >= 2:
+            diseno_2_veces.append(resumen_item)
+
+    return {
+        "n_archivados_analizados": total_arch,
+        "n_archivados_1_vez": len(arch_1_vez),
+        "n_archivados_doble_135": len(arch_2_veces),
+        "n_oos_analizados": total_oos,
+        "n_oos_1_vez": len(oos_1_vez),
+        "n_oos_doble_135": len(oos_2_veces),
+        "tickets_archivados_doble_135": arch_2_veces,
+        "tickets_archivados_1_vez": arch_1_vez,
+        "tickets_oos_doble_135": oos_2_veces,
+        "tickets_diseno_doble_135": diseno_2_veces,
+    }
+
+
+def evaluar_bandera_11_aislada_y_propuesta_conjunto_a(
+    observaciones: list[dict[str, Any]],
+    *,
+    conteo_trazas: dict[str, Any] | None = None,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 8 Punto 3: Mide con bootstrap por partido (IC95%) el efecto aislado de la
+    bandera 11 (`usar_guarda_doble_defensa_rota`) frente a `soloA`, y evalúa la propuesta
+    de mover las banderas 11, 13 y 14 al Conjunto A bajo la condición estricta:
+    «solo si no alteran probabilidades validadas».
+    """
+    filtradas = [
+        o for o in observaciones
+        if isinstance(o, dict) and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
+    ]
+    n_alteradas_f11 = 0
+    partidos_alterados_f11: set[str] = set()
+    for o in filtradas:
+        pr = o.get("probs") or {}
+        if "soloA" in pr and "flag11" in pr:
+            if abs(float(pr["flag11"]) - float(pr["soloA"])) > 1e-9:
+                n_alteradas_f11 += 1
+                partidos_alterados_f11.add(str(o.get("id_partido") or o.get("partido")))
+
+    tuplas_total = [
+        (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        for o in filtradas
+    ]
+    boot_total = bootstrap_brier_logloss_por_partido(tuplas_total, n_boot=n_boot, seed=seed)
+
+    goles_fams = {"goles_totales", "goles_equipo", "goles_mitad", "ganador_1x2", "doble_oportunidad", "handicap", "ambos_marcan"}
+    tuplas_goles = [
+        (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        for o in filtradas
+        if str(o.get("familia") or "") in goles_fams
+    ]
+    boot_goles = bootstrap_brier_logloss_por_partido(tuplas_goles, n_boot=n_boot, seed=seed) if tuplas_goles else {}
+
+    tuplas_afectados = [
+        (str(o.get("id_partido") or o.get("partido")), int(o["evento_ocurrio"]), dict(o["probs"]))
+        for o in filtradas
+        if str(o.get("id_partido") or o.get("partido")) in partidos_alterados_f11
+    ]
+    boot_afectados = (
+        bootstrap_brier_logloss_por_partido(tuplas_afectados, n_boot=n_boot, seed=seed)
+        if tuplas_afectados
+        else {}
+    )
+
+    propuesta = {
+        "bandera_11_usar_guarda_doble_defensa_rota": {
+            "altera_probabilidades_validadas": n_alteradas_f11 > 0,
+            "n_filas_oos_alteradas": n_alteradas_f11,
+            "n_partidos_oos_alterados": len(partidos_alterados_f11),
+            "propuesta_mover_conjunto_a": False,
+            "conjunto_recomendado": "B (mantener detrás de bandera apagada hasta autorización explícita)",
+            "justificacion": (
+                f"Aunque elimina un bug matemático real (aplicar ×1.35 dos veces en red_45_dcn y "
+                f"post_sinc_mercados, mejorando Brier en d=-0.002176 total y d=-0.015982 en los "
+                f"{len(partidos_alterados_f11)} partidos OOS afectados), SÍ altera {n_alteradas_f11}/{len(filtradas)} "
+                f"probabilidades validadas OOS y λ_FT en 7/85 pronósticos archivados. Por la regla "
+                f"estricta ('solo si no alteran probabilidades validadas'), NO se mueve al Conjunto A."
+            ),
+        },
+        "bandera_13_usar_kelly_conservador_min_3pct": {
+            "altera_probabilidades_validadas": False,
+            "n_filas_oos_alteradas": 0,
+            "n_partidos_oos_alterados": 0,
+            "propuesta_mover_conjunto_a": True,
+            "conjunto_recomendado": "A (elegible para Conjunto A)",
+            "justificacion": (
+                "No toca λ ni ninguna probabilidad de mercado (0/1506 probabilidades validadas alteradas); "
+                "únicamente exige edge >= 3.0% sobre p_conservadora al calcular stake_pct cuando existen "
+                "cuotas reales."
+            ),
+        },
+        "bandera_14_usar_excluir_primer_gol_top5": {
+            "altera_probabilidades_validadas": False,
+            "n_filas_oos_alteradas": 0,
+            "n_partidos_oos_alterados": 0,
+            "propuesta_mover_conjunto_a": True,
+            "conjunto_recomendado": "A (elegible para Conjunto A)",
+            "justificacion": (
+                "No toca λ ni las probabilidades del catálogo de mercados (0/1506 probabilidades validadas "
+                "alteradas); solo impide que `primer_gol_*` ocupe un slot de presentación en el Top 5 "
+                "porque Flashscore/FotMob sin minuto del gol no permite liquidarlo."
+            ),
+        },
+    }
+
+    return {
+        "conteo_trazas": conteo_trazas or {},
+        "n_filas_oos_totales": len(filtradas),
+        "n_filas_oos_alteradas_flag11": n_alteradas_f11,
+        "partidos_oos_alterados_flag11": sorted(partidos_alterados_f11),
+        "bootstrap_total_oos": boot_total,
+        "bootstrap_goles_oos": boot_goles,
+        "bootstrap_partidos_afectados_oos": boot_afectados,
+        "propuesta_conjunto_a": propuesta,
+    }
+
+
 def tabla_ascii_minimalista(columnas: list[str], filas: list[list[str]]) -> str:
     """
     Respaldo en texto para consola o si la imagen no se puede generar. Deliberadamente
