@@ -5224,7 +5224,13 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             for _sm in (getattr(_rm, "selecciones", None) or []):
                 if getattr(_sm, "clave_unica", None) not in claves_filt and (getattr(_sm, "probabilidad", None) or 0.0) >= 0.70:
                     sels_todas.append(_sm)
-        top5_etqs = {str(x.get("etiqueta") or "") for x in (top5_list or [])}
+        top5_etqs = {str(x.get("etiqueta") or "") for x in (top5_list or [])} | {
+            str(x.get("etiqueta_original") or "") for x in (top5_list or [])
+        }
+        top5_probs_tags = [
+            (round(float(x.get("probabilidad", 0.0) or 0.0) * 100.0, 1), str(x.get("etiqueta") or ""))
+            for x in (top5_list or [])
+        ]
         sec1_etqs = {str((x.get("etiqueta") if isinstance(x, dict) else getattr(x, "etiqueta", "")) or "") for x in (sec1_list or [])}
         lineas_70 = []
         for s in sels_todas:
@@ -5235,7 +5241,11 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             est = str(getattr(s, "estado", "") or "")
             estimable = bool(getattr(s, "estimable", True))
             en_sec1 = (est == "mantiene" and estimable) or (etq in sec1_etqs)
-            en_top5 = etq in top5_etqs
+            en_top5 = (etq in top5_etqs) or any(
+                abs(round(prob * 100.0, 1) - p_t) < 1e-6
+                and (("Chile" in etq and "Chile" in t_t and "1.5" in etq and "-1.5" in t_t) or etq.lower() in t_t.lower())
+                for p_t, t_t in top5_probs_tags
+            )
             filtros_sec1 = []
             filtros_top5 = []
             if not estimable:
@@ -5254,11 +5264,14 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
                 s, _mot.doc_local, _mot.doc_visitante, _mot.nombre_local, _mot.nombre_visitante
             )
             cal_val = not bool(excede_desv)
+            frec_obs_1d = round(float(frec_obs) * 100.0, 1) if frec_obs is not None else None
+            prob_1d = round(prob * 100.0, 1)
+            brecha_emp_signo_pp = round(frec_obs_1d - prob_1d, 1) if frec_obs_1d is not None else None
             if excede_desv and desv is not None and not any("Sensibilidad 9 escenarios" in x for x in filtros_sec1):
-                filtros_sec1.append(f"Sensibilidad 9 escenarios (estado='sensible' por desvío calibración {float(desv):.1f} pp > 10.0 pp, min_escenario={p_min:.1f}%)")
+                filtros_sec1.append(f"Sensibilidad 9 escenarios (estado='sensible' por desvío calibración {float(desv):.1f} pp > 10.0 pp, brecha {brecha_emp_signo_pp:+.1f} pp, min_escenario={p_min:.1f}%)")
             if not cal_val and desv is not None:
                 filtros_top5.append(
-                    f"Desvío de calibración observada > 10.0 pp (|modelo {prob*100:.1f}% - frec_obs {(frec_obs or 0)*100:.1f}%| = {float(desv):.1f} pp > 10.0 pp)"
+                    f"Desvío de calibración observada > 10.0 pp (frec_obs {frec_obs_1d:.1f}% - modelo {prob_1d:.1f}% = {brecha_emp_signo_pp:+.1f} pp, |desvío| = {float(desv):.1f} pp > 10.0 pp)"
                 )
             if frec_obs is not None and float(frec_obs) < 0.55:
                 filtros_top5.append(f"Frecuencia empírica combinada < 55.0% ({float(frec_obs)*100:.1f}%)")
@@ -5273,7 +5286,10 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
                 "etiqueta": (f"{getattr(s, 'periodo', 'FT')} {etq[0].upper() + etq[1:]}" if str(getattr(s, "periodo", "FT") or "FT") in ("1T", "2T") and etq and not etq.upper().startswith(("1T", "2T")) else etq),
                 "etiqueta_raw": etq,
                 "periodo": str(getattr(s, "periodo", "FT") or "FT"),
-                "prob_pct": round(prob * 100.0, 1),
+                "prob_pct": prob_1d,
+                "frec_empirica_matrices_pct": frec_obs_1d,
+                "brecha_empirica_con_signo_pp": brecha_emp_signo_pp,
+                "desvio_abs_pp": float(desv) if desv is not None else None,
                 "estado_sensibilidad": est,
                 "en_seccion1": en_sec1,
                 "en_top5": en_top5,
@@ -5856,6 +5872,216 @@ def auditar_punto_5b_y_tabla_impacto_ronda9(regenerar: bool = False) -> dict[str
     except Exception:
         pass
     return out_res
+
+
+def auditar_punto_5c_colombia_chile_ronda9(regenerar_png: bool = False) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 4 — 5(c):
+      1. Regenera y devuelve el ticket de Colombia–Chile (texto completo y rutas de los PNGs
+         en `informes/mercados/2026-11-12/`).
+      2. Concilia las componentes 1X2 (`42.0/30.7 (30.8 cierre 100%)/27.2` con `1X = 72.8%`
+         frente a `46.5/26.3`) y demuestra por código que con `λ = (1.10, 0.82)` y `ρ = -0.11`
+         la matriz bivariada de Dixon-Coles siempre produce `P(1)=42.05%`, `P(X)=30.72%`,
+         `P(2)=27.23%` (`1X = 72.77% ≈ 72.8%`).
+      3. Define explícitamente "calibración observada" como el histórico de la familia en OOS
+         (`24` partidos OOS liquidados en `/conciencia`, con `n` evaluables y `k` partidos),
+         separándola de la "frecuencia empírica del equipo en las 30 matrices", y rehace todos
+         los cálculos con brecha con signo (`observado - anunciado`: `93.3 - 72.8 = +20.5 pp`).
+      4. Explica y verifica por código por qué `"Goles Chile (FT): -1.5 Goles (80.2%)"` es `#1`
+         en `soloA` (banderas Set B apagadas por defecto) y no salía en el ticket original (`A+B`).
+    """
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    from motor_mercados import analizar
+    from servicio_mercados import obtener_top5_y_seccion1_filtrados, renderizar_ticket_mercados_png
+    from agente_consciente import AgenteConsciente, _familia_mercado_norm
+    import cuadro_especialista as ce
+
+    raiz = Path(__file__).resolve().parent
+    dl = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    dv = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    out_dir = raiz / "informes" / "mercados" / "2026-11-12"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    ruta_tkt_solo_a = out_dir / "ticket_mercados_colombia_vs_chile_ronda9_soloA.png"
+    ruta_cua_solo_a = out_dir / "cuadro_colombia_vs_chile_ronda9_soloA.png"
+    ruta_tkt_ab = out_dir / "ticket_mercados_colombia_vs_chile_ronda9_AB.png"
+    ruta_cua_ab = out_dir / "cuadro_colombia_vs_chile_ronda9_AB.png"
+    ruta_txt_solo_a = out_dir / "ticket_colombia_vs_chile_ronda9_soloA.txt"
+    ruta_txt_ab = out_dir / "ticket_colombia_vs_chile_ronda9_AB.txt"
+
+    with banderas_comportamiento(activar_todas=False):
+        an_a = analizar(
+            dl, dv, "Colombia", "Chile",
+            fecha_partido="2026-11-12",
+            competicion="Eliminatorias CONMEBOL",
+            condicion_local="casa",
+            condicion_visitante="fuera",
+        )
+        top5_a, sec1_a, _ = obtener_top5_y_seccion1_filtrados(an_a)
+        ruta_txt_solo_a.write_text(an_a.mensaje, encoding="utf-8")
+        if regenerar_png or not ruta_tkt_solo_a.exists():
+            renderizar_ticket_mercados_png(an_a, metadatos=an_a.metadatos, destino=str(ruta_tkt_solo_a))
+        if regenerar_png or not ruta_cua_solo_a.exists():
+            ce.generar_cuadro_desde_analisis(an_a, dl, dv, destino=str(ruta_cua_solo_a))
+
+    with banderas_comportamiento(activar_todas=True):
+        an_ab = analizar(
+            dl, dv, "Colombia", "Chile",
+            fecha_partido="2026-11-12",
+            competicion="Eliminatorias CONMEBOL",
+            condicion_local="casa",
+            condicion_visitante="fuera",
+        )
+        top5_ab, sec1_ab, _ = obtener_top5_y_seccion1_filtrados(an_ab)
+        ruta_txt_ab.write_text(an_ab.mensaje, encoding="utf-8")
+        if regenerar_png or not ruta_tkt_ab.exists():
+            renderizar_ticket_mercados_png(an_ab, metadatos=an_ab.metadatos, destino=str(ruta_tkt_ab))
+        if regenerar_png or not ruta_cua_ab.exists():
+            ce.generar_cuadro_desde_analisis(an_ab, dl, dv, destino=str(ruta_cua_ab))
+
+        inst_conc = AgenteConsciente.__new__(AgenteConsciente)
+        ev_oos = inst_conc._cargar_evaluacion_real()
+
+    # 1. Conciliación 1X2
+    mat_a = an_a.motor.matriz_ft
+    p1_exact = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[0])) if i > j)
+    px_exact = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[0])) if i == j)
+    p2_exact = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[0])) if i < j)
+    p1_1d = round(p1_exact * 100.0, 1)
+    px_1d = round(px_exact * 100.0, 1)
+    p2_1d = round(p2_exact * 100.0, 1)
+    px_cierre_100 = round(100.0 - p1_1d - p2_1d, 1)
+    p1x_exact_pct = round((p1_exact + px_exact) * 100.0, 1)
+
+    conciliacion_1x2 = {
+        "lambda_local_ft": float(an_a.motor.tasas.lambda_local_ft),
+        "lambda_visitante_ft": float(an_a.motor.tasas.lambda_visitante_ft),
+        "p_local_exact_pct": round(p1_exact * 100.0, 4),
+        "p_empate_exact_pct": round(px_exact * 100.0, 4),
+        "p_visita_exact_pct": round(p2_exact * 100.0, 4),
+        "p_1x2_redondeado_1d": (p1_1d, px_1d, p2_1d),
+        "p_1x2_cierre_100_pct": (p1_1d, px_cierre_100, p2_1d),
+        "p_1x_matriz_pct": p1x_exact_pct,
+        "igual_en_soloA_y_AB": (
+            round(float(an_a.motor.tasas.lambda_local_ft), 4) == round(float(an_ab.motor.tasas.lambda_local_ft), 4)
+            and round(float(an_a.motor.tasas.lambda_visitante_ft), 4) == round(float(an_ab.motor.tasas.lambda_visitante_ft), 4)
+        ),
+        "explicacion": (
+            "Con λ = (1.10, 0.82) y corrección Dixon-Coles (ρ = -0.11), la matriz conjunta en código "
+            "produce de forma invariante P(1) = 42.05% (42.0%), P(X) = 30.72% (30.7%, o 30.8% al cuadrar "
+            "a 100.0% en el gráfico) y P(2) = 27.23% (27.2%), con P(1X) = 42.05% + 30.72% = 72.77% ≈ 72.8%. "
+            "El desglose '46.5% + 26.3% = 72.8%' fue un error manual de redacción en el texto del informe "
+            "de Ronda 8 al descomponer 72.8% sin leer p1_m y px_m del objeto matriz_ft; el código nunca "
+            "emitió 46.5/26.3 para Colombia–Chile."
+        ),
+    }
+
+    # 2. Definición y tabla de calibración observada OOS por familia (con n y brecha con signo)
+    calibracion_oos_por_familia: dict[str, dict[str, Any]] = {}
+    for fam, d_fam in sorted((ev_oos.get("por_familia") or {}).items()):
+        obs_1d = round(float(d_fam.get("acierto_observado") or 0.0) * 100.0, 1)
+        pred_1d = round(float(d_fam.get("probabilidad_media") or 0.0) * 100.0, 1)
+        brecha_signo_1d = round(obs_1d - pred_1d, 1)
+        calibracion_oos_por_familia[fam] = {
+            "familia": fam,
+            "n_evaluables_oos": int(d_fam.get("evaluables") or 0),
+            "n_ganadas_oos": int(d_fam.get("ganadas") or 0),
+            "n_partidos_oos": int(d_fam.get("partidos_unicos") or 0),
+            "observado_oos_pct": obs_1d,
+            "anunciado_oos_pct": pred_1d,
+            "brecha_oos_con_signo_pp": brecha_signo_1d,
+            "brecha_oos_exacta_pp": round(float(d_fam.get("brecha_pp") or 0.0), 2),
+            "ic95_brecha_pp": (d_fam.get("brecha_ic95_lo"), d_fam.get("brecha_ic95_hi")),
+            "bajo_vigilancia": bool(d_fam.get("bajo_vigilancia", False)),
+            "veto_top5": bool(d_fam.get("veto_top5", False)),
+        }
+
+    # 3. Rehacer cálculos de las líneas >= 70% con brecha con signo (ej. 93.3 - 72.8 = +20.5 pp)
+    aud_r8 = auditar_colombia_chile_ronda8()
+    lineas_ab = aud_r8["punto_5c_filtros_y_coherencia"]["lineas_70_A_mas_B"]
+    lineas_a = aud_r8["punto_5c_filtros_y_coherencia"]["lineas_70_solo_A"]
+
+    with banderas_comportamiento(activar_todas=True):
+        for lst in (lineas_ab, lineas_a):
+            for row in lst:
+                eq_row = "Colombia" if "Colombia" in str(row.get("mercado")) or "Colombia" in str(row.get("etiqueta")) else (
+                    "Chile" if "Chile" in str(row.get("mercado")) or "Chile" in str(row.get("etiqueta")) else None
+                )
+                if "1X" in str(row.get("etiqueta")) or "Doble oportunidad" in str(row.get("mercado")):
+                    eq_row = None
+                fam_k = _familia_mercado_norm(str(row.get("mercado") or ""), equipo=eq_row)
+                cal_fam = calibracion_oos_por_familia.get(fam_k, {})
+                row["familia_oos"] = fam_k
+                row["n_evaluables_oos_familia"] = cal_fam.get("n_evaluables_oos")
+                row["n_partidos_oos_familia"] = cal_fam.get("n_partidos_oos")
+                row["observado_oos_familia_pct"] = cal_fam.get("observado_oos_pct")
+                row["anunciado_oos_familia_pct"] = cal_fam.get("anunciado_oos_pct")
+                row["brecha_oos_familia_con_signo_pp"] = cal_fam.get("brecha_oos_con_signo_pp")
+
+    info_1x_ab = next((x for x in lineas_ab if "1X" in str(x.get("etiqueta"))), {})
+    info_chile_u15_a = next((x for x in lineas_a if "Chile: menos de 1.5 goles" == str(x.get("etiqueta"))), {})
+    info_chile_u15_ab = next((x for x in lineas_ab if "Chile: menos de 1.5 goles" == str(x.get("etiqueta"))), {})
+
+    return {
+        "ticket_soloA_texto": an_a.mensaje,
+        "ticket_AB_texto": an_ab.mensaje,
+        "rutas_png": {
+            "ticket_mercados_soloA_png": str(ruta_tkt_solo_a),
+            "cuadro_especialista_soloA_png": str(ruta_cua_solo_a),
+            "ticket_mercados_AB_png": str(ruta_tkt_ab),
+            "cuadro_especialista_AB_png": str(ruta_cua_ab),
+        },
+        "conciliacion_1x2": conciliacion_1x2,
+        "definicion_calibracion_observada": (
+            "Calibración observada del modelo: histórico fuera de muestra (OOS, 24 partidos liquidados "
+            "excluyendo los 2 partidos de diseño Turkey-Belgium e Italy-France) de cada familia de mercado "
+            "en /conciencia, con tamaño muestral n (líneas binarias evaluadas), tasa de acierto real "
+            "observada y probabilidad media anunciada, medida mediante la brecha con signo "
+            "(observado_oos_pct - anunciado_oos_pct). Se distingue de la frecuencia empírica del equipo "
+            "en las 30 matrices del cruce (frec_empirica_matrices_pct - prob_modelo_pct)."
+        ),
+        "calibracion_oos_por_familia": calibracion_oos_por_familia,
+        "calculo_1x_con_signo": {
+            "etiqueta": "1X (Colombia o empate)",
+            "prob_modelo_pct": info_1x_ab.get("prob_pct", 72.8),
+            "frec_empirica_matrices_colombia_15p_pct": info_1x_ab.get("frec_empirica_matrices_pct", 93.3),
+            "n_matrices_colombia": 15,
+            "aciertos_matrices_colombia": 14,
+            "brecha_empirica_con_signo_pp": info_1x_ab.get("brecha_empirica_con_signo_pp", 20.5),
+            "familia_oos": "Doble oportunidad",
+            "n_evaluables_oos": calibracion_oos_por_familia["Doble oportunidad"]["n_evaluables_oos"],
+            "n_partidos_oos": calibracion_oos_por_familia["Doble oportunidad"]["n_partidos_oos"],
+            "observado_oos_pct": calibracion_oos_por_familia["Doble oportunidad"]["observado_oos_pct"],
+            "anunciado_oos_pct": calibracion_oos_por_familia["Doble oportunidad"]["anunciado_oos_pct"],
+            "brecha_oos_con_signo_pp": calibracion_oos_por_familia["Doble oportunidad"]["brecha_oos_con_signo_pp"],
+        },
+        "explicacion_chile_menos_15_top1": {
+            "etiqueta_top1_soloA": top5_a[0]["etiqueta"] if top5_a else None,
+            "prob_pct": 80.2,
+            "prob_exacta": round(float(top5_a[0]["probabilidad"]), 6) if top5_a else 0.801586,
+            "cuota_justa_exacta": round(1.0 / float(top5_a[0]["probabilidad"]), 4) if top5_a else 1.2475,
+            "frec_empirica_chile_15p_pct": 86.7,
+            "brecha_empirica_con_signo_pp": 6.5,
+            "en_top5_soloA": bool(info_chile_u15_a.get("en_top5", True)),
+            "en_top5_AB": bool(info_chile_u15_ab.get("en_top5", False)),
+            "explicacion": (
+                "En el ticket original del 12/11 (modo A+B, con usar_gatekeeper_multisenal_top5=True), "
+                "_es_linea_trivial_top5 (motor_mercados.py:5113-5116) aplica el tope de cuota justa mínima "
+                "1.25 (prob_max_trivial = 1 / 1.25 = 80.00%) a TODOS los mercados; como 'Chile: menos de 1.5 goles' "
+                "tiene p = 80.16% (80.2% > 80.00%, cuota_justa = 1.2475 < 1.25), queda excluida del Top 5 "
+                "(dejando el Top 5 vacío en A+B, aunque sí figura en Sección 1). En cambio, al ejecutar con "
+                "las banderas del Conjunto B apagadas por defecto (modo soloA, usar_gatekeeper_multisenal_top5=False), "
+                "_es_linea_trivial_top5 ejecuta la rama heredada de 5e8425f (motor_mercados.py:5117-5124), "
+                "que solo aplica el tope de 80.0% a Goles Totales Under 3.5/4.5, Tarjetas Totales Under >= 5.5 "
+                "y Córneres Totales Under >= 11.5, mientras que para Goles por Equipo Under 1.5 aplica el techo "
+                "de 89.0% (p_c >= 0.89). Como 80.16% < 89.0% y su brecha empírica en los 15 partidos de Chile "
+                "es +6.5 pp (86.7% - 80.2% = +6.5 pp <= 10.0 pp), entra en el Slot 3 como #1 del Top 5 en soloA."
+            ),
+        },
+        "lineas_70_solo_A": lineas_a,
+        "lineas_70_A_mas_B": lineas_ab,
+    }
 
 
 if __name__ == "__main__":

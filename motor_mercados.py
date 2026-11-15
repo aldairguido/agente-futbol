@@ -4756,8 +4756,11 @@ def tiene_desvio_excesivo_calibracion(
     f_obs = calcular_frecuencia_observada(sel, doc_local, doc_visitante, eq_l, eq_v)
     if f_obs is None:
         return False, None, None
-    desvio_pts = round(abs(p_modelo - f_obs) * 100.0, 2)
-    return (desvio_pts > max_desvio), desvio_pts, f_obs
+    obs_1d = round(float(f_obs) * 100.0, 1)
+    mod_1d = round(float(p_modelo) * 100.0, 1)
+    desvio_pts = round(abs(obs_1d - mod_1d), 1)
+    desvio_raw = round(abs(p_modelo - f_obs) * 100.0, 2)
+    return (desvio_raw > max_desvio), desvio_pts, f_obs
 
 
 def filtrar_top_opciones_ticket(
@@ -7410,7 +7413,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             )
             if excede_desv:
                 estado = ESTADO_SENSIBLE
-                motivo = f"sin calibración validada (obs: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, desvío {desv_pts:.1f} pts > 10.0)"
+                _brecha_emp_s = round(round(float(f_obs) * 100.0, 1) - round(float(s.probabilidad) * 100.0, 1), 1)
+                motivo = f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, brecha {_brecha_emp_s:+.1f} pp, desvío {desv_pts:.1f} pts > 10.0)"
             s.estado = estado
             if motivo:
                 s.motivo = motivo
