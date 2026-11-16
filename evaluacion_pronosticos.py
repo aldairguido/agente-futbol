@@ -7066,4 +7066,147 @@ def auditar_evidencia_corners_nb_ronda10(
     }
 
 
+def clasificar_torneos_y_localia_30_matrices_ronda10() -> dict[str, Any]:
+    """
+    Ronda 10 Punto 4: Clasifica las 30 matrices de Colombia (15) y Chile (15) en
+    `amistoso` (incluyendo FIFA Series M29/M30), `torneo_sede_neutral` y `sede_real`
+    (sin modificar el modelo ni su λ). Cuenta cuántos partidos etiquetados como
+    "Local" (`condicion == "casa"`) ocurrieron en sede neutral y entrega la tabla
+    de GF/GC por tipo y equipo.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    anfitriones_por_torneo_anio = {
+        ("copa america", "2021"): {"brazil"},
+        ("copa america", "2024"): {"usa", "united states"},
+        ("world cup", "2026"): {"usa", "united states", "mexico", "canada"},
+        ("confederations cup", "2017"): {"russia"},
+    }
+
+    def _clasificar_partido(equipo_propio: str, p: dict[str, Any]) -> tuple[str, str]:
+        torneo = str(p.get("torneo") or "")
+        t_low = torneo.lower()
+        fecha = str(p.get("fecha") or "")
+        anio = fecha[:4]
+        rival_low = str(p.get("rival") or "").strip().lower()
+        propio_low = equipo_propio.strip().lower()
+
+        if (
+            bool(p.get("es_amistoso"))
+            or "friendly" in t_low
+            or "friendlies" in t_low
+            or "amistoso" in t_low
+            or "fifa series" in t_low
+        ):
+            return "amistoso", "FIFA Series / amistoso internacional"
+
+        anfitriones: set[str] = set()
+        for (pref, y), hosts in anfitriones_por_torneo_anio.items():
+            if pref in t_low and anio == y:
+                anfitriones = hosts
+                break
+
+        if anfitriones:
+            if propio_low in anfitriones or rival_low in anfitriones:
+                return "sede_real", f"Torneo ante anfitrión ({torneo} {anio})"
+            return "torneo_sede_neutral", f"Torneo con sede neutral ({torneo} {anio})"
+
+        return "sede_real", f"Competición ida/vuelta ({torneo})"
+
+    partidos_clasificados: list[dict[str, Any]] = []
+    por_tipo: dict[str, list[dict[str, Any]]] = {
+        "amistoso": [],
+        "torneo_sede_neutral": [],
+        "sede_real": [],
+    }
+    por_equipo_tipo: dict[tuple[str, str], list[dict[str, Any]]] = {}
+
+    for equipo, doc in (("Colombia", doc_col), ("Chile", doc_chi)):
+        for idx, p in enumerate(list(doc.get("partidos") or [])[:15], start=1):
+            cat, motivo = _clasificar_partido(equipo, p)
+            cond = str(p.get("condicion") or "")
+            marc = p.get("marcador") or {}
+            gf = int(marc["equipo"]) if marc.get("equipo") is not None else None
+            gc = int(marc["rival"]) if marc.get("rival") is not None else None
+            fila = {
+                "equipo": equipo,
+                "idx_equipo": idx,
+                "idx_matriz": idx if equipo == "Colombia" else idx + 15,
+                "id_partido": str(p.get("id_partido") or ""),
+                "fecha": str(p.get("fecha") or ""),
+                "torneo": str(p.get("torneo") or "").replace("\n", " "),
+                "rival": str(p.get("rival") or ""),
+                "condicion": cond,
+                "etiqueta_localia": "Local" if cond == "casa" else "Visita",
+                "marcador": str(marc.get("texto") or ""),
+                "gf": gf,
+                "gc": gc,
+                "es_amistoso_campo_cache": bool(p.get("es_amistoso")),
+                "clasificacion": cat,
+                "motivo": motivo,
+            }
+            partidos_clasificados.append(fila)
+            por_tipo[cat].append(fila)
+            por_equipo_tipo.setdefault((equipo, cat), []).append(fila)
+
+    def _resumen_gf_gc(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        valid = [r for r in rows if r["gf"] is not None and r["gc"] is not None]
+        n = len(valid)
+        if n == 0:
+            return {"n_partidos": 0, "gf_total": 0, "gc_total": 0, "gf_prom": None, "gc_prom": None}
+        gf_tot = sum(int(r["gf"]) for r in valid)
+        gc_tot = sum(int(r["gc"]) for r in valid)
+        return {
+            "n_partidos": n,
+            "gf_total": gf_tot,
+            "gc_total": gc_tot,
+            "gf_prom": round(gf_tot / n, 4),
+            "gc_prom": round(gc_tot / n, 4),
+        }
+
+    locales_col = [r for r in partidos_clasificados if r["equipo"] == "Colombia" and r["condicion"] == "casa"]
+    locales_chi = [r for r in partidos_clasificados if r["equipo"] == "Chile" and r["condicion"] == "casa"]
+    locales_todos = locales_col + locales_chi
+
+    resumen_locales = {
+        "total_etiqueta_local": len(locales_todos),
+        "total_local_en_torneo_sede_neutral": sum(1 for r in locales_todos if r["clasificacion"] == "torneo_sede_neutral"),
+        "total_local_en_amistoso_fifa_series": sum(1 for r in locales_todos if r["clasificacion"] == "amistoso"),
+        "total_local_en_sede_real": sum(1 for r in locales_todos if r["clasificacion"] == "sede_real"),
+        "colombia_local_total": len(locales_col),
+        "colombia_local_sede_neutral": sum(1 for r in locales_col if r["clasificacion"] == "torneo_sede_neutral"),
+        "colombia_local_sede_real": sum(1 for r in locales_col if r["clasificacion"] == "sede_real"),
+        "chile_local_total": len(locales_chi),
+        "chile_local_sede_neutral": sum(1 for r in locales_chi if r["clasificacion"] == "torneo_sede_neutral"),
+        "chile_local_amistoso_fifa_series": sum(1 for r in locales_chi if r["clasificacion"] == "amistoso"),
+        "chile_local_sede_real": sum(1 for r in locales_chi if r["clasificacion"] == "sede_real"),
+    }
+
+    tabla_gf_gc_por_tipo = {cat: _resumen_gf_gc(rows) for cat, rows in por_tipo.items()}
+    tabla_gf_gc_por_equipo_y_tipo = {
+        f"{eq}::{cat}": _resumen_gf_gc(rows)
+        for (eq, cat), rows in sorted(por_equipo_tipo.items())
+    }
+    tabla_gf_gc_por_equipo_y_condicion = {
+        "Colombia::Local_etiqueta": _resumen_gf_gc(locales_col),
+        "Colombia::Visita_etiqueta": _resumen_gf_gc([r for r in partidos_clasificados if r["equipo"] == "Colombia" and r["condicion"] == "fuera"]),
+        "Chile::Local_etiqueta": _resumen_gf_gc(locales_chi),
+        "Chile::Visita_etiqueta": _resumen_gf_gc([r for r in partidos_clasificados if r["equipo"] == "Chile" and r["condicion"] == "fuera"]),
+    }
+
+    return {
+        "n_matrices": len(partidos_clasificados),
+        "partidos_clasificados": partidos_clasificados,
+        "resumen_locales": resumen_locales,
+        "tabla_gf_gc_por_tipo": tabla_gf_gc_por_tipo,
+        "tabla_gf_gc_por_equipo_y_tipo": tabla_gf_gc_por_equipo_y_tipo,
+        "tabla_gf_gc_por_equipo_y_condicion": tabla_gf_gc_por_equipo_y_condicion,
+    }
+
+
+
 
