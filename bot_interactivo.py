@@ -1607,6 +1607,17 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 print(f"[BOT TELEGRAM] ⚠️ Modo sombra no bloqueante omitido: {_e_somb}")
             snapshot = evaluacion.snapshot_desde_analisis(preparado)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
+            try:
+                res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
+                    preparado, ruta_snapshot=ruta_snap
+                )
+                if res_led_pre.get("registrado"):
+                    print(
+                        f"[BOT TELEGRAM] 🔗 Sombra pre-partido en ledger OOS: "
+                        f"idx={res_led_pre.get('indice')} sha={str(res_led_pre.get('sha256') or '')[:12]}"
+                    )
+            except Exception as _e_led:
+                print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
             print(f"[BOT TELEGRAM] 🗂️  Snapshot de pronóstico guardado: {ruta_snap} "
                   f"({len(snapshot.selecciones)} estimables, "
                   f"{len(snapshot.selecciones_publicadas)} > umbral)")

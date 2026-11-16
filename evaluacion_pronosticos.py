@@ -2881,7 +2881,9 @@ def preparar_evaluacion(pronosticos: list[dict[str, Any]] | None = None,
                         fuente: Any | None = None,
                         aviso: Any = None,
                         enviar_media_fn: Any = None,
-                        filtro_equipos: list[str] | tuple[str, ...] | str | None = None) -> dict[str, Any]:
+                        filtro_equipos: list[str] | tuple[str, ...] | str | None = None,
+                        registrar_ledger_oos_sombra: bool | None = None,
+                        ruta_ledger_oos: str | None = None) -> dict[str, Any]:
     """
     Prepara la evaluación sin enviarla. Admite filtro opcional por equipos
     (ej: ['Roma', 'Real Madrid'] o ['Roma']). Estados separados:
@@ -2954,6 +2956,12 @@ def preparar_evaluacion(pronosticos: list[dict[str, Any]] | None = None,
         )
     except Exception as _e_banco:
         print(f"[BANCO HISTORICO] ⚠️ Hook /evaluar omitido: {_e_banco}")
+    _reg_sombra = (pronosticos is None) if registrar_ledger_oos_sombra is None else bool(registrar_ledger_oos_sombra)
+    if _reg_sombra:
+        try:
+            liquidar_sombras_en_ledger_oos(docs, resultados, ruta_ledger=ruta_ledger_oos)
+        except Exception as _e_somb_led:
+            print(f"[LEDGER OOS] ⚠️ Liquidación sombra omitida: {_e_somb_led}")
     if not norm_filtro:
         try:
             from agente_consciente import obtener_agente_consciente
@@ -3923,7 +3931,24 @@ def registrar_en_ledger_oos(
     id_part = str(registro.get("id_partido") or "")
     fecha = str(registro.get("fecha") or "")
     partido = str(registro.get("partido") or "")
+    estado_reg_nuevo = str(registro.get("estado_registro") or "liquidado").strip().lower()
+    id_trab_nuevo = str(registro.get("id_trabajo") or "")
     for ex in existentes:
+        estado_ex = str(ex.get("estado_registro") or "liquidado").strip().lower()
+        if estado_ex != estado_reg_nuevo:
+            continue
+        if (
+            estado_reg_nuevo == "pre_partido"
+            and id_trab_nuevo
+            and str(ex.get("id_trabajo") or "") == id_trab_nuevo
+        ):
+            return {
+                "registrado": False,
+                "ya_existia": True,
+                "indice": ex.get("indice"),
+                "sha256": ex.get("sha256"),
+                "ruta": ruta,
+            }
         if id_part and str(ex.get("id_partido") or "") == id_part and str(ex.get("fecha") or "") == fecha:
             return {
                 "registrado": False,
@@ -4128,7 +4153,7 @@ def adjuntar_modo_sombra_preparado(
     cands = dict(banderas_candidatas) if banderas_candidatas else {
         k: True
         for k in BANDERAS_COMPORTAMIENTO_DEFECTO
-        if k != "usar_cuota_justa_114_top5"
+        # Incluye las 14 banderas de A+B en modo sombra (Top-5 e inferencia sin alterar soloA)
     }
     params = getattr(analisis, "parametros", None)
     kw: dict[str, Any] = {
@@ -4145,6 +4170,7 @@ def adjuntar_modo_sombra_preparado(
         analisis,
         an_sombra,
         banderas_candidatas=cands,
+        version_sombra="A+B" if banderas_candidatas is None else "candidata",
     )
     preparado["modo_sombra"] = sombra
     return sombra
@@ -8176,6 +8202,8 @@ def resumen_ledger_oos(
     excluidos: list[dict[str, Any]] = []
     incluidos: list[dict[str, Any]] = []
     for r in registros:
+        if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
+            continue
         if (not incluir_amistosos) and es_registro_amistoso_excluido(r):
             excluidos.append({
                 "indice": r.get("indice"),
@@ -9593,3 +9621,453 @@ def auditar_etiquetas_citas_y_bisect_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return res
+
+
+
+def _hash_archivo_sha256(ruta: str | None) -> str | None:
+    if not ruta or not os.path.exists(ruta):
+        return None
+    try:
+        return hashlib.sha256(open(ruta, "rb").read()).hexdigest()
+    except OSError:
+        return None
+
+
+def registrar_sombra_prepartido_en_ledger_oos(
+    preparado: dict[str, Any],
+    *,
+    ruta_snapshot: str | None = None,
+    ruta_ledger: str | None = None,
+) -> dict[str, Any]:
+    """
+    Registra ANTES del inicio del partido (estado_registro='pre_partido') el compromiso
+    dual inmutable SHA-256 (`soloA` publicado vs `A+B` candidato en sombra) en `ledger_oos`,
+    sin retroalimentar al modelo (`retroalimenta_modelo=False`).
+    """
+    if not isinstance(preparado, dict):
+        return {"registrado": False, "motivo": "preparado_invalido"}
+    if bool(preparado.get("partido_ya_jugado")):
+        return {"registrado": False, "motivo": "partido_ya_jugado"}
+    analisis = preparado.get("analisis")
+    if bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False)):
+        return {"registrado": False, "motivo": "abstenido_por_cobertura"}
+    sombra = preparado.get("modo_sombra")
+    if not isinstance(sombra, dict):
+        return {"registrado": False, "motivo": "sin_modo_sombra"}
+
+    ctx = preparado.get("contexto") or {}
+    meta = (getattr(analisis, "metadatos", None) or {}) if analisis is not None else {}
+    eq_l = str(meta.get("equipo_local") or ctx.get("equipo_local") or "Local")
+    eq_v = str(meta.get("equipo_visitante") or ctx.get("equipo_visitante") or "Visitante")
+    partido = f"{eq_l} vs {eq_v}"
+    fecha = str(meta.get("fecha_partido") or ctx.get("fecha_partido") or "")[:10]
+    comp = str(meta.get("competicion") or ctx.get("competicion") or "")
+    id_part = str(
+        preparado.get("id_partido")
+        or meta.get("id_partido")
+        or meta.get("match_id_fotmob")
+        or ctx.get("id_partido")
+        or ""
+    )
+    id_trabajo = str(preparado.get("id_trabajo") or "")
+    snapshot_sha = _hash_archivo_sha256(ruta_snapshot)
+    payload_sombra = {
+        "esquema": str(sombra.get("esquema") or "sombra-v1"),
+        "publicado": str(sombra.get("publicado") or "soloA"),
+        "version_base": str(sombra.get("version_base") or "soloA"),
+        "version_sombra": str(sombra.get("version_sombra") or "A+B"),
+        "banderas_candidatas": dict(sombra.get("banderas_candidatas") or {}),
+        "lambdas_base": dict(sombra.get("lambdas_base") or {}),
+        "lambdas_sombra": dict(sombra.get("lambdas_sombra") or {}),
+        "n_selecciones_comparables": int(sombra.get("n_selecciones_comparables") or 0),
+        "comparaciones": list(sombra.get("comparaciones") or []),
+        "es_partido_diseno": es_partido_de_diseno(partido, id_part),
+    }
+    comp_sha = _hash_canonico_oos({
+        "lambdas_base": payload_sombra["lambdas_base"],
+        "lambdas_sombra": payload_sombra["lambdas_sombra"],
+        "comparaciones": payload_sombra["comparaciones"],
+    })
+    registro = {
+        "estado_registro": "pre_partido",
+        "corte_temporal": "pre_partido",
+        "id_trabajo": id_trabajo,
+        "id_partido": id_part,
+        "partido": partido,
+        "fecha": fecha,
+        "competicion": comp,
+        "tipo_partido": str(meta.get("tipo_partido") or ctx.get("tipo_partido") or ""),
+        "generado_en": str(meta.get("generado_en") or ""),
+        "snapshot_sha256": snapshot_sha,
+        "sombra_comparaciones_sha256": comp_sha,
+        "modo_sombra": payload_sombra,
+    }
+    res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
+    res["estado_registro"] = "pre_partido"
+    res["snapshot_sha256"] = snapshot_sha
+    res["sombra_comparaciones_sha256"] = comp_sha
+    return res
+
+
+def liquidar_sombras_en_ledger_oos(
+    pronosticos: list[dict[str, Any]],
+    resultados: dict[str, ResultadoPartido],
+    *,
+    ruta_ledger: str | None = None,
+) -> dict[str, Any]:
+    """
+    Liquida post-partido (`estado_registro='liquidado'`) todos los pronósticos finalizados
+    con `modo_sombra` y anterioridad pre-partido verificada, comparando `soloA` vs `A+B`
+    contra los resultados reales y vinculando el hash `pre_partido_sha256` previo si existe.
+    """
+    existentes = cargar_ledger_oos(ruta_ledger)
+    pre_por_trab: dict[str, dict[str, Any]] = {}
+    pre_por_clave: dict[tuple[str, str], dict[str, Any]] = {}
+    for ex in existentes:
+        if str(ex.get("estado_registro") or "liquidado").strip().lower() != "pre_partido":
+            continue
+        if ex.get("id_trabajo"):
+            pre_por_trab[str(ex["id_trabajo"])] = ex
+        pre_por_clave[(str(ex.get("partido") or ""), str(ex.get("fecha") or "")[:10])] = ex
+
+    registrados: list[dict[str, Any]] = []
+    ya_existian = 0
+    omitidos: list[dict[str, Any]] = []
+
+    for doc in (pronosticos or []):
+        if not isinstance(doc, dict) or bool(doc.get("abstenido")):
+            continue
+        sombra = doc.get("modo_sombra")
+        if not isinstance(sombra, dict) or not (sombra.get("comparaciones") or []):
+            continue
+        equipos = doc.get("equipos") or {}
+        partido = f"{equipos.get('local')} vs {equipos.get('visitante')}"
+        p_info = doc.get("partido") or {}
+        fecha = str(p_info.get("fecha") or (doc.get("metadatos") or {}).get("fecha_partido") or "")[:10]
+        comp = str(p_info.get("competicion") or doc.get("competicion") or (doc.get("metadatos") or {}).get("competicion") or "")
+        id_trab = str(doc.get("id_trabajo") or "")
+        resultado = (resultados or {}).get(partido)
+        if resultado is None or not getattr(resultado, "finalizado", False):
+            omitidos.append({"id_trabajo": id_trab, "partido": partido, "motivo": "no_finalizado"})
+            continue
+        anterior, motivo_ant = _comprobar_anterioridad(doc, resultado)
+        if not anterior:
+            omitidos.append({"id_trabajo": id_trab, "partido": partido, "motivo": f"sin_anterioridad:{motivo_ant}"})
+            continue
+
+        id_part = str(getattr(resultado, "id_partido", None) or doc.get("id_partido") or "")
+        pre_ref = pre_por_trab.get(id_trab) or pre_por_clave.get((partido, fecha))
+        lineas_liq: list[dict[str, Any]] = []
+        obs_sombra: list[dict[str, Any]] = []
+        b_base_sum = 0.0
+        b_somb_sum = 0.0
+        ll_base_sum = 0.0
+        ll_somb_sum = 0.0
+
+        for item in sombra.get("comparaciones") or []:
+            if not isinstance(item, dict):
+                continue
+            pb = item.get("prob_base")
+            ps = item.get("prob_sombra")
+            if pb is None or ps is None:
+                continue
+            pb_f = float(pb)
+            ps_f = float(ps)
+            sel = {
+                "mercado": item.get("mercado"),
+                "evento": item.get("evento"),
+                "periodo": item.get("periodo") or "FT",
+                "equipo": item.get("equipo"),
+                "linea": item.get("linea"),
+                "probabilidad": pb_f,
+                "etiqueta": str(item.get("evento") or ""),
+            }
+            ev = liquidar(sel, resultado, id_trab)
+            if ev.estado_liquidacion not in ("ganada", "perdida") or ev.evento_ocurrio not in (0, 1):
+                continue
+            y = int(ev.evento_ocurrio)
+            pbc = min(max(pb_f, 1e-15), 1.0 - 1e-15)
+            psc = min(max(ps_f, 1e-15), 1.0 - 1e-15)
+            b_base_sum += (pb_f - y) ** 2
+            b_somb_sum += (ps_f - y) ** 2
+            ll_base_sum += -(y * math.log(pbc) + (1 - y) * math.log(1.0 - pbc))
+            ll_somb_sum += -(y * math.log(psc) + (1 - y) * math.log(1.0 - psc))
+            lineas_liq.append({
+                "mercado": item.get("mercado"),
+                "evento": item.get("evento"),
+                "periodo": item.get("periodo"),
+                "equipo": item.get("equipo"),
+                "linea": item.get("linea"),
+                "estado_liquidacion": ev.estado_liquidacion,
+                "evento_ocurrio": y,
+                "probabilidad_publicada": round(pb_f, 6),
+                "probabilidad_sombra": round(ps_f, 6),
+            })
+            obs_sombra.append({
+                "id_partido": id_part or partido,
+                "partido": partido,
+                "fecha": fecha,
+                "competicion": comp,
+                "mercado": str(item.get("mercado") or ""),
+                "evento": str(item.get("evento") or ""),
+                "periodo": str(item.get("periodo") or "FT"),
+                "equipo": item.get("equipo"),
+                "linea": item.get("linea"),
+                "evento_ocurrio": y,
+                "probs": {"base": round(pb_f, 6), "sombra": round(ps_f, 6)},
+            })
+
+        n_ev = len(lineas_liq)
+        if n_ev <= 0:
+            omitidos.append({"id_trabajo": id_trab, "partido": partido, "motivo": "sin_comparables_binarios"})
+            continue
+
+        aciertos_base = sum(1 for ln in lineas_liq if ln["evento_ocurrio"] == 1)
+        b_base = round(b_base_sum / n_ev, 6)
+        b_somb = round(b_somb_sum / n_ev, 6)
+        ll_base = round(ll_base_sum / n_ev, 6)
+        ll_somb = round(ll_somb_sum / n_ev, 6)
+
+        registro = {
+            "estado_registro": "liquidado",
+            "id_trabajo": id_trab,
+            "id_partido": id_part,
+            "partido": partido,
+            "fecha": fecha,
+            "competicion": comp,
+            "tipo_partido": str(doc.get("tipo_partido") or (doc.get("metadatos") or {}).get("tipo_partido") or ""),
+            "pre_partido_sha256": (pre_ref or {}).get("sha256"),
+            "marcador_real": {
+                "ft": [getattr(resultado, "goles_local", None), getattr(resultado, "goles_visitante", None)],
+                "1t": [resultado.goles_local_1t, resultado.goles_visitante_1t] if resultado.goles_local_1t is not None and resultado.goles_visitante_1t is not None else None,
+                "2t": [int(resultado.goles_local) - int(resultado.goles_local_1t), int(resultado.goles_visitante) - int(resultado.goles_visitante_1t)] if resultado.goles_local is not None and resultado.goles_visitante is not None and resultado.goles_local_1t is not None and resultado.goles_visitante_1t is not None else None,
+            },
+            "resumen": {
+                "aciertos": aciertos_base,
+                "fallos": n_ev - aciertos_base,
+                "n_evaluables": n_ev,
+                "brier": b_base,
+            },
+            "lineas": lineas_liq,
+            "modo_sombra": {
+                "esquema": str(sombra.get("esquema") or "sombra-v1"),
+                "version_base": str(sombra.get("version_base") or "soloA"),
+                "version_sombra": str(sombra.get("version_sombra") or "A+B"),
+                "banderas_candidatas": dict(sombra.get("banderas_candidatas") or {}),
+                "lambdas_base": dict(sombra.get("lambdas_base") or {}),
+                "lambdas_sombra": dict(sombra.get("lambdas_sombra") or {}),
+                "es_partido_diseno": es_partido_de_diseno(partido, id_part),
+                "pre_partido_vinculado": bool(pre_ref is not None),
+                "pre_partido_sha256": (pre_ref or {}).get("sha256"),
+                "n_comparables_evaluables": n_ev,
+                "brier_base": b_base,
+                "brier_sombra": b_somb,
+                "log_loss_base": ll_base,
+                "log_loss_sombra": ll_somb,
+                "observaciones": obs_sombra,
+            },
+        }
+        r_ins = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
+        if r_ins.get("registrado"):
+            registrados.append({
+                "id_trabajo": id_trab,
+                "partido": partido,
+                "fecha": fecha,
+                "indice": r_ins.get("indice"),
+                "sha256": r_ins.get("sha256"),
+                "pre_partido_sha256": (pre_ref or {}).get("sha256"),
+                "n_comparables_evaluables": n_ev,
+            })
+        elif r_ins.get("ya_existia"):
+            ya_existian += 1
+
+    return {
+        "n_liquidados_nuevos": len(registrados),
+        "n_ya_liquidados": ya_existian,
+        "registrados": registrados,
+        "omitidos": omitidos,
+    }
+
+
+def extraer_observaciones_sombra_desde_ledger(
+    ruta_ledger: str | None = None,
+    *,
+    excluir_diseno: bool = True,
+    excluir_amistosos: bool = True,
+) -> dict[str, Any]:
+    """
+    Extrae desde `ledger_oos` las observaciones duales (`soloA` vs `A+B`) ya liquidadas
+    listas para `evaluar_promocion_regla_futura`, contando los partidos competitivos válidos.
+    """
+    registros = cargar_ledger_oos(ruta_ledger)
+    obs: list[dict[str, Any]] = []
+    partidos_validos: set[str] = set()
+    pre_pendientes: list[str] = []
+    liquidados_con_obs_ids: set[str] = set()
+
+    for r in registros:
+        est = str(r.get("estado_registro") or "liquidado").strip().lower()
+        ms = r.get("modo_sombra")
+        if not isinstance(ms, dict):
+            continue
+        if est == "liquidado":
+            clave = str(r.get("id_partido") or r.get("partido") or "")
+            if clave:
+                liquidados_con_obs_ids.add(clave)
+            if r.get("pre_partido_sha256"):
+                liquidados_con_obs_ids.add(f"sha:{r['pre_partido_sha256']}")
+            if r.get("id_trabajo"):
+                liquidados_con_obs_ids.add(f"trab:{r['id_trabajo']}")
+            if r.get("partido"):
+                liquidados_con_obs_ids.add(f"pf:{r.get('partido')}|{str(r.get('fecha') or '')[:10]}")
+            if excluir_amistosos and es_registro_amistoso_excluido(r):
+                continue
+            if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
+                continue
+            obs_r = ms.get("observaciones") or []
+            if obs_r:
+                partidos_validos.add(clave)
+                obs.extend(obs_r)
+
+    for r in registros:
+        if str(r.get("estado_registro") or "liquidado").strip().lower() != "pre_partido":
+            continue
+        clave = str(r.get("id_partido") or r.get("partido") or "")
+        claves_match = {
+            clave,
+            f"sha:{r.get('sha256') or ''}",
+            f"trab:{r.get('id_trabajo') or ''}",
+            f"pf:{r.get('partido') or ''}|{str(r.get('fecha') or '')[:10]}",
+        }
+        if not (claves_match & liquidados_con_obs_ids):
+            pre_pendientes.append(f"{r.get('partido')} ({r.get('fecha')})")
+
+    return {
+        "n_partidos_sombra_validos": len(partidos_validos),
+        "n_observaciones": len(obs),
+        "partidos_sombra_validos": sorted(partidos_validos),
+        "pre_partido_pendientes_liquidacion": pre_pendientes,
+        "observaciones": obs,
+    }
+
+
+def auditar_estado_modo_sombra_ronda11(
+    *,
+    guardar_ruta: str | None = "datos/ronda11_punto7_modo_sombra.json",
+) -> dict[str, Any]:
+    """
+    Ronda 11 Punto 7 (MODO SOMBRA):
+      - Verifica estado real en disco de `informes/evaluacion/ledger_oos.jsonl` y
+        `informes/pronosticos/*.json` (cuántos guardan `soloA` vs `A+B` con hash antes
+        del partido y cuántos quedan liquidados después).
+      - Calcula exactamente cuántos partidos competitivos no-diseño faltan para llegar
+        a `min_partidos_modo_sombra = 30`.
+      - Documenta la captura automática cableada de punta a punta (`cmd_mercados` ->
+        `adjuntar_modo_sombra_preparado` + `registrar_sombra_prepartido_en_ledger_oos`,
+        y `/evaluar` -> `preparar_evaluacion` -> `liquidar_sombras_en_ledger_oos`) sin
+        tocar `ledger_oos.jsonl` ni modificar λ/probabilidades por defecto.
+    """
+    from pathlib import Path
+    from decision_cobertura import (
+        BANDERAS_COMPORTAMIENTO_DEFECTO,
+        obtener_politica_regla_futura,
+        obtener_banderas_comportamiento,
+    )
+
+    raiz = Path(__file__).resolve().parent
+    politica = obtener_politica_regla_futura()
+    meta_partidos = int(politica.get("min_partidos_modo_sombra", 30))
+
+    verif = verificar_cadena_ledger_oos(LEDGER_OOS_PATH)
+    registros = cargar_ledger_oos(LEDGER_OOS_PATH)
+    res_led = resumen_ledger_oos(LEDGER_OOS_PATH)
+    obs_info = extraer_observaciones_sombra_desde_ledger(LEDGER_OOS_PATH)
+
+    pdir = Path(PRONOSTICOS_DIR)
+    snaps = sorted(pdir.glob("*.json")) if pdir.exists() else []
+    n_snaps_sombra = 0
+    for fp in snaps:
+        try:
+            d = json.loads(fp.read_text(encoding="utf-8"))
+            if isinstance(d.get("modo_sombra"), dict):
+                n_snaps_sombra += 1
+        except Exception:
+            pass
+
+    entradas_ledger_detalle = []
+    n_ledger_con_sombra = 0
+    for r in registros:
+        tiene_s = isinstance(r.get("modo_sombra"), dict)
+        if tiene_s:
+            n_ledger_con_sombra += 1
+        es_dis = es_partido_de_diseno(r.get("partido"), r.get("id_partido"))
+        es_amis = es_registro_amistoso_excluido(r)
+        entradas_ledger_detalle.append({
+            "indice": r.get("indice"),
+            "estado_registro": str(r.get("estado_registro") or "liquidado"),
+            "id_partido": r.get("id_partido"),
+            "partido": r.get("partido"),
+            "fecha": r.get("fecha"),
+            "tipo_partido": r.get("tipo_partido"),
+            "es_partido_diseno": es_dis,
+            "es_amistoso_excluido": es_amis,
+            "entra_calibracion": r.get("entra_calibracion", True),
+            "tiene_modo_sombra": tiene_s,
+            "sha256_prefix": str(r.get("sha256") or "")[:16],
+        })
+
+    n_validos = int(obs_info["n_partidos_sombra_validos"])
+    faltan = max(0, meta_partidos - n_validos)
+
+    out = {
+        "estado_previo_ronda11": {
+            "ledger_ya_guardaba_soloA_y_AB_pre_y_liquidaba_post": False,
+            "diagnostico_huecos": [
+                "informes/evaluacion/ledger_oos.jsonl contenía 3 registros históricos (2 diseño TB/IF y 1 amistoso COL-CHI), todos con 0 objetos `modo_sombra`.",
+                "Los 56 snapshots archivados en informes/pronosticos/*.json anteriores tienen 0 entradas con `modo_sombra`.",
+                "bot_interactivo.cmd_mercados adjuntaba modo_sombra solo al snapshot en pronosticos/*.json (excluyendo usar_cuota_justa_114_top5) pero nunca escribía registro pre_partido en ledger_oos.jsonl.",
+                "registrar_sombra_en_ledger_oos no tenía invocadores en producción y registrar_en_ledger_oos bloqueaba insertar 'liquidado' tras un 'pre_partido' del mismo (id_partido, fecha).",
+            ],
+        },
+        "ledger_oos_real": {
+            "ruta": str(Path(LEDGER_OOS_PATH).relative_to(raiz).as_posix()),
+            "cadena_sha256_ok": bool(verif.get("ok")),
+            "n_entradas_totales": len(registros),
+            "n_entradas_con_modo_sombra": n_ledger_con_sombra,
+            "n_incluidos_promedios_calibracion_legacy": int(res_led.get("n_incluidos_promedios_calibracion") or 0),
+            "n_excluidos_amistosos": int(res_led.get("n_excluidos_amistosos") or 0),
+            "entradas": entradas_ledger_detalle,
+        },
+        "snapshots_pronosticos": {
+            "directorio": str(Path(PRONOSTICOS_DIR).relative_to(raiz).as_posix()),
+            "n_snapshots_totales": len(snaps),
+            "n_snapshots_con_modo_sombra": n_snaps_sombra,
+        },
+        "progreso_meta_30_partidos": {
+            "meta_min_partidos_competitivos_no_diseno": meta_partidos,
+            "n_partidos_competitivos_sombra_completados": n_validos,
+            "faltan_partidos_competitivos_para_30": faltan,
+            "razon_diseno_y_amistoso_no_cuentan": (
+                "TB (5181796) e IF (5181797) son partidos de diseño excluidos por `exigir_datos_no_diseno=True`, "
+                "y COL-CHI (6539346) es amistoso (`entra_calibracion=False`, sin `modo_sombra`)."
+            ),
+        },
+        "captura_automatica_cableada": {
+            "pre_partido": (
+                "bot_interactivo.cmd_mercados -> evaluacion.adjuntar_modo_sombra_preparado(preparado) [base soloA vs A+B 14 banderas] "
+                "-> evaluacion.guardar_snapshot(snapshot) -> evaluacion.registrar_sombra_prepartido_en_ledger_oos(preparado, ruta_snapshot=...)"
+            ),
+            "post_partido": (
+                "bot_interactivo.cmd_evaluar -> evaluacion.preparar_evaluacion() -> evaluacion.liquidar_sombras_en_ledger_oos(docs, resultados) "
+                "-> evaluacion.registrar_en_ledger_oos(..., estado_registro='liquidado', pre_partido_sha256=...)"
+            ),
+            "alimentacion_promocion": "evaluacion.extraer_observaciones_sombra_desde_ledger() -> evaluacion.evaluar_promocion_regla_futura()",
+            "banderas_comportamiento_activas_por_defecto": obtener_banderas_comportamiento(),
+            "todas_las_14_banderas_apagadas": all(not v for v in BANDERAS_COMPORTAMIENTO_DEFECTO.values()),
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

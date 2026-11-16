@@ -1,0 +1,93 @@
+{
+  "estado_previo_ronda11": {
+    "ledger_ya_guardaba_soloA_y_AB_pre_y_liquidaba_post": false,
+    "diagnostico_huecos": [
+      "informes/evaluacion/ledger_oos.jsonl contenía 3 registros históricos (2 diseño TB/IF y 1 amistoso COL-CHI), todos con 0 objetos `modo_sombra`.",
+      "Los 56 snapshots archivados en informes/pronosticos/*.json anteriores tienen 0 entradas con `modo_sombra`.",
+      "bot_interactivo.cmd_mercados adjuntaba modo_sombra solo al snapshot en pronosticos/*.json (excluyendo usar_cuota_justa_114_top5) pero nunca escribía registro pre_partido en ledger_oos.jsonl.",
+      "registrar_sombra_en_ledger_oos no tenía invocadores en producción y registrar_en_ledger_oos bloqueaba insertar 'liquidado' tras un 'pre_partido' del mismo (id_partido, fecha)."
+    ]
+  },
+  "ledger_oos_real": {
+    "ruta": "informes/evaluacion/ledger_oos.jsonl",
+    "cadena_sha256_ok": true,
+    "n_entradas_totales": 3,
+    "n_entradas_con_modo_sombra": 0,
+    "n_incluidos_promedios_calibracion_legacy": 2,
+    "n_excluidos_amistosos": 1,
+    "entradas": [
+      {
+        "indice": 0,
+        "estado_registro": "liquidado",
+        "id_partido": "5181796",
+        "partido": "Turkiye vs Belgium",
+        "fecha": "2026-11-12",
+        "tipo_partido": null,
+        "es_partido_diseno": true,
+        "es_amistoso_excluido": false,
+        "entra_calibracion": true,
+        "tiene_modo_sombra": false,
+        "sha256_prefix": "5839ca5aa2a29c7c"
+      },
+      {
+        "indice": 1,
+        "estado_registro": "liquidado",
+        "id_partido": "5181797",
+        "partido": "Italy vs France",
+        "fecha": "2026-11-12",
+        "tipo_partido": null,
+        "es_partido_diseno": true,
+        "es_amistoso_excluido": false,
+        "entra_calibracion": true,
+        "tiene_modo_sombra": false,
+        "sha256_prefix": "a5498f8f0df84a19"
+      },
+      {
+        "indice": 2,
+        "estado_registro": "liquidado",
+        "id_partido": "6539346",
+        "partido": "Colombia vs Chile",
+        "fecha": "2026-11-13",
+        "tipo_partido": "amistoso",
+        "es_partido_diseno": false,
+        "es_amistoso_excluido": true,
+        "entra_calibracion": false,
+        "tiene_modo_sombra": false,
+        "sha256_prefix": "a6d53fd445c562d8"
+      }
+    ]
+  },
+  "snapshots_pronosticos": {
+    "directorio": "informes/pronosticos",
+    "n_snapshots_totales": 56,
+    "n_snapshots_con_modo_sombra": 0
+  },
+  "progreso_meta_30_partidos": {
+    "meta_min_partidos_competitivos_no_diseno": 30,
+    "n_partidos_competitivos_sombra_completados": 0,
+    "faltan_partidos_competitivos_para_30": 30,
+    "razon_diseno_y_amistoso_no_cuentan": "TB (5181796) e IF (5181797) son partidos de diseño excluidos por `exigir_datos_no_diseno=True`, y COL-CHI (6539346) es amistoso (`entra_calibracion=False`, sin `modo_sombra`)."
+  },
+  "captura_automatica_cableada": {
+    "pre_partido": "bot_interactivo.cmd_mercados -> evaluacion.adjuntar_modo_sombra_preparado(preparado) [base soloA vs A+B 14 banderas] -> evaluacion.guardar_snapshot(snapshot) -> evaluacion.registrar_sombra_prepartido_en_ledger_oos(preparado, ruta_snapshot=...)",
+    "post_partido": "bot_interactivo.cmd_evaluar -> evaluacion.preparar_evaluacion() -> evaluacion.liquidar_sombras_en_ledger_oos(docs, resultados) -> evaluacion.registrar_en_ledger_oos(..., estado_registro='liquidado', pre_partido_sha256=...)",
+    "alimentacion_promocion": "evaluacion.extraer_observaciones_sombra_desde_ledger() -> evaluacion.evaluar_promocion_regla_futura()",
+    "banderas_comportamiento_activas_por_defecto": {
+      "usar_anclaje_coef_torneo": false,
+      "usar_tope_dcn_18_pct": false,
+      "usar_tensor_65_35_y_diesel": false,
+      "usar_micropatrones_combinatorios": false,
+      "usar_gatekeeper_multisenal_top5": false,
+      "usar_sobredispersion_nb_corners": false,
+      "usar_gate_corners_8_15": false,
+      "usar_gate_cronologia_mitades_10_15": false,
+      "usar_calibracion_y_veto_conciencia": false,
+      "usar_cuota_justa_114_top5": false,
+      "usar_guarda_doble_defensa_rota": false,
+      "usar_gate_goles_mitad_15_15": false,
+      "usar_kelly_conservador_min_3pct": false,
+      "usar_excluir_primer_gol_top5": false
+    },
+    "todas_las_14_banderas_apagadas": true
+  }
+}
