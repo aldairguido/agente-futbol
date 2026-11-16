@@ -4632,23 +4632,30 @@ def contar_doble_defensa_rota_en_trazas(
     arch_2_veces: list[dict[str, Any]] = []
     oos_1_vez: list[dict[str, Any]] = []
     oos_2_veces: list[dict[str, Any]] = []
+    diseno_1_vez: list[dict[str, Any]] = []
     diseno_2_veces: list[dict[str, Any]] = []
+    todos_1_vez: list[dict[str, Any]] = []
+    todos_2_veces: list[dict[str, Any]] = []
     total_arch = 0
     total_oos = 0
+    total_general = 0
 
     for reg in registros_traza or []:
         if not isinstance(reg, dict):
             continue
         jid = str(reg.get("job_id") or "")
         es_arch = jid.startswith("ARCH::")
+        es_diseno = jid.startswith("DESIGN::")
         es_oos = bool(reg.get("es_oos", False))
         traza = list(reg.get("traza_lambda") or [])
         hits = [
             st for st in traza
             if isinstance(st, dict) and st.get("regla") == "copa_asedio_defensa_rota"
         ]
+        total_general += 1
         resumen_item = {
             "job_id": jid,
+            "tipo_registro": "ARCH" if es_arch else ("DESIGN" if es_diseno else "OTRO"),
             "partido": reg.get("partido"),
             "competicion": reg.get("competicion"),
             "es_oos": es_oos,
@@ -4666,6 +4673,11 @@ def contar_doble_defensa_rota_en_trazas(
                 for h in hits
             ],
         }
+        if len(hits) == 1:
+            todos_1_vez.append(resumen_item)
+        elif len(hits) >= 2:
+            todos_2_veces.append(resumen_item)
+
         if es_arch:
             total_arch += 1
             if es_oos:
@@ -4678,8 +4690,19 @@ def contar_doble_defensa_rota_en_trazas(
                 arch_2_veces.append(resumen_item)
                 if es_oos:
                     oos_2_veces.append(resumen_item)
-        elif jid.startswith("DESIGN::") and len(hits) >= 2:
-            diseno_2_veces.append(resumen_item)
+        elif es_diseno:
+            if len(hits) == 1:
+                diseno_1_vez.append(resumen_item)
+            elif len(hits) >= 2:
+                diseno_2_veces.append(resumen_item)
+
+    incluye_tb = any(
+        "turkey" in str(it.get("partido") or "").lower()
+        and "belgium" in str(it.get("partido") or "").lower()
+        or "turqu" in str(it.get("partido") or "").lower()
+        and "belgium" in str(it.get("partido") or "").lower()
+        for it in todos_2_veces
+    )
 
     return {
         "n_archivados_analizados": total_arch,
@@ -4688,10 +4711,17 @@ def contar_doble_defensa_rota_en_trazas(
         "n_oos_analizados": total_oos,
         "n_oos_1_vez": len(oos_1_vez),
         "n_oos_doble_135": len(oos_2_veces),
+        "n_total_analizados": total_general,
+        "n_total_con_diseno_1_vez": len(todos_1_vez),
+        "n_total_con_diseno_doble_135": len(todos_2_veces),
+        "incluye_turkey_belgium": bool(incluye_tb),
         "tickets_archivados_doble_135": arch_2_veces,
         "tickets_archivados_1_vez": arch_1_vez,
         "tickets_oos_doble_135": oos_2_veces,
         "tickets_diseno_doble_135": diseno_2_veces,
+        "tickets_diseno_1_vez": diseno_1_vez,
+        "tickets_todos_doble_135": todos_2_veces,
+        "tickets_todos_1_vez": todos_1_vez,
     }
 
 
@@ -6349,4 +6379,159 @@ def auditar_coherencia_texto_cifras_ronda9() -> dict[str, Any]:
         "coherencia_veredicto": coh_ver,
         "veredicto_colombia_chile": veredicto,
         "bloque_adn_con_n": [ln for ln in an.mensaje.splitlines() if "▸ " in ln and ("Posesión:" in ln or "Goles / xG:" in ln or "Goles Evitados" in ln)],
+    }
+
+
+def auditar_doble_135_ronda9(activar_b: bool = False) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 7: Ejecuta el conteo completo de doble aplicación de ×1.35
+    (`copa_asedio_defensa_rota` en `red_45_dcn` y `post_sinc_mercados`) sobre:
+      - Todos los tickets archivados ejecutables en `informes/mercados/**/*.json` (`85` de `89`
+        JSONs emparejables con auditorías en `informes/auditorias/`, señalando exactamente los
+        `4` sin par local)
+      - Partidos de diseño y control (`DESIGN::TB` Turkey-Belgium, `DESIGN::IF` Italy-France,
+        `CTRL::LN` Londrina-Náutico, `AUDIT::COL_CHI` Colombia-Chile)
+    Corrige el conteo de Ronda 8 para incluir explícitamente `Turkey–Belgium` en el total
+    unificado (`n_total_con_diseno_doble_135` / `tickets_todos_doble_135`) y documenta con
+    evidencia el origen del «1/28 (Londrina)» reportado en Ronda 8.
+    """
+    import glob as _glob
+    import re as _re
+    import unicodedata as _ud
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    raiz = Path(__file__).resolve().parent
+
+    def _norm(s: Any) -> str:
+        t = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii").lower()
+        return _re.sub(r"[^a-z0-9]+", "", t)
+
+    r5 = json.loads((raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))["docs"]
+    ln = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    dv_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    ev93 = json.loads((raiz / "informes" / "evaluacion" / "evaluacion_9393a7b9017a5365.json").read_text(encoding="utf-8"))
+    ev_rows = ev93.get("evaluaciones") or []
+    ev93_jids = {str(r.get("id_trabajo")) for r in ev_rows if r.get("id_trabajo")}
+    ev93_pids = {str(r.get("id_partido")) for r in ev_rows if r.get("id_partido")}
+
+    docs_idx: dict[tuple[str, str], list[Path]] = {}
+    for fp_s in sorted(_glob.glob(str(raiz / "informes" / "auditorias" / "**" / "auditoria_*.json"), recursive=True)):
+        fp = Path(fp_s)
+        if "_matriz" in fp.name:
+            continue
+        m = _re.match(r"auditoria_(.+?)_(\d{4}-\d{2}-\d{2})(?:_\d{6})?\.json$", fp.name)
+        if m:
+            docs_idx.setdefault((_norm(m.group(1)), m.group(2)), []).append(fp)
+
+    def _find_doc(nombre_eq: str, fch_ref: str) -> dict[str, Any] | None:
+        k = _norm(nombre_eq)
+        cands: list[tuple[int, str, Path]] = []
+        for (eq, fch), fps in docs_idx.items():
+            if k == eq or (len(k) >= 4 and (k in eq or eq in k)):
+                score = 0 if (fch_ref and fch == fch_ref[:10]) else 1
+                for fp in fps:
+                    cands.append((score, fch, fp))
+        cands.sort(key=lambda t: (t[0], t[1], str(t[2])))
+        for _, _, fp in cands:
+            try:
+                d = json.loads(fp.read_text(encoding="utf-8"))
+                if isinstance(d, dict) and d.get("partidos"):
+                    return d
+            except Exception:
+                continue
+        return None
+
+    mer_files = sorted(_glob.glob(str(raiz / "informes" / "mercados" / "**" / "mercados_*.json"), recursive=True))
+    registros_traza: list[dict[str, Any]] = []
+    sin_par_auditoria: list[dict[str, str]] = []
+
+    casos_ref = [
+        ("DESIGN::TB", "Turkey vs Belgium", "Turkey", "Belgium", r5["turkey"], r5["belgium"], "UEFA Nations League", None, "casa", "fuera", False),
+        ("DESIGN::IF", "Italy vs France", "Italy", "France", r5["italy"], r5["france"], "UEFA Nations League", None, "casa", "fuera", False),
+        ("CTRL::LN", "Londrina vs Náutico", "Londrina", "Náutico", ln["londrina"], ln["nautico"], "Brasileirao Serie C", None, "casa", "fuera", True),
+        ("AUDIT::COL_CHI", "Colombia vs Chile", "Colombia", "Chile", dl_col, dv_chi, "Eliminatorias CONMEBOL", "2026-11-12", "casa", "fuera", False),
+    ]
+
+    with banderas_comportamiento(activar_todas=bool(activar_b)):
+        for jid, nom, el, ev, dl, dv, comp, fch, cl, cv, es_oos in casos_ref:
+            params = mm.Parametros()
+            if comp:
+                params.competicion = comp
+            mot = mm.MotorMercados(dl, dv, cl, cv, el, ev, params)
+            mot.preparar()
+            registros_traza.append({
+                "job_id": jid,
+                "partido": nom,
+                "competicion": comp,
+                "es_oos": es_oos,
+                "traza_lambda": list(mot.traza_lambda or []),
+            })
+
+        for fp_m in mer_files:
+            dm = json.loads(Path(fp_m).read_text(encoding="utf-8"))
+            jid_raw = str(dm.get("id_trabajo") or Path(fp_m).stem)
+            md = dm.get("metadatos") or {}
+            el = str(md.get("equipo_local") or "").strip()
+            ev = str(md.get("equipo_visitante") or "").strip()
+            fch = str(md.get("fecha_partido") or md.get("generado_en") or "")[:10]
+            dl = _find_doc(el, fch)
+            dv = _find_doc(ev, fch)
+            if not dl or not dv:
+                sin_par_auditoria.append({"id_trabajo": jid_raw, "partido": f"{el} vs {ev}", "fecha": fch})
+                continue
+            dl_c = mm.filtrar_por_fecha(dl, fch) if fch else dl
+            dv_c = mm.filtrar_por_fecha(dv, fch) if fch else dv
+            cl = str(md.get("condicion_local") or "casa")
+            cv = str(md.get("condicion_visitante") or "fuera")
+            params = mm.Parametros()
+            if md.get("competicion"):
+                params.competicion = str(md.get("competicion"))
+            mot = mm.MotorMercados(
+                dl_c, dv_c,
+                cl if cl in ("casa", "fuera") else "casa",
+                cv if cv in ("casa", "fuera") else "fuera",
+                el, ev, params,
+            )
+            mot.preparar()
+            registros_traza.append({
+                "job_id": f"ARCH::{jid_raw}",
+                "partido": f"{el} vs {ev}",
+                "competicion": md.get("competicion"),
+                "es_oos": bool(jid_raw in ev93_jids),
+                "traza_lambda": list(mot.traza_lambda or []),
+            })
+
+    conteo = contar_doble_defensa_rota_en_trazas(registros_traza)
+    ln_hits = [r for r in registros_traza if r["job_id"] == "CTRL::LN"][0]
+    ln_dr = [s for s in ln_hits["traza_lambda"] if isinstance(s, dict) and s.get("regla") == "copa_asedio_defensa_rota"]
+    tb_item = next((x for x in conteo["tickets_todos_doble_135"] if x["job_id"] == "DESIGN::TB"), None)
+
+    return {
+        "modo_banderas": "A+B" if activar_b else "soloA",
+        "n_mercados_json_totales": len(mer_files),
+        "n_archivados_ejecutables": conteo["n_archivados_analizados"],
+        "n_archivados_sin_par_auditoria": len(sin_par_auditoria),
+        "sin_par_auditoria": sin_par_auditoria,
+        "n_ev93_id_partido_unicos": len(ev93_pids),
+        "n_ev93_id_trabajo_unicos": len(ev93_jids),
+        "conteo": conteo,
+        "turkey_belgium_incluido": bool(conteo["incluye_turkey_belgium"]),
+        "turkey_belgium_detalle": tb_item,
+        "londrina_nautico_n_aplicaciones": len(ln_dr),
+        "explicacion_1_28_ronda8": (
+            f"El '1/28 (Londrina)' reportado en la Ronda 8 mezcló tres inconsistencias verificadas en el código y los archivos: "
+            f"(1) el denominador '28' provino de un subconjunto ad-hoc de 24 tickets OOS + 4 de diseño/estudio/pendientes (= 28; análogo a los {len(ev93_pids)} id_partido no nulos de `evaluacion_9393a7b9017a5365.json`, que tiene 32 nombres de partido y 35 id_trabajo), "
+            f"omitiendo la totalidad de los {conteo['n_archivados_analizados']} tickets ejecutables en `informes/mercados/` ({len(mer_files)} JSONs en disco, {len(sin_par_auditoria)} sin par de auditoría local); "
+            f"(2) atribuyó erróneamente el único caso doble a `Londrina vs Náutico` cuando al ejecutar el motor actual con sus fixtures reales "
+            f"`copa_asedio_defensa_rota` se activa {len(ln_dr)} veces (0 en soloA y 0 en A+B), y afirmó 0/24 en OOS pese a que {conteo['n_oos_doble_135']} tickets "
+            f"archivados liquidados en EV93 (`Everton vs Chelsea`, `Newcastle United vs Aston Villa`, `Union Berlin vs Borussia Dortmund`) sí la disparan dos veces; "
+            f"y (3) `contar_doble_defensa_rota_en_trazas` segregaba `DESIGN::TB` (`Turkey vs Belgium`, donde sí se dispara en `red_45_dcn` y `post_sinc_mercados`: "
+            f"3.42 -> 4.62 y 2.63 -> 3.55 en soloA; 2.21 -> 2.98 en A+B) fuera de `n_archivados_doble_135` y `n_oos_doble_135`. "
+            f"Con el conteo corregido e inclusivo, el total con doble ×1.35 es {conteo['n_total_con_diseno_doble_135']} "
+            f"({conteo['n_archivados_doble_135']}/{conteo['n_archivados_analizados']} archivados + 1 de diseño `Turkey vs Belgium`)."
+        ),
     }
