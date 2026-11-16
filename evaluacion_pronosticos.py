@@ -8957,3 +8957,377 @@ def auditar_m1_tackles_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+
+def auditar_impacto_calcular_frecuencia_observada_ronda11(
+    *,
+    guardar_ruta: str | None = "datos/ronda11_punto5_impacto_73_tickets.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 11 — Punto 5 (IMPACTO DE LOS 2 ARREGLOS DE calcular_frecuencia_observada):
+      Evalúa sobre los 73 registros únicos (`_recolectar_pares_partidos_cacheados_ronda9`:
+      69 cruces únicos archivados + 4 referencia TB, IF, LN, COL_CHI) el impacto exacto de los
+      2 arreglos en `calcular_frecuencia_observada`:
+        1) `periodo 1T/2T` (leer goles por mitad en lugar de FT completo)
+        2) `"al menos"` (`g >= lin` en lugar de tratar `"al menos"` como `"menos"`/`g < lin` o `g > lin`)
+      Compara `pre_2_arreglos` (`5e8425f`) vs `solo_al_menos`, `solo_periodo_1t` y `actual_ambos_arreglos`
+      en `soloA` (y también en `A+B`), contabilizando cuántos partidos y líneas de Top 5 y Sección 1
+      cambian y verificando empíricamente 0 cambios de λ.
+    """
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+    import servicio_mercados as sm
+
+    raiz = Path(__file__).resolve().parent
+    pares_73 = _recolectar_pares_partidos_cacheados_ronda9()
+
+    def _crear_calc_freq(*, fix_periodo: bool, fix_al_menos: bool):
+        def _calc(
+            sel: Any,
+            doc_local: dict[str, Any] | None,
+            doc_visitante: dict[str, Any] | None,
+            eq_l: str = "Local",
+            eq_v: str = "Visitante",
+        ) -> float | None:
+            def _v(obj: Any, k: str, d: Any = None) -> Any:
+                if isinstance(obj, dict):
+                    return obj.get(k, d)
+                return getattr(obj, k, d)
+
+            ev = str(_v(sel, "evento") or "").lower()
+            et = str(_v(sel, "etiqueta") or "").lower()
+            mkt = str(_v(sel, "mercado") or "").lower()
+            per = str(_v(sel, "periodo", "FT") or "FT").strip().upper() if fix_periodo else "FT"
+            eq = str(_v(sel, "equipo") or "").strip()
+            lin_raw = _v(sel, "linea", None)
+            lin = None
+            if lin_raw is not None:
+                try:
+                    lin = float(lin_raw)
+                except Exception:
+                    lin = None
+
+            def _extraer_pts(doc: Any) -> list[dict[str, Any]]:
+                if not isinstance(doc, dict):
+                    return []
+                pts = doc.get("partidos", []) or []
+                res = []
+                for p in pts:
+                    if not isinstance(p, dict):
+                        continue
+                    m = p.get("marcador", {}) or {}
+                    gf = m.get("equipo")
+                    gc = m.get("rival")
+                    gf_per, gc_per = gf, gc
+                    if fix_periodo and per in ("1T", "2T"):
+                        p_per = (p.get("periodos", {}) or {}).get(per, {}) or {}
+                        m_per = p_per.get("marcador") or {}
+                        if m_per.get("equipo") is not None and m_per.get("rival") is not None:
+                            gf_per, gc_per = m_per.get("equipo"), m_per.get("rival")
+                        else:
+                            fg = p.get("franjas_goles") or {}
+                            claves_mitad = ("00_15", "16_30", "31_45") if per == "1T" else ("46_60", "61_75", "76_90")
+                            if fg and all(isinstance(fg.get(k), dict) for k in claves_mitad):
+                                gf_per = sum(float(fg[k].get("anotados", 0) or 0) for k in claves_mitad)
+                                gc_per = sum(float(fg[k].get("recibidos", 0) or 0) for k in claves_mitad)
+                            else:
+                                from auditoria_historica import reconstruir_marcador_mitades_partido
+                                g1, c1, g2, c2, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+                                if ok_m and g1 is not None and c1 is not None and g2 is not None and c2 is not None:
+                                    gf_per, gc_per = (g1, c1) if per == "1T" else (g2, c2)
+                                else:
+                                    gf_per, gc_per = None, None
+                    cf, cr, tf, tr = None, None, None, None
+                    filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
+                    for f in filas:
+                        if f.get("clave") == "corners":
+                            cf = f.get("equipo")
+                            cr = f.get("rival")
+                        elif f.get("clave") in ("tarjetas_amarillas", "tarjetas"):
+                            tf = f.get("equipo")
+                            tr = f.get("rival")
+                    res.append({"gf": gf, "gc": gc, "gf_per": gf_per, "gc_per": gc_per, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
+                return res
+
+            pts_l = _extraer_pts(doc_local)
+            pts_v = _extraer_pts(doc_visitante)
+            if not pts_l and not pts_v:
+                return None
+
+            from resolvedor_entidades import normalizar_texto
+            nom_l = normalizar_texto(eq_l)
+            nom_v = normalizar_texto(eq_v)
+            eq_norm = normalizar_texto(eq)
+            if fix_al_menos:
+                es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
+                es_al_menos = ("al_menos" in ev or "al menos" in et)
+            else:
+                es_under = ("under" in ev or "menos" in et)
+                es_al_menos = False
+
+            if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
+                if "1x" in ev or "1x" in et:
+                    valid_l = [p for p in pts_l if p.get("gf") is not None and p.get("gc") is not None]
+                    return (sum(1 for p in valid_l if p["gf"] >= p["gc"]) / len(valid_l)) if valid_l else None
+                elif "x2" in ev or "x2" in et:
+                    valid_v = [p for p in pts_v if p.get("gf") is not None and p.get("gc") is not None]
+                    return (sum(1 for p in valid_v if p["gf"] >= p["gc"]) / len(valid_v)) if valid_v else None
+                elif "12" in ev or "12" in et:
+                    valid = [p for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+                    return (sum(1 for p in valid if p["gf"] != p["gc"]) / len(valid)) if valid else None
+
+            if (any(k in mkt for k in ("corner", "córner")) or "corner" in ev) and lin is not None:
+                if "local" in ev or (eq_norm and (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)):
+                    valid = [float(p["cf"]) for p in pts_l if p.get("cf") is not None]
+                elif "visita" in ev or "visitante" in ev or (eq_norm and (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)):
+                    valid = [float(p["cf"]) for p in pts_v if p.get("cf") is not None]
+                else:
+                    valid = [float(p["cf"] + p["cr"]) for p in (pts_l + pts_v) if p.get("cf") is not None and p.get("cr") is not None]
+                if not valid:
+                    return None
+                return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
+
+            if ("total" in mkt or "goles" in mkt) and not eq_norm and not any(k in ev for k in ("local", "visita")) and lin is not None:
+                valid = [float(p["gf_per"] + p["gc_per"]) for p in (pts_l + pts_v) if p.get("gf_per") is not None and p.get("gc_per") is not None]
+                if not valid:
+                    return None
+                if es_under:
+                    return sum(1 for g in valid if g < lin) / len(valid)
+                if es_al_menos:
+                    return sum(1 for g in valid if g >= lin) / len(valid)
+                return sum(1 for g in valid if g > lin) / len(valid)
+
+            if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
+                if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
+                    valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
+                elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
+                    valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
+                else:
+                    valid = []
+                if not valid:
+                    return None
+                if es_under:
+                    return sum(1 for g in valid if g < lin) / len(valid)
+                if es_al_menos:
+                    return sum(1 for g in valid if g >= lin) / len(valid)
+                return sum(1 for g in valid if g > lin) / len(valid)
+
+            if "ambos_anotan" in ev or "btts" in ev:
+                valid = [(float(p["gf"]), float(p["gc"])) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+                if not valid:
+                    return None
+                if "no" in ev:
+                    return sum(1 for gf, gc in valid if gf == 0 or gc == 0) / len(valid)
+                return sum(1 for gf, gc in valid if gf > 0 and gc > 0) / len(valid)
+
+            if (any(k in mkt for k in ("tarjeta", "tarjetas")) or "tarjeta" in ev) and lin is not None:
+                valid = [float(p["tf"] + p["tr"]) for p in (pts_l + pts_v) if p.get("tf") is not None and p.get("tr") is not None]
+                if not valid:
+                    return None
+                return (sum(1 for t in valid if t < lin) / len(valid)) if es_under else (sum(1 for t in valid if t > lin) / len(valid))
+
+            return None
+
+        return _calc
+
+    def _sig_item(it: Any) -> str:
+        def _g(o: Any, k: str, d: Any = None) -> Any:
+            return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+        per = str(_g(it, "periodo", "FT") or "FT")
+        etq = str(_g(it, "etiqueta", "") or _g(it, "evento", ""))
+        prob = round(float(_g(it, "probabilidad", 0.0) or 0.0) * 100.0, 2)
+        return f"[{per}] {etq} ({prob:.2f}%)"
+
+    def _rf(v: Any) -> float | None:
+        return None if v is None else round(float(v), 4)
+
+    def _construir_bases(*, activar_banderas_b: bool) -> dict[str, tuple[dict[str, Any], Any, list[tuple[str, str | None]]]]:
+        orig_desv = mm.tiene_desvio_excesivo_calibracion
+        mm.tiene_desvio_excesivo_calibracion = lambda *a, **kw: (False, None, None)
+        bases: dict[str, tuple[dict[str, Any], Any, list[tuple[str, str | None]]]] = {}
+        try:
+            with banderas_comportamiento(activar_todas=activar_banderas_b):
+                for item in pares_73:
+                    an = mm.analizar(
+                        item["doc_local"],
+                        item["doc_visitante"],
+                        item["equipo_local"],
+                        item["equipo_visitante"],
+                        competicion=item.get("competicion"),
+                        fecha_partido=item.get("fecha_partido"),
+                        condicion_local=item.get("cond_l", "casa"),
+                        condicion_visitante=item.get("cond_v", "fuera"),
+                    )
+                    est_orig = [(getattr(s, "estado", "no_evaluada"), getattr(s, "motivo", None)) for s in (getattr(an, "selecciones_filtradas", None) or [])]
+                    bases[item["job_id"]] = (item, an, est_orig)
+        finally:
+            mm.tiene_desvio_excesivo_calibracion = orig_desv
+        return bases
+
+    def _correr_cohorte_desde_bases(
+        bases: dict[str, tuple[dict[str, Any], Any, list[tuple[str, str | None]]]],
+        *,
+        activar_banderas_b: bool,
+        fix_periodo: bool,
+        fix_al_menos: bool,
+    ) -> dict[str, dict[str, Any]]:
+        orig_fn = mm.calcular_frecuencia_observada
+        mm.calcular_frecuencia_observada = _crear_calc_freq(fix_periodo=fix_periodo, fix_al_menos=fix_al_menos)
+        res_p: dict[str, dict[str, Any]] = {}
+        try:
+            with banderas_comportamiento(activar_todas=activar_banderas_b):
+                for jid, (item, an, est_orig) in bases.items():
+                    mot = an.motor
+                    if not getattr(an, "abstenido", False) and mot is not None:
+                        nuevos_grupos: dict[str, list[Any]] = {
+                            mm.ESTADO_MANTIENE: [],
+                            mm.ESTADO_SENSIBLE: [],
+                            mm.ESTADO_INCOMPLETA: [],
+                        }
+                        for s, (est_b, mot_b) in zip((getattr(an, "selecciones_filtradas", None) or []), est_orig):
+                            s.estado = est_b
+                            s.motivo = mot_b
+                            excede_desv, desv_pts, f_obs = mm.tiene_desvio_excesivo_calibracion(
+                                s, mot.doc_local, mot.doc_visitante, mot.nombre_local, mot.nombre_visitante
+                            )
+                            if excede_desv:
+                                s.estado = mm.ESTADO_SENSIBLE
+                                brecha_s = round(round(float(f_obs) * 100.0, 1) - round(float(s.probabilidad) * 100.0, 1), 1)
+                                s.motivo = (
+                                    f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs "
+                                    f"mod: {s.probabilidad*100:.1f}%, brecha {brecha_s:+.1f} pp, "
+                                    f"desvío {desv_pts:.1f} pts > 10.0)"
+                                )
+                            nuevos_grupos.setdefault(s.estado, []).append(s)
+                        an.grupos = nuevos_grupos
+                        top5, sec1, _ = sm.obtener_top5_y_seccion1_filtrados(
+                            an,
+                            metadatos={"equipo_local": item["equipo_local"], "equipo_visitante": item["equipo_visitante"]},
+                            umbral=0.70,
+                        )
+                    else:
+                        top5, sec1 = [], []
+                    t = getattr(mot, "tasas", None) if mot is not None else None
+                    res_p[jid] = {
+                        "partido": item["partido"],
+                        "grupo": item["grupo"],
+                        "lambdas": (
+                            _rf(getattr(t, "lambda_local_ft", None)),
+                            _rf(getattr(t, "lambda_visitante_ft", None)),
+                            _rf(getattr(t, "lambda_local_1t", None)),
+                            _rf(getattr(t, "lambda_visitante_1t", None)),
+                            _rf(getattr(t, "lambda_local_2t", None)),
+                            _rf(getattr(t, "lambda_visitante_2t", None)),
+                        ) if t is not None else (None, None, None, None, None, None),
+                        "top5": [_sig_item(x) for x in (top5 or [])],
+                        "sec1": [_sig_item(x) for x in (sec1 or [])],
+                    }
+        finally:
+            mm.calcular_frecuencia_observada = orig_fn
+        return res_p
+
+    def _resumir_diffs(base_map: dict[str, dict[str, Any]], nuevo_map: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        lam_cambiados = 0
+        partidos_top5_cambiados: list[dict[str, Any]] = []
+        partidos_sec1_cambiados: list[dict[str, Any]] = []
+        n_lineas_top5_dif = 0
+        n_lineas_sec1_dif = 0
+        total_lineas_top5_base = 0
+        total_lineas_sec1_base = 0
+
+        for jid, b in base_map.items():
+            n = nuevo_map[jid]
+            if b["lambdas"] != n["lambdas"]:
+                lam_cambiados += 1
+            total_lineas_top5_base += len(b["top5"])
+            total_lineas_sec1_base += len(b["sec1"])
+
+            if b["top5"] != n["top5"]:
+                set_b, set_n = set(b["top5"]), set(n["top5"])
+                removidas = [x for x in b["top5"] if x not in set_n]
+                agregadas = [x for x in n["top5"] if x not in set_b]
+                reordenadas = (len(removidas) == 0 and len(agregadas) == 0)
+                slots_dif = sum(1 for i in range(max(len(b["top5"]), len(n["top5"])))
+                                if (b["top5"][i] if i < len(b["top5"]) else None) != (n["top5"][i] if i < len(n["top5"]) else None))
+                n_lineas_top5_dif += slots_dif
+                partidos_top5_cambiados.append({
+                    "job_id": jid,
+                    "partido": b["partido"],
+                    "grupo": b["grupo"],
+                    "n_antes": len(b["top5"]),
+                    "n_despues": len(n["top5"]),
+                    "slots_diferentes": slots_dif,
+                    "solo_reordenamiento": reordenadas,
+                    "removidas": removidas,
+                    "agregadas": agregadas,
+                    "antes": b["top5"],
+                    "despues": n["top5"],
+                })
+
+            set_s1_b, set_s1_n = set(b["sec1"]), set(n["sec1"])
+            if set_s1_b != set_s1_n or b["sec1"] != n["sec1"]:
+                rem_s1 = [x for x in b["sec1"] if x not in set_s1_n]
+                agr_s1 = [x for x in n["sec1"] if x not in set_s1_b]
+                n_lineas_sec1_dif += len(rem_s1) + len(agr_s1)
+                partidos_sec1_cambiados.append({
+                    "job_id": jid,
+                    "partido": b["partido"],
+                    "grupo": b["grupo"],
+                    "n_antes": len(b["sec1"]),
+                    "n_despues": len(n["sec1"]),
+                    "removidas": rem_s1,
+                    "agregadas": agr_s1,
+                })
+
+        return {
+            "n_partidos_evaluados": len(base_map),
+            "n_partidos_lambda_cambiado": lam_cambiados,
+            "top5": {
+                "n_partidos_top5_cambiado": len(partidos_top5_cambiados),
+                "total_slots_diferentes": n_lineas_top5_dif,
+                "total_lineas_top5_base": total_lineas_top5_base,
+                "detalle_partidos": partidos_top5_cambiados,
+            },
+            "seccion_1": {
+                "n_partidos_sec1_cambiado": len(partidos_sec1_cambiados),
+                "total_lineas_cambiadas_altas_bajas": n_lineas_sec1_dif,
+                "total_lineas_sec1_base": total_lineas_sec1_base,
+                "detalle_partidos": partidos_sec1_cambiados,
+            },
+        }
+
+    # Modo oficial soloA (Conjunto A) y modo A+B (banderas activas)
+    bases_a = _construir_bases(activar_banderas_b=False)
+    a_pre = _correr_cohorte_desde_bases(bases_a, activar_banderas_b=False, fix_periodo=False, fix_al_menos=False)
+    a_al_menos = _correr_cohorte_desde_bases(bases_a, activar_banderas_b=False, fix_periodo=False, fix_al_menos=True)
+    a_periodo = _correr_cohorte_desde_bases(bases_a, activar_banderas_b=False, fix_periodo=True, fix_al_menos=False)
+    a_ambos = _correr_cohorte_desde_bases(bases_a, activar_banderas_b=False, fix_periodo=True, fix_al_menos=True)
+
+    bases_ab = _construir_bases(activar_banderas_b=True)
+    ab_pre = _correr_cohorte_desde_bases(bases_ab, activar_banderas_b=True, fix_periodo=False, fix_al_menos=False)
+    ab_ambos = _correr_cohorte_desde_bases(bases_ab, activar_banderas_b=True, fix_periodo=True, fix_al_menos=True)
+
+    out = {
+        "denominador_registros": len(pares_73),
+        "declaracion_conjunto_a": (
+            "Los 2 arreglos de calcular_frecuencia_observada (periodo 1T/2T y 'al menos' g >= lin) NO modifican "
+            "ningún λ ni ninguna probabilidad del motor (0/73 λ cambiados), pero SÍ modifican qué líneas son vetadas "
+            "por desvío > 10 pp, qué selecciones pasan a Sección 1 y qué líneas entran/ordenan el Top 5. Por lo tanto, "
+            "el Conjunto A cambia tickets aunque no cambie λ."
+        ),
+        "soloA": {
+            "pre_vs_solo_al_menos": _resumir_diffs(a_pre, a_al_menos),
+            "pre_vs_solo_periodo_1t": _resumir_diffs(a_pre, a_periodo),
+            "pre_vs_ambos_arreglos": _resumir_diffs(a_pre, a_ambos),
+        },
+        "AB_con_banderas": {
+            "pre_vs_ambos_arreglos": _resumir_diffs(ab_pre, ab_ambos),
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

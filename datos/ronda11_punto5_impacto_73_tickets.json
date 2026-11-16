@@ -1,0 +1,4496 @@
+{
+  "denominador_registros": 73,
+  "declaracion_conjunto_a": "Los 2 arreglos de calcular_frecuencia_observada (periodo 1T/2T y 'al menos' g >= lin) NO modifican ningún λ ni ninguna probabilidad del motor (0/73 λ cambiados), pero SÍ modifican qué líneas son vetadas por desvío > 10 pp, qué selecciones pasan a Sección 1 y qué líneas entran/ordenan el Top 5. Por lo tanto, el Conjunto A cambia tickets aunque no cambie λ.",
+  "soloA": {
+    "pre_vs_solo_al_menos": {
+      "n_partidos_evaluados": 73,
+      "n_partidos_lambda_cambiado": 0,
+      "top5": {
+        "n_partidos_top5_cambiado": 1,
+        "total_slots_diferentes": 1,
+        "total_lineas_top5_base": 248,
+        "detalle_partidos": [
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Totales (FT): +2.5 Goles (73.26%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)",
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (73.26%)",
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ]
+          }
+        ]
+      },
+      "seccion_1": {
+        "n_partidos_sec1_cambiado": 48,
+        "total_lineas_cambiadas_altas_bajas": 154,
+        "total_lineas_sec1_base": 671,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "grupo": "diseno",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[1T] más de 0.5 goles (90.30%)",
+              "[1T] Al menos un gol en el 1T (90.30%)",
+              "[FT] menos de 6.5 tarjetas amarillas (96.05%)"
+            ],
+            "agregadas": [
+              "[1T] Belgium: al menos 1 goles (84.93%)",
+              "[2T] Belgium: al menos 1 goles (80.94%)",
+              "[2T] al menos 1 goles (89.53%)"
+            ]
+          },
+          {
+            "job_id": "DESIGN::IF",
+            "partido": "Italy vs France",
+            "grupo": "diseno",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (84.17%)",
+              "[FT] France: al menos 1 goles (90.27%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::26ddf6b82b37aeee",
+            "partido": "Atlético Madrid vs Manchester United",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (84.74%)",
+              "[FT] Manchester United: al menos 1 goles (73.82%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 17,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (90.13%)",
+              "[FT] al menos 3 goles (76.88%)",
+              "[2T] al menos 1 goles (93.79%)",
+              "[FT] Barcelona: al menos 1 goles (94.33%)",
+              "[FT] al menos 3 goles en el partido (76.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.59%)",
+              "[FT] al menos 3 goles (74.55%)",
+              "[FT] al menos 3 goles en el partido (74.55%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d3d45be6c72ec657",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 3 goles (73.97%)",
+              "[2T] al menos 1 goles (90.85%)",
+              "[FT] RB Leipzig: al menos 1 goles (91.60%)",
+              "[2T] RB Leipzig: al menos 1 goles (77.56%)",
+              "[FT] al menos 3 goles en el partido (73.97%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::895402c59f17d314",
+            "partido": "Sabah FK vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.37%)",
+              "[FT] Sabah FK: al menos 1 goles (83.74%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a29bd308cdbe8ccc",
+            "partido": "Viking vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.95%)",
+              "[FT] Bayern München: al menos 1 goles (86.60%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::ee5cab1ef4c05c3e",
+            "partido": "Deportivo A Coruña vs Levante",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (73.03%)",
+              "[FT] Levante: al menos 1 goles (76.54%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3d8f1069c9f32b4d",
+            "partido": "Espanyol vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 17,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (75.24%)",
+              "[FT] Atlético Madrid: al menos 1 goles (83.30%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.67%)",
+              "[FT] al menos 3 goles (72.95%)",
+              "[FT] Barcelona: al menos 1 goles (90.84%)",
+              "[FT] al menos 3 goles en el partido (72.95%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Elche: menos de 2.5 goles (91.97%)",
+              "[FT] Elche: menos de 6.5 córneres (89.50%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.99%)",
+              "[FT] Villarreal: al menos 2 goles (74.03%)",
+              "[2T] Villarreal: al menos 1 goles (75.83%)",
+              "[1T] Villarreal: al menos 1 goles (74.33%)",
+              "[FT] al menos 3 goles (70.98%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (91.22%)",
+              "[FT] Barcelona: al menos 1 goles (93.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (87.29%)",
+              "[FT] al menos 3 goles (70.05%)",
+              "[2T] al menos 1 goles (90.08%)",
+              "[FT] Brentford: al menos 1 goles (84.62%)",
+              "[FT] Liverpool FC: al menos 1 goles (81.92%)",
+              "[FT] al menos 3 goles en el partido (70.05%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] Al menos un gol en el 2T (89.70%)",
+              "[2T] más de 0.5 goles (89.70%)",
+              "[FT] menos de 6.5 tarjetas amarillas (93.06%)"
+            ],
+            "agregadas": [
+              "[2T] Everton: al menos 1 goles (84.69%)",
+              "[FT] al menos 3 goles (77.29%)",
+              "[FT] al menos 3 goles en el partido (77.29%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::477b13731c13f085",
+            "partido": "FC Porto vs Hull City",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (73.86%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] Al menos un gol en el 2T (89.11%)",
+              "[2T] más de 0.5 goles (89.11%)",
+              "[FT] Ipswich Town: menos de 6.5 córneres (92.95%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.71%)",
+              "[FT] al menos 3 goles (73.26%)",
+              "[FT] al menos 3 goles en el partido (73.26%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[1T] al menos 1 goles (89.61%)",
+              "[2T] al menos 1 goles (90.13%)",
+              "[FT] Newcastle United: al menos 1 goles (91.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (81.08%)",
+              "[FT] Borussia Dortmund: al menos 1 goles (86.69%)",
+              "[2T] Borussia Dortmund: al menos 1 goles (70.73%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::19782b0411325c11",
+            "partido": "Real Madrid vs Sevilla",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 18,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Real Madrid: al menos 1 goles (93.54%)",
+              "[FT] Real Madrid: al menos 2 goles (75.85%)",
+              "[2T] Real Madrid: al menos 1 goles (81.96%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3eca7f2cb903a922",
+            "partido": "Juventus Next Gen vs Renate",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[2T] al menos 1 goles (71.42%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7950e64d091122d0",
+            "partido": "FC Porto vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (82.96%)",
+              "[FT] FC Porto: al menos 1 goles (84.89%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::264113ea1900872f",
+            "partido": "Fenerbahçe vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Fenerbahçe: al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::881c46e4eb7f5c59",
+            "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Fenerbahçe (W): al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::51e6914948c72987",
+            "partido": "Liverpool vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 16,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] menos de 4.5 tarjetas amarillas (71.95%)",
+              "[FT] menos de 6.5 tarjetas amarillas (93.23%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (83.85%)",
+              "[2T] al menos 1 goles (84.62%)",
+              "[FT] Liverpool: al menos 1 goles (81.11%)",
+              "[FT] Villarreal: al menos 1 goles (77.70%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0592cec465480956",
+            "partido": "Manchester City vs AEK Athens",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.18%)",
+              "[2T] al menos 1 goles (87.59%)",
+              "[FT] Manchester City: al menos 1 goles (94.50%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6ea309941d8da82a",
+            "partido": "Napoli vs Bodø/Glimt",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (77.30%)",
+              "[FT] Napoli: al menos 1 goles (81.36%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::41459cd49a14bd28",
+            "partido": "Paris Saint-Germain vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.17%)",
+              "[FT] al menos 3 goles (73.12%)",
+              "[FT] Barcelona: al menos 1 goles (87.63%)",
+              "[FT] al menos 3 goles en el partido (73.12%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (90.05%)",
+              "[1T] al menos 1 goles (87.66%)",
+              "[FT] Roma: al menos 1 goles (95.26%)",
+              "[FT] Roma: al menos 2 goles (80.81%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::031ff13d60700ffb",
+            "partido": "VfB Stuttgart vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (82.87%)",
+              "[FT] VfB Stuttgart: al menos 1 goles (75.59%)",
+              "[FT] Atlético Madrid: al menos 1 goles (83.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d7c180d368cfb593",
+            "partido": "Arsenal vs Everton",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.47%)",
+              "[FT] Arsenal: al menos 1 goles (85.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a5380106704096e6",
+            "partido": "Aston Villa vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.13%)",
+              "[2T] al menos 1 goles (87.14%)",
+              "[FT] Aston Villa: al menos 1 goles (83.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6b172f5b9a84a21a",
+            "partido": "Atlético Madrid vs Deportivo A Coruña",
+            "grupo": "archivado",
+            "n_antes": 14,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.58%)",
+              "[FT] Atlético Madrid: al menos 1 goles (89.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "grupo": "archivado",
+            "n_antes": 18,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Inter Miami CF: al menos 3 goles (73.75%)",
+              "[FT] New Zealand: menos de 2.5 goles (91.03%)",
+              "[1T] Al menos un gol en el 1T (89.79%)",
+              "[FT] más de 1.5 goles (94.16%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 3 goles (85.73%)",
+              "[FT] al menos 3 goles en el partido (85.73%)",
+              "[FT] al menos 4 goles (72.53%)",
+              "[FT] al menos 4 goles en el partido (72.53%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b43800e3bc57516e",
+            "partido": "Real Sociedad vs Levante",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (77.84%)",
+              "[2T] al menos 1 goles (82.35%)",
+              "[FT] Levante: al menos 1 goles (81.73%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[2T] al menos 1 goles (85.70%)",
+              "[2T] Villarreal: al menos 1 goles (70.70%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::cb569ef3699dc8d3",
+            "partido": "Barcelona vs Deportivo Alavés",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Anota primero Barcelona (72.72%)",
+              "[FT] Gol en ambos tiempos (partido) (72.28%)",
+              "[FT] 1X (Barcelona o empate) (89.19%)",
+              "[FT] Deportivo Alavés: menos de 2.5 goles (92.33%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.81%)",
+              "[2T] al menos 1 goles (87.16%)",
+              "[FT] Barcelona: al menos 2 goles (77.56%)",
+              "[FT] al menos 3 goles (73.38%)",
+              "[FT] al menos 3 goles en el partido (73.38%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0ed8682238d4b1fc",
+            "partido": "AEK Athens vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Real Madrid: al menos 1 goles (85.19%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2c876ea9da4f14ae",
+            "partido": "Atlético Madrid vs 1860 München",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (88.23%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.20%)",
+              "[2T] al menos 1 goles (86.55%)",
+              "[FT] Bayern München: al menos 1 goles (89.35%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[FT] Barcelona: más de 1.5 goles (92.17%)",
+              "[2T] más de 0.5 goles (91.82%)",
+              "[2T] Al menos un gol en el 2T (91.82%)"
+            ],
+            "agregadas": [
+              "[FT] Barcelona: al menos 3 goles (78.89%)",
+              "[FT] al menos 3 goles (89.26%)",
+              "[FT] al menos 3 goles en el partido (89.26%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.30%)",
+              "[FT] Barcelona: al menos 1 goles (91.22%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2620e71a20445340",
+            "partido": "Bodø/Glimt vs Lille",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.83%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::c2744c4d701a91e9",
+            "partido": "Borussia Dortmund vs Real Betis",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[2T] al menos 1 goles (86.49%)",
+              "[FT] Borussia Dortmund: al menos 1 goles (84.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.48%)",
+              "[FT] al menos 3 goles (72.64%)",
+              "[2T] al menos 1 goles (90.46%)",
+              "[FT] al menos 3 goles en el partido (72.64%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Galatasaray: al menos 1 goles (73.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (70.84%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.36%)",
+              "[2T] al menos 1 goles (87.92%)",
+              "[FT] Manchester City: al menos 1 goles (92.35%)",
+              "[FT] Manchester City: al menos 2 goles (72.67%)"
+            ]
+          }
+        ]
+      }
+    },
+    "pre_vs_solo_periodo_1t": {
+      "n_partidos_evaluados": 73,
+      "n_partidos_lambda_cambiado": 0,
+      "top5": {
+        "n_partidos_top5_cambiado": 29,
+        "total_slots_diferentes": 54,
+        "total_lineas_top5_base": 248,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "grupo": "diseno",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Belgium (2T): +0.5 Goles (80.94%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Belgium (FT): Anota primero Belgium (76.56%)"
+            ],
+            "antes": [
+              "[FT] 1X2: Belgium Gana (FT) (81.70%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.85%)",
+              "[FT] Goles Belgium (2T): +0.5 Goles (80.94%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.78%)",
+              "[FT] Belgium Apuesta Sin Empate / DNB (FT) (81.70%)"
+            ],
+            "despues": [
+              "[FT] 1X2: Belgium Gana (FT) (81.70%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.85%)",
+              "[FT] Goles Belgium (FT): Anota primero Belgium (76.56%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.78%)",
+              "[FT] Belgium Apuesta Sin Empate / DNB (FT) (81.70%)"
+            ]
+          },
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 2,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 2T: -1.5 Goles (77.56%)",
+              "[FT] Goles 1T: -1.5 Goles (72.52%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)",
+              "[FT] Goles Chile (FT): -1.5 Goles (80.16%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)",
+              "[FT] Goles Chile (FT): -1.5 Goles (80.16%)",
+              "[FT] Goles 2T: -1.5 Goles (77.56%)",
+              "[FT] Goles 1T: -1.5 Goles (72.52%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2862cb894f5c4039",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)",
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Barcelona (FT): Anota primero Barcelona (74.44%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (88.65%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (89.58%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.69%)",
+              "[FT] Goles Barcelona (FT): Anota primero Barcelona (74.44%)",
+              "[FT] Córneres Totales (FT): -9.5 Córn. (70.66%)",
+              "[FT] 1X2: Barcelona Gana (FT) (77.88%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (89.58%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.69%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (88.65%)",
+              "[FT] Córneres Totales (FT): -9.5 Córn. (70.66%)",
+              "[FT] 1X2: Barcelona Gana (FT) (77.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Inter (2T): +0.5 Goles (75.09%)"
+            ],
+            "antes": [
+              "[FT] Goles Totales (FT): +2.5 Goles (74.55%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (72.56%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): +2.5 Goles (74.55%)",
+              "[FT] Goles Inter (2T): +0.5 Goles (75.09%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (72.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f2c5227f05725c64",
+            "partido": "Lens vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T) (75.47%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (84.76%)",
+              "[FT] Córneres Sporting CP (FT): -5.5 Córn. (83.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T) (75.47%)",
+              "[FT] Córneres Sporting CP (FT): -5.5 Córn. (83.87%)",
+              "[FT] Goles 2T: +0.5 Goles (84.76%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T) (75.55%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (74.43%)",
+              "[FT] Córneres Totales (FT): +8.5 Córn. (72.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T) (75.55%)",
+              "[FT] Córneres Totales (FT): +8.5 Córn. (72.87%)",
+              "[FT] Goles 2T: +0.5 Goles (74.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f0c3170eee55fb5c",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)",
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::4e5a5d34ae883217",
+            "partido": "FC Gifu vs Vanraure Hachinohe",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (83.37%)"
+            ],
+            "antes": [
+              "[FT] Goles Vanraure Hachinohe (FT): -1.5 Goles (88.79%)",
+              "[FT] Córneres Vanraure Hachinohe (FT): -5.5 Córn. (79.00%)"
+            ],
+            "despues": [
+              "[FT] Goles Vanraure Hachinohe (FT): -1.5 Goles (88.79%)",
+              "[FT] Córneres Vanraure Hachinohe (FT): -5.5 Córn. (79.00%)",
+              "[FT] Goles 1T: -1.5 Goles (83.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (77.52%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (78.09%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.18%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (78.09%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.18%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (77.52%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (74.47%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (81.32%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (76.12%)",
+              "[FT] Goles 2T: +0.5 Goles (89.00%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (73.93%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (81.32%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (76.12%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (74.47%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (73.93%)",
+              "[FT] Goles 2T: +0.5 Goles (89.00%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Brentford (FT): +0.5 Goles (84.62%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Brentford (2T): +0.5 Goles (71.75%)"
+            ],
+            "antes": [
+              "[FT] Goles Totales (FT): +1.5 Goles (87.29%)",
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (78.40%)",
+              "[FT] Goles Liverpool FC (FT): +0.5 Goles (81.92%)",
+              "[FT] Goles Brentford (FT): +0.5 Goles (84.62%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): +1.5 Goles (87.29%)",
+              "[FT] Goles Brentford (2T): +0.5 Goles (71.75%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (78.40%)",
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Goles Liverpool FC (FT): +0.5 Goles (81.92%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Everton (2T): +0.5 Goles (84.69%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Everton (FT): Anota primero Everton (71.80%)"
+            ],
+            "antes": [
+              "[FT] 1X2: Everton Gana (FT) (75.81%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (77.29%)",
+              "[FT] Goles Everton (2T): +0.5 Goles (84.69%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (76.49%)",
+              "[FT] Everton Apuesta Sin Empate / DNB (FT) (75.81%)"
+            ],
+            "despues": [
+              "[FT] 1X2: Everton Gana (FT) (75.81%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (77.29%)",
+              "[FT] Goles Everton (FT): Anota primero Everton (71.80%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (76.49%)",
+              "[FT] Everton Apuesta Sin Empate / DNB (FT) (75.81%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Manchester City (2T): +0.5 Goles (80.84%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)",
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)",
+              "[FT] Goles Manchester City (2T): +0.5 Goles (80.84%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Newcastle United (2T): +0.5 Goles (70.41%)"
+            ],
+            "antes": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.77%)",
+              "[FT] Córneres Aston Villa (FT): -6.5 Córn. (81.80%)"
+            ],
+            "despues": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.77%)",
+              "[FT] Goles Newcastle United (2T): +0.5 Goles (70.41%)",
+              "[FT] Córneres Aston Villa (FT): -6.5 Córn. (81.80%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62f014959843c34d",
+            "partido": "Valencia vs Athletic Club",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 4,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T) (79.63%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (70.34%)",
+              "[FT] Córneres Athletic Club (FT): +3.5 Córn. (83.21%)",
+              "[FT] Goles Athletic Club (FT): -1.5 Goles (72.84%)",
+              "[FT] Goles Valencia (FT): -1.5 Goles (72.47%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T) (79.63%)",
+              "[FT] Córneres Athletic Club (FT): +3.5 Córn. (83.21%)",
+              "[FT] Goles 2T: +0.5 Goles (70.34%)",
+              "[FT] Goles Athletic Club (FT): -1.5 Goles (72.84%)",
+              "[FT] Goles Valencia (FT): -1.5 Goles (72.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7cf6c44047ba86eb",
+            "partido": "Getafe vs Rayo Vallecano",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 2,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (77.3%) (Duelo de estudio en 1T / Explosión en 2T) (77.27%)"
+            ],
+            "antes": [
+              "[FT] Córneres Totales (FT): -12.5 Córn. (78.66%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (77.3%) (Duelo de estudio en 1T / Explosión en 2T) (77.27%)",
+              "[FT] Córneres Totales (FT): -12.5 Córn. (78.66%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::12e22edc4c5ca4f1",
+            "partido": "Parma vs Torino",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 2T: -1.5 Goles (79.02%)",
+              "[FT] Goles 1T: -1.5 Goles (77.67%)"
+            ],
+            "antes": [
+              "[FT] Goles Parma (FT): -1.5 Goles (79.43%)",
+              "[FT] Córneres Parma (FT): -6.5 Córn. (79.49%)"
+            ],
+            "despues": [
+              "[FT] Goles Parma (FT): -1.5 Goles (79.43%)",
+              "[FT] Córneres Parma (FT): -6.5 Córn. (79.49%)",
+              "[FT] Goles 2T: -1.5 Goles (79.02%)",
+              "[FT] Goles 1T: -1.5 Goles (77.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6676e02e47888387",
+            "partido": "Tottenham Hotspur vs Coventry City",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (74.0%) (Duelo de estudio en 1T / Explosión en 2T) (73.99%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Coventry City (FT) (71.89%)",
+              "[FT] Goles Tottenham Hotspur (FT): -1.5 Goles (78.34%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (77.78%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Coventry City (FT) (71.89%)",
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (74.0%) (Duelo de estudio en 1T / Explosión en 2T) (73.99%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (77.78%)",
+              "[FT] Goles Tottenham Hotspur (FT): -1.5 Goles (78.34%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Roma (FT): +1.5 Goles (80.81%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Roma (1T): +0.5 Goles (81.10%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Roma o Empate (FT) (91.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (74.12%)",
+              "[FT] Goles Roma (FT): +1.5 Goles (80.81%)",
+              "[FT] 1X2: Roma Gana (FT) (80.23%)",
+              "[FT] Roma Apuesta Sin Empate / DNB (FT) (80.23%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Roma o Empate (FT) (91.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (74.12%)",
+              "[FT] Goles Roma (1T): +0.5 Goles (81.10%)",
+              "[FT] 1X2: Roma Gana (FT) (80.23%)",
+              "[FT] Roma Apuesta Sin Empate / DNB (FT) (80.23%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 4,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Villarreal (2T): +0.5 Goles (70.70%)"
+            ],
+            "agregadas": [],
+            "antes": [
+              "[FT] Goles Totales (FT): -4.5 Goles (77.20%)",
+              "[FT] Goles 2T: +0.5 Goles (85.70%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.10%)",
+              "[FT] Tarjetas Totales (FT): -4.5 Tarj. (74.20%)",
+              "[FT] Goles Villarreal (2T): +0.5 Goles (70.70%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): -4.5 Goles (77.20%)",
+              "[FT] Goles 2T: +0.5 Goles (85.70%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.10%)",
+              "[FT] Tarjetas Totales (FT): -4.5 Tarj. (74.20%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Bayern München (2T): +0.5 Goles (73.09%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Bayern München (FT) (78.23%)",
+              "[FT] Goles Totales (FT): -4.5 Goles (71.95%)",
+              "[FT] Goles 2T: +0.5 Goles (86.55%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Bayern München (FT) (78.23%)",
+              "[FT] Goles Totales (FT): -4.5 Goles (71.95%)",
+              "[FT] Goles 2T: +0.5 Goles (86.55%)",
+              "[FT] Goles Bayern München (2T): +0.5 Goles (73.09%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (71.59%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (83.91%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (86.30%)",
+              "[FT] Goles 2T: +0.5 Goles (86.14%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.56%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (83.91%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (86.30%)",
+              "[FT] Goles 2T: +0.5 Goles (86.14%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.56%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (71.59%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::50e4f9a99cf945ad",
+            "partido": "Bodø/Glimt vs Lillestrøm",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.4%) (Duelo de estudio en 1T / Explosión en 2T) (75.43%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (71.93%)",
+              "[FT] Córneres Bodø/Glimt (FT): +3.5 Córn. (80.24%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.4%) (Duelo de estudio en 1T / Explosión en 2T) (75.43%)",
+              "[FT] Córneres Bodø/Glimt (FT): +3.5 Córn. (80.24%)",
+              "[FT] Goles 2T: +0.5 Goles (71.93%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Totales (FT): +1.5 Goles (88.48%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Inter (2T): +0.5 Goles (77.47%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Inter (FT) (73.01%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (72.64%)",
+              "[FT] Córneres Feyenoord (FT): +3.5 Córn. (72.18%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.28%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (88.48%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Inter (FT) (73.01%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (72.64%)",
+              "[FT] Goles Inter (2T): +0.5 Goles (77.47%)",
+              "[FT] Córneres Feyenoord (FT): +3.5 Córn. (72.18%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.28%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (73.3%) (Duelo de estudio en 1T / Explosión en 2T) (73.33%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (76.15%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (79.34%)",
+              "[FT] Goles Galatasaray (FT): +0.5 Goles (73.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (73.3%) (Duelo de estudio en 1T / Explosión en 2T) (73.33%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (79.34%)",
+              "[FT] Goles 2T: +0.5 Goles (76.15%)",
+              "[FT] Goles Galatasaray (FT): +0.5 Goles (73.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d4d5425de071ba99",
+            "partido": "Shakhtar Donetsk vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T) (78.86%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (73.13%)",
+              "[FT] Córneres Totales (FT): -8.5 Córn. (79.05%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T) (78.86%)",
+              "[FT] Córneres Totales (FT): -8.5 Córn. (79.05%)",
+              "[FT] Goles 2T: +0.5 Goles (73.13%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (72.7%) (Duelo de estudio en 1T / Explosión en 2T) (72.73%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (82.97%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (70.84%)",
+              "[FT] Goles 2T: +0.5 Goles (78.28%)",
+              "[FT] Córneres Manchester City (FT): +3.5 Córn. (71.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (82.97%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (70.84%)",
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (72.7%) (Duelo de estudio en 1T / Explosión en 2T) (72.73%)",
+              "[FT] Córneres Manchester City (FT): +3.5 Córn. (71.67%)",
+              "[FT] Goles 2T: +0.5 Goles (78.28%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Manchester City (FT): +1.5 Goles (72.67%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Manchester City (2T): +0.5 Goles (77.53%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (83.45%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (71.14%)",
+              "[FT] Goles 2T: +0.5 Goles (87.92%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (70.42%)",
+              "[FT] Goles Manchester City (FT): +1.5 Goles (72.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (83.45%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (71.14%)",
+              "[FT] Goles Manchester City (2T): +0.5 Goles (77.53%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (70.42%)",
+              "[FT] Goles 2T: +0.5 Goles (87.92%)"
+            ]
+          }
+        ]
+      },
+      "seccion_1": {
+        "n_partidos_sec1_cambiado": 55,
+        "total_lineas_cambiadas_altas_bajas": 140,
+        "total_lineas_sec1_base": 671,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "grupo": "diseno",
+            "n_antes": 17,
+            "n_despues": 14,
+            "removidas": [
+              "[1T] más de 0.5 goles (90.30%)",
+              "[1T] Belgium: más de 0.5 goles (84.93%)",
+              "[2T] Belgium: más de 0.5 goles (80.94%)"
+            ],
+            "agregadas": []
+          },
+          {
+            "job_id": "DESIGN::IF",
+            "partido": "Italy vs France",
+            "grupo": "diseno",
+            "n_antes": 9,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (85.22%)"
+            ]
+          },
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 12,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (72.52%)",
+              "[2T] menos de 1.5 goles (77.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0511af5559314a12",
+            "partido": "Arsenal vs Lille",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (73.51%)",
+              "[2T] al menos 1 goles (73.51%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::26ddf6b82b37aeee",
+            "partido": "Atlético Madrid vs Manchester United",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (82.16%)",
+              "[1T] al menos 1 goles (82.16%)",
+              "[2T] más de 0.5 goles (77.61%)",
+              "[2T] al menos 1 goles (77.61%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2862cb894f5c4039",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.64%)",
+              "[2T] menos de 1.5 goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] más de 0.5 goles (93.79%)"
+            ],
+            "agregadas": [
+              "[2T] Barcelona: más de 0.5 goles (88.65%)",
+              "[2T] Barcelona: al menos 1 goles (88.65%)",
+              "[2T] más de 1.5 goles (76.53%)",
+              "[2T] al menos 2 goles (76.53%)",
+              "[1T] más de 0.5 goles (75.37%)",
+              "[1T] al menos 1 goles (75.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (80.67%)",
+              "[1T] al menos 1 goles (80.67%)",
+              "[2T] más de 0.5 goles (89.94%)",
+              "[2T] al menos 1 goles (89.94%)",
+              "[2T] Inter: más de 0.5 goles (75.09%)",
+              "[2T] Inter: al menos 1 goles (75.09%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f2c5227f05725c64",
+            "partido": "Lens vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.47%)",
+              "[2T] más de 0.5 goles (84.76%)",
+              "[2T] al menos 1 goles (84.76%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d3d45be6c72ec657",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (78.10%)",
+              "[1T] al menos 1 goles (78.10%)",
+              "[2T] al menos 1 goles (90.85%)",
+              "[2T] RB Leipzig: al menos 1 goles (77.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a29bd308cdbe8ccc",
+            "partido": "Viking vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (75.25%)",
+              "[1T] al menos 1 goles (75.25%)",
+              "[2T] más de 0.5 goles (81.98%)",
+              "[2T] al menos 1 goles (81.98%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.55%)",
+              "[2T] más de 0.5 goles (74.43%)",
+              "[2T] al menos 1 goles (74.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f0c3170eee55fb5c",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.64%)",
+              "[2T] menos de 1.5 goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6ada5cd1eba43a3e",
+            "partido": "Roma vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (73.37%)",
+              "[2T] al menos 1 goles (73.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::ee5cab1ef4c05c3e",
+            "partido": "Deportivo A Coruña vs Levante",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (71.63%)",
+              "[1T] al menos 1 goles (71.63%)",
+              "[2T] más de 0.5 goles (74.08%)",
+              "[2T] al menos 1 goles (74.08%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3d8f1069c9f32b4d",
+            "partido": "Espanyol vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (78.44%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::4e5a5d34ae883217",
+            "partido": "FC Gifu vs Vanraure Hachinohe",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (83.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (78.36%)",
+              "[2T] más de 0.5 goles (89.56%)",
+              "[2T] Barcelona: más de 0.5 goles (77.52%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 16,
+            "removidas": [
+              "[2T] Villarreal: más de 0.5 goles (75.83%)"
+            ],
+            "agregadas": [
+              "[1T] más de 0.5 goles (84.63%)",
+              "[2T] más de 0.5 goles (85.15%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (85.53%)",
+              "[1T] al menos 1 goles (85.53%)",
+              "[2T] más de 0.5 goles (89.00%)",
+              "[2T] al menos 1 goles (89.00%)",
+              "[1T] Barcelona: más de 0.5 goles (74.19%)",
+              "[1T] Barcelona: al menos 1 goles (74.19%)",
+              "[2T] Barcelona: más de 0.5 goles (74.47%)",
+              "[2T] Barcelona: al menos 1 goles (74.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (73.80%)",
+              "[2T] Brentford: más de 0.5 goles (71.75%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] Everton: más de 0.5 goles (84.69%)"
+            ],
+            "agregadas": [
+              "[FT] Everton: más de 0.5 goles (94.92%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::477b13731c13f085",
+            "partido": "FC Porto vs Hull City",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (78.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] más de 0.5 goles (89.11%)",
+              "[FT] Ipswich Town: menos de 6.5 córneres (92.95%)"
+            ],
+            "agregadas": [
+              "[2T] Manchester City: más de 0.5 goles (80.84%)",
+              "[1T] más de 0.5 goles (79.66%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[2T] Newcastle United: más de 0.5 goles (70.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (72.93%)",
+              "[2T] más de 0.5 goles (84.79%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62f014959843c34d",
+            "partido": "Valencia vs Athletic Club",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (79.63%)",
+              "[2T] más de 0.5 goles (70.34%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::19782b0411325c11",
+            "partido": "Real Madrid vs Sevilla",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (88.60%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7cf6c44047ba86eb",
+            "partido": "Getafe vs Rayo Vallecano",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (77.27%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::12e22edc4c5ca4f1",
+            "partido": "Parma vs Torino",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (77.67%)",
+              "[2T] menos de 1.5 goles (79.02%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6676e02e47888387",
+            "partido": "Tottenham Hotspur vs Coventry City",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (73.99%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7950e64d091122d0",
+            "partido": "FC Porto vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (83.79%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::264113ea1900872f",
+            "partido": "Fenerbahçe vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (73.04%)",
+              "[2T] más de 0.5 goles (77.44%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::881c46e4eb7f5c59",
+            "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (73.04%)",
+              "[2T] más de 0.5 goles (77.44%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::51e6914948c72987",
+            "partido": "Liverpool vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 16,
+            "n_despues": 16,
+            "removidas": [
+              "[2T] más de 0.5 goles (84.62%)"
+            ],
+            "agregadas": [
+              "[1T] más de 0.5 goles (77.20%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::41459cd49a14bd28",
+            "partido": "Paris Saint-Germain vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (79.19%)",
+              "[2T] más de 0.5 goles (89.25%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 14,
+            "removidas": [
+              "[1T] más de 0.5 goles (87.66%)"
+            ],
+            "agregadas": [
+              "[2T] más de 0.5 goles (84.55%)",
+              "[1T] Roma: más de 0.5 goles (81.10%)",
+              "[2T] Roma: más de 0.5 goles (74.94%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d7c180d368cfb593",
+            "partido": "Arsenal vs Everton",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (80.28%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a5380106704096e6",
+            "partido": "Aston Villa vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (76.05%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6b172f5b9a84a21a",
+            "partido": "Atlético Madrid vs Deportivo A Coruña",
+            "grupo": "archivado",
+            "n_antes": 14,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (76.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "grupo": "archivado",
+            "n_antes": 18,
+            "n_despues": 18,
+            "removidas": [
+              "[1T] Al menos un gol en el 1T (89.79%)",
+              "[FT] más de 1.5 goles (94.16%)"
+            ],
+            "agregadas": [
+              "[1T] Inter Miami CF: más de 0.5 goles (84.70%)",
+              "[1T] más de 0.5 goles (89.79%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b43800e3bc57516e",
+            "partido": "Real Sociedad vs Levante",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 12,
+            "removidas": [
+              "[2T] más de 0.5 goles (82.35%)"
+            ],
+            "agregadas": []
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 12,
+            "removidas": [
+              "[2T] Villarreal: más de 0.5 goles (70.70%)"
+            ],
+            "agregadas": []
+          },
+          {
+            "job_id": "ARCH::cb569ef3699dc8d3",
+            "partido": "Barcelona vs Deportivo Alavés",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[FT] 1X (Barcelona o empate) (89.19%)",
+              "[FT] Deportivo Alavés: menos de 2.5 goles (92.33%)"
+            ],
+            "agregadas": [
+              "[1T] más de 0.5 goles (82.93%)",
+              "[1T] Barcelona: más de 0.5 goles (75.08%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0ed8682238d4b1fc",
+            "partido": "AEK Athens vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (76.49%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (78.22%)",
+              "[1T] al menos 1 goles (78.22%)",
+              "[2T] al menos 1 goles (86.55%)",
+              "[2T] Bayern München: más de 0.5 goles (73.09%)",
+              "[2T] Bayern München: al menos 1 goles (73.09%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] más de 0.5 goles (91.82%)",
+              "[2T] Al menos un gol en el 2T (91.82%)"
+            ],
+            "agregadas": [
+              "[2T] Barcelona: más de 0.5 goles (85.56%)",
+              "[2T] Barcelona: al menos 1 goles (85.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (81.25%)",
+              "[1T] al menos 1 goles (81.25%)",
+              "[2T] más de 0.5 goles (86.14%)",
+              "[2T] al menos 1 goles (86.14%)",
+              "[1T] Barcelona: más de 0.5 goles (72.51%)",
+              "[1T] Barcelona: al menos 1 goles (72.51%)",
+              "[2T] Barcelona: más de 0.5 goles (71.59%)",
+              "[2T] Barcelona: al menos 1 goles (71.59%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2620e71a20445340",
+            "partido": "Bodø/Glimt vs Lille",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (71.17%)",
+              "[2T] más de 0.5 goles (81.84%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::50e4f9a99cf945ad",
+            "partido": "Bodø/Glimt vs Lillestrøm",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.43%)",
+              "[2T] más de 0.5 goles (71.93%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (77.68%)",
+              "[2T] Inter: más de 0.5 goles (77.47%)",
+              "[2T] Inter: al menos 1 goles (77.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (73.33%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d4d5425de071ba99",
+            "partido": "Shakhtar Donetsk vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (78.86%)",
+              "[2T] más de 0.5 goles (73.13%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (72.73%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[2T] Manchester City: más de 0.5 goles (77.53%)"
+            ]
+          }
+        ]
+      }
+    },
+    "pre_vs_ambos_arreglos": {
+      "n_partidos_evaluados": 73,
+      "n_partidos_lambda_cambiado": 0,
+      "top5": {
+        "n_partidos_top5_cambiado": 29,
+        "total_slots_diferentes": 55,
+        "total_lineas_top5_base": 248,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "grupo": "diseno",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Belgium (2T): +0.5 Goles (80.94%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Belgium (FT): Anota primero Belgium (76.56%)"
+            ],
+            "antes": [
+              "[FT] 1X2: Belgium Gana (FT) (81.70%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.85%)",
+              "[FT] Goles Belgium (2T): +0.5 Goles (80.94%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.78%)",
+              "[FT] Belgium Apuesta Sin Empate / DNB (FT) (81.70%)"
+            ],
+            "despues": [
+              "[FT] 1X2: Belgium Gana (FT) (81.70%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.85%)",
+              "[FT] Goles Belgium (FT): Anota primero Belgium (76.56%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.78%)",
+              "[FT] Belgium Apuesta Sin Empate / DNB (FT) (81.70%)"
+            ]
+          },
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 2,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 2T: -1.5 Goles (77.56%)",
+              "[FT] Goles 1T: -1.5 Goles (72.52%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)",
+              "[FT] Goles Chile (FT): -1.5 Goles (80.16%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)",
+              "[FT] Goles Chile (FT): -1.5 Goles (80.16%)",
+              "[FT] Goles 2T: -1.5 Goles (77.56%)",
+              "[FT] Goles 1T: -1.5 Goles (72.52%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2862cb894f5c4039",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)",
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Barcelona (FT): Anota primero Barcelona (74.44%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (88.65%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (89.58%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.69%)",
+              "[FT] Goles Barcelona (FT): Anota primero Barcelona (74.44%)",
+              "[FT] Córneres Totales (FT): -9.5 Córn. (70.66%)",
+              "[FT] 1X2: Barcelona Gana (FT) (77.88%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (89.58%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.69%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (88.65%)",
+              "[FT] Córneres Totales (FT): -9.5 Córn. (70.66%)",
+              "[FT] 1X2: Barcelona Gana (FT) (77.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Inter (2T): +0.5 Goles (75.09%)"
+            ],
+            "antes": [
+              "[FT] Goles Totales (FT): +2.5 Goles (74.55%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (72.56%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): +2.5 Goles (74.55%)",
+              "[FT] Goles Inter (2T): +0.5 Goles (75.09%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (72.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f2c5227f05725c64",
+            "partido": "Lens vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T) (75.47%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (84.76%)",
+              "[FT] Córneres Sporting CP (FT): -5.5 Córn. (83.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T) (75.47%)",
+              "[FT] Córneres Sporting CP (FT): -5.5 Córn. (83.87%)",
+              "[FT] Goles 2T: +0.5 Goles (84.76%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T) (75.55%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (74.43%)",
+              "[FT] Córneres Totales (FT): +8.5 Córn. (72.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T) (75.55%)",
+              "[FT] Córneres Totales (FT): +8.5 Córn. (72.87%)",
+              "[FT] Goles 2T: +0.5 Goles (74.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f0c3170eee55fb5c",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Boca Juniors o Empate (FT) (70.65%)",
+              "[FT] Goles 1T: -1.5 Goles (75.64%)",
+              "[FT] Goles 2T: -1.5 Goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::4e5a5d34ae883217",
+            "partido": "FC Gifu vs Vanraure Hachinohe",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 1T: -1.5 Goles (83.37%)"
+            ],
+            "antes": [
+              "[FT] Goles Vanraure Hachinohe (FT): -1.5 Goles (88.79%)",
+              "[FT] Córneres Vanraure Hachinohe (FT): -5.5 Córn. (79.00%)"
+            ],
+            "despues": [
+              "[FT] Goles Vanraure Hachinohe (FT): -1.5 Goles (88.79%)",
+              "[FT] Córneres Vanraure Hachinohe (FT): -5.5 Córn. (79.00%)",
+              "[FT] Goles 1T: -1.5 Goles (83.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (77.52%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (78.09%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.18%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Barcelona (FT) (78.09%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.18%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (77.52%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (74.47%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (81.32%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (76.12%)",
+              "[FT] Goles 2T: +0.5 Goles (89.00%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (73.93%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (81.32%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (76.12%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (74.47%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (73.93%)",
+              "[FT] Goles 2T: +0.5 Goles (89.00%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Brentford (FT): +0.5 Goles (84.62%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Brentford (2T): +0.5 Goles (71.75%)"
+            ],
+            "antes": [
+              "[FT] Goles Totales (FT): +1.5 Goles (87.29%)",
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (78.40%)",
+              "[FT] Goles Liverpool FC (FT): +0.5 Goles (81.92%)",
+              "[FT] Goles Brentford (FT): +0.5 Goles (84.62%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): +1.5 Goles (87.29%)",
+              "[FT] Goles Brentford (2T): +0.5 Goles (71.75%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (78.40%)",
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Goles Liverpool FC (FT): +0.5 Goles (81.92%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Everton (2T): +0.5 Goles (84.69%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Everton (FT): Anota primero Everton (71.80%)"
+            ],
+            "antes": [
+              "[FT] 1X2: Everton Gana (FT) (75.81%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (77.29%)",
+              "[FT] Goles Everton (2T): +0.5 Goles (84.69%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (76.49%)",
+              "[FT] Everton Apuesta Sin Empate / DNB (FT) (75.81%)"
+            ],
+            "despues": [
+              "[FT] 1X2: Everton Gana (FT) (75.81%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (77.29%)",
+              "[FT] Goles Everton (FT): Anota primero Everton (71.80%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (76.49%)",
+              "[FT] Everton Apuesta Sin Empate / DNB (FT) (75.81%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)",
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Totales (FT): +2.5 Goles (73.26%)",
+              "[FT] Goles Manchester City (2T): +0.5 Goles (80.84%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.99%)",
+              "[FT] Goles Manchester City (FT): Anota primero Manchester City (71.61%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Manchester City o Empate (FT) (88.19%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (73.26%)",
+              "[FT] Goles Manchester City (2T): +0.5 Goles (80.84%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.66%)",
+              "[FT] 1X2: Manchester City Gana (FT) (74.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Newcastle United (2T): +0.5 Goles (70.41%)"
+            ],
+            "antes": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.77%)",
+              "[FT] Córneres Aston Villa (FT): -6.5 Córn. (81.80%)"
+            ],
+            "despues": [
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (80.77%)",
+              "[FT] Goles Newcastle United (2T): +0.5 Goles (70.41%)",
+              "[FT] Córneres Aston Villa (FT): -6.5 Córn. (81.80%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62f014959843c34d",
+            "partido": "Valencia vs Athletic Club",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 4,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T) (79.63%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (70.34%)",
+              "[FT] Córneres Athletic Club (FT): +3.5 Córn. (83.21%)",
+              "[FT] Goles Athletic Club (FT): -1.5 Goles (72.84%)",
+              "[FT] Goles Valencia (FT): -1.5 Goles (72.47%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T) (79.63%)",
+              "[FT] Córneres Athletic Club (FT): +3.5 Córn. (83.21%)",
+              "[FT] Goles 2T: +0.5 Goles (70.34%)",
+              "[FT] Goles Athletic Club (FT): -1.5 Goles (72.84%)",
+              "[FT] Goles Valencia (FT): -1.5 Goles (72.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7cf6c44047ba86eb",
+            "partido": "Getafe vs Rayo Vallecano",
+            "grupo": "archivado",
+            "n_antes": 1,
+            "n_despues": 2,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (77.3%) (Duelo de estudio en 1T / Explosión en 2T) (77.27%)"
+            ],
+            "antes": [
+              "[FT] Córneres Totales (FT): -12.5 Córn. (78.66%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (77.3%) (Duelo de estudio en 1T / Explosión en 2T) (77.27%)",
+              "[FT] Córneres Totales (FT): -12.5 Córn. (78.66%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::12e22edc4c5ca4f1",
+            "partido": "Parma vs Torino",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles 2T: -1.5 Goles (79.02%)",
+              "[FT] Goles 1T: -1.5 Goles (77.67%)"
+            ],
+            "antes": [
+              "[FT] Goles Parma (FT): -1.5 Goles (79.43%)",
+              "[FT] Córneres Parma (FT): -6.5 Córn. (79.49%)"
+            ],
+            "despues": [
+              "[FT] Goles Parma (FT): -1.5 Goles (79.43%)",
+              "[FT] Córneres Parma (FT): -6.5 Córn. (79.49%)",
+              "[FT] Goles 2T: -1.5 Goles (79.02%)",
+              "[FT] Goles 1T: -1.5 Goles (77.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6676e02e47888387",
+            "partido": "Tottenham Hotspur vs Coventry City",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (74.0%) (Duelo de estudio en 1T / Explosión en 2T) (73.99%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Coventry City (FT) (71.89%)",
+              "[FT] Goles Tottenham Hotspur (FT): -1.5 Goles (78.34%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (77.78%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Coventry City (FT) (71.89%)",
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (74.0%) (Duelo de estudio en 1T / Explosión en 2T) (73.99%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (77.78%)",
+              "[FT] Goles Tottenham Hotspur (FT): -1.5 Goles (78.34%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Roma (FT): +1.5 Goles (80.81%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Roma (1T): +0.5 Goles (81.10%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Roma o Empate (FT) (91.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (74.12%)",
+              "[FT] Goles Roma (FT): +1.5 Goles (80.81%)",
+              "[FT] 1X2: Roma Gana (FT) (80.23%)",
+              "[FT] Roma Apuesta Sin Empate / DNB (FT) (80.23%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Roma o Empate (FT) (91.46%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (74.12%)",
+              "[FT] Goles Roma (1T): +0.5 Goles (81.10%)",
+              "[FT] 1X2: Roma Gana (FT) (80.23%)",
+              "[FT] Roma Apuesta Sin Empate / DNB (FT) (80.23%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 4,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Villarreal (2T): +0.5 Goles (70.70%)"
+            ],
+            "agregadas": [],
+            "antes": [
+              "[FT] Goles Totales (FT): -4.5 Goles (77.20%)",
+              "[FT] Goles 2T: +0.5 Goles (85.70%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.10%)",
+              "[FT] Tarjetas Totales (FT): -4.5 Tarj. (74.20%)",
+              "[FT] Goles Villarreal (2T): +0.5 Goles (70.70%)"
+            ],
+            "despues": [
+              "[FT] Goles Totales (FT): -4.5 Goles (77.20%)",
+              "[FT] Goles 2T: +0.5 Goles (85.70%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (80.10%)",
+              "[FT] Tarjetas Totales (FT): -4.5 Tarj. (74.20%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Bayern München (2T): +0.5 Goles (73.09%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Bayern München (FT) (78.23%)",
+              "[FT] Goles Totales (FT): -4.5 Goles (71.95%)",
+              "[FT] Goles 2T: +0.5 Goles (86.55%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Bayern München (FT) (78.23%)",
+              "[FT] Goles Totales (FT): -4.5 Goles (71.95%)",
+              "[FT] Goles 2T: +0.5 Goles (86.55%)",
+              "[FT] Goles Bayern München (2T): +0.5 Goles (73.09%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Barcelona (2T): +0.5 Goles (71.59%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (83.91%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (86.30%)",
+              "[FT] Goles 2T: +0.5 Goles (86.14%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.56%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Barcelona o Empate (FT) (83.91%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (86.30%)",
+              "[FT] Goles 2T: +0.5 Goles (86.14%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (84.56%)",
+              "[FT] Goles Barcelona (2T): +0.5 Goles (71.59%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::50e4f9a99cf945ad",
+            "partido": "Bodø/Glimt vs Lillestrøm",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.4%) (Duelo de estudio en 1T / Explosión en 2T) (75.43%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (71.93%)",
+              "[FT] Córneres Bodø/Glimt (FT): +3.5 Córn. (80.24%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.4%) (Duelo de estudio en 1T / Explosión en 2T) (75.43%)",
+              "[FT] Córneres Bodø/Glimt (FT): +3.5 Córn. (80.24%)",
+              "[FT] Goles 2T: +0.5 Goles (71.93%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Totales (FT): +1.5 Goles (88.48%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Inter (2T): +0.5 Goles (77.47%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Inter (FT) (73.01%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (72.64%)",
+              "[FT] Córneres Feyenoord (FT): +3.5 Córn. (72.18%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.28%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (88.48%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Inter (FT) (73.01%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (72.64%)",
+              "[FT] Goles Inter (2T): +0.5 Goles (77.47%)",
+              "[FT] Córneres Feyenoord (FT): +3.5 Córn. (72.18%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (70.28%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "slots_diferentes": 3,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (73.3%) (Duelo de estudio en 1T / Explosión en 2T) (73.33%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (76.15%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (79.34%)",
+              "[FT] Goles Galatasaray (FT): +0.5 Goles (73.87%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (73.3%) (Duelo de estudio en 1T / Explosión en 2T) (73.33%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (79.34%)",
+              "[FT] Goles 2T: +0.5 Goles (76.15%)",
+              "[FT] Goles Galatasaray (FT): +0.5 Goles (73.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d4d5425de071ba99",
+            "partido": "Shakhtar Donetsk vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T) (78.86%)"
+            ],
+            "antes": [
+              "[FT] Goles 2T: +0.5 Goles (73.13%)",
+              "[FT] Córneres Totales (FT): -8.5 Córn. (79.05%)"
+            ],
+            "despues": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T) (78.86%)",
+              "[FT] Córneres Totales (FT): -8.5 Córn. (79.05%)",
+              "[FT] Goles 2T: +0.5 Goles (73.13%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (72.7%) (Duelo de estudio en 1T / Explosión en 2T) (72.73%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (82.97%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (70.84%)",
+              "[FT] Goles 2T: +0.5 Goles (78.28%)",
+              "[FT] Córneres Manchester City (FT): +3.5 Córn. (71.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (82.97%)",
+              "[FT] Goles Totales (FT): +1.5 Goles (70.84%)",
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (72.7%) (Duelo de estudio en 1T / Explosión en 2T) (72.73%)",
+              "[FT] Córneres Manchester City (FT): +3.5 Córn. (71.67%)",
+              "[FT] Goles 2T: +0.5 Goles (78.28%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Manchester City (FT): +1.5 Goles (72.67%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Manchester City (2T): +0.5 Goles (77.53%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (83.45%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (71.14%)",
+              "[FT] Goles 2T: +0.5 Goles (87.92%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (70.42%)",
+              "[FT] Goles Manchester City (FT): +1.5 Goles (72.67%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad X2: Empate o Manchester City (FT) (83.45%)",
+              "[FT] Goles (FT): Gol en ambos tiempos (partido) (71.14%)",
+              "[FT] Goles Manchester City (2T): +0.5 Goles (77.53%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (70.42%)",
+              "[FT] Goles 2T: +0.5 Goles (87.92%)"
+            ]
+          }
+        ]
+      },
+      "seccion_1": {
+        "n_partidos_sec1_cambiado": 62,
+        "total_lineas_cambiadas_altas_bajas": 310,
+        "total_lineas_sec1_base": 671,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "grupo": "diseno",
+            "n_antes": 17,
+            "n_despues": 15,
+            "removidas": [
+              "[1T] más de 0.5 goles (90.30%)",
+              "[1T] Belgium: más de 0.5 goles (84.93%)",
+              "[2T] Belgium: más de 0.5 goles (80.94%)"
+            ],
+            "agregadas": [
+              "[2T] al menos 1 goles (89.53%)"
+            ]
+          },
+          {
+            "job_id": "DESIGN::IF",
+            "partido": "Italy vs France",
+            "grupo": "diseno",
+            "n_antes": 9,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (84.17%)",
+              "[2T] más de 0.5 goles (85.22%)",
+              "[2T] al menos 1 goles (85.22%)",
+              "[FT] France: al menos 1 goles (90.27%)"
+            ]
+          },
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 12,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (72.52%)",
+              "[2T] menos de 1.5 goles (77.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0511af5559314a12",
+            "partido": "Arsenal vs Lille",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (73.51%)",
+              "[2T] al menos 1 goles (73.51%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::26ddf6b82b37aeee",
+            "partido": "Atlético Madrid vs Manchester United",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (82.16%)",
+              "[1T] al menos 1 goles (82.16%)",
+              "[2T] más de 0.5 goles (77.61%)",
+              "[2T] al menos 1 goles (77.61%)",
+              "[FT] Atlético Madrid: al menos 1 goles (84.74%)",
+              "[FT] Manchester United: al menos 1 goles (73.82%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2862cb894f5c4039",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.64%)",
+              "[2T] menos de 1.5 goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] más de 0.5 goles (93.79%)",
+              "[FT] Barcelona: más de 0.5 goles (94.33%)",
+              "[2T] Al menos un gol en el 2T (93.79%)"
+            ],
+            "agregadas": [
+              "[2T] Barcelona: más de 0.5 goles (88.65%)",
+              "[2T] Barcelona: al menos 1 goles (88.65%)",
+              "[FT] al menos 3 goles (76.88%)",
+              "[FT] al menos 3 goles en el partido (76.88%)",
+              "[2T] más de 1.5 goles (76.53%)",
+              "[2T] al menos 2 goles (76.53%)",
+              "[1T] más de 0.5 goles (75.37%)",
+              "[1T] al menos 1 goles (75.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.59%)",
+              "[FT] al menos 3 goles (74.55%)",
+              "[1T] más de 0.5 goles (80.67%)",
+              "[1T] al menos 1 goles (80.67%)",
+              "[2T] más de 0.5 goles (89.94%)",
+              "[2T] al menos 1 goles (89.94%)",
+              "[2T] Inter: más de 0.5 goles (75.09%)",
+              "[2T] Inter: al menos 1 goles (75.09%)",
+              "[FT] al menos 3 goles en el partido (74.55%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f2c5227f05725c64",
+            "partido": "Lens vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.47%)",
+              "[2T] más de 0.5 goles (84.76%)",
+              "[2T] al menos 1 goles (84.76%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d3d45be6c72ec657",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 3 goles (73.97%)",
+              "[1T] más de 0.5 goles (78.10%)",
+              "[1T] al menos 1 goles (78.10%)",
+              "[2T] al menos 1 goles (90.85%)",
+              "[FT] RB Leipzig: al menos 1 goles (91.60%)",
+              "[2T] RB Leipzig: al menos 1 goles (77.56%)",
+              "[FT] al menos 3 goles en el partido (73.97%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::895402c59f17d314",
+            "partido": "Sabah FK vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.37%)",
+              "[FT] Sabah FK: al menos 1 goles (83.74%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a29bd308cdbe8ccc",
+            "partido": "Viking vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.95%)",
+              "[1T] más de 0.5 goles (75.25%)",
+              "[1T] al menos 1 goles (75.25%)",
+              "[2T] más de 0.5 goles (81.98%)",
+              "[2T] al menos 1 goles (81.98%)",
+              "[FT] Bayern München: al menos 1 goles (86.60%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.55%)",
+              "[2T] más de 0.5 goles (74.43%)",
+              "[2T] al menos 1 goles (74.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f0c3170eee55fb5c",
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 4,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.64%)",
+              "[2T] menos de 1.5 goles (71.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6ada5cd1eba43a3e",
+            "partido": "Roma vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[2T] más de 0.5 goles (73.37%)",
+              "[2T] al menos 1 goles (73.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::ee5cab1ef4c05c3e",
+            "partido": "Deportivo A Coruña vs Levante",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 17,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (73.03%)",
+              "[1T] más de 0.5 goles (71.63%)",
+              "[1T] al menos 1 goles (71.63%)",
+              "[2T] más de 0.5 goles (74.08%)",
+              "[2T] al menos 1 goles (74.08%)",
+              "[FT] Levante: al menos 1 goles (76.54%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3d8f1069c9f32b4d",
+            "partido": "Espanyol vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] menos de 6.5 tarjetas amarillas (95.08%)"
+            ],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (83.30%)",
+              "[2T] más de 0.5 goles (78.44%)",
+              "[2T] al menos 1 goles (78.44%)",
+              "[FT] al menos 2 goles (75.24%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::4e5a5d34ae883217",
+            "partido": "FC Gifu vs Vanraure Hachinohe",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (83.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 17,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.67%)",
+              "[FT] al menos 3 goles (72.95%)",
+              "[1T] más de 0.5 goles (78.36%)",
+              "[1T] al menos 1 goles (78.36%)",
+              "[2T] más de 0.5 goles (89.56%)",
+              "[2T] al menos 1 goles (89.56%)",
+              "[FT] Barcelona: al menos 1 goles (90.84%)",
+              "[2T] Barcelona: más de 0.5 goles (77.52%)",
+              "[2T] Barcelona: al menos 1 goles (77.52%)",
+              "[FT] al menos 3 goles en el partido (72.95%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] más de 2.5 goles (70.98%)",
+              "[2T] Villarreal: más de 0.5 goles (75.83%)",
+              "[FT] Elche: menos de 2.5 goles (91.97%)",
+              "[FT] Elche: menos de 6.5 córneres (89.50%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.99%)",
+              "[2T] más de 0.5 goles (85.15%)",
+              "[2T] al menos 1 goles (85.15%)",
+              "[1T] más de 0.5 goles (84.63%)",
+              "[1T] al menos 1 goles (84.63%)",
+              "[FT] Villarreal: al menos 2 goles (74.03%)",
+              "[1T] Villarreal: al menos 1 goles (74.33%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 18,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (91.22%)",
+              "[1T] más de 0.5 goles (85.53%)",
+              "[1T] al menos 1 goles (85.53%)",
+              "[2T] más de 0.5 goles (89.00%)",
+              "[2T] al menos 1 goles (89.00%)",
+              "[FT] Barcelona: al menos 1 goles (93.41%)",
+              "[1T] Barcelona: más de 0.5 goles (74.19%)",
+              "[1T] Barcelona: al menos 1 goles (74.19%)",
+              "[2T] Barcelona: más de 0.5 goles (74.47%)",
+              "[2T] Barcelona: al menos 1 goles (74.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 18,
+            "removidas": [
+              "[2T] Al menos un gol en el 2T (90.08%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (87.29%)",
+              "[FT] Brentford: al menos 1 goles (84.62%)",
+              "[FT] Liverpool FC: al menos 1 goles (81.92%)",
+              "[1T] más de 0.5 goles (73.80%)",
+              "[1T] al menos 1 goles (73.80%)",
+              "[FT] al menos 3 goles (70.05%)",
+              "[FT] al menos 3 goles en el partido (70.05%)",
+              "[2T] Brentford: más de 0.5 goles (71.75%)",
+              "[2T] Brentford: al menos 1 goles (71.75%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[2T] Everton: más de 0.5 goles (84.69%)",
+              "[2T] más de 0.5 goles (89.70%)",
+              "[FT] menos de 6.5 tarjetas amarillas (93.06%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 3 goles (77.29%)",
+              "[FT] al menos 3 goles en el partido (77.29%)",
+              "[FT] al menos 2 goles (90.90%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::477b13731c13f085",
+            "partido": "FC Porto vs Hull City",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (73.86%)",
+              "[2T] más de 0.5 goles (78.47%)",
+              "[2T] al menos 1 goles (78.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Anota primero Manchester City (71.61%)",
+              "[FT] Ipswich Town: menos de 4.5 córneres (71.29%)",
+              "[FT] Gol en ambos tiempos (partido) (70.99%)",
+              "[2T] Al menos un gol en el 2T (89.11%)",
+              "[2T] más de 0.5 goles (89.11%)",
+              "[FT] Ipswich Town: menos de 6.5 córneres (92.95%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.71%)",
+              "[2T] Manchester City: más de 0.5 goles (80.84%)",
+              "[2T] Manchester City: al menos 1 goles (80.84%)",
+              "[1T] más de 0.5 goles (79.66%)",
+              "[1T] al menos 1 goles (79.66%)",
+              "[FT] al menos 3 goles (73.26%)",
+              "[FT] al menos 3 goles en el partido (73.26%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 18,
+            "removidas": [],
+            "agregadas": [
+              "[1T] al menos 1 goles (89.61%)",
+              "[2T] al menos 1 goles (90.13%)",
+              "[FT] Newcastle United: al menos 1 goles (91.63%)",
+              "[2T] Newcastle United: más de 0.5 goles (70.41%)",
+              "[2T] Newcastle United: al menos 1 goles (70.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] menos de 6.5 tarjetas amarillas (94.09%)"
+            ],
+            "agregadas": [
+              "[FT] Borussia Dortmund: al menos 1 goles (86.69%)",
+              "[2T] más de 0.5 goles (84.79%)",
+              "[2T] al menos 1 goles (84.79%)",
+              "[FT] al menos 2 goles (81.08%)",
+              "[1T] más de 0.5 goles (72.93%)",
+              "[1T] al menos 1 goles (72.93%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62f014959843c34d",
+            "partido": "Valencia vs Athletic Club",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (79.63%)",
+              "[2T] más de 0.5 goles (70.34%)",
+              "[2T] al menos 1 goles (70.34%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::19782b0411325c11",
+            "partido": "Real Madrid vs Sevilla",
+            "grupo": "archivado",
+            "n_antes": 15,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Real Madrid: más de 0.5 goles (93.54%)"
+            ],
+            "agregadas": [
+              "[2T] más de 0.5 goles (88.60%)",
+              "[2T] al menos 1 goles (88.60%)",
+              "[2T] Real Madrid: al menos 1 goles (81.96%)",
+              "[FT] Real Madrid: al menos 2 goles (75.85%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7cf6c44047ba86eb",
+            "partido": "Getafe vs Rayo Vallecano",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (77.27%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3eca7f2cb903a922",
+            "partido": "Juventus Next Gen vs Renate",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[2T] al menos 1 goles (71.42%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::12e22edc4c5ca4f1",
+            "partido": "Parma vs Torino",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (77.67%)",
+              "[2T] menos de 1.5 goles (79.02%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6676e02e47888387",
+            "partido": "Tottenham Hotspur vs Coventry City",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (73.99%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7950e64d091122d0",
+            "partido": "FC Porto vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (82.96%)",
+              "[2T] más de 0.5 goles (83.79%)",
+              "[2T] al menos 1 goles (83.79%)",
+              "[FT] FC Porto: al menos 1 goles (84.89%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::264113ea1900872f",
+            "partido": "Fenerbahçe vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (73.04%)",
+              "[1T] al menos 1 goles (73.04%)",
+              "[2T] más de 0.5 goles (77.44%)",
+              "[2T] al menos 1 goles (77.44%)",
+              "[FT] Fenerbahçe: al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::881c46e4eb7f5c59",
+            "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (73.04%)",
+              "[1T] al menos 1 goles (73.04%)",
+              "[2T] más de 0.5 goles (77.44%)",
+              "[2T] al menos 1 goles (77.44%)",
+              "[FT] Fenerbahçe (W): al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::51e6914948c72987",
+            "partido": "Liverpool vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 16,
+            "n_despues": 18,
+            "removidas": [
+              "[2T] más de 0.5 goles (84.62%)",
+              "[FT] menos de 4.5 tarjetas amarillas (71.95%)",
+              "[FT] menos de 6.5 tarjetas amarillas (93.23%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (83.85%)",
+              "[FT] Liverpool: al menos 1 goles (81.11%)",
+              "[FT] Villarreal: al menos 1 goles (77.70%)",
+              "[1T] más de 0.5 goles (77.20%)",
+              "[1T] al menos 1 goles (77.20%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0592cec465480956",
+            "partido": "Manchester City vs AEK Athens",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.18%)",
+              "[2T] al menos 1 goles (87.59%)",
+              "[FT] Manchester City: al menos 1 goles (94.50%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6ea309941d8da82a",
+            "partido": "Napoli vs Bodø/Glimt",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (77.30%)",
+              "[FT] Napoli: al menos 1 goles (81.36%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::41459cd49a14bd28",
+            "partido": "Paris Saint-Germain vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.17%)",
+              "[FT] al menos 3 goles (73.12%)",
+              "[1T] más de 0.5 goles (79.19%)",
+              "[1T] al menos 1 goles (79.19%)",
+              "[2T] más de 0.5 goles (89.25%)",
+              "[2T] al menos 1 goles (89.25%)",
+              "[FT] Barcelona: al menos 1 goles (87.63%)",
+              "[FT] al menos 3 goles en el partido (73.12%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 18,
+            "removidas": [
+              "[1T] más de 0.5 goles (87.66%)",
+              "[FT] Roma: más de 0.5 goles (95.26%)"
+            ],
+            "agregadas": [
+              "[2T] más de 0.5 goles (84.55%)",
+              "[2T] al menos 1 goles (84.55%)",
+              "[FT] Roma: al menos 2 goles (80.81%)",
+              "[1T] Roma: más de 0.5 goles (81.10%)",
+              "[1T] Roma: al menos 1 goles (81.10%)",
+              "[2T] Roma: más de 0.5 goles (74.94%)",
+              "[2T] Roma: al menos 1 goles (74.94%)",
+              "[FT] al menos 2 goles (90.05%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::031ff13d60700ffb",
+            "partido": "VfB Stuttgart vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 11,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (82.87%)",
+              "[FT] VfB Stuttgart: al menos 1 goles (75.59%)",
+              "[FT] Atlético Madrid: al menos 1 goles (83.47%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d7c180d368cfb593",
+            "partido": "Arsenal vs Everton",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.47%)",
+              "[2T] más de 0.5 goles (80.28%)",
+              "[2T] al menos 1 goles (80.28%)",
+              "[FT] Arsenal: al menos 1 goles (85.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a5380106704096e6",
+            "partido": "Aston Villa vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.13%)",
+              "[1T] más de 0.5 goles (76.05%)",
+              "[1T] al menos 1 goles (76.05%)",
+              "[2T] al menos 1 goles (87.14%)",
+              "[FT] Aston Villa: al menos 1 goles (83.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6b172f5b9a84a21a",
+            "partido": "Atlético Madrid vs Deportivo A Coruña",
+            "grupo": "archivado",
+            "n_antes": 14,
+            "n_despues": 18,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.58%)",
+              "[2T] más de 0.5 goles (76.47%)",
+              "[2T] al menos 1 goles (76.47%)",
+              "[FT] Atlético Madrid: al menos 1 goles (89.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "grupo": "archivado",
+            "n_antes": 18,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Inter Miami CF: al menos 3 goles (73.75%)",
+              "[FT] New Zealand: menos de 1.5 goles (71.73%)",
+              "[FT] 1T 2 / FT 2 - 2 (70.40%)",
+              "[FT] New Zealand: menos de 2.5 goles (91.03%)",
+              "[1T] Al menos un gol en el 1T (89.79%)",
+              "[FT] más de 1.5 goles (94.16%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 3 goles (85.73%)",
+              "[FT] al menos 3 goles en el partido (85.73%)",
+              "[1T] Inter Miami CF: más de 0.5 goles (84.70%)",
+              "[1T] Inter Miami CF: al menos 1 goles (84.70%)",
+              "[FT] al menos 4 goles (72.53%)",
+              "[FT] al menos 4 goles en el partido (72.53%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b43800e3bc57516e",
+            "partido": "Real Sociedad vs Levante",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 14,
+            "removidas": [
+              "[2T] más de 0.5 goles (82.35%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (77.84%)",
+              "[FT] Levante: al menos 1 goles (81.73%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 13,
+            "removidas": [
+              "[2T] Villarreal: más de 0.5 goles (70.70%)"
+            ],
+            "agregadas": [
+              "[2T] al menos 1 goles (85.70%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::cb569ef3699dc8d3",
+            "partido": "Barcelona vs Deportivo Alavés",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 18,
+            "removidas": [
+              "[FT] Anota primero Barcelona (72.72%)",
+              "[FT] Gol en ambos tiempos (partido) (72.28%)",
+              "[FT] 1X (Barcelona o empate) (89.19%)",
+              "[FT] Deportivo Alavés: menos de 2.5 goles (92.33%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.81%)",
+              "[2T] al menos 1 goles (87.16%)",
+              "[1T] más de 0.5 goles (82.93%)",
+              "[1T] al menos 1 goles (82.93%)",
+              "[FT] Barcelona: al menos 2 goles (77.56%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0ed8682238d4b1fc",
+            "partido": "AEK Athens vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[1T] más de 0.5 goles (76.49%)",
+              "[1T] al menos 1 goles (76.49%)",
+              "[FT] Real Madrid: al menos 1 goles (85.19%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2c876ea9da4f14ae",
+            "partido": "Atlético Madrid vs 1860 München",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (88.23%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.20%)",
+              "[1T] más de 0.5 goles (78.22%)",
+              "[1T] al menos 1 goles (78.22%)",
+              "[2T] al menos 1 goles (86.55%)",
+              "[FT] Bayern München: al menos 1 goles (89.35%)",
+              "[2T] Bayern München: más de 0.5 goles (73.09%)",
+              "[2T] Bayern München: al menos 1 goles (73.09%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 17,
+            "n_despues": 17,
+            "removidas": [
+              "[FT] Barcelona: más de 1.5 goles (92.17%)",
+              "[2T] más de 0.5 goles (91.82%)",
+              "[2T] Al menos un gol en el 2T (91.82%)"
+            ],
+            "agregadas": [
+              "[2T] Barcelona: más de 0.5 goles (85.56%)",
+              "[2T] Barcelona: al menos 1 goles (85.56%)",
+              "[FT] Barcelona: al menos 3 goles (78.89%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.30%)",
+              "[1T] más de 0.5 goles (81.25%)",
+              "[1T] al menos 1 goles (81.25%)",
+              "[2T] más de 0.5 goles (86.14%)",
+              "[2T] al menos 1 goles (86.14%)",
+              "[FT] Barcelona: al menos 1 goles (91.22%)",
+              "[1T] Barcelona: más de 0.5 goles (72.51%)",
+              "[1T] Barcelona: al menos 1 goles (72.51%)",
+              "[2T] Barcelona: más de 0.5 goles (71.59%)",
+              "[2T] Barcelona: al menos 1 goles (71.59%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2620e71a20445340",
+            "partido": "Bodø/Glimt vs Lille",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.83%)",
+              "[1T] más de 0.5 goles (71.17%)",
+              "[1T] al menos 1 goles (71.17%)",
+              "[2T] más de 0.5 goles (81.84%)",
+              "[2T] al menos 1 goles (81.84%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::50e4f9a99cf945ad",
+            "partido": "Bodø/Glimt vs Lillestrøm",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.43%)",
+              "[2T] más de 0.5 goles (71.93%)",
+              "[2T] al menos 1 goles (71.93%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::c2744c4d701a91e9",
+            "partido": "Borussia Dortmund vs Real Betis",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 14,
+            "removidas": [],
+            "agregadas": [
+              "[2T] al menos 1 goles (86.49%)",
+              "[FT] Borussia Dortmund: al menos 1 goles (84.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.48%)",
+              "[FT] al menos 3 goles (72.64%)",
+              "[1T] más de 0.5 goles (77.68%)",
+              "[1T] al menos 1 goles (77.68%)",
+              "[2T] al menos 1 goles (90.46%)",
+              "[2T] Inter: más de 0.5 goles (77.47%)",
+              "[2T] Inter: al menos 1 goles (77.47%)",
+              "[FT] al menos 3 goles en el partido (72.64%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (73.33%)",
+              "[FT] Galatasaray: al menos 1 goles (73.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d4d5425de071ba99",
+            "partido": "Shakhtar Donetsk vs Sporting CP",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (78.86%)",
+              "[2T] más de 0.5 goles (73.13%)",
+              "[2T] al menos 1 goles (73.13%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (70.84%)",
+              "[1T] menos de 1.5 goles (72.73%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.36%)",
+              "[2T] al menos 1 goles (87.92%)",
+              "[FT] Manchester City: al menos 1 goles (92.35%)",
+              "[FT] Manchester City: al menos 2 goles (72.67%)",
+              "[2T] Manchester City: más de 0.5 goles (77.53%)",
+              "[2T] Manchester City: al menos 1 goles (77.53%)"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "AB_con_banderas": {
+    "pre_vs_ambos_arreglos": {
+      "n_partidos_evaluados": 73,
+      "n_partidos_lambda_cambiado": 0,
+      "top5": {
+        "n_partidos_top5_cambiado": 4,
+        "total_slots_diferentes": 6,
+        "total_lineas_top5_base": 140,
+        "detalle_partidos": [
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 1,
+            "n_despues": 3,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.7%) (Duelo de estudio en 1T / Explosión en 2T) (75.71%)",
+              "[FT] Goles 2T: -1.5 Goles (74.38%)"
+            ],
+            "antes": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)"
+            ],
+            "despues": [
+              "[FT] Doble Oportunidad 1X: Colombia o Empate (FT) (72.77%)",
+              "[FT] 1ra Mitad : Menos de 1.5 Goles (75.7%) (Duelo de estudio en 1T / Explosión en 2T) (75.71%)",
+              "[FT] Goles 2T: -1.5 Goles (74.38%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 5,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Villarreal (FT): +1.5 Goles (73.69%)"
+            ],
+            "agregadas": [
+              "[FT] Goles Totales (FT): +2.5 Goles (70.67%)"
+            ],
+            "antes": [
+              "[FT] 1X2: Villarreal Gana (FT) (72.87%)",
+              "[FT] Villarreal Apuesta Sin Empate / DNB (FT) (72.87%)",
+              "[FT] Córneres Totales (FT): -11.5 Córn. (79.20%)",
+              "[FT] Goles Villarreal (FT): Anota primero Villarreal (71.70%)",
+              "[FT] Goles Villarreal (FT): +1.5 Goles (73.69%)"
+            ],
+            "despues": [
+              "[FT] 1X2: Villarreal Gana (FT) (72.87%)",
+              "[FT] Villarreal Apuesta Sin Empate / DNB (FT) (72.87%)",
+              "[FT] Córneres Totales (FT): -11.5 Córn. (79.20%)",
+              "[FT] Goles Villarreal (FT): Anota primero Villarreal (71.70%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (70.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "slots_diferentes": 1,
+            "solo_reordenamiento": false,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Goles Totales (FT): +2.5 Goles (70.05%)"
+            ],
+            "antes": [
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.26%)"
+            ],
+            "despues": [
+              "[FT] Goles Liverpool FC (FT): -2.5 Goles (75.46%)",
+              "[FT] Córneres Totales (FT): +7.5 Córn. (74.26%)",
+              "[FT] Goles Totales (FT): +2.5 Goles (70.05%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 2,
+            "slots_diferentes": 2,
+            "solo_reordenamiento": false,
+            "removidas": [
+              "[FT] Goles Inter Miami CF (FT): +2.5 Goles (73.75%)"
+            ],
+            "agregadas": [],
+            "antes": [
+              "[FT] Goles New Zealand (FT): -1.5 Goles (73.20%)",
+              "[FT] Goles Inter Miami CF (FT): +2.5 Goles (73.75%)",
+              "[FT] Goles Totales (FT): +3.5 Goles (71.99%)"
+            ],
+            "despues": [
+              "[FT] Goles New Zealand (FT): -1.5 Goles (73.20%)",
+              "[FT] Goles Totales (FT): +3.5 Goles (71.99%)"
+            ]
+          }
+        ]
+      },
+      "seccion_1": {
+        "n_partidos_sec1_cambiado": 45,
+        "total_lineas_cambiadas_altas_bajas": 104,
+        "total_lineas_sec1_base": 488,
+        "detalle_partidos": [
+          {
+            "job_id": "DESIGN::IF",
+            "partido": "Italy vs France",
+            "grupo": "diseno",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.94%)"
+            ]
+          },
+          {
+            "job_id": "AUDIT::COL_CHI",
+            "partido": "Colombia vs Chile",
+            "grupo": "auditoria",
+            "n_antes": 13,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[1T] menos de 1.5 goles (75.71%)",
+              "[2T] menos de 1.5 goles (74.38%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::26ddf6b82b37aeee",
+            "partido": "Atlético Madrid vs Manchester United",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (84.74%)",
+              "[FT] Manchester United: al menos 1 goles (73.82%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.85%)",
+              "[FT] Barcelona: al menos 1 goles (93.45%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.61%)",
+              "[FT] al menos 3 goles (74.58%)",
+              "[FT] al menos 3 goles en el partido (74.58%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d3d45be6c72ec657",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 3 goles (73.97%)",
+              "[FT] RB Leipzig: al menos 1 goles (91.60%)",
+              "[FT] al menos 3 goles en el partido (73.97%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::895402c59f17d314",
+            "partido": "Sabah FK vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.11%)",
+              "[FT] Sabah FK: al menos 1 goles (83.46%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a29bd308cdbe8ccc",
+            "partido": "Viking vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.95%)",
+              "[FT] Bayern München: al menos 1 goles (86.60%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Villarreal: al menos 1 goles (71.35%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3d8f1069c9f32b4d",
+            "partido": "Espanyol vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 14,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (77.46%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (88.03%)",
+              "[FT] al menos 3 goles (71.79%)",
+              "[FT] Barcelona: al menos 1 goles (89.97%)",
+              "[FT] al menos 3 goles en el partido (71.79%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 16,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.82%)",
+              "[FT] al menos 3 goles (70.67%)",
+              "[FT] Villarreal: al menos 2 goles (73.69%)",
+              "[FT] al menos 3 goles en el partido (70.67%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1c2c1d4ec8a33580",
+            "partido": "Barcelona vs Real Madrid",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (91.22%)",
+              "[FT] Barcelona: al menos 1 goles (93.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::177d446a97606f01",
+            "partido": "Brentford vs Liverpool FC",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (87.29%)",
+              "[FT] al menos 3 goles (70.05%)",
+              "[FT] Brentford: al menos 1 goles (84.62%)",
+              "[FT] Liverpool FC: al menos 1 goles (81.92%)",
+              "[FT] al menos 3 goles en el partido (70.05%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 17,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (91.05%)",
+              "[FT] al menos 3 goles (77.57%)",
+              "[FT] Everton: al menos 1 goles (95.21%)",
+              "[FT] al menos 3 goles en el partido (77.57%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::477b13731c13f085",
+            "partido": "FC Porto vs Hull City",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (73.86%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (82.81%)",
+              "[FT] Manchester City: al menos 1 goles (89.46%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 3 goles (82.29%)",
+              "[FT] Newcastle United: al menos 1 goles (91.87%)",
+              "[FT] al menos 3 goles en el partido (82.29%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (81.08%)",
+              "[FT] Borussia Dortmund: al menos 1 goles (86.69%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::19782b0411325c11",
+            "partido": "Real Madrid vs Sevilla",
+            "grupo": "archivado",
+            "n_antes": 13,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.88%)",
+              "[FT] Real Madrid: al menos 1 goles (89.97%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::7950e64d091122d0",
+            "partido": "FC Porto vs PSV Eindhoven",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (80.77%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::264113ea1900872f",
+            "partido": "Fenerbahçe vs Slavia Prague",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (76.80%)",
+              "[FT] Fenerbahçe: al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::881c46e4eb7f5c59",
+            "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (76.80%)",
+              "[FT] Fenerbahçe (W): al menos 1 goles (80.41%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::51e6914948c72987",
+            "partido": "Liverpool vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 15,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (83.85%)",
+              "[FT] Liverpool: al menos 1 goles (81.11%)",
+              "[FT] Villarreal: al menos 1 goles (77.70%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::0592cec465480956",
+            "partido": "Manchester City vs AEK Athens",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 13,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (85.63%)",
+              "[FT] Manchester City: al menos 1 goles (91.71%)",
+              "[FT] Manchester City: al menos 2 goles (71.06%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6ea309941d8da82a",
+            "partido": "Napoli vs Bodø/Glimt",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (76.45%)",
+              "[FT] Napoli: al menos 1 goles (81.36%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::41459cd49a14bd28",
+            "partido": "Paris Saint-Germain vs Barcelona",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (89.17%)",
+              "[FT] al menos 3 goles (73.12%)",
+              "[FT] Barcelona: al menos 1 goles (87.63%)",
+              "[FT] al menos 3 goles en el partido (73.12%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (90.92%)",
+              "[FT] Roma: al menos 1 goles (95.26%)",
+              "[FT] Roma: al menos 2 goles (80.81%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::031ff13d60700ffb",
+            "partido": "VfB Stuttgart vs Atlético Madrid",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.85%)",
+              "[FT] VfB Stuttgart: al menos 1 goles (76.07%)",
+              "[FT] Atlético Madrid: al menos 1 goles (77.69%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d7c180d368cfb593",
+            "partido": "Arsenal vs Everton",
+            "grupo": "archivado",
+            "n_antes": 7,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (78.47%)",
+              "[FT] Arsenal: al menos 1 goles (85.63%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::a5380106704096e6",
+            "partido": "Aston Villa vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 5,
+            "n_despues": 7,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.23%)",
+              "[FT] Aston Villa: al menos 1 goles (83.80%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6b172f5b9a84a21a",
+            "partido": "Atlético Madrid vs Deportivo A Coruña",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 11,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (85.04%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "grupo": "archivado",
+            "n_antes": 12,
+            "n_despues": 17,
+            "removidas": [
+              "[FT] Inter Miami CF: al menos 3 goles (73.75%)"
+            ],
+            "agregadas": [
+              "[FT] al menos 2 goles (93.98%)",
+              "[FT] al menos 3 goles (85.38%)",
+              "[FT] al menos 4 goles (71.99%)",
+              "[FT] Inter Miami CF: al menos 1 goles (96.56%)",
+              "[FT] al menos 3 goles en el partido (85.38%)",
+              "[FT] al menos 4 goles en el partido (71.99%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::b43800e3bc57516e",
+            "partido": "Real Sociedad vs Levante",
+            "grupo": "archivado",
+            "n_antes": 10,
+            "n_despues": 12,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (72.61%)",
+              "[FT] Levante: al menos 1 goles (75.83%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 8,
+            "n_despues": 9,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (79.14%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::cb569ef3699dc8d3",
+            "partido": "Barcelona vs Deportivo Alavés",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (83.48%)",
+              "[FT] Barcelona: al menos 1 goles (90.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2c876ea9da4f14ae",
+            "partido": "Atlético Madrid vs 1860 München",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Atlético Madrid: al menos 1 goles (87.88%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 5,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Bayern München: al menos 1 goles (86.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "grupo": "archivado",
+            "n_antes": 14,
+            "n_despues": 18,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 3 goles (88.27%)",
+              "[FT] al menos 3 goles en el partido (88.27%)",
+              "[FT] Barcelona: al menos 2 goles (91.31%)",
+              "[FT] al menos 2 goles (96.04%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2b74db0247ae9a33",
+            "partido": "Barcelona vs Villarreal",
+            "grupo": "archivado",
+            "n_antes": 4,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (86.30%)",
+              "[FT] Barcelona: al menos 1 goles (91.22%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::2620e71a20445340",
+            "partido": "Bodø/Glimt vs Lille",
+            "grupo": "archivado",
+            "n_antes": 2,
+            "n_despues": 3,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (77.37%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::c2744c4d701a91e9",
+            "partido": "Borussia Dortmund vs Real Betis",
+            "grupo": "archivado",
+            "n_antes": 9,
+            "n_despues": 10,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Borussia Dortmund: al menos 1 goles (84.43%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 6,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (87.14%)",
+              "[FT] al menos 3 goles (70.23%)",
+              "[FT] al menos 3 goles en el partido (70.23%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::beacf9541def6a9a",
+            "partido": "Galatasaray vs VfB Stuttgart",
+            "grupo": "archivado",
+            "n_antes": 3,
+            "n_despues": 4,
+            "removidas": [],
+            "agregadas": [
+              "[FT] Galatasaray: al menos 1 goles (73.87%)"
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "grupo": "archivado",
+            "n_antes": 6,
+            "n_despues": 8,
+            "removidas": [],
+            "agregadas": [
+              "[FT] al menos 2 goles (83.88%)",
+              "[FT] Manchester City: al menos 1 goles (88.00%)"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
