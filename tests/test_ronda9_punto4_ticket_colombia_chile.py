@@ -57,8 +57,9 @@ def test_ronda9_punto4_conciliacion_1x2_y_brecha_con_signo():
     assert l_1x["frec_empirica_matrices_pct"] == 93.3
     assert l_1x["brecha_empirica_con_signo_pp"] == 20.5
     assert l_1x["desvio_abs_pp"] == 20.5
-    assert "+20.5 pp" in str(l_1x["filtro_quito_top5"])
-    assert "Sensibilidad 9 escenarios" in str(l_1x["filtro_quito_seccion1"])
+    # Tras Ronda 10 Punto 7 (brecha con signo), 1X NO se veta por calibración al estar por debajo de lo observado
+    assert l_1x["en_seccion1"] is True
+    assert "Desvío de calibración observada" not in str(l_1x["filtro_quito_top5"] or "")
 
     # 4. Explicación de por qué Chile Menos de 1.5 (80.2%) es #1 en soloA y no salía en A+B
     exp_chile = res["explicacion_chile_menos_15_top1"]
@@ -71,7 +72,8 @@ def test_ronda9_punto4_conciliacion_1x2_y_brecha_con_signo():
 
     # 5. Ticket regenerado en texto y PNG
     assert "Goles Chile (FT): -1.5 Goles — 80.2%" in res["ticket_soloA_texto"]
-    assert "🏆 TOP" not in res["ticket_AB_texto"]
+    # Tras Ronda 10 Punto 7 (frecuencia 1T real 85.7% vs 75.7%), 1T Menos de 1.5 entra al Top en A+B
+    assert "1T" in res["ticket_AB_texto"] and "1.5" in res["ticket_AB_texto"]
     for k, ruta in res["rutas_png"].items():
         assert os.path.exists(ruta), f"Falta PNG {k}: {ruta}"
 

@@ -75,32 +75,31 @@ def test_ronda8_punto5_colombia_chile_completo():
     assert abs(p5c["prob_1x_matriz_pct"] - 72.8) <= 0.1
 
     lineas_ab = {x["etiqueta"]: x for x in p5c["lineas_70_A_mas_B"]}
+    # En Ronda 10 Punto 7 se corrige VETO 1X (brecha con signo) y frecuencia 1T real:
+    # 1X (72.8% < 93.3%, brecha -20.5 pp) ya no recibe veto por calibración y entra a Sección 1;
+    # 1T Menos de 1.5 (75.7% vs 85.7% real en 1T) entra a Sección 1 y Top 5 en A+B.
     assert "1X (Colombia o empate)" in lineas_ab
     info_1x = lineas_ab["1X (Colombia o empate)"]
     assert abs(info_1x["prob_pct"] - 72.8) <= 0.1
-    assert info_1x["en_seccion1"] is False
-    assert info_1x["en_top5"] is False
-    assert "Sensibilidad 9 escenarios" in (info_1x["filtro_quito_seccion1"] or "")
-    assert "Desvío de calibración observada > 10.0 pp" in (info_1x["filtro_quito_top5"] or "")
+    assert info_1x["en_seccion1"] is True
+    assert info_1x["en_top5"] is True
 
     assert "1T Menos de 1.5 goles" in lineas_ab
     info_u15_1t = lineas_ab["1T Menos de 1.5 goles"]
     assert abs(info_u15_1t["prob_pct"] - 75.7) <= 0.2
-    assert info_u15_1t["en_seccion1"] is False
-    assert info_u15_1t["en_top5"] is False
-    assert "Sensibilidad 9 escenarios" in (info_u15_1t["filtro_quito_seccion1"] or "")
-    assert "Desvío de calibración observada > 10.0 pp" in (info_u15_1t["filtro_quito_top5"] or "")
+    assert info_u15_1t["en_seccion1"] is True
+    assert info_u15_1t["en_top5"] is True
 
     # El veredicto sin Top 5 usa exactamente 72.8% (y nunca 72.0% por el antiguo -4.5 pp)
     assert "72.8%" in p5c["veredicto_sin_top_c1"]
     assert "72.0% (Base Matriz Poisson: 72.8%)" not in p5c["veredicto_sin_top_c1"]
-    # Y cuando usa el Top #1 (80.2%), usa la misma cifra en ambos lados
-    assert "80.2% (Base Matriz Poisson: 80.2%)" in p5c["veredicto_con_top_c1"]
+    # Y cuando usa el Top #1 (ahora 1X al 72.8% tras corregir VETO 1X en Ronda 10), usa la misma cifra en ambos lados
+    assert "72.8% (Base Matriz Poisson: 72.8%)" in p5c["veredicto_con_top_c1"]
 
-    # Y la fila HÁNDICAP / 1X2 / DC de Sección 1 no se contamina con el puesto #1 de Goles Por Equipo
+    # Y la fila HÁNDICAP / 1X2 / DC de Sección 1 refleja 1X (Colombia o X) validada por brecha con signo
     pildoras_hc = p5c["fila_handicap_1x2_dc_sec1"].get("pildoras") or []
-    assert len(pildoras_hc) == 1
-    assert "Sin líneas validadas" in pildoras_hc[0]["lbl"]
+    assert len(pildoras_hc) >= 1
+    assert "1X" in pildoras_hc[0]["lbl"]
 
     # ── 5(d): Cuadro C de Chile: 9 GF y 11 GC según mitades, no 7 y 9; evaluables reales ──
     p5d = res["punto_5d_cuadro_c_chile"]

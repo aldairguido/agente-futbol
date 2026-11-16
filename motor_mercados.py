@@ -4711,6 +4711,7 @@ def calcular_frecuencia_observada(
     ev = str(_v(sel, "evento") or "").lower()
     et = str(_v(sel, "etiqueta") or "").lower()
     mkt = str(_v(sel, "mercado") or "").lower()
+    per = str(_v(sel, "periodo", "FT") or "FT").strip().upper()
     eq = str(_v(sel, "equipo") or "").strip()
     lin_raw = _v(sel, "linea", None)
     lin = None
@@ -4731,6 +4732,20 @@ def calcular_frecuencia_observada(
             m = p.get("marcador", {}) or {}
             gf = m.get("equipo")
             gc = m.get("rival")
+            gf_per, gc_per = gf, gc
+            if per in ("1T", "2T"):
+                p_per = (p.get("periodos", {}) or {}).get(per, {}) or {}
+                m_per = p_per.get("marcador") or {}
+                if m_per.get("equipo") is not None and m_per.get("rival") is not None:
+                    gf_per, gc_per = m_per.get("equipo"), m_per.get("rival")
+                else:
+                    fg = p.get("franjas_goles") or {}
+                    claves_mitad = ("00_15", "16_30", "31_45") if per == "1T" else ("46_60", "61_75", "76_90")
+                    if fg and all(isinstance(fg.get(k), dict) for k in claves_mitad):
+                        gf_per = sum(float(fg[k].get("anotados", 0) or 0) for k in claves_mitad)
+                        gc_per = sum(float(fg[k].get("recibidos", 0) or 0) for k in claves_mitad)
+                    else:
+                        gf_per, gc_per = None, None
             cf, cr, tf, tr = None, None, None, None
             filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
             for f in filas:
@@ -4740,7 +4755,7 @@ def calcular_frecuencia_observada(
                 elif f.get("clave") in ("tarjetas_amarillas", "tarjetas"):
                     tf = f.get("equipo")
                     tr = f.get("rival")
-            res.append({"gf": gf, "gc": gc, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
+            res.append({"gf": gf, "gc": gc, "gf_per": gf_per, "gc_per": gc_per, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
         return res
 
     pts_l = _extraer_pts(doc_local)
@@ -4790,22 +4805,26 @@ def calcular_frecuencia_observada(
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
 
-    # 3. Goles totales
+    # 3. Goles totales (respetando periodo 1T/2T si sel.periodo es mitad)
     if ("total" in mkt or "goles" in mkt) and not eq_norm and not any(k in ev for k in ("local", "visita")) and lin is not None:
-        valid = [float(p["gf"] + p["gc"]) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+        valid = [
+            float(p["gf_per"] + p["gc_per"])
+            for p in (pts_l + pts_v)
+            if p.get("gf_per") is not None and p.get("gc_per") is not None
+        ]
         if not valid:
             return None
         return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
 
-    # 4. Goles por equipo
+    # 4. Goles por equipo (respetando periodo 1T/2T)
     if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
         if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
-            valid = [float(p["gf"]) for p in pts_l if p.get("gf") is not None]
+            valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
             if not valid:
                 return None
             return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
         elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
-            valid = [float(p["gf"]) for p in pts_v if p.get("gf") is not None]
+            valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
             if not valid:
                 return None
             return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
@@ -4859,6 +4878,21 @@ def tiene_desvio_excesivo_calibracion(
     obs_1d = round(float(f_obs) * 100.0, 1)
     mod_1d = round(float(p_modelo) * 100.0, 1)
     desvio_pts = round(abs(obs_1d - mod_1d), 1)
+    mkt_dc = str(_v(sel, "id_mercado", "") or "").lower()
+    mkt_nom_dc = str(_v(sel, "mercado", "") or "").lower()
+    ev_dc = str(_v(sel, "evento", "") or "").lower()
+    et_dc = str(_v(sel, "etiqueta", "") or "").lower()
+    es_doble_op = (
+        "doble_oportunidad" in mkt_dc
+        or "doble oportunidad" in mkt_nom_dc
+        or any(k in ev_dc for k in ("dc_1x", "dc_x2", "dc_12"))
+        or ev_dc in ("1x", "x2", "12")
+        or any(et_dc.startswith(k) for k in ("1x", "x2", "12"))
+    )
+    if es_doble_op:
+        # VETO 1X/DC con brecha con signo: solo se veta si el modelo supera lo observado en > max_desvio (10.0 pp)
+        brecha_modelo_sobre_obs = round((p_modelo - f_obs) * 100.0, 2)
+        return (brecha_modelo_sobre_obs > max_desvio), desvio_pts, f_obs
     desvio_raw = round(abs(p_modelo - f_obs) * 100.0, 2)
     return (desvio_raw > max_desvio), desvio_pts, f_obs
 

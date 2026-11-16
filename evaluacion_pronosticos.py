@@ -5311,7 +5311,12 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
             en_sec1 = (est == "mantiene" and estimable) or (etq in sec1_etqs)
             en_top5 = (etq in top5_etqs) or any(
                 abs(round(prob * 100.0, 1) - p_t) < 1e-6
-                and (("Chile" in etq and "Chile" in t_t and "1.5" in etq and "-1.5" in t_t) or etq.lower() in t_t.lower())
+                and (
+                    ("Chile" in etq and "Chile" in t_t and "1.5" in etq and "-1.5" in t_t)
+                    or ("1x" in etq.lower() and "1x" in t_t.lower())
+                    or ("1.5" in etq and "-1.5" in t_t and ("1t" in etq.lower() or "1t" in t_t.lower()))
+                    or etq.lower() in t_t.lower()
+                )
                 for p_t, t_t in top5_probs_tags
             )
             filtros_sec1 = []
@@ -6091,6 +6096,12 @@ def auditar_punto_5c_colombia_chile_ronda9(regenerar_png: bool = False) -> dict[
     info_chile_u15_a = next((x for x in lineas_a if "Chile: menos de 1.5 goles" == str(x.get("etiqueta"))), {})
     info_chile_u15_ab = next((x for x in lineas_ab if "Chile: menos de 1.5 goles" == str(x.get("etiqueta"))), {})
 
+    item_chile_u15_top_a = next(
+        (x for x in (top5_a or []) if "chile" in str(x.get("etiqueta", "")).lower() and "1.5" in str(x.get("etiqueta", ""))),
+        None,
+    )
+    prob_ch_u15 = float(item_chile_u15_top_a["probabilidad"]) if item_chile_u15_top_a else 0.801586
+
     return {
         "ticket_soloA_texto": an_a.mensaje,
         "ticket_AB_texto": an_ab.mensaje,
@@ -6126,9 +6137,9 @@ def auditar_punto_5c_colombia_chile_ronda9(regenerar_png: bool = False) -> dict[
         },
         "explicacion_chile_menos_15_top1": {
             "etiqueta_top1_soloA": top5_a[0]["etiqueta"] if top5_a else None,
-            "prob_pct": 80.2,
-            "prob_exacta": round(float(top5_a[0]["probabilidad"]), 6) if top5_a else 0.801586,
-            "cuota_justa_exacta": round(1.0 / float(top5_a[0]["probabilidad"]), 4) if top5_a else 1.2475,
+            "prob_pct": round(prob_ch_u15 * 100.0, 1),
+            "prob_exacta": round(prob_ch_u15, 6),
+            "cuota_justa_exacta": round(1.0 / prob_ch_u15, 4),
             "frec_empirica_chile_15p_pct": 86.7,
             "brecha_empirica_con_signo_pp": 6.5,
             "en_top5_soloA": bool(info_chile_u15_a.get("en_top5", True)),
@@ -7489,7 +7500,123 @@ def resumen_tope_dcn_18_ronda10(*, regenerar: bool = False) -> dict[str, Any]:
     return res
 
 
+def auditar_veto_1x_y_frec_1t_ronda10() -> dict[str, Any]:
+    """
+    Ronda 10 Punto 7:
+      1. Verifica que VETO 1X (`tiene_desvio_excesivo_calibracion` sobre Doble Oportunidad)
+         use brecha con signo (`modelo - observado > 10.0 pp`), de modo que Colombia-Chile 1X
+         (72.8% modelo < 93.3% observado, brecha -20.5 pp) NO se veta por calibración,
+         mientras un modelo sobreconfiado (ej. 71.7% > 40.0%, +31.7 pp) SÍ se veta.
+      2. Reproduce la frecuencia 46.7% (14/30) atribuida anteriormente a "1T Menos de 1.5"
+         demostrando su origen en evaluar goles FT < 1.5 (7/15 Colombia + 7/15 Chile = 14/30),
+         frente a las frecuencias reales en 1T desde franjas_goles y mitades de Cuadro C
+         (11/14 Colombia = 78.6% / 12/15 = 80.0% y 6/9 Chile = 66.7%, más 12/13 Chile con franjas -> 24/28 = 85.7%).
+    """
+    from pathlib import Path
+    from auditoria_historica import reconstruir_marcador_mitades_partido
+    from decision_cobertura import banderas_comportamiento as _bc_p7
+    from motor_mercados import Parametros as _Par_p7, Seleccion, analizar as _an_p7, calcular_frecuencia_observada, tiene_desvio_excesivo_calibracion
 
+    raiz = Path(__file__).resolve().parent
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
 
+    # 1. Prueba VETO 1X con brecha con signo
+    s_1x_col_chi = Seleccion("doble_oportunidad", "Doble oportunidad", "dc_1x", "1X (Colombia o empate)", "FT", "", None, 0.728)
+    excede_cc, desv_cc, f_obs_cc = tiene_desvio_excesivo_calibracion(s_1x_col_chi, doc_col, doc_chi, "Colombia", "Chile")
 
+    doc_sobre_l = {"partidos": [{"marcador": {"equipo": 1, "rival": 0}}] * 6 + [{"marcador": {"equipo": 0, "rival": 1}}] * 9}
+    doc_sobre_v = {"partidos": [{"marcador": {"equipo": 0, "rival": 1}}] * 15}
+    s_1x_sobre = Seleccion("doble_oportunidad", "Doble oportunidad", "dc_1x", "1X (Sobreconfiado)", "FT", "", None, 0.717)
+    excede_sc, desv_sc, f_obs_sc = tiene_desvio_excesivo_calibracion(s_1x_sobre, doc_sobre_l, doc_sobre_v, "Local", "Visita")
 
+    # 2. Reproducción exacta de 46.7% (FT < 1.5) vs 1T real
+    pts_col = (doc_col.get("partidos") or [])[:15]
+    pts_chi = (doc_chi.get("partidos") or [])[:15]
+
+    ft_u15_col = sum(1 for p in pts_col if (p.get("marcador") or {}).get("equipo") is not None and (p["marcador"]["equipo"] + p["marcador"]["rival"]) < 1.5)
+    ft_u15_chi = sum(1 for p in pts_chi if (p.get("marcador") or {}).get("equipo") is not None and (p["marcador"]["equipo"] + p["marcador"]["rival"]) < 1.5)
+
+    fg_eval_col, fg_u15_col = 0, 0
+    for p in pts_col:
+        fg = p.get("franjas_goles") or {}
+        if fg and all(isinstance(fg.get(k), dict) for k in ("00_15", "16_30", "31_45")):
+            fg_eval_col += 1
+            if sum((fg[k].get("anotados", 0) or 0) + (fg[k].get("recibidos", 0) or 0) for k in ("00_15", "16_30", "31_45")) < 1.5:
+                fg_u15_col += 1
+    fg_eval_chi, fg_u15_chi = 0, 0
+    for p in pts_chi:
+        fg = p.get("franjas_goles") or {}
+        if fg and all(isinstance(fg.get(k), dict) for k in ("00_15", "16_30", "31_45")):
+            fg_eval_chi += 1
+            if sum((fg[k].get("anotados", 0) or 0) + (fg[k].get("recibidos", 0) or 0) for k in ("00_15", "16_30", "31_45")) < 1.5:
+                fg_u15_chi += 1
+
+    col_mit_eval, col_mit_u15 = 0, 0
+    for p in pts_col:
+        ge1, gr1, _, _, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+        if ok_m and ge1 is not None and gr1 is not None:
+            col_mit_eval += 1
+            if (ge1 + gr1) < 1.5:
+                col_mit_u15 += 1
+
+    chi_mit_eval, chi_mit_u15 = 0, 0
+    for p in pts_chi:
+        ge1, gr1, _, _, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+        if ok_m and ge1 is not None and gr1 is not None:
+            chi_mit_eval += 1
+            if (ge1 + gr1) < 1.5:
+                chi_mit_u15 += 1
+
+    _pr_p7 = _Par_p7()
+    _pr_p7.competicion = "Eliminatorias CONMEBOL"
+    with _bc_p7(activar_todas=True):
+        _an1t = _an_p7(doc_col, doc_chi, "Colombia", "Chile", condicion_local="casa", condicion_visitante="fuera", parametros=_pr_p7)
+    _sel_1t = next(
+        s for rm in _an1t.mercados for s in rm.selecciones
+        if s.periodo == "1T" and s.evento == "under_1.5"
+    )
+    f_obs_1t_corregida = calcular_frecuencia_observada(_sel_1t, doc_col, doc_chi, "Colombia", "Chile")
+    excede_1t_ab, desv_1t_ab, _ = tiene_desvio_excesivo_calibracion(_sel_1t, doc_col, doc_chi, "Colombia", "Chile")
+
+    return {
+        "veto_1x_brecha_con_signo": {
+            "colombia_chile_1x": {
+                "modelo_pct": 72.8,
+                "observado_pct": round(float(f_obs_cc) * 100.0, 1) if f_obs_cc is not None else None,
+                "brecha_modelo_menos_obs_pp": round((0.728 - float(f_obs_cc)) * 100.0, 1) if f_obs_cc is not None else None,
+                "excede_desvio_vetado": bool(excede_cc),
+                "desvio_abs_pp": desv_cc,
+            },
+            "caso_sobreconfiado_prueba": {
+                "modelo_pct": 71.7,
+                "observado_pct": round(float(f_obs_sc) * 100.0, 1) if f_obs_sc is not None else None,
+                "brecha_modelo_menos_obs_pp": round((0.717 - float(f_obs_sc)) * 100.0, 1) if f_obs_sc is not None else None,
+                "excede_desvio_vetado": bool(excede_sc),
+                "desvio_abs_pp": desv_sc,
+            },
+        },
+        "origen_46_7_vs_real_1t": {
+            "reproduccion_46_7_bug_ft_ignora_periodo_1t": {
+                "colombia_ft_u15": f"{ft_u15_col}/15",
+                "chile_ft_u15": f"{ft_u15_chi}/15",
+                "combinado": f"{ft_u15_col + ft_u15_chi}/30",
+                "frecuencia_pct": round((ft_u15_col + ft_u15_chi) * 100.0 / 30.0, 1),
+                "explicacion": "calcular_frecuencia_observada ignoraba sel.periodo=='1T' y sumaba goles FT (gf+gc < 1.5): 7/15 Colombia + 7/15 Chile = 14/30 = 46.7%.",
+            },
+            "frecuencia_1t_desde_franjas_goles": {
+                "colombia": f"{fg_u15_col}/{fg_eval_col} ({round(fg_u15_col*100.0/fg_eval_col, 1)}%)",
+                "chile_con_franjas": f"{fg_u15_chi}/{fg_eval_chi} ({round(fg_u15_chi*100.0/fg_eval_chi, 1)}%)",
+                "combinado_28p": f"{fg_u15_col + fg_u15_chi}/{fg_eval_col + fg_eval_chi} ({round((fg_u15_col + fg_u15_chi)*100.0/(fg_eval_col + fg_eval_chi), 1)}%)",
+            },
+            "frecuencia_1t_cuadro_c_mitades": {
+                "colombia_sin_m14_0_0_inferido": f"{col_mit_u15}/{col_mit_eval} ({round(col_mit_u15*100.0/max(1,col_mit_eval), 1)}%)",
+                "chile_9_mitades_cuadro_c": f"{chi_mit_u15}/{chi_mit_eval} ({round(chi_mit_u15*100.0/max(1,chi_mit_eval), 1)}%)",
+                "combinado_mitades": f"{col_mit_u15 + chi_mit_u15}/{col_mit_eval + chi_mit_eval} ({round((col_mit_u15 + chi_mit_u15)*100.0/max(1, col_mit_eval + chi_mit_eval), 1)}%)",
+            },
+            "prob_modelo_1t_u15_AB_pct": round(float(_sel_1t.probabilidad) * 100.0, 2),
+            "frecuencia_1t_corregida_en_motor_pct": round(float(f_obs_1t_corregida) * 100.0, 1) if f_obs_1t_corregida is not None else None,
+            "veto_calibracion_1t_u15_75_7_en_AB": bool(excede_1t_ab),
+            "desvio_1t_u15_75_7_vs_obs_pp": desv_1t_ab,
+        },
+    }
