@@ -6953,3 +6953,117 @@ def auditar_arch_vs_reconstruccion_ronda10(
     return resultado
 
 
+def auditar_evidencia_corners_nb_ronda10(
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 10 Punto 3: Separa la evidencia de córneres Binomial Negativa (factor 1.05,
+    bandera `usar_sobredispersion_nb_corners`) en:
+      (a) Partidos de ajuste (los 24 partidos OOS de `evaluacion_9393a7b9017a5365.json` del
+          2026-10-18 + TB/IF del 2026-11-12, todos anteriores a `9593ba6` 2026-11-13T04:16:01);
+      (b) Partidos OOS posteriores competitivos (`>= 2026-11-13T04:16:01-05:00`, excluyendo
+          amistosos marcados con `entra_calibracion=False`).
+    Si no hay partidos posteriores, lo declara explícitamente con métricas `None` y mantiene
+    `usar_sobredispersion_nb_corners = False` como regla operativa en muestra sin validación OOS.
+    """
+    from pathlib import Path
+    from decision_cobertura import bandera_activa, BANDERAS_COMPORTAMIENTO_DEFECTO
+
+    raiz = Path(__file__).resolve().parent
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1376 = [
+        r for r in oos["filas_1506"]
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    filas_corners = [
+        r for r in filas_1376
+        if _macro_familia_ronda8(str(r.get("mercado") or "")) == "Córneres"
+    ]
+    verif = verificar_no_inversion_etiquetas_modelos(filas_1376)
+
+    tuplas_corners = [
+        (
+            str(r.get("id_partido") or r.get("partido")),
+            int(r["evento_ocurrio"]),
+            {
+                "arch": float(r["probs"]["arch"]),
+                "5e8425f": float(r["probs"]["5e8425f"]),
+                "soloA": float(r["probs"]["soloA"]),
+                "994209a": float(r["probs"]["994209a"]),
+                "A+B": float(r["probs"]["A+B"]),
+            },
+        )
+        for r in filas_corners
+    ]
+    stats_corners = bootstrap_brier_logloss_por_partido(tuplas_corners, n_boot=n_boot, seed=seed)
+
+    # Revisar ledger_oos y archivos informes/evaluacion por partidos posteriores competitivos
+    corte_norm = _normalizar_fecha_iso_comparacion(FECHA_FIJACION_UMBRALES_BLOQUE3_ISO)
+    partidos_post: list[dict[str, Any]] = []
+    amistosos_post_excluidos: list[dict[str, Any]] = []
+    ruta_ledger = raiz / "informes" / "evaluacion" / "ledger_oos.jsonl"
+    if ruta_ledger.exists():
+        for linea in ruta_ledger.read_text(encoding="utf-8").splitlines():
+            s = linea.strip()
+            if not s:
+                continue
+            try:
+                reg = json.loads(s)
+            except Exception:
+                continue
+            ts_norm = _normalizar_fecha_iso_comparacion(
+                str(reg.get("liquidado_en") or reg.get("registrado_en") or reg.get("fecha_partido") or "")
+            )
+            es_amistoso = (
+                str(reg.get("tipo_partido") or "").strip().lower() == "amistoso"
+                or reg.get("entra_calibracion") is False
+                or reg.get("entra_promedios") is False
+            )
+            if ts_norm and ts_norm >= corte_norm:
+                if es_amistoso:
+                    amistosos_post_excluidos.append({
+                        "partido": reg.get("partido"),
+                        "fecha_partido": reg.get("fecha_partido"),
+                        "tipo_partido": reg.get("tipo_partido"),
+                    })
+                elif not es_partido_de_diseno(reg.get("partido"), reg.get("id_partido")):
+                    partidos_post.append(reg)
+
+    n_post = len(partidos_post)
+    d_ll_corners = stats_corners["diferencias"]["A+B - soloA"]["d_log_loss"]
+    aporte_sobre_1376 = round(len(filas_corners) * d_ll_corners / len(filas_1376), 6) if filas_1376 else None
+
+    return {
+        "bandera": "usar_sobredispersion_nb_corners",
+        "valor_por_defecto": bool(BANDERAS_COMPORTAMIENTO_DEFECTO.get("usar_sobredispersion_nb_corners", False)),
+        "activo_en_runtime": bool(bandera_activa("usar_sobredispersion_nb_corners")),
+        "estado_regla": "regla operativa en muestra sin validación OOS",
+        "fecha_calibracion_commit": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+        "commit_calibracion": COMMIT_FIJACION_UMBRALES_BLOQUE3,
+        "partidos_de_ajuste_en_muestra": {
+            "fuente_json": "informes/evaluacion/evaluacion_9393a7b9017a5365.json (y espejo de conciliación Ronda 9 `n=1376`)",
+            "fecha_generacion_json": "2026-10-18T01:19:18 / evaluacion 2026-10-18",
+            "incluye_diseno_previo": ["Turkey vs Belgium (2026-11-12)", "Italy vs France (2026-11-12)"],
+            "n_partidos_unicos_corners_oos": stats_corners["n_partidos_unicos"],
+            "n_filas_corners_totales": len(filas_corners),
+            "n_filas_corners_cambiadas": verif["pares_verificados"]["A+B vs soloA"]["n_cambiadas"],
+            "metricas_corners_en_muestra": stats_corners,
+            "aporte_a_diferencia_global_1376_log_loss": aporte_sobre_1376,
+        },
+        "partidos_oos_posteriores": {
+            "corte_iso": FECHA_FIJACION_UMBRALES_BLOQUE3_ISO,
+            "estado": "sin_partidos_oos_posteriores" if n_post == 0 else "evaluado",
+            "n_partidos_posteriores": n_post,
+            "n_filas_posteriores": 0 if n_post == 0 else None,
+            "partidos": partidos_post,
+            "amistosos_excluidos": amistosos_post_excluidos,
+            "brier": None if n_post == 0 else None,
+            "log_loss": None if n_post == 0 else None,
+            "ic95": None if n_post == 0 else None,
+        },
+    }
+
+
+
