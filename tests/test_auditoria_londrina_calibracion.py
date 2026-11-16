@@ -157,7 +157,20 @@ def test_4_veredicto_duelo_parejo_cuando_prob_menor_50():
         cuadro_c_loc={"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 2}, "recibidos": {"76'-90'": 1}},
         cuadro_c_vis={"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 1}, "recibidos": {"76'-90'": 2}},
     )
-    assert "1. Duelo parejo / Ligera ventaja para Londrina (o empate):" in veredicto
+    assert "1. Ligera ventaja para Londrina (o empate):" in veredicto
+    assert "Duelo parejo" not in veredicto
+    veredicto_parejo = mi.generar_veredicto_tactico_partido(
+        nombre_local="Londrina",
+        nombre_visita="Náutico",
+        patrones_loc={"xg": 1.10},
+        patrones_vis={"xg": 1.05},
+        probs={"local": 0.36, "empate": 0.34, "visita": 0.30},
+        cuadro_b_loc={"victorias": 3, "sin_derrotas": 9, "n_partidos": 15},
+        cuadro_b_vis={"victorias": 3, "sin_derrotas": 9, "n_partidos": 15},
+        cuadro_c_loc={"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 2}, "recibidos": {"76'-90'": 1}},
+        cuadro_c_vis={"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 1}, "recibidos": {"76'-90'": 2}},
+    )
+    assert "1. Duelo parejo / Ligera ventaja para Londrina (o empate):" in veredicto_parejo
     assert "1. El Londrina va a ganar" not in veredicto
 
 

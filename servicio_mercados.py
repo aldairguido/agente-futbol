@@ -2172,7 +2172,7 @@ def renderizar_ticket_mercados_png(
         y_c = _dibujar_seccion(
             y_inicio=y_c,
             titulo_sec="SECCIÓN 1: ALTA PROBABILIDAD",
-            subtitulo_sec="Mercados que superan el umbral cuantitativo en el modelo central y bajo estrés.",
+            subtitulo_sec=("Mercados que superan el umbral cuantitativo en el modelo central y bajo estrés." if total_pills_sec1 > 0 else "Sin mercados que superan el umbral cuantitativo (>=70%) en el modelo central y bajo estrés."),
             conteo_txt=cnt1_txt,
             datos_sec=sec1_data,
             c_banner_bg=C_SEC1_BANNER_BG,

@@ -2491,9 +2491,38 @@ def generar_cuadro_visual_partido(
             ax_sec1.text(x_pill + p_w / 2.0, y_c - 0.055, p_txt, ha="center", va="center", fontsize=7.2, fontweight="bold", color="#1B5E20", transform=ax_sec1.transAxes)
             x_pill += p_w + 0.012
 
+    import re as _re_ver
+    _m_jopt = _re_ver.search(r"\((\d+(?:\.\d+)?)%\)", str((info_clusters or {}).get("jugada_optima") or ""))
+    _prob_jopt = float(_m_jopt.group(1)) if _m_jopt else None
+    _probs_render = []
+    for _cat_r in sec1_organizada[:5]:
+        for _pil_r in (_cat_r.get("pildoras") or [])[:4]:
+            _m_pr = _re_ver.search(r"(\d+(?:\.\d+)?)%", str(_pil_r.get("pct") or ""))
+            if _m_pr:
+                _probs_render.append(float(_m_pr.group(1)))
+    _todas_sobre_70 = (
+        total_validadas_cnt > 0
+        and (_prob_jopt is None or _prob_jopt >= 70.0)
+        and all(pv >= 70.0 for pv in _probs_render)
+    )
+    if _todas_sobre_70:
+        _txt_pie_cuadro = (
+            "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en una red de factores con pesos fijos y el Doble ADN.  ·  "
+            + __import__("utilidades_seguridad").obtener_sello_build()
+        )
+    elif _prob_jopt is not None and _prob_jopt < 70.0:
+        _txt_pie_cuadro = (
+            f"Verificación Cuantitativa: Red de factores con pesos fijos y Doble ADN. Nota: Jugada Óptima ({_prob_jopt:.1f}%) < 70.0% (no clasificada como mercado validado >= 70%).  ·  "
+            + __import__("utilidades_seguridad").obtener_sello_build()
+        )
+    else:
+        _txt_pie_cuadro = (
+            "Verificación Cuantitativa: Red de factores con pesos fijos y Doble ADN (sin mercados validados >= 70% con probabilidad confirmada).  ·  "
+            + __import__("utilidades_seguridad").obtener_sello_build()
+        )
     fig.text(
         0.50, 0.008,
-        "Verificación Cuantitativa: Todos los mercados validados superan el 70% matemático basado en una red de factores con pesos fijos y el Doble ADN.  ·  " + __import__("utilidades_seguridad").obtener_sello_build(),
+        _txt_pie_cuadro,
         ha="center", fontsize=8.0, color="#64748B", style="italic"
     )
 

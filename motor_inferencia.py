@@ -1256,7 +1256,7 @@ def generar_veredicto_tactico_partido(
     for k_u, k_lbl in pares_franjas:
         a_l = _get_c(cuadro_c_loc, k_u, k_lbl, "anotados")
         r_v = _get_c(cuadro_c_vis, k_u, k_lbl, "recibidos")
-        flujo_l = a_l + r_v + (2 if k_u == "76_90" else 0)
+        flujo_l = a_l + r_v + (2 if (k_u == "76_90" and (a_l + r_v) > 0) else 0)
         if flujo_l > mejor_flujo:
             mejor_flujo = flujo_l
             mejor_tramo_lbl = k_lbl
@@ -1267,7 +1267,7 @@ def generar_veredicto_tactico_partido(
 
         a_v = _get_c(cuadro_c_vis, k_u, k_lbl, "anotados")
         r_l = _get_c(cuadro_c_loc, k_u, k_lbl, "recibidos")
-        flujo_v = a_v + r_l + (2 if k_u == "76_90" else 0)
+        flujo_v = a_v + r_l + (2 if (k_u == "76_90" and (a_v + r_l) > 0) else 0)
         if flujo_v > mejor_flujo:
             mejor_flujo = flujo_v
             mejor_tramo_lbl = k_lbl
@@ -1379,11 +1379,13 @@ def generar_veredicto_tactico_partido(
         or (obtener_seleccion_nacional and (obtener_seleccion_nacional(eq_fav) is not None or obtener_seleccion_nacional(eq_riv) is not None))
     )
     art_fav = "" if es_sel_fav else "El "
-    c1_tit = (
-        f"1. {art_fav}{eq_fav} va a ganar (o mínimo empatar):"
-        if p_fav_max >= 0.50
-        else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
-    )
+    diff_1x2_pp = abs(p_loc - p_vis) * 100.0
+    if p_fav_max >= 0.50:
+        c1_tit = f"1. {art_fav}{eq_fav} va a ganar (o mínimo empatar):"
+    elif diff_1x2_pp >= 10.0:
+        c1_tit = f"1. Ligera ventaja para {eq_fav} (o empate):"
+    else:
+        c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
     if es_under:
@@ -1427,11 +1429,22 @@ def generar_veredicto_tactico_partido(
             f"2. Cronología de goles: Cobertura de minutos insuficiente ({k_eval_ver}/15 partidos con cronología "
             f"verificada). No se proyecta alerta en tramos específicos por prudencia estadística hasta contar con datos completos."
         )
-    else:
+    elif (goles_anot_tramo + goles_rec_tramo) <= 0 or (mejor_tramo_lbl == "76'-90'" and flujo_76_90 <= 0):
+        c2 = (
+            f"2. Cronología de goles: Sin concentración relevante de goles en los tramos recientes "
+            f"(tramo 76'-90': {flujo_76_90} goles combinados anotados/recibidos)."
+        )
+    elif mejor_tramo_lbl == "76'-90'" and goles_anot_tramo > 0 and flujo_76_90 > 0:
         c2 = (
             f"2. Cuidado con los goles de {eq_peligro_tramo} al final: El Cuadro C (Timeline) revela un dato letal: "
             f"{eq_peligro_tramo} ha anotado {goles_anot_tramo} goles en el tramo {mejor_tramo_lbl}, y {riv_tramo} ha "
             f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
+        )
+    else:
+        c2 = (
+            f"2. Tramo de mayor volumen goleador ({mejor_tramo_lbl}): El Cuadro C (Timeline) muestra que "
+            f"{eq_peligro_tramo} anotó {goles_anot_tramo} goles y {riv_tramo} recibió {goles_rec_tramo} goles "
+            f"en la franja {mejor_tramo_lbl} (flujo 76'-90': {flujo_76_90} goles combinados)."
         )
 
     etq_muestra = str(patrones_loc.get("_muestra_etiqueta") or patrones_vis.get("_muestra_etiqueta") or "15P general")
@@ -1473,10 +1486,13 @@ def generar_veredicto_tactico_partido(
                 f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
         else:
+            _txt_flujo_final = (
+                f"Sumado al flujo del tramo 76'-90' ({flujo_76_90} goles combinados)"
+                if flujo_76_90 > 0 else "Flujo 76'-90': 0 goles combinados"
+            )
             c4 = (
                 f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
-                f"{etq_vol_2t} y {txt_p26}). Sumado al flujo del tramo 76'-90' "
-                f"({flujo_76_90} goles combinados), es una selección con respaldo estadístico."
+                f"{etq_vol_2t} y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
             )
     from decision_cobertura import bandera_activa as _ba_mi_mp
     mp_ver = None
@@ -1660,3 +1676,117 @@ def generar_informe_narrativo_xai(
         selecciones_sec1=selecciones_sec1,
         motor=motor,
     )
+
+
+def verificar_coherencia_texto_cifras_ticket(
+    texto: str,
+    *,
+    p_local: Optional[float] = None,
+    p_visita: Optional[float] = None,
+    cuadro_c_loc: Optional[Dict[str, Any]] = None,
+    cuadro_c_vis: Optional[Dict[str, Any]] = None,
+    flujo_76_90: Optional[int] = None,
+    jugada_optima_pct: Optional[float] = None,
+    total_validadas: Optional[int] = None,
+    probs_validadas: Optional[List[float]] = None,
+    requerir_n_en_adn: bool = False,
+    bloquear: bool = False,
+) -> Dict[str, Any]:
+    """
+    Ronda 9 Punto 6(E): Verificación automática texto vs cifras del ticket/veredicto/cuadro.
+    Detecta y bloquea contradicciones:
+      1. «duelo parejo» con diferencia |P(1)-P(2)| >= 10 pp
+      2. goles «al final» cuando el tramo 76'-90' suma 0 goles
+      3. «todos los mercados validados superan 70%» cuando jugada óptima < 70%,
+         cuando no hay validadas o alguna línea validada es < 70%
+      4. sección «ADN del Enfrentamiento» sin tamaños de muestra n por métrica
+    """
+    import re as _re_coh
+
+    txt = str(texto or "")
+    txt_low = txt.lower()
+    contradicciones: List[Dict[str, Any]] = []
+
+    # 1) Duelo parejo vs brecha 1X2 >= 10 pp
+    diff_pp: Optional[float] = None
+    if p_local is not None and p_visita is not None:
+        pl_p = float(p_local) * 100.0 if max(float(p_local), float(p_visita)) <= 1.0 else float(p_local)
+        pv_p = float(p_visita) * 100.0 if max(float(p_local), float(p_visita)) <= 1.0 else float(p_visita)
+        diff_pp = round(abs(pl_p - pv_p), 2)
+        if "duelo parejo" in txt_low and diff_pp >= 10.0:
+            contradicciones.append({
+                "codigo": "duelo_parejo_con_brecha_mayor_10pp",
+                "detalle": f"El texto afirma 'duelo parejo' pero |P(1)-P(2)| = {diff_pp:.1f} pp (>= 10 pp).",
+            })
+
+    # 2) Goles "al final" cuando 76'-90' == 0
+    def _g76(cc: Optional[Dict[str, Any]], campo: str) -> int:
+        if not isinstance(cc, dict):
+            return 0
+        if campo in cc and isinstance(cc[campo], dict):
+            for k in ("76'-90'", "76_90"):
+                if k in cc[campo]:
+                    return int(cc[campo][k] or 0)
+        for k in ("76_90", "76'-90'"):
+            if isinstance(cc.get(k), dict):
+                return int(cc[k].get(campo, 0) or 0)
+            if isinstance(cc.get("franjas"), dict) and isinstance(cc["franjas"].get(k), dict):
+                return int(cc["franjas"][k].get(campo, 0) or 0)
+        return 0
+
+    g76_calc = flujo_76_90
+    if g76_calc is None and (cuadro_c_loc is not None or cuadro_c_vis is not None):
+        g76_calc = (
+            _g76(cuadro_c_loc, "anotados") + _g76(cuadro_c_vis, "recibidos")
+            + _g76(cuadro_c_vis, "anotados") + _g76(cuadro_c_loc, "recibidos")
+        )
+    if g76_calc is not None and int(g76_calc) == 0:
+        if ("al final" in txt_low and "0 goles" not in txt_low) or "máxima alerta en el 76'-90'" in txt_low:
+            contradicciones.append({
+                "codigo": "goles_al_final_con_76_90_cero",
+                "detalle": "El texto alerta sobre goles 'al final' pero el tramo 76'-90' tiene 0 goles.",
+            })
+
+    # 3) "Todos los mercados validados superan 70%" vs jugada óptima < 70% / 0 validadas
+    p_opt_eff = jugada_optima_pct
+    if p_opt_eff is None:
+        m_opt = _re_coh.search(r"JUGADA\s+[ÓO]PTIMA[^\n]*?\((\d+(?:\.\d+)?)%\)", txt, _re_coh.IGNORECASE)
+        if m_opt:
+            p_opt_eff = float(m_opt.group(1))
+    elif p_opt_eff <= 1.0:
+        p_opt_eff *= 100.0
+
+    afirma_todos_70 = "todos los mercados validados superan" in txt_low and "70%" in txt_low
+    if afirma_todos_70:
+        fallo_opt = p_opt_eff is not None and p_opt_eff < 70.0
+        fallo_cnt = total_validadas is not None and int(total_validadas) <= 0
+        fallo_lineas = bool(probs_validadas) and any((float(p) * 100.0 if float(p) <= 1.0 else float(p)) < 70.0 for p in probs_validadas)
+        if fallo_opt or fallo_cnt or fallo_lineas:
+            contradicciones.append({
+                "codigo": "todos_mercados_superan_70_inconsistente",
+                "detalle": (
+                    f"Afirma que todos los mercados validados superan 70% "
+                    f"(jugada_optima={p_opt_eff}, total_validadas={total_validadas})."
+                ),
+            })
+
+    # 4) n por métrica en bloque ADN
+    if requerir_n_en_adn and "adn del enfrentamiento" in txt_low:
+        if not _re_coh.search(r"\(n=\d+", txt_low):
+            contradicciones.append({
+                "codigo": "n_por_metrica_ausente_en_adn",
+                "detalle": "El bloque ADN del Enfrentamiento no declara tamaños de muestra (n=) por métrica.",
+            })
+
+    res = {
+        "es_coherente": len(contradicciones) == 0,
+        "bloqueado": bool(contradicciones),
+        "contradicciones": contradicciones,
+        "diff_1x2_pp": diff_pp,
+        "flujo_76_90": g76_calc,
+        "jugada_optima_pct": p_opt_eff,
+    }
+    if bloquear and contradicciones:
+        msgs = "; ".join(c["detalle"] for c in contradicciones)
+        raise ValueError(f"Contradicción texto vs cifras bloqueada: {msgs}")
+    return res

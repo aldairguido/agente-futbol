@@ -6086,3 +6086,267 @@ def auditar_punto_5c_colombia_chile_ronda9(regenerar_png: bool = False) -> dict[
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def _recolectar_pares_partidos_cacheados_ronda9() -> list[dict[str, Any]]:
+    """
+    Reúne pares de documentos reales en caché/fixtures offline:
+      - Diseño / control: Turkey-Belgium (`DESIGN::TB`), Italy-France (`DESIGN::IF`),
+        Londrina-Náutico (`CTRL::LN`), Colombia-Chile (`AUDIT::COL_CHI`)
+      - Archivados de `informes/mercados/**/*.json` emparejados con `informes/auditorias/**/*.json`
+    """
+    import glob as _glob
+    import re as _re
+    import unicodedata as _ud
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+
+    def _norm(s: Any) -> str:
+        t = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii").lower()
+        return _re.sub(r"[^a-z0-9]+", "", t)
+
+    r5 = json.loads((raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))["docs"]
+    ln = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    dv_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    pares: list[dict[str, Any]] = [
+        {"job_id": "DESIGN::TB", "grupo": "diseno", "partido": "Turkey vs Belgium", "equipo_local": "Turkey", "equipo_visitante": "Belgium", "doc_local": r5["turkey"], "doc_visitante": r5["belgium"], "competicion": "UEFA Nations League", "fecha_partido": None, "cond_l": "casa", "cond_v": "fuera"},
+        {"job_id": "DESIGN::IF", "grupo": "diseno", "partido": "Italy vs France", "equipo_local": "Italy", "equipo_visitante": "France", "doc_local": r5["italy"], "doc_visitante": r5["france"], "competicion": "UEFA Nations League", "fecha_partido": None, "cond_l": "casa", "cond_v": "fuera"},
+        {"job_id": "CTRL::LN", "grupo": "control", "partido": "Londrina vs Náutico", "equipo_local": "Londrina", "equipo_visitante": "Náutico", "doc_local": ln["londrina"], "doc_visitante": ln["nautico"], "competicion": "Brasileirao Serie C", "fecha_partido": None, "cond_l": "casa", "cond_v": "fuera"},
+        {"job_id": "AUDIT::COL_CHI", "grupo": "auditoria", "partido": "Colombia vs Chile", "equipo_local": "Colombia", "equipo_visitante": "Chile", "doc_local": dl_col, "doc_visitante": dv_chi, "competicion": "Eliminatorias CONMEBOL", "fecha_partido": "2026-11-12", "cond_l": "casa", "cond_v": "fuera"},
+    ]
+
+    docs_idx: dict[tuple[str, str], list[Path]] = {}
+    for fp_s in sorted(_glob.glob(str(raiz / "informes" / "auditorias" / "**" / "auditoria_*.json"), recursive=True)):
+        fp = Path(fp_s)
+        if "_matriz" in fp.name:
+            continue
+        m = _re.match(r"auditoria_(.+?)_(\d{4}-\d{2}-\d{2})(?:_\d{6})?\.json$", fp.name)
+        if m:
+            docs_idx.setdefault((_norm(m.group(1)), m.group(2)), []).append(fp)
+
+    def _find_doc(nombre_eq: str, fch_ref: str) -> dict[str, Any] | None:
+        k = _norm(nombre_eq)
+        cands: list[tuple[int, str, Path]] = []
+        for (eq, fch), fps in docs_idx.items():
+            if k == eq or (len(k) >= 4 and (k in eq or eq in k)):
+                score = 0 if (fch_ref and fch == fch_ref[:10]) else 1
+                for fp in fps:
+                    cands.append((score, fch, fp))
+        cands.sort(key=lambda t: (t[0], t[1], str(t[2])))
+        for _, _, fp in cands:
+            try:
+                d = json.loads(fp.read_text(encoding="utf-8"))
+                if isinstance(d, dict) and d.get("partidos"):
+                    return d
+            except Exception:
+                continue
+        return None
+
+    vistos: set[tuple[str, str, str]] = set()
+    for fp_m in sorted(_glob.glob(str(raiz / "informes" / "mercados" / "**" / "mercados_*.json"), recursive=True)):
+        try:
+            dm = json.loads(Path(fp_m).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        md = dm.get("metadatos") or {}
+        el = str(md.get("equipo_local") or "").strip()
+        ev = str(md.get("equipo_visitante") or "").strip()
+        fch = str(md.get("fecha_partido") or md.get("generado_en") or "")[:10]
+        if not el or not ev:
+            continue
+        clave = (_norm(el), _norm(ev), fch)
+        if clave in vistos:
+            continue
+        dl = _find_doc(el, fch)
+        dv = _find_doc(ev, fch)
+        if dl and dv:
+            vistos.add(clave)
+            cl = str(md.get("condicion_local") or "casa")
+            cv = str(md.get("condicion_visitante") or "fuera")
+            pares.append({
+                "job_id": f"ARCH::{dm.get('id_trabajo') or Path(fp_m).stem}",
+                "grupo": "archivado",
+                "partido": f"{el} vs {ev}",
+                "equipo_local": el,
+                "equipo_visitante": ev,
+                "doc_local": dl,
+                "doc_visitante": dv,
+                "competicion": md.get("competicion"),
+                "fecha_partido": fch or None,
+                "cond_l": cl if cl in ("casa", "fuera") else "casa",
+                "cond_v": cv if cv in ("casa", "fuera") else "fuera",
+            })
+    return pares
+
+
+def auditar_tope_dcn_18_por_lado_y_partido(
+    pares: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 6(C): Evalúa con `usar_tope_dcn_18_pct=True` (sin cambiar valores por defecto
+    fuera del contexto de auditoría) cuántas veces el tope ±18% de la DCN (en `red_45_dcn` y/o
+    `post_sinc_mercados`) toca el límite, desglosado por lado (`local`/`visitante`), dirección
+    (`+18%`/`-18%`) y por partido.
+    """
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    muestra = pares if pares is not None else _recolectar_pares_partidos_cacheados_ronda9()
+    detalle: list[dict[str, Any]] = []
+
+    cont_red = {"local": 0, "visitante": 0, "local_mas_18": 0, "local_menos_18": 0, "visitante_mas_18": 0, "visitante_menos_18": 0, "partidos_al_menos_un_lado": 0, "partidos_ambos_lados": 0}
+    cont_post = {"local": 0, "visitante": 0, "local_mas_18": 0, "local_menos_18": 0, "visitante_mas_18": 0, "visitante_menos_18": 0, "partidos_al_menos_un_lado": 0, "partidos_ambos_lados": 0}
+    cont_global = {"local": 0, "visitante": 0, "total_eventos_lado": 0, "partidos_al_menos_un_lado": 0, "partidos_ambos_lados": 0}
+
+    with banderas_comportamiento(activar_todas=False, usar_tope_dcn_18_pct=True):
+        for item in muestra:
+            dl = item["doc_local"]
+            dv = item["doc_visitante"]
+            fch = item.get("fecha_partido")
+            if fch and str(item.get("job_id") or "").startswith("ARCH::"):
+                dl = mm.filtrar_por_fecha(dl, fch)
+                dv = mm.filtrar_por_fecha(dv, fch)
+            mot = mm.MotorMercados(
+                dl, dv, item.get("cond_l", "casa"), item.get("cond_v", "fuera"),
+                item["equipo_local"], item["equipo_visitante"], mm.Parametros(),
+            )
+            mot.preparar()
+            rec = mot.recursivo or {}
+            if not rec.get("aplicado"):
+                continue
+
+            t_red = rec.get("tope_dcn_18_red") or {}
+            t_post = rec.get("tope_dcn_18_post_sinc") or {}
+            rl, rv = (t_red.get("local") or {}), (t_red.get("visitante") or {})
+            pl, pv = (t_post.get("local") or {}), (t_post.get("visitante") or {})
+
+            hit_rl, hit_rv = bool(rl.get("toco")), bool(rv.get("toco"))
+            hit_pl, hit_pv = bool(pl.get("toco")), bool(pv.get("toco"))
+            hit_gl, hit_gv = (hit_rl or hit_pl), (hit_rv or hit_pv)
+
+            if hit_rl:
+                cont_red["local"] += 1
+                cont_red["local_mas_18" if rl.get("direccion") == "+18%" else "local_menos_18"] += 1
+            if hit_rv:
+                cont_red["visitante"] += 1
+                cont_red["visitante_mas_18" if rv.get("direccion") == "+18%" else "visitante_menos_18"] += 1
+            if hit_rl or hit_rv:
+                cont_red["partidos_al_menos_un_lado"] += 1
+            if hit_rl and hit_rv:
+                cont_red["partidos_ambos_lados"] += 1
+
+            if hit_pl:
+                cont_post["local"] += 1
+                cont_post["local_mas_18" if pl.get("direccion") == "+18%" else "local_menos_18"] += 1
+            if hit_pv:
+                cont_post["visitante"] += 1
+                cont_post["visitante_mas_18" if pv.get("direccion") == "+18%" else "visitante_menos_18"] += 1
+            if hit_pl or hit_pv:
+                cont_post["partidos_al_menos_un_lado"] += 1
+            if hit_pl and hit_pv:
+                cont_post["partidos_ambos_lados"] += 1
+
+            if hit_gl:
+                cont_global["local"] += 1
+            if hit_gv:
+                cont_global["visitante"] += 1
+            cont_global["total_eventos_lado"] += int(hit_gl) + int(hit_gv)
+            if hit_gl or hit_gv:
+                cont_global["partidos_al_menos_un_lado"] += 1
+            if hit_gl and hit_gv:
+                cont_global["partidos_ambos_lados"] += 1
+
+            detalle.append({
+                "job_id": item["job_id"],
+                "grupo": item["grupo"],
+                "partido": item["partido"],
+                "local_toco": hit_gl,
+                "visitante_toco": hit_gv,
+                "red_local": rl,
+                "red_visitante": rv,
+                "post_local": pl,
+                "post_visitante": pv,
+            })
+
+    n_ev = len(detalle)
+    return {
+        "n_partidos_evaluados": n_ev,
+        "n_lados_evaluados": n_ev * 2,
+        "en_red_45_dcn": cont_red,
+        "en_post_sinc_mercados": cont_post,
+        "global_cualquier_etapa": cont_global,
+        "partidos_que_tocan_limite": [d for d in detalle if d["local_toco"] or d["visitante_toco"]],
+        "detalle": detalle,
+    }
+
+
+def auditar_defectos_banco_83_ronda9() -> dict[str, Any]:
+    """Ronda 9 Punto 6(D): Wrapper directo sobre el validador de defectos de los 83 partidos del banco."""
+    from banco_historico import validar_defectos_partidos_banco
+
+    return validar_defectos_partidos_banco()
+
+
+def auditar_coherencia_texto_cifras_ronda9() -> dict[str, Any]:
+    """
+    Ronda 9 Punto 6(E): Verifica tamaño muestral `n` por métrica en el ticket de Colombia-Chile
+    y valida texto vs cifras (bloqueo de contradicciones) sobre casos reales.
+    """
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+    from motor_inferencia import (
+        calcular_cuadro_b_tendencias_15p,
+        calcular_cuadro_c_timeline_15min,
+        generar_veredicto_tactico_partido,
+        verificar_coherencia_texto_cifras_ticket,
+    )
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    dl = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    dv = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    with banderas_comportamiento(activar_todas=False):
+        an = mm.analizar(
+            dl, dv, "Colombia", "Chile",
+            fecha_partido="2026-11-12",
+            competicion="Eliminatorias CONMEBOL",
+            condicion_local="casa",
+            condicion_visitante="fuera",
+        )
+    cb_l = calcular_cuadro_b_tendencias_15p(dl.get("partidos"), "Colombia")
+    cb_v = calcular_cuadro_b_tendencias_15p(dv.get("partidos"), "Chile")
+    cc_l = calcular_cuadro_c_timeline_15min(dl.get("partidos"), "Colombia")
+    cc_v = calcular_cuadro_c_timeline_15min(dv.get("partidos"), "Chile")
+    mat = an.motor.matriz_ft
+    p1 = sum(mat[i][j] for i in range(len(mat)) for j in range(len(mat[0])) if i > j)
+    px = sum(mat[i][j] for i in range(len(mat)) for j in range(len(mat[0])) if i == j)
+    p2 = sum(mat[i][j] for i in range(len(mat)) for j in range(len(mat[0])) if i < j)
+    veredicto = generar_veredicto_tactico_partido(
+        "Colombia", "Chile",
+        (an.motor.recursivo or {}).get("mu_local_casa") or {},
+        (an.motor.recursivo or {}).get("mu_visita_fuera") or {},
+        {"local": p1, "empate": px, "visita": p2, "es_seleccion": True},
+        cb_l, cb_v, cc_l, cc_v,
+        motor=an.motor,
+    )
+    coh_ticket = an.metadatos.get("coherencia_texto_cifras") or {}
+    coh_ver = verificar_coherencia_texto_cifras_ticket(
+        veredicto,
+        p_local=p1,
+        p_visita=p2,
+        cuadro_c_loc=cc_l,
+        cuadro_c_vis=cc_v,
+        bloquear=True,
+    )
+    return {
+        "n_metricas_local": (an.motor.xai_factores or {}).get("n_metricas_local") or {},
+        "n_metricas_visita": (an.motor.xai_factores or {}).get("n_metricas_visita") or {},
+        "coherencia_ticket": coh_ticket,
+        "coherencia_veredicto": coh_ver,
+        "veredicto_colombia_chile": veredicto,
+        "bloque_adn_con_n": [ln for ln in an.mensaje.splitlines() if "▸ " in ln and ("Posesión:" in ln or "Goles / xG:" in ln or "Goles Evitados" in ln)],
+    }

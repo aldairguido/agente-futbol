@@ -2186,6 +2186,11 @@ class MotorMercados:
                 lam_v_nuevo = max(lam_v_nuevo, round(lam_v * 0.72, 2))
 
             from decision_cobertura import bandera_activa as _ba_techo
+            _tope_ps_info: dict[str, Any] = {
+                "activo": bool(_ba_techo("usar_tope_dcn_18_pct")),
+                "local": {"toco": False, "direccion": None, "lam_pre": round(float(lam_l_nuevo), 4), "lam_post": round(float(lam_l_nuevo), 4)},
+                "visitante": {"toco": False, "direccion": None, "lam_pre": round(float(lam_v_nuevo), 4), "lam_post": round(float(lam_v_nuevo), 4)},
+            }
             if _ba_techo("usar_tope_dcn_18_pct"):
                 try:
                     _techo_post = float((cargar_umbrales_cobertura() or {}).get("techo_ajuste_red_dcn_pct", 18.0))
@@ -2194,18 +2199,35 @@ class MotorMercados:
                 _f_t = _techo_post / 100.0
                 if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_local")):
                     if abs(f_ctx_l - 1.0) <= 1e-6:
+                        _pre_t_l = float(lam_l_nuevo)
+                        _sup_l = round(lam_l * (1.0 + _f_t), 4)
                         if bool(resultado.get("freno_bajista_dcn_local")):
-                            lam_l_nuevo = min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo)
+                            lam_l_nuevo = min(_sup_l, lam_l_nuevo)
+                            if _pre_t_l > _sup_l + 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
                         else:
                             _piso_t_l = round(min(lam_l * (1.0 - _f_t), lam_l_red), 4)
-                            lam_l_nuevo = max(_piso_t_l, min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo))
+                            lam_l_nuevo = max(_piso_t_l, min(_sup_l, lam_l_nuevo))
+                            if _pre_t_l > _sup_l + 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
+                            elif _pre_t_l < _piso_t_l - 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "-18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
                 if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_visita")):
                     if abs(f_ctx_v - 1.0) <= 1e-6 and not (pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45))):
+                        _pre_t_v = float(lam_v_nuevo)
+                        _sup_v = round(lam_v * (1.0 + _f_t), 4)
                         if bool(resultado.get("freno_bajista_dcn_visita")):
-                            lam_v_nuevo = min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo)
+                            lam_v_nuevo = min(_sup_v, lam_v_nuevo)
+                            if _pre_t_v > _sup_v + 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
                         else:
                             _piso_t_v = round(min(lam_v * (1.0 - _f_t), lam_v_red), 4)
-                            lam_v_nuevo = max(_piso_t_v, min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo))
+                            lam_v_nuevo = max(_piso_t_v, min(_sup_v, lam_v_nuevo))
+                            if _pre_t_v > _sup_v + 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
+                            elif _pre_t_v < _piso_t_v - 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "-18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
+            resultado["tope_dcn_18_post_sinc"] = _tope_ps_info
 
             # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
@@ -2468,6 +2490,12 @@ class MotorMercados:
             self.xai_factores["micropatrones_combinatorios"] = mp_comb
             self.xai_factores["mu_local_casa"] = dict(resultado.get("mu_local_casa", {}))
             self.xai_factores["mu_visita_fuera"] = dict(resultado.get("mu_visita_fuera", {}))
+            self.xai_factores["n_metricas_local"] = contar_n_real_por_metrica_doc(
+                getattr(self, "doc_local", None), getattr(self, "cond_local", None)
+            )
+            self.xai_factores["n_metricas_visita"] = contar_n_real_por_metrica_doc(
+                getattr(self, "doc_visitante", None), getattr(self, "cond_visitante", None)
+            )
 
         # ── Mitades: reescaladas a la λ de la red (λ_1T + λ_2T = λ_FT) ──────
         if self.matriz_1t and self.matriz_2t:
@@ -4346,6 +4374,60 @@ def evaluar_ensemble_mlp(
     }
 
 
+def contar_n_real_por_metrica_doc(
+    doc: dict[str, Any] | None,
+    condicion: str | None = None,
+) -> dict[str, dict[str, int]]:
+    """
+    Cuenta las observaciones REALES (no nulas y no sintéticas / estimacion_modelo)
+    por métrica para el documento del equipo en su condición (`n_cond`) y en el
+    historial total filtrado (`n_gen`), evitando que imputaciones o valores 0
+    oculten tamaños muestrales pequeños.
+    """
+    if not isinstance(doc, dict):
+        return {}
+    pts = [p for p in (doc.get("partidos") or []) if isinstance(p, dict) and not p.get("es_amistoso")]
+    cond_norm = str(condicion or "").lower().strip()
+    if cond_norm in ("casa", "fuera"):
+        pts_c = [p for p in pts if str(p.get("condicion") or "").lower().strip() == cond_norm]
+    else:
+        pts_c = pts
+
+    claves_clave = (
+        "posesion_pct", "goles_favor", "xg", "goles_contra", "xgot_enfrentado",
+        "remates_totales", "remates_puerta", "toques_area_rival", "corners",
+        "despejes", "duelos_aereos_pct", "faltas", "goles_evitados",
+    )
+
+    def _tiene_real(p: dict[str, Any], k: str) -> bool:
+        if k in ("goles_favor", "goles_contra"):
+            marc = p.get("marcador") if isinstance(p.get("marcador"), dict) else {}
+            lado_k = "equipo" if k == "goles_favor" else "rival"
+            return marc.get(lado_k) is not None or p.get(f"goles_{lado_k}") is not None
+        proc = ((p.get("procedencia") or {}).get("FT") or {}).get("equipo") or {}
+        if isinstance(proc, dict):
+            pr = str(proc.get(k) or "").strip().lower()
+            if pr in ("estimacion_modelo", "estimado", "sintetico", "sin_dato"):
+                return False
+        for fila in ((p.get("periodos") or {}).get("FT") or {}).get("filas") or []:
+            if not isinstance(fila, dict) or fila.get("clave") != k:
+                continue
+            if bool(fila.get("estimado")):
+                return False
+            pr_f = str(fila.get("procedencia") or fila.get("fuente") or "").strip().lower()
+            if pr_f in ("estimacion_modelo", "estimado", "sintetico", "sin_dato"):
+                return False
+            return fila.get("equipo") is not None
+        return False
+
+    out: dict[str, dict[str, int]] = {}
+    for k in claves_clave:
+        nc = sum(1 for p in pts_c if _tiene_real(p, k))
+        ng = sum(1 for p in pts if _tiene_real(p, k))
+        out[k] = {"n_cond": nc, "n_gen": ng}
+    return out
+
+
 def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     """
     Fase 5 y 8: Genera las líneas de IA Explicable (XAI) con Doble ADN, 6 Cruces Tácticos,
@@ -4365,27 +4447,45 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     # 1. ADN del Enfrentamiento (Local en Casa vs. Rival de Visita)
     mu_l = xai.get("mu_local_casa") or (getattr(motor, "recursivo", {}) or {}).get("mu_local_casa") or {}
     mu_v = xai.get("mu_visita_fuera") or (getattr(motor, "recursivo", {}) or {}).get("mu_visita_fuera") or {}
+    n_met_l = xai.get("n_metricas_local") or contar_n_real_por_metrica_doc(
+        getattr(motor, "doc_local", None), getattr(motor, "cond_local", None)
+    )
+    n_met_v = xai.get("n_metricas_visita") or contar_n_real_por_metrica_doc(
+        getattr(motor, "doc_visitante", None), getattr(motor, "cond_visitante", None)
+    )
+    tiene_doc_l = bool(isinstance(getattr(motor, "doc_local", None), dict) and (motor.doc_local.get("partidos") or []))
+    tiene_doc_v = bool(isinstance(getattr(motor, "doc_visitante", None), dict) and (motor.doc_visitante.get("partidos") or []))
 
     if mu_l and mu_v:
-        def _fmt_m(d: dict, k: str, def_val: float, fmt: str = ".1f", suf: str = "") -> str:
+        def _fmt_m(d: dict, k: str, def_val: float, fmt: str = ".1f", suf: str = "", n_map: dict | None = None, tiene_doc: bool = False) -> str:
+            info_n = (n_map or {}).get(k) if isinstance(n_map, dict) else None
+            tag_n = ""
+            if isinstance(info_n, dict):
+                nc = int(info_n.get("n_cond", 0))
+                ng = int(info_n.get("n_gen", 0))
+                tag_n = f" (n={nc}c/{ng}g)"
+                if tiene_doc and nc == 0 and ng == 0 and d.get(k) is None:
+                    return f"sin dato{tag_n}"
             v = d.get(k)
             if v is None:
+                if tiene_doc and isinstance(info_n, dict) and int(info_n.get("n_gen", 0)) == 0:
+                    return f"sin dato{tag_n}"
                 v = def_val
             try:
                 val = float(v)
-                return f"{val:{fmt}}{suf}"
+                return f"{val:{fmt}}{suf}{tag_n}"
             except (ValueError, TypeError):
-                return f"{def_val:{fmt}}{suf}"
+                return f"{def_val:{fmt}}{suf}{tag_n}"
 
         lineas.extend([
             "🧬 ADN del Enfrentamiento (Local en Casa vs. Rival de Visita):",
-            f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%')}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%')}",
-            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_favor', 1.3, '.2f')} G / {_fmt_m(mu_l, 'xg', 1.3, '.2f')} xG]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_favor', 1.2, '.2f')} G / {_fmt_m(mu_v, 'xg', 1.2, '.2f')} xG]",
-            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f')} Gc / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f')} xGOTc]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f')} Gc / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f')} xGOTc]",
-            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f')} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f')} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f')}]",
-            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f')} / {_fmt_m(mu_l, 'corners', 5.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f')} / {_fmt_m(mu_v, 'corners', 4.5, '.1f')}]",
-            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'despejes', 18.0, '.1f')} / {_fmt_m(mu_l, 'duelos_aereos_pct', 50.0, '.1f', '%')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'despejes', 20.0, '.1f')} / {_fmt_m(mu_v, 'duelos_aereos_pct', 48.0, '.1f', '%')}]",
-            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'faltas', 11.0, '.1f')} F / {_fmt_m(mu_l, 'goles_evitados', 0.0, '+.2f')} GEv]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'faltas', 13.0, '.1f')} F / {_fmt_m(mu_v, 'goles_evitados', 0.0, '+.2f')} GEv]",
+            f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%', n_met_l, tiene_doc_l)}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%', n_met_v, tiene_doc_v)}",
+            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_favor', 1.3, '.2f', ' G', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'xg', 1.3, '.2f', ' xG', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_favor', 1.2, '.2f', ' G', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'xg', 1.2, '.2f', ' xG', n_met_v, tiene_doc_v)}]",
+            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f', ' Gc', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f', ' xGOTc', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f', ' Gc', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f', ' xGOTc', n_met_v, tiene_doc_v)}]",
+            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f', '', n_met_v, tiene_doc_v)}]",
+            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'corners', 5.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'corners', 4.5, '.1f', '', n_met_v, tiene_doc_v)}]",
+            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'despejes', 18.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'duelos_aereos_pct', 50.0, '.1f', '%', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'despejes', 20.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'duelos_aereos_pct', 48.0, '.1f', '%', n_met_v, tiene_doc_v)}]",
+            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'faltas', 11.0, '.1f', ' F', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'goles_evitados', 0.0, '+.2f', ' GEv', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'faltas', 13.0, '.1f', ' F', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'goles_evitados', 0.0, '+.2f', ' GEv', n_met_v, tiene_doc_v)}]",
         ])
 
     # 2. Patrones Detectados por la Red (XAI)
@@ -6599,10 +6699,33 @@ def clusters_marcador(
 
     # ── Comparativa de Clusters y Regla Anti-Favoritismo Prematuro (<58%) ─────
     max_p_win = max(p_1, p_2)
-    if max_p_win < 0.58:
+    diff_1x2_pp = abs(p_1 - p_2) * 100.0
+    if max_p_win < 0.58 and diff_1x2_pp < 10.0:
         favorito_tipo = "parejo"
         favorito_nombre = "Duelo Parejo"
         comp_favorito_txt = "⚖️ DUELO PAREJO / RIESGO DE EMPATE (No jugar 1x2 directo)"
+    elif max_p_win < 0.58 and p_2 > p_1:
+        favorito_tipo = "ligera_ventaja_visita"
+        favorito_nombre = f"Ligera Ventaja {nombre_visita}"
+        c_btts = next((c for c in lista_clusters if c["id"] == "victoria_visita_btts"), None)
+        c_cero = next((c for c in lista_clusters if c["id"] == "victoria_visita_corta"), None)
+        p_btts_val = c_btts['probabilidad_pct'] if c_btts else 0.0
+        p_cero_val = c_cero['probabilidad_pct'] if c_cero else 0.0
+        comp_favorito_txt = (
+            f"Lig. Ventaja {nombre_visita} ({p_2 * 100.0:.1f}% vs {p_1 * 100.0:.1f}%): "
+            f"c/Ambos {p_btts_val:.1f}% vs a Cero {p_cero_val:.1f}%"
+        )
+    elif max_p_win < 0.58:
+        favorito_tipo = "ligera_ventaja_local"
+        favorito_nombre = f"Ligera Ventaja {nombre_local}"
+        c_btts = next((c for c in lista_clusters if c["id"] == "victoria_local_btts"), None)
+        c_cero = next((c for c in lista_clusters if c["id"] == "victoria_local_cero"), None)
+        p_btts_val = c_btts['probabilidad_pct'] if c_btts else 0.0
+        p_cero_val = c_cero['probabilidad_pct'] if c_cero else 0.0
+        comp_favorito_txt = (
+            f"Lig. Ventaja {nombre_local} ({p_1 * 100.0:.1f}% vs {p_2 * 100.0:.1f}%): "
+            f"c/Ambos {p_btts_val:.1f}% vs a Cero {p_cero_val:.1f}%"
+        )
     elif p_2 > p_1 and p_2 >= p_x:
         favorito_tipo = "visita"
         favorito_nombre = nombre_visita
@@ -7440,6 +7563,32 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
 
     informe = generar_informe(metadatos, motor, mercados, grupos, sensibilidad, params)
     mensaje = construir_mensaje(metadatos, grupos, params, motor, mercados)
+    try:
+        from motor_inferencia import verificar_coherencia_texto_cifras_ticket as _verif_coh
+        import re as _re_an
+        _mat_ft_an = getattr(motor, "matriz_ft", None) or []
+        _pl_an = sum(_mat_ft_an[i][j] for i in range(len(_mat_ft_an)) for j in range(len(_mat_ft_an[i])) if i > j) if _mat_ft_an else None
+        _pv_an = sum(_mat_ft_an[i][j] for i in range(len(_mat_ft_an)) for j in range(len(_mat_ft_an[i])) if i < j) if _mat_ft_an else None
+        _cl_an = getattr(motor, "clusters", None) or {}
+        _mj_an = _re_an.search(r"\((\d+(?:\.\d+)?)%\)", str(_cl_an.get("jugada_optima") or ""))
+        _popt_an = float(_mj_an.group(1)) if _mj_an else None
+        _sels_val_an = [float(s.probabilidad) for s in (grupos.get(ESTADO_MANTIENE) or []) if s.probabilidad is not None]
+        _req_n = bool((getattr(motor, "xai_factores", None) or {}).get("aplicado")) and "adn del enfrentamiento" in mensaje.lower()
+        _coh = _verif_coh(
+            mensaje,
+            p_local=_pl_an,
+            p_visita=_pv_an,
+            jugada_optima_pct=_popt_an,
+            total_validadas=len(_sels_val_an),
+            probs_validadas=_sels_val_an,
+            requerir_n_en_adn=_req_n,
+            bloquear=True,
+        )
+        metadatos["coherencia_texto_cifras"] = _coh
+    except ValueError:
+        raise
+    except Exception:
+        pass
     return Analisis(metadatos, params, motor, mercados, selecciones, grupos,
                     sensibilidad, informe, mensaje)
 

@@ -3037,17 +3037,40 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         for t in traza_red_45_dcn
     )
 
+    delta_pre_tope_L = float(delta_pct_real_L)
+    delta_pre_tope_V = float(delta_pct_real_V)
+    toco_tope_red_L = False
+    toco_tope_red_V = False
+    dir_tope_red_L = None
+    dir_tope_red_V = None
+
     if _ba_rt("usar_tope_dcn_18_pct"):
         if not alineado_5_L and abs(delta_pct_real_L) > _techo_dcn:
             if delta_pct_real_L < -_techo_dcn and _freno_bajista_L:
                 delta_pct_real_L = round(min(delta_pct_real_L, _techo_dcn), 1)
             else:
+                toco_tope_red_L = True
+                dir_tope_red_L = "+18%" if delta_pct_real_L > _techo_dcn else "-18%"
                 delta_pct_real_L = round(clip(delta_pct_real_L, -_techo_dcn, _techo_dcn), 1)
+        elif not alineado_5_L and abs(delta_pct_real_L - _techo_dcn) < 1e-6:
+            toco_tope_red_L = True
+            dir_tope_red_L = "+18%"
+        elif not alineado_5_L and not _freno_bajista_L and abs(delta_pct_real_L + _techo_dcn) < 1e-6:
+            toco_tope_red_L = True
+            dir_tope_red_L = "-18%"
         if not alineado_5_V and abs(delta_pct_real_V) > _techo_dcn:
             if delta_pct_real_V < -_techo_dcn and _freno_bajista_V:
                 delta_pct_real_V = round(min(delta_pct_real_V, _techo_dcn), 1)
             else:
+                toco_tope_red_V = True
+                dir_tope_red_V = "+18%" if delta_pct_real_V > _techo_dcn else "-18%"
                 delta_pct_real_V = round(clip(delta_pct_real_V, -_techo_dcn, _techo_dcn), 1)
+        elif not alineado_5_V and abs(delta_pct_real_V - _techo_dcn) < 1e-6:
+            toco_tope_red_V = True
+            dir_tope_red_V = "+18%"
+        elif not alineado_5_V and not _freno_bajista_V and abs(delta_pct_real_V + _techo_dcn) < 1e-6:
+            toco_tope_red_V = True
+            dir_tope_red_V = "-18%"
 
     pisos_L = {}
     if f_l.get("F_fragilidad_rival", 0.0) >= 3.0:
@@ -3182,4 +3205,24 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         "meta_condicion_visita": {"n_en_condicion": n_cond_adn_V},
         "ic_factores_local": ic_factores_L,
         "ic_factores_visita": ic_factores_V,
+        "tope_dcn_18_red": {
+            "activo": bool(_ba_rt("usar_tope_dcn_18_pct")),
+            "techo_pct": float(_techo_dcn),
+            "local": {
+                "toco": bool(toco_tope_red_L),
+                "direccion": dir_tope_red_L,
+                "delta_pre_pct": round(delta_pre_tope_L, 2),
+                "delta_post_pct": round(float(delta_pct_real_L), 2),
+                "alineado_5": bool(alineado_5_L),
+                "freno_bajista": bool(_freno_bajista_L),
+            },
+            "visitante": {
+                "toco": bool(toco_tope_red_V),
+                "direccion": dir_tope_red_V,
+                "delta_pre_pct": round(delta_pre_tope_V, 2),
+                "delta_post_pct": round(float(delta_pct_real_V), 2),
+                "alineado_5": bool(alineado_5_V),
+                "freno_bajista": bool(_freno_bajista_V),
+            },
+        },
     }
