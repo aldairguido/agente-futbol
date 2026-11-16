@@ -4655,6 +4655,7 @@ def analizar_ablacion_cadena_lambda_oos(
     mejor_brier = min(etapas_presentes, key=lambda e: boot["versiones"][e]["brier"]) if etapas_presentes else None
     mejor_logloss = min(etapas_presentes, key=lambda e: boot["versiones"][e]["log_loss"]) if etapas_presentes else None
     acum = diffs.get(f"{etapas_presentes[-1]} - {etapas_presentes[0]}") if len(etapas_presentes) >= 2 else None
+    delta_4_a_6 = diffs.get("6_mas_reglas - 4_mas_doble_adn")
 
     return {
         "n_filas": boot["n_filas"],
@@ -4662,6 +4663,7 @@ def analizar_ablacion_cadena_lambda_oos(
         "versiones": boot["versiones"],
         "transiciones_paso_a_paso": pasos,
         "delta_acumulado_total": acum,
+        "delta_4_a_6": delta_4_a_6,
         "mejor_etapa_brier": mejor_brier,
         "mejor_etapa_log_loss": mejor_logloss,
     }
@@ -8435,3 +8437,60 @@ def auditar_colombia_chile_amistoso_3_pantallas_ronda10(
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
 
+
+
+def reportar_cadena_6_etapas_completa_ronda11(
+    *,
+    regenerar: bool = False,
+    n_boot: int = 2000,
+    seed: int = 42,
+    guardar_ruta: str | None = "datos/ronda11_punto1_cadena_6_etapas.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 11 — Punto 1: Reporta la cadena completa de las 6 etapas (1 a 6)
+    sobre exactamente las mismas 1376 filas (y 1506), con delta pareado Brier/LogLoss
+    e IC95% por partido entre etapas consecutivas y entre etapas 4 y 6.
+    No modifica λ, umbrales ni comportamiento por defecto.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    out_p = (Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)) if guardar_ruta else None
+    if out_p is not None and out_p.exists() and not regenerar:
+        return json.loads(out_p.read_text(encoding="utf-8"))
+
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1506 = list(oos["filas_1506"])
+    banderas_solo_a = {k: False for k in obtener_especificacion_columnas_modelos()["soloA"]["banderas_activas"]}
+    banderas_ab_r9 = dict(obtener_especificacion_columnas_modelos()["A+B"]["banderas_activas"])
+    probs_a, _ = _reejecutar_etapas_oos_26_ronda10(banderas_solo_a)
+    probs_ab, _ = _reejecutar_etapas_oos_26_ronda10(banderas_ab_r9)
+
+    obs_1506_a, obs_1376_a, obs_1376_ab = [], [], []
+    for r in filas_1506:
+        jid = str(r["id_trabajo"])
+        k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+        p_map_a = {ek: float(probs_a[jid][ek][k]) for ek in ETAPAS_CADENA_LAMBDA}
+        row_a = {**r, "probs": {**p_map_a, "arch": float(r["probs"]["arch"]), "5e8425f": float(r["probs"]["5e8425f"]), "soloA": float(r["probs"]["soloA"])}}
+        obs_1506_a.append(row_a)
+        if all(x in (r.get("probs") or {}) for x in ("994209a", "A+B")):
+            p_map_ab = {ek: float(probs_ab[jid][ek][k]) for ek in ETAPAS_CADENA_LAMBDA}
+            obs_1376_a.append(row_a)
+            obs_1376_ab.append({**r, "probs": {**p_map_ab, "arch": float(r["probs"]["arch"]), "A+B": float(r["probs"]["A+B"])}})
+
+    out = {
+        "hashes": {
+            "sha256_ids_1376": hashlib.sha256("\n".join(str(r["row_id"]) for r in obs_1376_a).encode("utf-8")).hexdigest(),
+            "sha256_ids_1506": hashlib.sha256("\n".join(str(r["row_id"]) for r in obs_1506_a).encode("utf-8")).hexdigest(),
+        },
+        "nota_1506_vs_1376": "1506 es el universo completo de soloA/5e8425f/arch; 1376 es la intersección exacta con A+B tras excluir 130 filas filtradas por gates de cobertura en A+B.",
+        "cohortes": {
+            "soloA_1376": analizar_ablacion_cadena_lambda_oos(obs_1376_a, n_boot=n_boot, seed=seed),
+            "soloA_1506": analizar_ablacion_cadena_lambda_oos(obs_1506_a, n_boot=n_boot, seed=seed),
+            "AB_1376": analizar_ablacion_cadena_lambda_oos(obs_1376_ab, n_boot=n_boot, seed=seed),
+        },
+    }
+    if out_p is not None:
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
