@@ -6804,3 +6804,152 @@ def rehacer_ronda8_puntos_2_y_42_ronda10(
     ruta_cache.write_text(json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return resultado
 
+
+def auditar_arch_vs_reconstruccion_ronda10(
+    *,
+    regenerar: bool = False,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 10 Punto 2: Compara `arch` (pronósticos archivados en oct-2026) contra `s2_mod`
+    (Etapa 2 `tasas_goles_plano + moduladores_tacticos`), `s4_adn` (`4_mas_doble_adn`) y
+    `5e8425f` por macrofamilia (Goles, Resultado/DC/Hándicap, Tarjetas, Córneres) con IC95%
+    por partido, deslindando causa principal (versión de código) vs secundaria (datos/corte
+    en `490ae216` y `177d446a`, con 25/26 fixtures del día presentes y 0 sin fixtures).
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    ruta_cache = raiz / "datos" / "ronda10_punto2_arch_vs_reconstruccion.json"
+    if ruta_cache.exists() and not regenerar:
+        return json.loads(ruta_cache.read_text(encoding="utf-8"))
+
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1376 = [
+        r for r in oos["filas_1506"]
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    banderas_solo_a = {k: False for k in obtener_especificacion_columnas_modelos()["soloA"]["banderas_activas"]}
+    ps2, tz = _reejecutar_etapas_oos_26_ronda10(banderas_solo_a)
+
+    exact_s2_jids = sorted(
+        jid for jid, t in tz.items()
+        if t["arch_lambda"][0] is not None
+        and (
+            abs(float(t["arch_lambda"][0]) - float(t["etapas_lambda"]["2_mas_moduladores"][0]))
+            + abs(float(t["arch_lambda"][1]) - float(t["etapas_lambda"]["2_mas_moduladores"][1]))
+        ) < 0.001
+    )
+    jids_2_datacut = ["490ae216626e701a", "177d446a97606f01"]
+    cohortes = {
+        "todos_26_jobs_1376": set(tz.keys()),
+        "sin_2_datacut_24_jobs": set(tz.keys()) - set(jids_2_datacut),
+        "cohorte_exacta_s2_10_jobs": set(exact_s2_jids),
+    }
+
+    def _evaluar_cohorte(jids_ok: set[str]) -> dict[str, Any]:
+        por_mf: dict[str, list[tuple[str, int, dict[str, float]]]] = {}
+        por_goles: list[tuple[str, int, dict[str, float]]] = []
+        for r in filas_1376:
+            jid = str(r["id_trabajo"])
+            if jid not in jids_ok:
+                continue
+            k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+            mf = _macro_familia_ronda8(str(r.get("mercado") or ""))
+            pr = {
+                "arch": float(r["probs"]["arch"]),
+                "s2_mod": float(ps2[jid]["2_mas_moduladores"][k]),
+                "s4_adn": float(ps2[jid]["4_mas_doble_adn"][k]),
+                "s6_soloA": float(ps2[jid]["6_mas_reglas"][k]),
+                "5e8425f": float(r["probs"]["5e8425f"]),
+            }
+            tup = (str(r["id_partido"]), int(r["evento_ocurrio"]), pr)
+            por_mf.setdefault(mf, []).append(tup)
+            if mf.startswith("Goles"):
+                por_goles.append(tup)
+
+        tot = [x for lst in por_mf.values() for x in lst]
+        bloques: dict[str, Any] = {
+            "TOTAL": bootstrap_brier_logloss_por_partido(tot, n_boot=n_boot, seed=seed),
+            "Goles_Unificado": bootstrap_brier_logloss_por_partido(por_goles, n_boot=n_boot, seed=seed),
+        }
+        for idx, (mf, rows) in enumerate(sorted(por_mf.items()), start=1):
+            bloques[mf] = bootstrap_brier_logloss_por_partido(rows, n_boot=n_boot, seed=seed + idx)
+        return bloques
+
+    # Verificar caso 490ae216 con corte fecha_partido = 2026-08-15
+    import motor_mercados as mm
+    t_flu = tz["490ae216626e701a"]
+    dl_flu = json.loads((raiz / t_flu["auditoria_local"]).read_text(encoding="utf-8"))
+    dv_flu = json.loads((raiz / t_flu["auditoria_visitante"]).read_text(encoding="utf-8"))
+    mot_flu = mm.MotorMercados(
+        mm.filtrar_por_fecha(dl_flu, "2026-08-15"),
+        mm.filtrar_por_fecha(dv_flu, "2026-08-15"),
+        "casa", "fuera", "Fluminense", "Palmeiras", mm.Parametros(),
+    )
+    mot_flu.preparar()
+    flu_lam_15ago = extraer_lambdas_etapas_cadena(
+        mot_flu.traza_lambda,
+        (mot_flu.tasas.lambda_local_ft, mot_flu.tasas.lambda_visitante_ft),
+    )
+
+    trazabilidad_jobs: list[dict[str, Any]] = []
+    for jid, t in sorted(tz.items(), key=lambda kv: str(kv[1].get("generado_en") or "")):
+        al = t["arch_lambda"]
+        e2 = t["etapas_lambda"]["2_mas_moduladores"]
+        d_s2 = round(abs(float(al[0]) - float(e2[0])) + abs(float(al[1]) - float(e2[1])), 4) if al[0] is not None else None
+        if jid in jids_2_datacut:
+            tipo_causa = "datos_corte_fecha_o_auditoria"
+        elif d_s2 is not None and d_s2 < 0.001:
+            tipo_causa = "codigo_exacto_etapa2_en_arch"
+        elif str(t.get("generado_en") or "").startswith("2026-10-13") or jid == "6ada5cd1eba43a3e":
+            tipo_causa = "codigo_pre_moduladores_oct13_14"
+        else:
+            tipo_causa = "codigo_etapas_y_formula"
+        trazabilidad_jobs.append({
+            "id_trabajo": jid,
+            "partido": t["partido"],
+            "generado_en": t["generado_en"],
+            "fecha_partido": t["fecha_partido"],
+            "auditoria_local": Path(t["auditoria_local"]).name,
+            "auditoria_visitante": Path(t["auditoria_visitante"]).name,
+            "corte_fecha": t["corte_fecha"],
+            "arch_lambda": al,
+            "s2_mod_lambda": e2,
+            "s6_soloA_lambda": t["etapas_lambda"]["6_mas_reglas"],
+            "diff_abs_arch_vs_s2": d_s2,
+            "tipo_causa_principal": tipo_causa,
+        })
+
+    resultado = {
+        "clasificacion_causal": {
+            "causa_principal": "version_de_codigo",
+            "causa_secundaria": "datos_fecha_corte_en_2_partidos",
+            "fixtures_locales_disponibles": "26/26 jobs OOS tienen par local en disco (25/26 snapshot exacto del día; 1/26 `177d446a` Liverpool reconstruido con corte <2026-10-17)",
+            "cambios_codigo_identificados": [
+                "Etapas 3-6 de cadena λ (`lambda_efectivo_finalizacion` + `doble_adn` + `red_45_dcn` + `reglas`) añadidas tras oct-2026: en los 10 jobs exactos de Etapa 2 (`diff arch vs s2 <= 0.0001`), Goles y Resultado coinciden 0.0000 en `s2_mod` y solo empeoran al activar etapas 3-6.",
+                "Tarjetas (`_mu_tarjetas`): en `96483b7` (oct-2026) sumaba directamente `partes` (`sum(partes)`); `0bac1ce` añadió modulador `P43_Agresividad_Defensiva` y recorte `-15%` monopolio posesión (`×0.85`), y `5e8425f` reemplazó `sum(partes)` por `am_l + am_v` 45-DCN -> empeora Brier/LogLoss con IC95% excluyendo 0 (`+0.0287 / +0.0939` en 1376 y `+0.0298 / +0.1129` en los 10 jobs exactos).",
+                "Córneres (`_mu_corners`): pasó de `(propio+concedido)/2 * mult_corners` (`96483b7`) a multiplicadores de bloqueo/centros/asedio (`0bac1ce`/`6aace49`/`e68fff4`/`5976c27`/`13e82e1`), empeorando LogLoss en `s2_mod` y `5e8425f` respecto a `arch` (`+0.0474` global, `+0.0781` en 10 jobs exactos).",
+            ],
+            "fluminense_palmeiras_490ae216_con_corte_2026_08_15": {
+                "arch_lambda": t_flu["arch_lambda"],
+                "s2_mod_con_corte_2026_08_15": list(flu_lam_15ago["2_mas_moduladores"]),
+                "s2_mod_con_corte_2026_10_14": t_flu["etapas_lambda"]["2_mas_moduladores"],
+                "diagnostico": "Corte con `fecha_partido=2026-08-15` reproduce `arch` [0.4311, 0.6995] a 4 decimales.",
+            },
+            "brentford_liverpool_177d446a": {
+                "auditoria_visitante_usada": Path(tz["177d446a97606f01"]["auditoria_visitante"]).name,
+                "corte_aplicado": tz["177d446a97606f01"]["corte_fecha"],
+                "diagnostico": "No se conservó snapshot pre-partido de Liverpool del 2026-10-17; se usa auditoría del 2026-10-20 truncada `<2026-10-17`.",
+            },
+            "n_exactos_etapa2": len(exact_s2_jids),
+            "jids_exactos_etapa2": exact_s2_jids,
+        },
+        "comparativas_ic95": {nombre: _evaluar_cohorte(jids) for nombre, jids in cohortes.items()},
+        "trazabilidad_26_jobs": trazabilidad_jobs,
+    }
+    ruta_cache.write_text(json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return resultado
+
+

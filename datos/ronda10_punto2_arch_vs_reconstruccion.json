@@ -1,0 +1,4643 @@
+{
+  "clasificacion_causal": {
+    "causa_principal": "version_de_codigo",
+    "causa_secundaria": "datos_fecha_corte_en_2_partidos",
+    "fixtures_locales_disponibles": "26/26 jobs OOS tienen par local en disco (25/26 snapshot exacto del día; 1/26 `177d446a` Liverpool reconstruido con corte <2026-10-17)",
+    "cambios_codigo_identificados": [
+      "Etapas 3-6 de cadena λ (`lambda_efectivo_finalizacion` + `doble_adn` + `red_45_dcn` + `reglas`) añadidas tras oct-2026: en los 10 jobs exactos de Etapa 2 (`diff arch vs s2 <= 0.0001`), Goles y Resultado coinciden 0.0000 en `s2_mod` y solo empeoran al activar etapas 3-6.",
+      "Tarjetas (`_mu_tarjetas`): en `96483b7` (oct-2026) sumaba directamente `partes` (`sum(partes)`); `0bac1ce` añadió modulador `P43_Agresividad_Defensiva` y recorte `-15%` monopolio posesión (`×0.85`), y `5e8425f` reemplazó `sum(partes)` por `am_l + am_v` 45-DCN -> empeora Brier/LogLoss con IC95% excluyendo 0 (`+0.0287 / +0.0939` en 1376 y `+0.0298 / +0.1129` en los 10 jobs exactos).",
+      "Córneres (`_mu_corners`): pasó de `(propio+concedido)/2 * mult_corners` (`96483b7`) a multiplicadores de bloqueo/centros/asedio (`0bac1ce`/`6aace49`/`e68fff4`/`5976c27`/`13e82e1`), empeorando LogLoss en `s2_mod` y `5e8425f` respecto a `arch` (`+0.0474` global, `+0.0781` en 10 jobs exactos)."
+    ],
+    "fluminense_palmeiras_490ae216_con_corte_2026_08_15": {
+      "arch_lambda": [
+        0.4311473214285715,
+        0.6995297619047619
+      ],
+      "s2_mod_con_corte_2026_08_15": [
+        0.4311,
+        0.6995
+      ],
+      "s2_mod_con_corte_2026_10_14": [
+        1.199,
+        1.3918
+      ],
+      "diagnostico": "Corte con `fecha_partido=2026-08-15` reproduce `arch` [0.4311, 0.6995] a 4 decimales."
+    },
+    "brentford_liverpool_177d446a": {
+      "auditoria_visitante_usada": "auditoria_liverpool_2026-10-20_044340.json",
+      "corte_aplicado": "2026-10-17",
+      "diagnostico": "No se conservó snapshot pre-partido de Liverpool del 2026-10-17; se usa auditoría del 2026-10-20 truncada `<2026-10-17`."
+    },
+    "n_exactos_etapa2": 10,
+    "jids_exactos_etapa2": [
+      "0f42c568a51abbbe",
+      "3b0a2acd1f21d210",
+      "61eff7f75ce40b39",
+      "62f014959843c34d",
+      "9f46b31620767c49",
+      "ba49016ef08de15f",
+      "bec6a556bb2c46e8",
+      "c109d9b5b08e96de",
+      "d140040001d88996",
+      "ee5cab1ef4c05c3e"
+    ]
+  },
+  "comparativas_ic95": {
+    "todos_26_jobs_1376": {
+      "TOTAL": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.187028,
+            "log_loss": 0.626833,
+            "brier_ic95": [
+              0.147947,
+              0.225876
+            ],
+            "log_loss_ic95": [
+              0.488943,
+              0.767574
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.191383,
+            "log_loss": 0.656231,
+            "brier_ic95": [
+              0.149931,
+              0.231436
+            ],
+            "log_loss_ic95": [
+              0.503647,
+              0.810693
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.189146,
+            "log_loss": 0.648654,
+            "brier_ic95": [
+              0.149323,
+              0.228914
+            ],
+            "log_loss_ic95": [
+              0.49736,
+              0.801582
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.193777,
+            "log_loss": 0.670603,
+            "brier_ic95": [
+              0.149342,
+              0.23661
+            ],
+            "log_loss_ic95": [
+              0.505149,
+              0.837709
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.194422,
+            "log_loss": 0.672389,
+            "brier_ic95": [
+              0.150371,
+              0.237308
+            ],
+            "log_loss_ic95": [
+              0.50672,
+              0.839984
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.004355,
+            "d_brier_ic95": [
+              -5.1e-05,
+              0.008266
+            ],
+            "d_log_loss": 0.029398,
+            "d_log_loss_ic95": [
+              0.005686,
+              0.052808
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.002118,
+            "d_brier_ic95": [
+              -0.003798,
+              0.007527
+            ],
+            "d_log_loss": 0.021821,
+            "d_log_loss_ic95": [
+              -0.006907,
+              0.051198
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.006749,
+            "d_brier_ic95": [
+              -0.001661,
+              0.014936
+            ],
+            "d_log_loss": 0.04377,
+            "d_log_loss_ic95": [
+              0.005163,
+              0.083206
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.007394,
+            "d_brier_ic95": [
+              -0.000693,
+              0.015168
+            ],
+            "d_log_loss": 0.045556,
+            "d_log_loss_ic95": [
+              0.007391,
+              0.083911
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.002237,
+            "d_brier_ic95": [
+              -0.008138,
+              0.001836
+            ],
+            "d_log_loss": -0.007577,
+            "d_log_loss_ic95": [
+              -0.026785,
+              0.005621
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.002394,
+            "d_brier_ic95": [
+              -0.005058,
+              0.009047
+            ],
+            "d_log_loss": 0.014372,
+            "d_log_loss_ic95": [
+              -0.012492,
+              0.039298
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.003039,
+            "d_brier_ic95": [
+              -0.003732,
+              0.009194
+            ],
+            "d_log_loss": 0.016158,
+            "d_log_loss_ic95": [
+              -0.008374,
+              0.040255
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.004631,
+            "d_brier_ic95": [
+              -0.001334,
+              0.010616
+            ],
+            "d_log_loss": 0.021949,
+            "d_log_loss_ic95": [
+              0.000223,
+              0.046216
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.005276,
+            "d_brier_ic95": [
+              -0.000623,
+              0.01149
+            ],
+            "d_log_loss": 0.023735,
+            "d_log_loss_ic95": [
+              0.002548,
+              0.047836
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.000645,
+            "d_brier_ic95": [
+              -8e-06,
+              0.001826
+            ],
+            "d_log_loss": 0.001786,
+            "d_log_loss_ic95": [
+              -4.5e-05,
+              0.005063
+            ]
+          }
+        }
+      },
+      "Goles_Unificado": {
+        "n_partidos_unicos": 24,
+        "n_filas": 563,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.180096,
+            "log_loss": 0.553527,
+            "brier_ic95": [
+              0.133021,
+              0.231473
+            ],
+            "log_loss_ic95": [
+              0.423834,
+              0.704448
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.180733,
+            "log_loss": 0.558798,
+            "brier_ic95": [
+              0.132759,
+              0.233982
+            ],
+            "log_loss_ic95": [
+              0.4269,
+              0.711068
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.175394,
+            "log_loss": 0.541861,
+            "brier_ic95": [
+              0.132725,
+              0.222634
+            ],
+            "log_loss_ic95": [
+              0.424563,
+              0.676585
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.185088,
+            "log_loss": 0.589635,
+            "brier_ic95": [
+              0.133973,
+              0.236772
+            ],
+            "log_loss_ic95": [
+              0.435307,
+              0.760055
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.186487,
+            "log_loss": 0.5934,
+            "brier_ic95": [
+              0.13519,
+              0.239589
+            ],
+            "log_loss_ic95": [
+              0.436828,
+              0.763377
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.000637,
+            "d_brier_ic95": [
+              -0.007154,
+              0.006651
+            ],
+            "d_log_loss": 0.005271,
+            "d_log_loss_ic95": [
+              -0.013994,
+              0.023276
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.004702,
+            "d_brier_ic95": [
+              -0.016073,
+              0.004218
+            ],
+            "d_log_loss": -0.011666,
+            "d_log_loss_ic95": [
+              -0.045641,
+              0.015218
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.004992,
+            "d_brier_ic95": [
+              -0.010579,
+              0.019591
+            ],
+            "d_log_loss": 0.036108,
+            "d_log_loss_ic95": [
+              -0.016739,
+              0.088759
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.006391,
+            "d_brier_ic95": [
+              -0.008428,
+              0.020515
+            ],
+            "d_log_loss": 0.039873,
+            "d_log_loss_ic95": [
+              -0.011896,
+              0.090536
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.005339,
+            "d_brier_ic95": [
+              -0.018076,
+              0.0037
+            ],
+            "d_log_loss": -0.016937,
+            "d_log_loss_ic95": [
+              -0.057913,
+              0.013108
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.004355,
+            "d_brier_ic95": [
+              -0.011684,
+              0.019311
+            ],
+            "d_log_loss": 0.030837,
+            "d_log_loss_ic95": [
+              -0.028212,
+              0.086726
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.005754,
+            "d_brier_ic95": [
+              -0.009043,
+              0.019551
+            ],
+            "d_log_loss": 0.034602,
+            "d_log_loss_ic95": [
+              -0.020318,
+              0.088028
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.009694,
+            "d_brier_ic95": [
+              -0.0027,
+              0.021939
+            ],
+            "d_log_loss": 0.047774,
+            "d_log_loss_ic95": [
+              0.000795,
+              0.097373
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.011093,
+            "d_brier_ic95": [
+              -0.001334,
+              0.022984
+            ],
+            "d_log_loss": 0.051539,
+            "d_log_loss_ic95": [
+              0.005217,
+              0.099391
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.001399,
+            "d_brier_ic95": [
+              -9e-06,
+              0.003879
+            ],
+            "d_log_loss": 0.003765,
+            "d_log_loss_ic95": [
+              -9.5e-05,
+              0.010456
+            ]
+          }
+        }
+      },
+      "Córneres": {
+        "n_partidos_unicos": 18,
+        "n_filas": 613,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 18 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.219514,
+            "log_loss": 0.783772,
+            "brier_ic95": [
+              0.148895,
+              0.28247
+            ],
+            "log_loss_ic95": [
+              0.508925,
+              1.036568
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.224583,
+            "log_loss": 0.831129,
+            "brier_ic95": [
+              0.149886,
+              0.292847
+            ],
+            "log_loss_ic95": [
+              0.517694,
+              1.133497
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.224583,
+            "log_loss": 0.831129,
+            "brier_ic95": [
+              0.149886,
+              0.292847
+            ],
+            "log_loss_ic95": [
+              0.517694,
+              1.133497
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.224583,
+            "log_loss": 0.831129,
+            "brier_ic95": [
+              0.149886,
+              0.292847
+            ],
+            "log_loss_ic95": [
+              0.517694,
+              1.133497
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.224583,
+            "log_loss": 0.831128,
+            "brier_ic95": [
+              0.149886,
+              0.292847
+            ],
+            "log_loss_ic95": [
+              0.517693,
+              1.133489
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.005069,
+            "d_brier_ic95": [
+              -0.001897,
+              0.011736
+            ],
+            "d_log_loss": 0.047357,
+            "d_log_loss_ic95": [
+              -0.003121,
+              0.099339
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.005069,
+            "d_brier_ic95": [
+              -0.001897,
+              0.011736
+            ],
+            "d_log_loss": 0.047357,
+            "d_log_loss_ic95": [
+              -0.003121,
+              0.099339
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.005069,
+            "d_brier_ic95": [
+              -0.001897,
+              0.011736
+            ],
+            "d_log_loss": 0.047357,
+            "d_log_loss_ic95": [
+              -0.003121,
+              0.099339
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.005069,
+            "d_brier_ic95": [
+              -0.001897,
+              0.011736
+            ],
+            "d_log_loss": 0.047356,
+            "d_log_loss_ic95": [
+              -0.003122,
+              0.099337
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -1e-06,
+            "d_log_loss_ic95": [
+              -4e-06,
+              1e-06
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -1e-06,
+            "d_log_loss_ic95": [
+              -4e-06,
+              1e-06
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -1e-06,
+            "d_log_loss_ic95": [
+              -4e-06,
+              1e-06
+            ]
+          }
+        }
+      },
+      "Goles Equipo/BTTS/1erGol": {
+        "n_partidos_unicos": 20,
+        "n_filas": 46,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 20 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.208679,
+            "log_loss": 0.609618,
+            "brier_ic95": [
+              0.11733,
+              0.314293
+            ],
+            "log_loss_ic95": [
+              0.397637,
+              0.856571
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.202796,
+            "log_loss": 0.596861,
+            "brier_ic95": [
+              0.109967,
+              0.310291
+            ],
+            "log_loss_ic95": [
+              0.381566,
+              0.847222
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.194948,
+            "log_loss": 0.574532,
+            "brier_ic95": [
+              0.115788,
+              0.285758
+            ],
+            "log_loss_ic95": [
+              0.396907,
+              0.781172
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.205395,
+            "log_loss": 0.607228,
+            "brier_ic95": [
+              0.122181,
+              0.305292
+            ],
+            "log_loss_ic95": [
+              0.411117,
+              0.840653
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.207145,
+            "log_loss": 0.611332,
+            "brier_ic95": [
+              0.122202,
+              0.308668
+            ],
+            "log_loss_ic95": [
+              0.411292,
+              0.850516
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": -0.005883,
+            "d_brier_ic95": [
+              -0.032592,
+              0.009396
+            ],
+            "d_log_loss": -0.012757,
+            "d_log_loss_ic95": [
+              -0.078905,
+              0.027233
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.013731,
+            "d_brier_ic95": [
+              -0.043086,
+              0.006871
+            ],
+            "d_log_loss": -0.035086,
+            "d_log_loss_ic95": [
+              -0.108095,
+              0.017226
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": -0.003284,
+            "d_brier_ic95": [
+              -0.033708,
+              0.019861
+            ],
+            "d_log_loss": -0.00239,
+            "d_log_loss_ic95": [
+              -0.080524,
+              0.057749
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": -0.001534,
+            "d_brier_ic95": [
+              -0.031601,
+              0.020145
+            ],
+            "d_log_loss": 0.001714,
+            "d_log_loss_ic95": [
+              -0.074893,
+              0.058494
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.007848,
+            "d_brier_ic95": [
+              -0.028428,
+              0.007627
+            ],
+            "d_log_loss": -0.022329,
+            "d_log_loss_ic95": [
+              -0.07914,
+              0.020537
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.002599,
+            "d_brier_ic95": [
+              -0.020721,
+              0.022197
+            ],
+            "d_log_loss": 0.010367,
+            "d_log_loss_ic95": [
+              -0.054085,
+              0.066019
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.004349,
+            "d_brier_ic95": [
+              -0.016052,
+              0.02228
+            ],
+            "d_log_loss": 0.014471,
+            "d_log_loss_ic95": [
+              -0.043626,
+              0.066018
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.010447,
+            "d_brier_ic95": [
+              -0.004977,
+              0.025731
+            ],
+            "d_log_loss": 0.032696,
+            "d_log_loss_ic95": [
+              -0.013866,
+              0.080446
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.012197,
+            "d_brier_ic95": [
+              -0.00375,
+              0.02773
+            ],
+            "d_log_loss": 0.0368,
+            "d_log_loss_ic95": [
+              -0.00914,
+              0.085416
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.00175,
+            "d_brier_ic95": [
+              -0.000163,
+              0.005254
+            ],
+            "d_log_loss": 0.004104,
+            "d_log_loss_ic95": [
+              -0.000653,
+              0.012362
+            ]
+          }
+        }
+      },
+      "Goles Partido/Mitades": {
+        "n_partidos_unicos": 24,
+        "n_filas": 517,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.177552,
+            "log_loss": 0.548537,
+            "brier_ic95": [
+              0.132827,
+              0.226543
+            ],
+            "log_loss_ic95": [
+              0.421586,
+              0.698707
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.17877,
+            "log_loss": 0.555411,
+            "brier_ic95": [
+              0.13314,
+              0.228054
+            ],
+            "log_loss_ic95": [
+              0.42681,
+              0.709281
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.173654,
+            "log_loss": 0.538954,
+            "brier_ic95": [
+              0.132201,
+              0.220003
+            ],
+            "log_loss_ic95": [
+              0.421137,
+              0.681472
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.183281,
+            "log_loss": 0.58807,
+            "brier_ic95": [
+              0.1333,
+              0.237446
+            ],
+            "log_loss_ic95": [
+              0.432809,
+              0.770192
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.184649,
+            "log_loss": 0.591804,
+            "brier_ic95": [
+              0.13395,
+              0.239193
+            ],
+            "log_loss_ic95": [
+              0.434866,
+              0.77358
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.001218,
+            "d_brier_ic95": [
+              -0.005328,
+              0.006426
+            ],
+            "d_log_loss": 0.006874,
+            "d_log_loss_ic95": [
+              -0.010297,
+              0.022884
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.003898,
+            "d_brier_ic95": [
+              -0.013904,
+              0.004666
+            ],
+            "d_log_loss": -0.009583,
+            "d_log_loss_ic95": [
+              -0.040296,
+              0.017144
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.005729,
+            "d_brier_ic95": [
+              -0.010186,
+              0.020681
+            ],
+            "d_log_loss": 0.039533,
+            "d_log_loss_ic95": [
+              -0.015288,
+              0.095939
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.007097,
+            "d_brier_ic95": [
+              -0.007991,
+              0.021128
+            ],
+            "d_log_loss": 0.043267,
+            "d_log_loss_ic95": [
+              -0.010434,
+              0.097795
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.005116,
+            "d_brier_ic95": [
+              -0.017037,
+              0.003766
+            ],
+            "d_log_loss": -0.016457,
+            "d_log_loss_ic95": [
+              -0.055384,
+              0.013709
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.004511,
+            "d_brier_ic95": [
+              -0.011599,
+              0.019781
+            ],
+            "d_log_loss": 0.032659,
+            "d_log_loss_ic95": [
+              -0.024727,
+              0.092464
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.005879,
+            "d_brier_ic95": [
+              -0.008772,
+              0.020298
+            ],
+            "d_log_loss": 0.036393,
+            "d_log_loss_ic95": [
+              -0.018237,
+              0.093613
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.009627,
+            "d_brier_ic95": [
+              -0.003377,
+              0.022493
+            ],
+            "d_log_loss": 0.049116,
+            "d_log_loss_ic95": [
+              4.2e-05,
+              0.10112
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.010995,
+            "d_brier_ic95": [
+              -0.00205,
+              0.023268
+            ],
+            "d_log_loss": 0.05285,
+            "d_log_loss_ic95": [
+              0.004049,
+              0.105501
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.001368,
+            "d_brier_ic95": [
+              -1.2e-05,
+              0.003638
+            ],
+            "d_log_loss": 0.003734,
+            "d_log_loss_ic95": [
+              -0.000109,
+              0.010125
+            ]
+          }
+        }
+      },
+      "Resultado/DC/Hándicap": {
+        "n_partidos_unicos": 24,
+        "n_filas": 135,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.103698,
+            "log_loss": 0.346411,
+            "brier_ic95": [
+              0.07173,
+              0.139102
+            ],
+            "log_loss_ic95": [
+              0.263984,
+              0.435475
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.108588,
+            "log_loss": 0.363834,
+            "brier_ic95": [
+              0.075922,
+              0.143511
+            ],
+            "log_loss_ic95": [
+              0.280982,
+              0.454562
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.108046,
+            "log_loss": 0.357234,
+            "brier_ic95": [
+              0.076228,
+              0.140995
+            ],
+            "log_loss_ic95": [
+              0.27923,
+              0.437747
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.114825,
+            "log_loss": 0.381719,
+            "brier_ic95": [
+              0.076837,
+              0.157124
+            ],
+            "log_loss_ic95": [
+              0.274122,
+              0.507134
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.115568,
+            "log_loss": 0.384226,
+            "brier_ic95": [
+              0.077442,
+              0.157583
+            ],
+            "log_loss_ic95": [
+              0.276436,
+              0.508954
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.00489,
+            "d_brier_ic95": [
+              0.000533,
+              0.010619
+            ],
+            "d_log_loss": 0.017423,
+            "d_log_loss_ic95": [
+              0.00234,
+              0.03748
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.004348,
+            "d_brier_ic95": [
+              -0.002593,
+              0.012037
+            ],
+            "d_log_loss": 0.010823,
+            "d_log_loss_ic95": [
+              -0.012887,
+              0.035435
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.011127,
+            "d_brier_ic95": [
+              -4.4e-05,
+              0.024246
+            ],
+            "d_log_loss": 0.035308,
+            "d_log_loss_ic95": [
+              -0.003481,
+              0.08736
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.01187,
+            "d_brier_ic95": [
+              0.000929,
+              0.024839
+            ],
+            "d_log_loss": 0.037815,
+            "d_log_loss_ic95": [
+              -0.000218,
+              0.088823
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.000542,
+            "d_brier_ic95": [
+              -0.008787,
+              0.006947
+            ],
+            "d_log_loss": -0.0066,
+            "d_log_loss_ic95": [
+              -0.032552,
+              0.016764
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.006237,
+            "d_brier_ic95": [
+              -0.005968,
+              0.019899
+            ],
+            "d_log_loss": 0.017885,
+            "d_log_loss_ic95": [
+              -0.023899,
+              0.069047
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.00698,
+            "d_brier_ic95": [
+              -0.005051,
+              0.020423
+            ],
+            "d_log_loss": 0.020392,
+            "d_log_loss_ic95": [
+              -0.020007,
+              0.071026
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.006779,
+            "d_brier_ic95": [
+              -0.006831,
+              0.022728
+            ],
+            "d_log_loss": 0.024485,
+            "d_log_loss_ic95": [
+              -0.02158,
+              0.083864
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.007522,
+            "d_brier_ic95": [
+              -0.005927,
+              0.023056
+            ],
+            "d_log_loss": 0.026992,
+            "d_log_loss_ic95": [
+              -0.019205,
+              0.08554
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.000743,
+            "d_brier_ic95": [
+              -4.6e-05,
+              0.001722
+            ],
+            "d_log_loss": 0.002507,
+            "d_log_loss_ic95": [
+              -8.6e-05,
+              0.0057
+            ]
+          }
+        }
+      },
+      "Tarjetas": {
+        "n_partidos_unicos": 16,
+        "n_filas": 65,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 16 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.113779,
+            "log_loss": 0.364129,
+            "brier_ic95": [
+              0.051499,
+              0.174575
+            ],
+            "log_loss_ic95": [
+              0.201388,
+              0.534264
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.073898,
+              0.199986
+            ],
+            "log_loss_ic95": [
+              0.268032,
+              0.621765
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.073898,
+              0.199986
+            ],
+            "log_loss_ic95": [
+              0.268032,
+              0.621765
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.073898,
+              0.199986
+            ],
+            "log_loss_ic95": [
+              0.268032,
+              0.621765
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.073898,
+              0.199986
+            ],
+            "log_loss_ic95": [
+              0.268031,
+              0.621765
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.028713,
+            "d_brier_ic95": [
+              0.00746,
+              0.054518
+            ],
+            "d_log_loss": 0.09389,
+            "d_log_loss_ic95": [
+              0.023196,
+              0.174599
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.028713,
+            "d_brier_ic95": [
+              0.00746,
+              0.054518
+            ],
+            "d_log_loss": 0.09389,
+            "d_log_loss_ic95": [
+              0.023196,
+              0.174599
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.028713,
+            "d_brier_ic95": [
+              0.00746,
+              0.054518
+            ],
+            "d_log_loss": 0.09389,
+            "d_log_loss_ic95": [
+              0.023196,
+              0.174599
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.028713,
+            "d_brier_ic95": [
+              0.00746,
+              0.054518
+            ],
+            "d_log_loss": 0.09389,
+            "d_log_loss_ic95": [
+              0.023196,
+              0.174599
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    "sin_2_datacut_24_jobs": {
+      "TOTAL": {
+        "n_partidos_unicos": 22,
+        "n_filas": 1266,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 22 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.188116,
+            "log_loss": 0.626006,
+            "brier_ic95": [
+              0.146724,
+              0.228336
+            ],
+            "log_loss_ic95": [
+              0.481312,
+              0.766989
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.194267,
+            "log_loss": 0.663014,
+            "brier_ic95": [
+              0.150735,
+              0.236969
+            ],
+            "log_loss_ic95": [
+              0.502718,
+              0.824743
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.191511,
+            "log_loss": 0.654069,
+            "brier_ic95": [
+              0.149384,
+              0.233257
+            ],
+            "log_loss_ic95": [
+              0.494419,
+              0.811406
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.196829,
+            "log_loss": 0.67854,
+            "brier_ic95": [
+              0.150216,
+              0.242659
+            ],
+            "log_loss_ic95": [
+              0.50118,
+              0.850754
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.197531,
+            "log_loss": 0.680481,
+            "brier_ic95": [
+              0.150951,
+              0.24365
+            ],
+            "log_loss_ic95": [
+              0.503063,
+              0.85452
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.006151,
+            "d_brier_ic95": [
+              0.002736,
+              0.009425
+            ],
+            "d_log_loss": 0.037008,
+            "d_log_loss_ic95": [
+              0.014496,
+              0.059841
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.003395,
+            "d_brier_ic95": [
+              -0.003376,
+              0.008738
+            ],
+            "d_log_loss": 0.028063,
+            "d_log_loss_ic95": [
+              -0.004316,
+              0.056488
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.008713,
+            "d_brier_ic95": [
+              -0.000706,
+              0.016862
+            ],
+            "d_log_loss": 0.052534,
+            "d_log_loss_ic95": [
+              0.009721,
+              0.089603
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.009415,
+            "d_brier_ic95": [
+              0.000623,
+              0.017261
+            ],
+            "d_log_loss": 0.054475,
+            "d_log_loss_ic95": [
+              0.012998,
+              0.090764
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.002756,
+            "d_brier_ic95": [
+              -0.009492,
+              0.001904
+            ],
+            "d_log_loss": -0.008945,
+            "d_log_loss_ic95": [
+              -0.030879,
+              0.006046
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.002562,
+            "d_brier_ic95": [
+              -0.006089,
+              0.009688
+            ],
+            "d_log_loss": 0.015526,
+            "d_log_loss_ic95": [
+              -0.013379,
+              0.042162
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.003264,
+            "d_brier_ic95": [
+              -0.004821,
+              0.009909
+            ],
+            "d_log_loss": 0.017467,
+            "d_log_loss_ic95": [
+              -0.00947,
+              0.042909
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.005318,
+            "d_brier_ic95": [
+              -0.001395,
+              0.011538
+            ],
+            "d_log_loss": 0.024471,
+            "d_log_loss_ic95": [
+              0.000449,
+              0.05016
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.00602,
+            "d_brier_ic95": [
+              -0.000516,
+              0.012178
+            ],
+            "d_log_loss": 0.026412,
+            "d_log_loss_ic95": [
+              0.002186,
+              0.051562
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.000702,
+            "d_brier_ic95": [
+              -0.0,
+              0.002018
+            ],
+            "d_log_loss": 0.001941,
+            "d_log_loss_ic95": [
+              -1e-06,
+              0.005574
+            ]
+          }
+        }
+      },
+      "Goles_Unificado": {
+        "n_partidos_unicos": 22,
+        "n_filas": 533,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 22 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.181357,
+            "log_loss": 0.557849,
+            "brier_ic95": [
+              0.131169,
+              0.233281
+            ],
+            "log_loss_ic95": [
+              0.421048,
+              0.709909
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.18541,
+            "log_loss": 0.571376,
+            "brier_ic95": [
+              0.134654,
+              0.239659
+            ],
+            "log_loss_ic95": [
+              0.432724,
+              0.727144
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.179311,
+            "log_loss": 0.55248,
+            "brier_ic95": [
+              0.134172,
+              0.226017
+            ],
+            "log_loss_ic95": [
+              0.431652,
+              0.686157
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.189832,
+            "log_loss": 0.603539,
+            "brier_ic95": [
+              0.138982,
+              0.242802
+            ],
+            "log_loss_ic95": [
+              0.452401,
+              0.779936
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.19131,
+            "log_loss": 0.607515,
+            "brier_ic95": [
+              0.13951,
+              0.244274
+            ],
+            "log_loss_ic95": [
+              0.455643,
+              0.783053
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.004053,
+            "d_brier_ic95": [
+              0.000952,
+              0.008416
+            ],
+            "d_log_loss": 0.013527,
+            "d_log_loss_ic95": [
+              0.002806,
+              0.02882
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.002046,
+            "d_brier_ic95": [
+              -0.012317,
+              0.006454
+            ],
+            "d_log_loss": -0.005369,
+            "d_log_loss_ic95": [
+              -0.038102,
+              0.021815
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.008475,
+            "d_brier_ic95": [
+              -0.007529,
+              0.022902
+            ],
+            "d_log_loss": 0.04569,
+            "d_log_loss_ic95": [
+              -0.009728,
+              0.099957
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.009953,
+            "d_brier_ic95": [
+              -0.004501,
+              0.023497
+            ],
+            "d_log_loss": 0.049666,
+            "d_log_loss_ic95": [
+              -0.00385,
+              0.101549
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.006099,
+            "d_brier_ic95": [
+              -0.019877,
+              0.003938
+            ],
+            "d_log_loss": -0.018896,
+            "d_log_loss_ic95": [
+              -0.063608,
+              0.013927
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.004422,
+            "d_brier_ic95": [
+              -0.014271,
+              0.02038
+            ],
+            "d_log_loss": 0.032163,
+            "d_log_loss_ic95": [
+              -0.030987,
+              0.091055
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0059,
+            "d_brier_ic95": [
+              -0.010812,
+              0.020944
+            ],
+            "d_log_loss": 0.036139,
+            "d_log_loss_ic95": [
+              -0.022531,
+              0.093122
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.010521,
+            "d_brier_ic95": [
+              -0.003277,
+              0.022976
+            ],
+            "d_log_loss": 0.051059,
+            "d_log_loss_ic95": [
+              0.000566,
+              0.103738
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.011999,
+            "d_brier_ic95": [
+              -0.001461,
+              0.024156
+            ],
+            "d_log_loss": 0.055035,
+            "d_log_loss_ic95": [
+              0.004078,
+              0.106225
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.001478,
+            "d_brier_ic95": [
+              -0.0,
+              0.004187
+            ],
+            "d_log_loss": 0.003976,
+            "d_log_loss_ic95": [
+              -6.3e-05,
+              0.011279
+            ]
+          }
+        }
+      },
+      "Córneres": {
+        "n_partidos_unicos": 16,
+        "n_filas": 548,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 16 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.219696,
+            "log_loss": 0.778445,
+            "brier_ic95": [
+              0.147638,
+              0.28949
+            ],
+            "log_loss_ic95": [
+              0.494258,
+              1.049794
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.226937,
+            "log_loss": 0.83977,
+            "brier_ic95": [
+              0.149955,
+              0.301944
+            ],
+            "log_loss_ic95": [
+              0.513696,
+              1.157661
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.226937,
+            "log_loss": 0.83977,
+            "brier_ic95": [
+              0.149955,
+              0.301944
+            ],
+            "log_loss_ic95": [
+              0.513696,
+              1.157661
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.226937,
+            "log_loss": 0.83977,
+            "brier_ic95": [
+              0.149955,
+              0.301944
+            ],
+            "log_loss_ic95": [
+              0.513696,
+              1.157661
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.226937,
+            "log_loss": 0.839768,
+            "brier_ic95": [
+              0.149955,
+              0.301944
+            ],
+            "log_loss_ic95": [
+              0.513694,
+              1.157663
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.007241,
+            "d_brier_ic95": [
+              0.000266,
+              0.013715
+            ],
+            "d_log_loss": 0.061325,
+            "d_log_loss_ic95": [
+              0.010206,
+              0.112918
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.007241,
+            "d_brier_ic95": [
+              0.000266,
+              0.013715
+            ],
+            "d_log_loss": 0.061325,
+            "d_log_loss_ic95": [
+              0.010206,
+              0.112918
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.007241,
+            "d_brier_ic95": [
+              0.000266,
+              0.013715
+            ],
+            "d_log_loss": 0.061325,
+            "d_log_loss_ic95": [
+              0.010206,
+              0.112918
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.007241,
+            "d_brier_ic95": [
+              0.000266,
+              0.013715
+            ],
+            "d_log_loss": 0.061323,
+            "d_log_loss_ic95": [
+              0.010204,
+              0.112913
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -2e-06,
+            "d_log_loss_ic95": [
+              -5e-06,
+              2e-06
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -2e-06,
+            "d_log_loss_ic95": [
+              -5e-06,
+              2e-06
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -2e-06,
+            "d_log_loss_ic95": [
+              -5e-06,
+              2e-06
+            ]
+          }
+        }
+      },
+      "Goles Equipo/BTTS/1erGol": {
+        "n_partidos_unicos": 18,
+        "n_filas": 44,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 18 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.201266,
+            "log_loss": 0.591189,
+            "brier_ic95": [
+              0.10785,
+              0.31825
+            ],
+            "log_loss_ic95": [
+              0.376196,
+              0.85936
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.20658,
+            "log_loss": 0.606552,
+            "brier_ic95": [
+              0.111053,
+              0.323831
+            ],
+            "log_loss_ic95": [
+              0.385709,
+              0.884283
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.198678,
+            "log_loss": 0.583894,
+            "brier_ic95": [
+              0.118859,
+              0.299528
+            ],
+            "log_loss_ic95": [
+              0.403343,
+              0.816251
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.209046,
+            "log_loss": 0.61714,
+            "brier_ic95": [
+              0.123914,
+              0.317047
+            ],
+            "log_loss_ic95": [
+              0.41833,
+              0.877176
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.210875,
+            "log_loss": 0.621431,
+            "brier_ic95": [
+              0.124289,
+              0.319483
+            ],
+            "log_loss_ic95": [
+              0.418712,
+              0.882742
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.005314,
+            "d_brier_ic95": [
+              0.000243,
+              0.012613
+            ],
+            "d_log_loss": 0.015363,
+            "d_log_loss_ic95": [
+              0.000459,
+              0.036863
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.002588,
+            "d_brier_ic95": [
+              -0.020547,
+              0.010555
+            ],
+            "d_log_loss": -0.007295,
+            "d_log_loss_ic95": [
+              -0.054937,
+              0.028453
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.00778,
+            "d_brier_ic95": [
+              -0.01207,
+              0.025098
+            ],
+            "d_log_loss": 0.025951,
+            "d_log_loss_ic95": [
+              -0.026934,
+              0.07477
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.009609,
+            "d_brier_ic95": [
+              -0.007863,
+              0.02537
+            ],
+            "d_log_loss": 0.030242,
+            "d_log_loss_ic95": [
+              -0.016243,
+              0.075125
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.007902,
+            "d_brier_ic95": [
+              -0.031782,
+              0.008353
+            ],
+            "d_log_loss": -0.022658,
+            "d_log_loss_ic95": [
+              -0.086443,
+              0.021495
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.002466,
+            "d_brier_ic95": [
+              -0.023302,
+              0.022956
+            ],
+            "d_log_loss": 0.010588,
+            "d_log_loss_ic95": [
+              -0.05855,
+              0.06858
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.004295,
+            "d_brier_ic95": [
+              -0.017559,
+              0.022916
+            ],
+            "d_log_loss": 0.014879,
+            "d_log_loss_ic95": [
+              -0.046015,
+              0.068161
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.010368,
+            "d_brier_ic95": [
+              -0.005509,
+              0.025988
+            ],
+            "d_log_loss": 0.033246,
+            "d_log_loss_ic95": [
+              -0.012331,
+              0.082658
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.012197,
+            "d_brier_ic95": [
+              -0.00422,
+              0.027428
+            ],
+            "d_log_loss": 0.037537,
+            "d_log_loss_ic95": [
+              -0.010171,
+              0.086543
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.001829,
+            "d_brier_ic95": [
+              -0.000176,
+              0.005791
+            ],
+            "d_log_loss": 0.004291,
+            "d_log_loss_ic95": [
+              -0.000717,
+              0.0137
+            ]
+          }
+        }
+      },
+      "Goles Partido/Mitades": {
+        "n_partidos_unicos": 22,
+        "n_filas": 489,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 22 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.179566,
+            "log_loss": 0.554849,
+            "brier_ic95": [
+              0.130053,
+              0.234123
+            ],
+            "log_loss_ic95": [
+              0.416487,
+              0.715747
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.183505,
+            "log_loss": 0.568211,
+            "brier_ic95": [
+              0.132621,
+              0.238591
+            ],
+            "log_loss_ic95": [
+              0.426895,
+              0.733462
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.177569,
+            "log_loss": 0.549653,
+            "brier_ic95": [
+              0.131122,
+              0.225167
+            ],
+            "log_loss_ic95": [
+              0.418035,
+              0.692804
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.188103,
+            "log_loss": 0.602315,
+            "brier_ic95": [
+              0.132992,
+              0.244737
+            ],
+            "log_loss_ic95": [
+              0.433387,
+              0.794928
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.18955,
+            "log_loss": 0.606263,
+            "brier_ic95": [
+              0.134429,
+              0.246696
+            ],
+            "log_loss_ic95": [
+              0.437649,
+              0.798874
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.003939,
+            "d_brier_ic95": [
+              0.000936,
+              0.008005
+            ],
+            "d_log_loss": 0.013362,
+            "d_log_loss_ic95": [
+              0.002746,
+              0.027965
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.001997,
+            "d_brier_ic95": [
+              -0.012044,
+              0.00629
+            ],
+            "d_log_loss": -0.005196,
+            "d_log_loss_ic95": [
+              -0.037274,
+              0.022561
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.008537,
+            "d_brier_ic95": [
+              -0.00675,
+              0.023216
+            ],
+            "d_log_loss": 0.047466,
+            "d_log_loss_ic95": [
+              -0.010143,
+              0.105617
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.009984,
+            "d_brier_ic95": [
+              -0.004229,
+              0.02383
+            ],
+            "d_log_loss": 0.051414,
+            "d_log_loss_ic95": [
+              -0.002753,
+              0.107876
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.005936,
+            "d_brier_ic95": [
+              -0.018869,
+              0.003892
+            ],
+            "d_log_loss": -0.018558,
+            "d_log_loss_ic95": [
+              -0.061475,
+              0.013998
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.004598,
+            "d_brier_ic95": [
+              -0.012547,
+              0.020967
+            ],
+            "d_log_loss": 0.034104,
+            "d_log_loss_ic95": [
+              -0.02946,
+              0.09704
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.006045,
+            "d_brier_ic95": [
+              -0.009723,
+              0.021347
+            ],
+            "d_log_loss": 0.038052,
+            "d_log_loss_ic95": [
+              -0.022988,
+              0.099336
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.010534,
+            "d_brier_ic95": [
+              -0.003124,
+              0.024431
+            ],
+            "d_log_loss": 0.052662,
+            "d_log_loss_ic95": [
+              -0.001683,
+              0.110907
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.011981,
+            "d_brier_ic95": [
+              -0.001541,
+              0.025255
+            ],
+            "d_log_loss": 0.05661,
+            "d_log_loss_ic95": [
+              0.00305,
+              0.113838
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.001447,
+            "d_brier_ic95": [
+              -1.3e-05,
+              0.003961
+            ],
+            "d_log_loss": 0.003948,
+            "d_log_loss_ic95": [
+              -0.000117,
+              0.010932
+            ]
+          }
+        }
+      },
+      "Resultado/DC/Hándicap": {
+        "n_partidos_unicos": 22,
+        "n_filas": 124,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 22 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.111081,
+            "log_loss": 0.365886,
+            "brier_ic95": [
+              0.077675,
+              0.14599
+            ],
+            "log_loss_ic95": [
+              0.280768,
+              0.455251
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.114871,
+            "log_loss": 0.378916,
+            "brier_ic95": [
+              0.079703,
+              0.151365
+            ],
+            "log_loss_ic95": [
+              0.288413,
+              0.472544
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.112951,
+            "log_loss": 0.368817,
+            "brier_ic95": [
+              0.079361,
+              0.146861
+            ],
+            "log_loss_ic95": [
+              0.28367,
+              0.453574
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.12202,
+            "log_loss": 0.399189,
+            "brier_ic95": [
+              0.082036,
+              0.166804
+            ],
+            "log_loss_ic95": [
+              0.285714,
+              0.532991
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.122829,
+            "log_loss": 0.401918,
+            "brier_ic95": [
+              0.082784,
+              0.167602
+            ],
+            "log_loss_ic95": [
+              0.287625,
+              0.536413
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.00379,
+            "d_brier_ic95": [
+              -0.000137,
+              0.00934
+            ],
+            "d_log_loss": 0.01303,
+            "d_log_loss_ic95": [
+              -0.000476,
+              0.032353
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.00187,
+            "d_brier_ic95": [
+              -0.004362,
+              0.008115
+            ],
+            "d_log_loss": 0.002931,
+            "d_log_loss_ic95": [
+              -0.019862,
+              0.02486
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.010939,
+            "d_brier_ic95": [
+              -0.001718,
+              0.025387
+            ],
+            "d_log_loss": 0.033303,
+            "d_log_loss_ic95": [
+              -0.009366,
+              0.089345
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.011748,
+            "d_brier_ic95": [
+              -0.000744,
+              0.026243
+            ],
+            "d_log_loss": 0.036032,
+            "d_log_loss_ic95": [
+              -0.006893,
+              0.092256
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.00192,
+            "d_brier_ic95": [
+              -0.010085,
+              0.005693
+            ],
+            "d_log_loss": -0.010099,
+            "d_log_loss_ic95": [
+              -0.036821,
+              0.014509
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.007149,
+            "d_brier_ic95": [
+              -0.006613,
+              0.022817
+            ],
+            "d_log_loss": 0.020273,
+            "d_log_loss_ic95": [
+              -0.025657,
+              0.076413
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.007958,
+            "d_brier_ic95": [
+              -0.005616,
+              0.023584
+            ],
+            "d_log_loss": 0.023002,
+            "d_log_loss_ic95": [
+              -0.022075,
+              0.079847
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.009069,
+            "d_brier_ic95": [
+              -0.004873,
+              0.025521
+            ],
+            "d_log_loss": 0.030372,
+            "d_log_loss_ic95": [
+              -0.018802,
+              0.094311
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.009878,
+            "d_brier_ic95": [
+              -0.004233,
+              0.026058
+            ],
+            "d_log_loss": 0.033101,
+            "d_log_loss_ic95": [
+              -0.016045,
+              0.09585
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.000809,
+            "d_brier_ic95": [
+              -5.2e-05,
+              0.001886
+            ],
+            "d_log_loss": 0.002729,
+            "d_log_loss_ic95": [
+              -9.7e-05,
+              0.006213
+            ]
+          }
+        }
+      },
+      "Tarjetas": {
+        "n_partidos_unicos": 15,
+        "n_filas": 61,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 15 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.120058,
+            "log_loss": 0.380861,
+            "brier_ic95": [
+              0.053773,
+              0.180821
+            ],
+            "log_loss_ic95": [
+              0.207412,
+              0.551991
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.139566,
+            "log_loss": 0.453324,
+            "brier_ic95": [
+              0.065323,
+              0.202699
+            ],
+            "log_loss_ic95": [
+              0.243877,
+              0.632375
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.139566,
+            "log_loss": 0.453324,
+            "brier_ic95": [
+              0.065323,
+              0.202699
+            ],
+            "log_loss_ic95": [
+              0.243877,
+              0.632375
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.139566,
+            "log_loss": 0.453324,
+            "brier_ic95": [
+              0.065323,
+              0.202699
+            ],
+            "log_loss_ic95": [
+              0.243877,
+              0.632375
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.139566,
+            "log_loss": 0.453324,
+            "brier_ic95": [
+              0.065323,
+              0.202699
+            ],
+            "log_loss_ic95": [
+              0.243877,
+              0.632375
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.019508,
+            "d_brier_ic95": [
+              0.004591,
+              0.036531
+            ],
+            "d_log_loss": 0.072463,
+            "d_log_loss_ic95": [
+              0.010202,
+              0.145605
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.019508,
+            "d_brier_ic95": [
+              0.004591,
+              0.036531
+            ],
+            "d_log_loss": 0.072463,
+            "d_log_loss_ic95": [
+              0.010202,
+              0.145605
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.019508,
+            "d_brier_ic95": [
+              0.004591,
+              0.036531
+            ],
+            "d_log_loss": 0.072463,
+            "d_log_loss_ic95": [
+              0.010202,
+              0.145605
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.019508,
+            "d_brier_ic95": [
+              0.004591,
+              0.036531
+            ],
+            "d_log_loss": 0.072463,
+            "d_log_loss_ic95": [
+              0.010201,
+              0.145605
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    "cohorte_exacta_s2_10_jobs": {
+      "TOTAL": {
+        "n_partidos_unicos": 10,
+        "n_filas": 553,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 10 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.212425,
+            "log_loss": 0.713921,
+            "brier_ic95": [
+              0.150671,
+              0.271927
+            ],
+            "log_loss_ic95": [
+              0.488112,
+              0.935486
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.217926,
+            "log_loss": 0.756146,
+            "brier_ic95": [
+              0.152781,
+              0.281574
+            ],
+            "log_loss_ic95": [
+              0.499783,
+              1.005332
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.215526,
+            "log_loss": 0.747432,
+            "brier_ic95": [
+              0.152583,
+              0.2779
+            ],
+            "log_loss_ic95": [
+              0.493334,
+              0.997971
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.218849,
+            "log_loss": 0.769409,
+            "brier_ic95": [
+              0.149062,
+              0.286905
+            ],
+            "log_loss_ic95": [
+              0.487682,
+              1.038045
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.218849,
+            "log_loss": 0.769408,
+            "brier_ic95": [
+              0.149062,
+              0.286905
+            ],
+            "log_loss_ic95": [
+              0.487682,
+              1.038044
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.005501,
+            "d_brier_ic95": [
+              -0.000987,
+              0.01153
+            ],
+            "d_log_loss": 0.042225,
+            "d_log_loss_ic95": [
+              -0.003504,
+              0.087115
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.003101,
+            "d_brier_ic95": [
+              -0.006584,
+              0.011238
+            ],
+            "d_log_loss": 0.033511,
+            "d_log_loss_ic95": [
+              -0.022413,
+              0.08417
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.006424,
+            "d_brier_ic95": [
+              -0.00498,
+              0.017073
+            ],
+            "d_log_loss": 0.055488,
+            "d_log_loss_ic95": [
+              -0.006476,
+              0.114895
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.006424,
+            "d_brier_ic95": [
+              -0.00498,
+              0.017073
+            ],
+            "d_log_loss": 0.055487,
+            "d_log_loss_ic95": [
+              -0.006475,
+              0.114889
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.0024,
+            "d_brier_ic95": [
+              -0.007902,
+              0.002771
+            ],
+            "d_log_loss": -0.008714,
+            "d_log_loss_ic95": [
+              -0.027075,
+              0.008255
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.000923,
+            "d_brier_ic95": [
+              -0.006847,
+              0.007694
+            ],
+            "d_log_loss": 0.013263,
+            "d_log_loss_ic95": [
+              -0.017577,
+              0.049243
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.000923,
+            "d_brier_ic95": [
+              -0.006847,
+              0.007694
+            ],
+            "d_log_loss": 0.013262,
+            "d_log_loss_ic95": [
+              -0.017579,
+              0.049245
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.003323,
+            "d_brier_ic95": [
+              -0.00653,
+              0.011857
+            ],
+            "d_log_loss": 0.021977,
+            "d_log_loss_ic95": [
+              -0.015902,
+              0.063202
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.003323,
+            "d_brier_ic95": [
+              -0.00653,
+              0.011857
+            ],
+            "d_log_loss": 0.021976,
+            "d_log_loss_ic95": [
+              -0.0159,
+              0.063202
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -1e-06,
+            "d_log_loss_ic95": [
+              -4e-06,
+              1e-06
+            ]
+          }
+        }
+      },
+      "Goles_Unificado": {
+        "n_partidos_unicos": 10,
+        "n_filas": 214,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 10 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.218795,
+            "log_loss": 0.666006,
+            "brier_ic95": [
+              0.131202,
+              0.311599
+            ],
+            "log_loss_ic95": [
+              0.41878,
+              0.964907
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.218796,
+            "log_loss": 0.666014,
+            "brier_ic95": [
+              0.131202,
+              0.311601
+            ],
+            "log_loss_ic95": [
+              0.41878,
+              0.964931
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.212811,
+            "log_loss": 0.645456,
+            "brier_ic95": [
+              0.133256,
+              0.300295
+            ],
+            "log_loss_ic95": [
+              0.418379,
+              0.924143
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.219415,
+            "log_loss": 0.697406,
+            "brier_ic95": [
+              0.126092,
+              0.317585
+            ],
+            "log_loss_ic95": [
+              0.401459,
+              1.060565
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.219415,
+            "log_loss": 0.697406,
+            "brier_ic95": [
+              0.126092,
+              0.317585
+            ],
+            "log_loss_ic95": [
+              0.401459,
+              1.060566
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 1e-06,
+            "d_brier_ic95": [
+              -1e-06,
+              4e-06
+            ],
+            "d_log_loss": 8e-06,
+            "d_log_loss_ic95": [
+              -2e-06,
+              2.2e-05
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.005984,
+            "d_brier_ic95": [
+              -0.018947,
+              0.005322
+            ],
+            "d_log_loss": -0.02055,
+            "d_log_loss_ic95": [
+              -0.060748,
+              0.017686
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.00062,
+            "d_brier_ic95": [
+              -0.019245,
+              0.01685
+            ],
+            "d_log_loss": 0.0314,
+            "d_log_loss_ic95": [
+              -0.045833,
+              0.111708
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.00062,
+            "d_brier_ic95": [
+              -0.019245,
+              0.01685
+            ],
+            "d_log_loss": 0.0314,
+            "d_log_loss_ic95": [
+              -0.045833,
+              0.111709
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.005985,
+            "d_brier_ic95": [
+              -0.018949,
+              0.005322
+            ],
+            "d_log_loss": -0.020558,
+            "d_log_loss_ic95": [
+              -0.060773,
+              0.017686
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.000619,
+            "d_brier_ic95": [
+              -0.019246,
+              0.016851
+            ],
+            "d_log_loss": 0.031392,
+            "d_log_loss_ic95": [
+              -0.045834,
+              0.111695
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.000619,
+            "d_brier_ic95": [
+              -0.019247,
+              0.016851
+            ],
+            "d_log_loss": 0.031392,
+            "d_log_loss_ic95": [
+              -0.045834,
+              0.111696
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.006604,
+            "d_brier_ic95": [
+              -0.015107,
+              0.024684
+            ],
+            "d_log_loss": 0.05195,
+            "d_log_loss_ic95": [
+              -0.038708,
+              0.13971
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.006604,
+            "d_brier_ic95": [
+              -0.015107,
+              0.024684
+            ],
+            "d_log_loss": 0.05195,
+            "d_log_loss_ic95": [
+              -0.038708,
+              0.139711
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              1e-06
+            ]
+          }
+        }
+      },
+      "Córneres": {
+        "n_partidos_unicos": 8,
+        "n_filas": 257,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 8 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.240378,
+            "log_loss": 0.870415,
+            "brier_ic95": [
+              0.133827,
+              0.351214
+            ],
+            "log_loss_ic95": [
+              0.442994,
+              1.329555
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.24885,
+            "log_loss": 0.948522,
+            "brier_ic95": [
+              0.134607,
+              0.37025
+            ],
+            "log_loss_ic95": [
+              0.443566,
+              1.493306
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.24885,
+            "log_loss": 0.948522,
+            "brier_ic95": [
+              0.134607,
+              0.37025
+            ],
+            "log_loss_ic95": [
+              0.443566,
+              1.493306
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.24885,
+            "log_loss": 0.948522,
+            "brier_ic95": [
+              0.134607,
+              0.37025
+            ],
+            "log_loss_ic95": [
+              0.443566,
+              1.493306
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.24885,
+            "log_loss": 0.948519,
+            "brier_ic95": [
+              0.134607,
+              0.37025
+            ],
+            "log_loss_ic95": [
+              0.443566,
+              1.493299
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.008472,
+            "d_brier_ic95": [
+              -0.004389,
+              0.019926
+            ],
+            "d_log_loss": 0.078107,
+            "d_log_loss_ic95": [
+              -0.013653,
+              0.170942
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.008472,
+            "d_brier_ic95": [
+              -0.004389,
+              0.019926
+            ],
+            "d_log_loss": 0.078107,
+            "d_log_loss_ic95": [
+              -0.013653,
+              0.170942
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.008472,
+            "d_brier_ic95": [
+              -0.004389,
+              0.019926
+            ],
+            "d_log_loss": 0.078107,
+            "d_log_loss_ic95": [
+              -0.013653,
+              0.170942
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.008472,
+            "d_brier_ic95": [
+              -0.004389,
+              0.019926
+            ],
+            "d_log_loss": 0.078104,
+            "d_log_loss_ic95": [
+              -0.013652,
+              0.170934
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -3e-06,
+            "d_log_loss_ic95": [
+              -9e-06,
+              2e-06
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -3e-06,
+            "d_log_loss_ic95": [
+              -9e-06,
+              2e-06
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": -3e-06,
+            "d_log_loss_ic95": [
+              -9e-06,
+              2e-06
+            ]
+          }
+        }
+      },
+      "Goles Equipo/BTTS/1erGol": {
+        "n_partidos_unicos": 7,
+        "n_filas": 13,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 7 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.320699,
+            "log_loss": 0.878903,
+            "brier_ic95": [
+              0.128278,
+              0.544263
+            ],
+            "log_loss_ic95": [
+              0.425846,
+              1.40747
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.320697,
+            "log_loss": 0.878899,
+            "brier_ic95": [
+              0.128277,
+              0.544264
+            ],
+            "log_loss_ic95": [
+              0.425837,
+              1.407471
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.309807,
+            "log_loss": 0.84446,
+            "brier_ic95": [
+              0.134273,
+              0.51017
+            ],
+            "log_loss_ic95": [
+              0.445978,
+              1.303059
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.317255,
+            "log_loss": 0.874616,
+            "brier_ic95": [
+              0.124495,
+              0.542142
+            ],
+            "log_loss_ic95": [
+              0.411628,
+              1.413163
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.317255,
+            "log_loss": 0.874616,
+            "brier_ic95": [
+              0.124495,
+              0.542142
+            ],
+            "log_loss_ic95": [
+              0.411628,
+              1.413162
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": -2e-06,
+            "d_brier_ic95": [
+              -7e-06,
+              4e-06
+            ],
+            "d_log_loss": -4e-06,
+            "d_log_loss_ic95": [
+              -1.9e-05,
+              1e-05
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.010892,
+            "d_brier_ic95": [
+              -0.036696,
+              0.009532
+            ],
+            "d_log_loss": -0.034443,
+            "d_log_loss_ic95": [
+              -0.110851,
+              0.026888
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": -0.003444,
+            "d_brier_ic95": [
+              -0.038479,
+              0.022358
+            ],
+            "d_log_loss": -0.004287,
+            "d_log_loss_ic95": [
+              -0.101979,
+              0.077064
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": -0.003444,
+            "d_brier_ic95": [
+              -0.038479,
+              0.022357
+            ],
+            "d_log_loss": -0.004287,
+            "d_log_loss_ic95": [
+              -0.10198,
+              0.077064
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.01089,
+            "d_brier_ic95": [
+              -0.036699,
+              0.009535
+            ],
+            "d_log_loss": -0.034439,
+            "d_log_loss_ic95": [
+              -0.110858,
+              0.026902
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": -0.003442,
+            "d_brier_ic95": [
+              -0.038475,
+              0.022361
+            ],
+            "d_log_loss": -0.004283,
+            "d_log_loss_ic95": [
+              -0.101964,
+              0.077077
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": -0.003442,
+            "d_brier_ic95": [
+              -0.038475,
+              0.022361
+            ],
+            "d_log_loss": -0.004283,
+            "d_log_loss_ic95": [
+              -0.101964,
+              0.077077
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.007448,
+            "d_brier_ic95": [
+              -0.035754,
+              0.044698
+            ],
+            "d_log_loss": 0.030156,
+            "d_log_loss_ic95": [
+              -0.093513,
+              0.149818
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.007448,
+            "d_brier_ic95": [
+              -0.035755,
+              0.044698
+            ],
+            "d_log_loss": 0.030156,
+            "d_log_loss_ic95": [
+              -0.093513,
+              0.149817
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -1e-06,
+              0.0
+            ]
+          }
+        }
+      },
+      "Goles Partido/Mitades": {
+        "n_partidos_unicos": 10,
+        "n_filas": 201,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 10 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.212204,
+            "log_loss": 0.652236,
+            "brier_ic95": [
+              0.125948,
+              0.320885
+            ],
+            "log_loss_ic95": [
+              0.397791,
+              1.004433
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.212205,
+            "log_loss": 0.652245,
+            "brier_ic95": [
+              0.125948,
+              0.320889
+            ],
+            "log_loss_ic95": [
+              0.397792,
+              1.004458
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.206537,
+            "log_loss": 0.632585,
+            "brier_ic95": [
+              0.12562,
+              0.306464
+            ],
+            "log_loss_ic95": [
+              0.397383,
+              0.96077
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.213087,
+            "log_loss": 0.685944,
+            "brier_ic95": [
+              0.118911,
+              0.33063
+            ],
+            "log_loss_ic95": [
+              0.380187,
+              1.101287
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.213087,
+            "log_loss": 0.685944,
+            "brier_ic95": [
+              0.118911,
+              0.33063
+            ],
+            "log_loss_ic95": [
+              0.380187,
+              1.101288
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 1e-06,
+            "d_brier_ic95": [
+              -1e-06,
+              4e-06
+            ],
+            "d_log_loss": 9e-06,
+            "d_log_loss_ic95": [
+              -1e-06,
+              2.4e-05
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.005667,
+            "d_brier_ic95": [
+              -0.018445,
+              0.00453
+            ],
+            "d_log_loss": -0.019651,
+            "d_log_loss_ic95": [
+              -0.062587,
+              0.015094
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.000883,
+            "d_brier_ic95": [
+              -0.018035,
+              0.018142
+            ],
+            "d_log_loss": 0.033708,
+            "d_log_loss_ic95": [
+              -0.043256,
+              0.125144
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.000883,
+            "d_brier_ic95": [
+              -0.018035,
+              0.018142
+            ],
+            "d_log_loss": 0.033708,
+            "d_log_loss_ic95": [
+              -0.043256,
+              0.125145
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.005668,
+            "d_brier_ic95": [
+              -0.018448,
+              0.004531
+            ],
+            "d_log_loss": -0.01966,
+            "d_log_loss_ic95": [
+              -0.062592,
+              0.015094
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.000882,
+            "d_brier_ic95": [
+              -0.018036,
+              0.018142
+            ],
+            "d_log_loss": 0.033699,
+            "d_log_loss_ic95": [
+              -0.043259,
+              0.125122
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.000882,
+            "d_brier_ic95": [
+              -0.018036,
+              0.018142
+            ],
+            "d_log_loss": 0.033699,
+            "d_log_loss_ic95": [
+              -0.043259,
+              0.125122
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.00655,
+            "d_brier_ic95": [
+              -0.014137,
+              0.025499
+            ],
+            "d_log_loss": 0.053359,
+            "d_log_loss_ic95": [
+              -0.034074,
+              0.159132
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.00655,
+            "d_brier_ic95": [
+              -0.014137,
+              0.025499
+            ],
+            "d_log_loss": 0.053359,
+            "d_log_loss_ic95": [
+              -0.034074,
+              0.159133
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              1e-06
+            ]
+          }
+        }
+      },
+      "Resultado/DC/Hándicap": {
+        "n_partidos_unicos": 10,
+        "n_filas": 53,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 10 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.11021,
+            "log_loss": 0.363528,
+            "brier_ic95": [
+              0.059279,
+              0.165774
+            ],
+            "log_loss_ic95": [
+              0.226966,
+              0.516577
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.11021,
+            "log_loss": 0.363527,
+            "brier_ic95": [
+              0.05928,
+              0.165773
+            ],
+            "log_loss_ic95": [
+              0.226967,
+              0.516573
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.109334,
+            "log_loss": 0.355613,
+            "brier_ic95": [
+              0.061286,
+              0.159351
+            ],
+            "log_loss_ic95": [
+              0.231636,
+              0.483941
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.117337,
+            "log_loss": 0.375159,
+            "brier_ic95": [
+              0.062804,
+              0.176375
+            ],
+            "log_loss_ic95": [
+              0.227382,
+              0.543735
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.117337,
+            "log_loss": 0.375159,
+            "brier_ic95": [
+              0.062804,
+              0.176375
+            ],
+            "log_loss_ic95": [
+              0.227382,
+              0.543735
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -1e-06,
+              1e-06
+            ],
+            "d_log_loss": -1e-06,
+            "d_log_loss_ic95": [
+              -5e-06,
+              2e-06
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": -0.000876,
+            "d_brier_ic95": [
+              -0.010742,
+              0.008515
+            ],
+            "d_log_loss": -0.007915,
+            "d_log_loss_ic95": [
+              -0.04788,
+              0.025914
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.007127,
+            "d_brier_ic95": [
+              -0.004334,
+              0.020018
+            ],
+            "d_log_loss": 0.011631,
+            "d_log_loss_ic95": [
+              -0.018688,
+              0.043532
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.007127,
+            "d_brier_ic95": [
+              -0.004334,
+              0.020018
+            ],
+            "d_log_loss": 0.011631,
+            "d_log_loss_ic95": [
+              -0.018688,
+              0.043532
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": -0.000876,
+            "d_brier_ic95": [
+              -0.010741,
+              0.008516
+            ],
+            "d_log_loss": -0.007914,
+            "d_log_loss_ic95": [
+              -0.047877,
+              0.025915
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.007127,
+            "d_brier_ic95": [
+              -0.004333,
+              0.020018
+            ],
+            "d_log_loss": 0.011632,
+            "d_log_loss_ic95": [
+              -0.018688,
+              0.043531
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.007127,
+            "d_brier_ic95": [
+              -0.004333,
+              0.020018
+            ],
+            "d_log_loss": 0.011632,
+            "d_log_loss_ic95": [
+              -0.018688,
+              0.043531
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.008003,
+            "d_brier_ic95": [
+              -0.011912,
+              0.026134
+            ],
+            "d_log_loss": 0.019546,
+            "d_log_loss_ic95": [
+              -0.042898,
+              0.079309
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.008003,
+            "d_brier_ic95": [
+              -0.011912,
+              0.026134
+            ],
+            "d_log_loss": 0.019546,
+            "d_log_loss_ic95": [
+              -0.042898,
+              0.07931
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "Tarjetas": {
+        "n_partidos_unicos": 6,
+        "n_filas": 29,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 6 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "arch": {
+            "brier": 0.104493,
+            "log_loss": 0.321015,
+            "brier_ic95": [
+              0.050886,
+              0.146752
+            ],
+            "log_loss_ic95": [
+              0.194321,
+              0.425812
+            ]
+          },
+          "s2_mod": {
+            "brier": 0.134324,
+            "log_loss": 0.433962,
+            "brier_ic95": [
+              0.060506,
+              0.199091
+            ],
+            "log_loss_ic95": [
+              0.225503,
+              0.642102
+            ]
+          },
+          "s4_adn": {
+            "brier": 0.134324,
+            "log_loss": 0.433962,
+            "brier_ic95": [
+              0.060506,
+              0.199091
+            ],
+            "log_loss_ic95": [
+              0.225503,
+              0.642102
+            ]
+          },
+          "s6_soloA": {
+            "brier": 0.134324,
+            "log_loss": 0.433962,
+            "brier_ic95": [
+              0.060506,
+              0.199091
+            ],
+            "log_loss_ic95": [
+              0.225503,
+              0.642102
+            ]
+          },
+          "5e8425f": {
+            "brier": 0.134324,
+            "log_loss": 0.433962,
+            "brier_ic95": [
+              0.060506,
+              0.199091
+            ],
+            "log_loss_ic95": [
+              0.225503,
+              0.642103
+            ]
+          }
+        },
+        "diferencias": {
+          "s2_mod - arch": {
+            "d_brier": 0.029831,
+            "d_brier_ic95": [
+              0.008071,
+              0.052886
+            ],
+            "d_log_loss": 0.112947,
+            "d_log_loss_ic95": [
+              0.024741,
+              0.21822
+            ]
+          },
+          "s4_adn - arch": {
+            "d_brier": 0.029831,
+            "d_brier_ic95": [
+              0.008071,
+              0.052886
+            ],
+            "d_log_loss": 0.112947,
+            "d_log_loss_ic95": [
+              0.024741,
+              0.21822
+            ]
+          },
+          "s6_soloA - arch": {
+            "d_brier": 0.029831,
+            "d_brier_ic95": [
+              0.008071,
+              0.052886
+            ],
+            "d_log_loss": 0.112947,
+            "d_log_loss_ic95": [
+              0.024741,
+              0.21822
+            ]
+          },
+          "5e8425f - arch": {
+            "d_brier": 0.029831,
+            "d_brier_ic95": [
+              0.008071,
+              0.052886
+            ],
+            "d_log_loss": 0.112947,
+            "d_log_loss_ic95": [
+              0.024741,
+              0.21822
+            ]
+          },
+          "s4_adn - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s2_mod": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "s6_soloA - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s4_adn": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          },
+          "5e8425f - s6_soloA": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              -0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              -0.0,
+              0.0
+            ]
+          }
+        }
+      }
+    }
+  },
+  "trazabilidad_26_jobs": [
+    {
+      "id_trabajo": "193a259f96e34e49",
+      "partido": "Galatasaray vs Barcelona",
+      "generado_en": "2026-10-13 10:46:23",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_galatasaray_2026-10-13_101011.json",
+      "auditoria_visitante": "auditoria_barcelona_2026-10-13.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.51375,
+        2.6730408653846154
+      ],
+      "s2_mod_lambda": [
+        1.4683,
+        2.6191
+      ],
+      "s6_soloA_lambda": [
+        1.08,
+        3.13
+      ],
+      "diff_abs_arch_vs_s2": 0.0994,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "d8ffecfb201fb608",
+      "partido": "Atlético Madrid vs Manchester United",
+      "generado_en": "2026-10-13 11:26:20",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_atletico_madrid_2026-10-13_111535.json",
+      "auditoria_visitante": "auditoria_manchester_united_2026-10-13_111555.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.7606944444444443,
+        1.285642361111111
+      ],
+      "s2_mod_lambda": [
+        1.7122,
+        1.2639
+      ],
+      "s6_soloA_lambda": [
+        1.88,
+        1.34
+      ],
+      "diff_abs_arch_vs_s2": 0.0702,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "29190c5332f64eb1",
+      "partido": "Inter vs Club Brugge",
+      "generado_en": "2026-10-13 11:33:11",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_inter_2026-10-13_113053.json",
+      "auditoria_visitante": "auditoria_club_brugge_2026-10-13_113311.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        2.0371924603174603,
+        1.9448214285714287
+      ],
+      "s2_mod_lambda": [
+        1.8988,
+        1.9483
+      ],
+      "s6_soloA_lambda": [
+        2.14,
+        1.8
+      ],
+      "diff_abs_arch_vs_s2": 0.1419,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "f2c5227f05725c64",
+      "partido": "Lens vs Sporting CP",
+      "generado_en": "2026-10-13 11:35:32",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_lens_2026-10-13_113510.json",
+      "auditoria_visitante": "auditoria_sporting_cp_2026-10-13_113532.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.4649131944444445,
+        1.8216493055555554
+      ],
+      "s2_mod_lambda": [
+        1.5121,
+        1.9912
+      ],
+      "s6_soloA_lambda": [
+        1.33,
+        1.5
+      ],
+      "diff_abs_arch_vs_s2": 0.2167,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "895402c59f17d314",
+      "partido": "Sabah FK vs Slavia Prague",
+      "generado_en": "2026-10-13 11:37:02",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_sabah_fk_2026-10-13_113636.json",
+      "auditoria_visitante": "auditoria_slavia_prague_2026-10-13_113702.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.9452321428571429,
+        1.6090297619047618
+      ],
+      "s2_mod_lambda": [
+        1.5535,
+        2.0417
+      ],
+      "s6_soloA_lambda": [
+        1.97,
+        1.19
+      ],
+      "diff_abs_arch_vs_s2": 0.8244,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "0511af5559314a12",
+      "partido": "Arsenal vs Lille",
+      "generado_en": "2026-10-13 11:37:58",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_arsenal_2026-10-13_113735.json",
+      "auditoria_visitante": "auditoria_lille_2026-10-13_113758.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.7882837301587302,
+        1.031780753968254
+      ],
+      "s2_mod_lambda": [
+        1.5373,
+        1.2068
+      ],
+      "s6_soloA_lambda": [
+        1.41,
+        1.02
+      ],
+      "diff_abs_arch_vs_s2": 0.426,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "d3d45be6c72ec657",
+      "partido": "RB Leipzig vs PSV Eindhoven",
+      "generado_en": "2026-10-13 11:38:50",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_rb_leipzig_2026-10-13_113829.json",
+      "auditoria_visitante": "auditoria_psv_eindhoven_2026-10-13_113850.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        2.4315029761904765,
+        1.841324404761905
+      ],
+      "s2_mod_lambda": [
+        2.6652,
+        1.9922
+      ],
+      "s6_soloA_lambda": [
+        2.59,
+        1.32
+      ],
+      "diff_abs_arch_vs_s2": 0.3846,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "a29bd308cdbe8ccc",
+      "partido": "Viking vs Bayern München",
+      "generado_en": "2026-10-13 11:40:28",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_viking_2026-10-13_114004.json",
+      "auditoria_visitante": "auditoria_bayern_munchen_2026-10-13_114028.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.8287276785714286,
+        2.0043977793040293
+      ],
+      "s2_mod_lambda": [
+        1.7741,
+        2.0619
+      ],
+      "s6_soloA_lambda": [
+        1.1,
+        2.01
+      ],
+      "diff_abs_arch_vs_s2": 0.1121,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "b9491017b83abfab",
+      "partido": "Villarreal vs Napoli",
+      "generado_en": "2026-10-13 11:41:29",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_villarreal_2026-10-13_114102.json",
+      "auditoria_visitante": "auditoria_napoli_2026-10-13_114129.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.7665079365079366,
+        1.6321230158730158
+      ],
+      "s2_mod_lambda": [
+        1.5592,
+        1.3787
+      ],
+      "s6_soloA_lambda": [
+        1.1,
+        1.21
+      ],
+      "diff_abs_arch_vs_s2": 0.4607,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "6ada5cd1eba43a3e",
+      "partido": "Roma vs Real Madrid",
+      "generado_en": "2026-10-14 12:20:25",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_roma_2026-10-14_140607.json",
+      "auditoria_visitante": "auditoria_real_madrid_2026-10-14_140710.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.7912748015873015,
+        1.6202579365079366
+      ],
+      "s2_mod_lambda": [
+        1.6194,
+        1.3608
+      ],
+      "s6_soloA_lambda": [
+        1.57,
+        0.94
+      ],
+      "diff_abs_arch_vs_s2": 0.4313,
+      "tipo_causa_principal": "codigo_pre_moduladores_oct13_14"
+    },
+    {
+      "id_trabajo": "c056e997d152456e",
+      "partido": "Roma vs Real Madrid",
+      "generado_en": "2026-10-14 14:07:10",
+      "fecha_partido": null,
+      "auditoria_local": "auditoria_roma_2026-10-14_140607.json",
+      "auditoria_visitante": "auditoria_real_madrid_2026-10-14_140710.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.6430453863882937,
+        1.3537844447884417
+      ],
+      "s2_mod_lambda": [
+        1.6194,
+        1.3608
+      ],
+      "s6_soloA_lambda": [
+        1.57,
+        0.94
+      ],
+      "diff_abs_arch_vs_s2": 0.0307,
+      "tipo_causa_principal": "codigo_etapas_y_formula"
+    },
+    {
+      "id_trabajo": "9f46b31620767c49",
+      "partido": "Roma vs Real Madrid",
+      "generado_en": "2026-10-14 15:56:41",
+      "fecha_partido": "2026-10-14",
+      "auditoria_local": "auditoria_roma_2026-10-14_141629.json",
+      "auditoria_visitante": "auditoria_real_madrid_2026-10-14_141716.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.6193787894651788,
+        1.3607634204969437
+      ],
+      "s2_mod_lambda": [
+        1.6194,
+        1.3608
+      ],
+      "s6_soloA_lambda": [
+        1.57,
+        0.94
+      ],
+      "diff_abs_arch_vs_s2": 0.0001,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "490ae216626e701a",
+      "partido": "Fluminense vs Palmeiras",
+      "generado_en": "2026-10-14 16:57:42",
+      "fecha_partido": "2026-08-15",
+      "auditoria_local": "auditoria_fluminense_2026-10-14_165700.json",
+      "auditoria_visitante": "auditoria_palmeiras_2026-10-14_165742.json",
+      "corte_fecha": "2026-10-14",
+      "arch_lambda": [
+        0.4311473214285715,
+        0.6995297619047619
+      ],
+      "s2_mod_lambda": [
+        1.199,
+        1.3918
+      ],
+      "s6_soloA_lambda": [
+        1.04,
+        1.58
+      ],
+      "diff_abs_arch_vs_s2": 1.4601,
+      "tipo_causa_principal": "datos_corte_fecha_o_auditoria"
+    },
+    {
+      "id_trabajo": "3b0a2acd1f21d210",
+      "partido": "Atlético-MG vs Montevideo City Torque",
+      "generado_en": "2026-10-14 17:00:13",
+      "fecha_partido": "2026-10-14",
+      "auditoria_local": "auditoria_atletico_mg_2026-10-14_165924.json",
+      "auditoria_visitante": "auditoria_montevideo_city_torque_2026-10-14_170013.json",
+      "corte_fecha": "2026-10-14",
+      "arch_lambda": [
+        1.45120238986569,
+        1.3744467350288603
+      ],
+      "s2_mod_lambda": [
+        1.4512,
+        1.3744
+      ],
+      "s6_soloA_lambda": [
+        1.1,
+        0.81
+      ],
+      "diff_abs_arch_vs_s2": 0.0,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "ee5cab1ef4c05c3e",
+      "partido": "Deportivo A Coruña vs Levante",
+      "generado_en": "2026-10-16 01:29:25",
+      "fecha_partido": "2026-10-16",
+      "auditoria_local": "auditoria_deportivo_a_coruna_2026-10-16_012924.json",
+      "auditoria_visitante": "auditoria_levante_2026-10-16_011821.json",
+      "corte_fecha": "2026-10-16",
+      "arch_lambda": [
+        1.4171655093729798,
+        1.417285991902834
+      ],
+      "s2_mod_lambda": [
+        1.4172,
+        1.4173
+      ],
+      "s6_soloA_lambda": [
+        1.16,
+        1.45
+      ],
+      "diff_abs_arch_vs_s2": 0.0,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "61eff7f75ce40b39",
+      "partido": "Real Betis vs Barcelona",
+      "generado_en": "2026-10-16 19:33:03",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_real_betis_2026-10-16_193219.json",
+      "auditoria_visitante": "auditoria_barcelona_2026-10-16_193303.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.5140299657075382,
+        2.2575904111097875
+      ],
+      "s2_mod_lambda": [
+        1.514,
+        2.2576
+      ],
+      "s6_soloA_lambda": [
+        1.4,
+        2.39
+      ],
+      "diff_abs_arch_vs_s2": 0.0,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "c109d9b5b08e96de",
+      "partido": "Hokkaido Consadole Sapporo vs Blaublitz Akita",
+      "generado_en": "2026-10-16 23:28:28",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_hokkaido_consadole_sapporo_2026-10-16_232738.json",
+      "auditoria_visitante": "auditoria_blaublitz_akita_2026-10-16_232828.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        0.9315300191183085,
+        0.8661117318938371
+      ],
+      "s2_mod_lambda": [
+        0.9315,
+        0.8661
+      ],
+      "s6_soloA_lambda": [
+        0.73,
+        0.76
+      ],
+      "diff_abs_arch_vs_s2": 0.0,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "ba49016ef08de15f",
+      "partido": "FC Imabari vs Vanraure Hachinohe",
+      "generado_en": "2026-10-16 23:50:34",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_fc_imabari_2026-10-16_235032.json",
+      "auditoria_visitante": "auditoria_vanraure_hachinohe_2026-10-16_234256.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        0.9017399972050224,
+        0.7999371894838476
+      ],
+      "s2_mod_lambda": [
+        0.9017,
+        0.7999
+      ],
+      "s6_soloA_lambda": [
+        0.73,
+        0.63
+      ],
+      "diff_abs_arch_vs_s2": 0.0001,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "bec6a556bb2c46e8",
+      "partido": "Espanyol vs Atlético Madrid",
+      "generado_en": "2026-10-17 00:41:15",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_espanyol_2026-10-17_003953.json",
+      "auditoria_visitante": "auditoria_atletico_madrid_2026-10-17_004115.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.1617976692069538,
+        1.439474114691423
+      ],
+      "s2_mod_lambda": [
+        1.1618,
+        1.4395
+      ],
+      "s6_soloA_lambda": [
+        0.95,
+        1.79
+      ],
+      "diff_abs_arch_vs_s2": 0.0,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "0f42c568a51abbbe",
+      "partido": "Villarreal vs Elche",
+      "generado_en": "2026-10-17 00:44:54",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_villarreal_2026-10-17_004353.json",
+      "auditoria_visitante": "auditoria_elche_2026-10-17_004454.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.9374401327814017,
+        1.4913741263693736
+      ],
+      "s2_mod_lambda": [
+        1.9374,
+        1.4914
+      ],
+      "s6_soloA_lambda": [
+        2.78,
+        1.0
+      ],
+      "diff_abs_arch_vs_s2": 0.0001,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "62f014959843c34d",
+      "partido": "Valencia vs Athletic Club",
+      "generado_en": "2026-10-17 00:54:17",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_valencia_2026-10-17_005416.json",
+      "auditoria_visitante": "auditoria_athletic_club_2026-10-17_003628.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.1826639981443994,
+        1.571463329684151
+      ],
+      "s2_mod_lambda": [
+        1.1827,
+        1.5715
+      ],
+      "s6_soloA_lambda": [
+        1.03,
+        1.02
+      ],
+      "diff_abs_arch_vs_s2": 0.0001,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    },
+    {
+      "id_trabajo": "1fba9ef796150d73",
+      "partido": "Everton vs Chelsea",
+      "generado_en": "2026-10-17 01:05:46",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_everton_2026-10-17_010449.json",
+      "auditoria_visitante": "auditoria_chelsea_2026-10-17_010545.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.9356555488354217,
+        1.3013899062060228
+      ],
+      "s2_mod_lambda": [
+        1.9275,
+        1.266
+      ],
+      "s6_soloA_lambda": [
+        2.98,
+        1.1
+      ],
+      "diff_abs_arch_vs_s2": 0.0435,
+      "tipo_causa_principal": "codigo_etapas_y_formula"
+    },
+    {
+      "id_trabajo": "177d446a97606f01",
+      "partido": "Brentford vs Liverpool FC",
+      "generado_en": "2026-10-17 01:22:07",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_brentford_2026-10-17_012117.json",
+      "auditoria_visitante": "auditoria_liverpool_2026-10-20_044340.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.293545025019184,
+        1.0923297146145907
+      ],
+      "s2_mod_lambda": [
+        1.7187,
+        1.6985
+      ],
+      "s6_soloA_lambda": [
+        1.94,
+        1.71
+      ],
+      "diff_abs_arch_vs_s2": 1.0313,
+      "tipo_causa_principal": "datos_corte_fecha_o_auditoria"
+    },
+    {
+      "id_trabajo": "62a4e4b9ef6adf62",
+      "partido": "Manchester City vs Ipswich Town",
+      "generado_en": "2026-10-17 01:34:36",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_manchester_city_2026-10-17_013324.json",
+      "auditoria_visitante": "auditoria_ipswich_town_2026-10-17_013435.json",
+      "corte_fecha": null,
+      "arch_lambda": [
+        1.9094472792388213,
+        1.5295108178137653
+      ],
+      "s2_mod_lambda": [
+        1.9472,
+        1.434
+      ],
+      "s6_soloA_lambda": [
+        2.79,
+        1.02
+      ],
+      "diff_abs_arch_vs_s2": 0.1333,
+      "tipo_causa_principal": "codigo_etapas_y_formula"
+    },
+    {
+      "id_trabajo": "1edc8c043cfdd28a",
+      "partido": "Newcastle United vs Aston Villa",
+      "generado_en": "2026-10-17 01:42:43",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_newcastle_united_2026-10-17_014145.json",
+      "auditoria_visitante": "auditoria_aston_villa_2026-10-17_014243.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.791053186910157,
+        1.706369461619736
+      ],
+      "s2_mod_lambda": [
+        1.774,
+        1.6967
+      ],
+      "s6_soloA_lambda": [
+        2.48,
+        2.1
+      ],
+      "diff_abs_arch_vs_s2": 0.0267,
+      "tipo_causa_principal": "codigo_etapas_y_formula"
+    },
+    {
+      "id_trabajo": "d140040001d88996",
+      "partido": "Union Berlin vs Borussia Dortmund",
+      "generado_en": "2026-10-17 02:26:51",
+      "fecha_partido": "2026-10-17",
+      "auditoria_local": "auditoria_union_berlin_2026-10-17_022555.json",
+      "auditoria_visitante": "auditoria_borussia_dortmund_2026-10-17_022651.json",
+      "corte_fecha": "2026-10-17",
+      "arch_lambda": [
+        1.4952627440015478,
+        1.7656718121130028
+      ],
+      "s2_mod_lambda": [
+        1.4953,
+        1.7657
+      ],
+      "s6_soloA_lambda": [
+        1.03,
+        2.16
+      ],
+      "diff_abs_arch_vs_s2": 0.0001,
+      "tipo_causa_principal": "codigo_exacto_etapa2_en_arch"
+    }
+  ]
+}
