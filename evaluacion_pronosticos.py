@@ -8602,3 +8602,165 @@ def auditar_filtro_ruido_colombia_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+
+def auditar_m3_y_6_empates_ronda11(
+    *,
+    guardar_ruta: str | None = "datos/ronda11_punto3_m3_empates.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 11 — Punto 3 (M3):
+      - Valores finales de entradas (FT/1T/2T con denominadores) en M3 (FotMob 4667823 / Flashscore vL2qotaK)
+        comparados contra los porcentajes de la fuente cruda Flashscore.
+      - Aclaración exacta de la aparente contradicción entre Ronda 9 y Ronda 10 sobre inversión de bandos.
+      - Auditoría con `ac_dir` / `ac_inv` de los 6 `"empate_con_bandos_invertidos"` del banco de 83 partidos
+        para determinar si son artefactos de la heurística antigua `gl == gv`.
+    """
+    import copy
+    from pathlib import Path
+    import banco_historico as bh
+    from auditoria_historica import sanear_partido_auditoria_45
+    from fuente_flashscore import emparejar_partido, normalizar as _norm_fs
+
+    raiz = Path(__file__).resolve().parent
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8-sig"))
+    m3_raw = copy.deepcopy((doc_col.get("partidos") or [])[2])
+    m3_san = sanear_partido_auditoria_45(copy.deepcopy(m3_raw))
+
+    def _fila_dict(partido: dict[str, Any], per: str, clave: str) -> dict[str, Any]:
+        for f in ((partido.get("periodos") or {}).get(per) or {}).get("filas") or []:
+            if f.get("clave") == clave:
+                return f
+        return {}
+
+    fuente_fs_vl2qotak = {
+        "id_flashscore": "vL2qotaK",
+        "url": "https://www.flashscore.com/match/vL2qotaK/",
+        "local": "Colombia",
+        "visitante": "Portugal",
+        "marcador": "0-0",
+        "entradas": {
+            "FT": {"local": "53% (8/15)", "visitante": "56% (5/9)", "colombia": (8, 15, 53.0), "portugal": (5, 9, 56.0)},
+            "1T": {"local": "33% (2/6)", "visitante": "60% (3/5)", "colombia": (2, 6, 33.0), "portugal": (3, 5, 60.0)},
+            "2T": {"local": "67% (6/9)", "visitante": "50% (2/4)", "colombia": (6, 9, 67.0), "portugal": (2, 4, 50.0)},
+        },
+    }
+
+    m3_comparacion: dict[str, Any] = {}
+    for per in ("FT", "1T", "2T"):
+        eg = _fila_dict(m3_san, per, "entradas_ganadas")
+        et = _fila_dict(m3_san, per, "entradas")
+        ep = _fila_dict(m3_san, per, "entradas_pct")
+        col_tupla = (eg.get("equipo"), et.get("equipo"), ep.get("equipo"))
+        por_tupla = (eg.get("rival"), et.get("rival"), ep.get("rival"))
+        fs_per = fuente_fs_vl2qotak["entradas"][per]
+        col_txt = f"{int(col_tupla[0])}/{int(col_tupla[1])} ({int(round(col_tupla[2]))}%)"
+        por_txt = f"{int(por_tupla[0])}/{int(por_tupla[1])} ({int(round(por_tupla[2]))}%)"
+        m3_comparacion[per] = {
+            "final_colombia": col_txt,
+            "final_portugal": por_txt,
+            "final_tupla_colombia": list(col_tupla),
+            "final_tupla_portugal": list(por_tupla),
+            "fuente_flashscore_local_colombia": fs_per["local"],
+            "fuente_flashscore_visitante_portugal": fs_per["visitante"],
+            "coincide_exactamente": (
+                tuple(int(x) for x in col_tupla) == tuple(int(x) for x in fs_per["colombia"])
+                and tuple(int(x) for x in por_tupla) == tuple(int(x) for x in fs_per["portugal"])
+            ),
+        }
+
+    # Auditoría ac_dir/ac_inv de los 6 "empate_con_bandos_invertidos" en el banco de 83 partidos
+    candidatos_fs_banco = {
+        "5190761": {"id": "2qdzm8Mi", "fecha": "2026-10-13", "local": "Athletic Club", "visitante": "Londrina", "goles_local": 2, "goles_visitante": 2, "fs_ft_local": "60% (9/15)", "fs_ft_visitante": "42% (8/19)"},
+        "5190682": {"id": "WMjv9bAL", "fecha": "2026-09-01", "local": "Londrina", "visitante": "Juventude", "goles_local": 0, "goles_visitante": 0, "fs_ft_local": "44% (12/27)", "fs_ft_visitante": "71% (12/17)"},
+        "5190774": {"id": "YqUt3KCk", "fecha": "2026-10-19", "local": "Goias", "visitante": "Nautico", "goles_local": 0, "goles_visitante": 0, "fs_ft_local": "77% (10/13)", "fs_ft_visitante": "71% (10/14)"},
+        "5190743": {"id": "pnYANWyq", "fecha": "2026-10-02", "local": "Fortaleza", "visitante": "Nautico", "goles_local": 1, "goles_visitante": 1, "fs_ft_local": "57% (4/7)", "fs_ft_visitante": "36% (4/11)"},
+        "5190716": {"id": "xrpocwS8", "fecha": "2026-09-15", "local": "Nautico", "visitante": "Operario-PR", "goles_local": 3, "goles_visitante": 3, "fs_ft_local": "63% (19/30)", "fs_ft_visitante": "67% (8/12)"},
+        "5190670": {"id": "Ekd0vm5U", "fecha": "2026-08-23", "local": "Sao Bernardo", "visitante": "Nautico", "goles_local": 1, "goles_visitante": 1, "fs_ft_local": "80% (8/10)", "fs_ft_visitante": "65% (11/17)"},
+    }
+
+    pares, _ = bh._cargar_pares_matrices_banco_83(raiz)
+    rep_banco = bh.validar_defectos_partidos_banco(raiz=raiz)
+    n_empates_reportados = int(rep_banco["matrices_post_sanear_partido_auditoria_45"]["por_tipo"].get("empate_con_bandos_invertidos", 0))
+
+    def _aciertos_dir_inv(loc_fm: str, vis_fm: str, cand: dict[str, Any]) -> tuple[int, bool, int, bool]:
+        cl, cv = _norm_fs(cand["local"]), _norm_fs(cand["visitante"])
+        dl, dv = _norm_fs(loc_fm), _norm_fs(vis_fm)
+        d_l = int(bool(dl and cl and (dl == cl or dl in cl or cl in dl)))
+        d_v = int(bool(dv and cv and (dv == cv or dv in cv or cv in dv)))
+        i_l = int(bool(dl and cv and (dl == cv or dl in cv or cv in dl)))
+        i_v = int(bool(dv and cl and (dv == cl or dv in cl or cl in dv)))
+        return (d_l + d_v, bool(d_l and d_v), i_l + i_v, bool(i_l and i_v))
+
+    empates_auditoria: list[dict[str, Any]] = []
+    for eq_key, p in pares:
+        fs = p.get("fuente_secundaria") or {}
+        marc = p.get("marcador") or {}
+        emp = marc.get("equipo") is not None and marc.get("equipo") == marc.get("rival")
+        if not (emp and bool(fs.get("bandos_invertidos"))):
+            continue
+        pid = str(p.get("id_partido") or "")
+        es_casa = str(p.get("condicion") or "") == "casa"
+        loc_fm = str(p.get("equipo") if es_casa else p.get("rival"))
+        vis_fm = str(p.get("rival") if es_casa else p.get("equipo"))
+        gl = marc.get("equipo") if es_casa else marc.get("rival")
+        gv = marc.get("rival") if es_casa else marc.get("equipo")
+        cand = candidatos_fs_banco[pid]
+        ac_dir, amb_dir, ac_inv, amb_inv = _aciertos_dir_inv(loc_fm, vis_fm, cand)
+        res_emp = emparejar_partido(
+            {"fecha": p.get("fecha"), "local": loc_fm, "visitante": vis_fm, "goles_local": gl, "goles_visitante": gv},
+            [cand],
+        )
+        bandos_inv_actual = bool(res_emp and res_emp.get("bandos_invertidos"))
+        eg_f = _fila_dict(p, "FT", "entradas_ganadas")
+        et_f = _fila_dict(p, "FT", "entradas")
+        empates_auditoria.append({
+            "id_partido": pid,
+            "equipo_clave": eq_key,
+            "fecha_fotmob": p.get("fecha"),
+            "marcador": marc.get("texto"),
+            "fotmob_local_vs_visitante": f"{loc_fm} vs {vis_fm}",
+            "id_flashscore": fs.get("id_flashscore"),
+            "flashscore_local_vs_visitante": f"{cand['local']} vs {cand['visitante']}",
+            "ac_dir": ac_dir,
+            "amb_dir": amb_dir,
+            "ac_inv": ac_inv,
+            "amb_inv": amb_inv,
+            "bandos_invertidos_heredado_fixture": True,
+            "bandos_invertidos_emparejamiento_actual": bandos_inv_actual,
+            "es_artefacto_gl_igual_gv": bool(not bandos_inv_actual and ac_dir >= ac_inv),
+            "cache_entradas_crudo_equipo": [eg_f.get("equipo"), et_f.get("equipo")],
+            "cache_entradas_crudo_rival": [eg_f.get("rival"), et_f.get("rival")],
+            "fuente_fs_entradas_ft_local": cand["fs_ft_local"],
+            "fuente_fs_entradas_ft_visitante": cand["fs_ft_visitante"],
+            "explicacion": (
+                "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore "
+                "comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el "
+                "emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+            ),
+        })
+
+    n_artefactos = sum(1 for x in empates_auditoria if x["es_artefacto_gl_igual_gv"])
+    out = {
+        "m3_id_fotmob": "4667823",
+        "m3_id_flashscore": "vL2qotaK",
+        "m3_entradas_final_vs_fuente": m3_comparacion,
+        "aclaracion_contradiccion_ronda9_vs_ronda10": {
+            "antes_de_d6cdbe4_ronda8": "Heurística antigua `invertido = (gl == gv and gv == gl)` invertía M3 0-0 -> valores cruzados erróneos FT 5/15 (33%) Colombia | 8/9 (89%) Portugal (test_ronda8_punto6_datos_matrices).",
+            "en_d6cdbe4_ronda9": "Se corrigió `fuente_flashscore.emparejar_partido` para exigir `ac_inv > ac_dir` en empates (`ac_dir=2, ac_inv=0 => bandos_invertidos=False`) y `auditoria_historica.py` fijó M3 en 8/15 (53%) | 5/9 (56%) FT, 2/6 (33%) | 3/5 (60%) 1T, 6/9 (67%) | 2/4 (50%) 2T.",
+            "origen_confusion": "Ronda 9 no invirtió los bandos en M3 sino que detuvo esa falsa inversión. El texto breve del informe de Ronda 9 ('resuelta la inversión de bandos... (ac_inv > ac_dir)') omitió explicitar que el caché `cache_fotmob_colombia` mantenía el campo heredado `bandos_invertidos: True` pre-d6cdbe4 mientras el algoritmo nuevo da `bandos_invertidos=False`.",
+        },
+        "banco_83_empate_con_bandos_invertidos": {
+            "total_en_validador_banco": n_empates_reportados,
+            "total_auditados": len(empates_auditoria),
+            "total_artefactos_gl_igual_gv": n_artefactos,
+            "todos_son_artefactos": bool(len(empates_auditoria) == 6 and n_artefactos == 6),
+            "detalle_6_partidos": empates_auditoria,
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

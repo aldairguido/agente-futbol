@@ -1,0 +1,232 @@
+{
+  "m3_id_fotmob": "4667823",
+  "m3_id_flashscore": "vL2qotaK",
+  "m3_entradas_final_vs_fuente": {
+    "FT": {
+      "final_colombia": "8/15 (53%)",
+      "final_portugal": "5/9 (56%)",
+      "final_tupla_colombia": [
+        8.0,
+        15.0,
+        53.0
+      ],
+      "final_tupla_portugal": [
+        5.0,
+        9.0,
+        56.0
+      ],
+      "fuente_flashscore_local_colombia": "53% (8/15)",
+      "fuente_flashscore_visitante_portugal": "56% (5/9)",
+      "coincide_exactamente": true
+    },
+    "1T": {
+      "final_colombia": "2/6 (33%)",
+      "final_portugal": "3/5 (60%)",
+      "final_tupla_colombia": [
+        2.0,
+        6.0,
+        33.0
+      ],
+      "final_tupla_portugal": [
+        3.0,
+        5.0,
+        60.0
+      ],
+      "fuente_flashscore_local_colombia": "33% (2/6)",
+      "fuente_flashscore_visitante_portugal": "60% (3/5)",
+      "coincide_exactamente": true
+    },
+    "2T": {
+      "final_colombia": "6/9 (67%)",
+      "final_portugal": "2/4 (50%)",
+      "final_tupla_colombia": [
+        6.0,
+        9.0,
+        67.0
+      ],
+      "final_tupla_portugal": [
+        2.0,
+        4.0,
+        50.0
+      ],
+      "fuente_flashscore_local_colombia": "67% (6/9)",
+      "fuente_flashscore_visitante_portugal": "50% (2/4)",
+      "coincide_exactamente": true
+    }
+  },
+  "aclaracion_contradiccion_ronda9_vs_ronda10": {
+    "antes_de_d6cdbe4_ronda8": "Heurística antigua `invertido = (gl == gv and gv == gl)` invertía M3 0-0 -> valores cruzados erróneos FT 5/15 (33%) Colombia | 8/9 (89%) Portugal (test_ronda8_punto6_datos_matrices).",
+    "en_d6cdbe4_ronda9": "Se corrigió `fuente_flashscore.emparejar_partido` para exigir `ac_inv > ac_dir` en empates (`ac_dir=2, ac_inv=0 => bandos_invertidos=False`) y `auditoria_historica.py` fijó M3 en 8/15 (53%) | 5/9 (56%) FT, 2/6 (33%) | 3/5 (60%) 1T, 6/9 (67%) | 2/4 (50%) 2T.",
+    "origen_confusion": "Ronda 9 no invirtió los bandos en M3 sino que detuvo esa falsa inversión. El texto breve del informe de Ronda 9 ('resuelta la inversión de bandos... (ac_inv > ac_dir)') omitió explicitar que el caché `cache_fotmob_colombia` mantenía el campo heredado `bandos_invertidos: True` pre-d6cdbe4 mientras el algoritmo nuevo da `bandos_invertidos=False`."
+  },
+  "banco_83_empate_con_bandos_invertidos": {
+    "total_en_validador_banco": 6,
+    "total_auditados": 6,
+    "total_artefactos_gl_igual_gv": 6,
+    "todos_son_artefactos": true,
+    "detalle_6_partidos": [
+      {
+        "id_partido": "5190761",
+        "equipo_clave": "londrina",
+        "fecha_fotmob": "2026-10-13",
+        "marcador": "2-2",
+        "fotmob_local_vs_visitante": "Athletic Club MG vs Londrina",
+        "id_flashscore": "2qdzm8Mi",
+        "flashscore_local_vs_visitante": "Athletic Club vs Londrina",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          9.0,
+          19.0
+        ],
+        "cache_entradas_crudo_rival": [
+          8.0,
+          15.0
+        ],
+        "fuente_fs_entradas_ft_local": "60% (9/15)",
+        "fuente_fs_entradas_ft_visitante": "42% (8/19)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      },
+      {
+        "id_partido": "5190682",
+        "equipo_clave": "londrina",
+        "fecha_fotmob": "2026-09-01",
+        "marcador": "0-0",
+        "fotmob_local_vs_visitante": "Londrina vs Juventude",
+        "id_flashscore": "WMjv9bAL",
+        "flashscore_local_vs_visitante": "Londrina vs Juventude",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          12.0,
+          27.0
+        ],
+        "cache_entradas_crudo_rival": [
+          12.0,
+          17.0
+        ],
+        "fuente_fs_entradas_ft_local": "44% (12/27)",
+        "fuente_fs_entradas_ft_visitante": "71% (12/17)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      },
+      {
+        "id_partido": "5190774",
+        "equipo_clave": "nautico",
+        "fecha_fotmob": "2026-10-19",
+        "marcador": "0-0",
+        "fotmob_local_vs_visitante": "Goiás vs Náutico",
+        "id_flashscore": "YqUt3KCk",
+        "flashscore_local_vs_visitante": "Goias vs Nautico",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          10.0,
+          14.0
+        ],
+        "cache_entradas_crudo_rival": [
+          10.0,
+          13.0
+        ],
+        "fuente_fs_entradas_ft_local": "77% (10/13)",
+        "fuente_fs_entradas_ft_visitante": "71% (10/14)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      },
+      {
+        "id_partido": "5190743",
+        "equipo_clave": "nautico",
+        "fecha_fotmob": "2026-10-03",
+        "marcador": "1-1",
+        "fotmob_local_vs_visitante": "Fortaleza vs Náutico",
+        "id_flashscore": "pnYANWyq",
+        "flashscore_local_vs_visitante": "Fortaleza vs Nautico",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          4.0,
+          11.0
+        ],
+        "cache_entradas_crudo_rival": [
+          4.0,
+          7.0
+        ],
+        "fuente_fs_entradas_ft_local": "57% (4/7)",
+        "fuente_fs_entradas_ft_visitante": "36% (4/11)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      },
+      {
+        "id_partido": "5190716",
+        "equipo_clave": "nautico",
+        "fecha_fotmob": "2026-09-15",
+        "marcador": "3-3",
+        "fotmob_local_vs_visitante": "Náutico vs Operário-PR",
+        "id_flashscore": "xrpocwS8",
+        "flashscore_local_vs_visitante": "Nautico vs Operario-PR",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          8.0,
+          30.0
+        ],
+        "cache_entradas_crudo_rival": [
+          19.0,
+          12.0
+        ],
+        "fuente_fs_entradas_ft_local": "63% (19/30)",
+        "fuente_fs_entradas_ft_visitante": "67% (8/12)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      },
+      {
+        "id_partido": "5190670",
+        "equipo_clave": "nautico",
+        "fecha_fotmob": "2026-08-23",
+        "marcador": "1-1",
+        "fotmob_local_vs_visitante": "São Bernardo vs Náutico",
+        "id_flashscore": "Ekd0vm5U",
+        "flashscore_local_vs_visitante": "Sao Bernardo vs Nautico",
+        "ac_dir": 2,
+        "amb_dir": true,
+        "ac_inv": 0,
+        "amb_inv": false,
+        "bandos_invertidos_heredado_fixture": true,
+        "bandos_invertidos_emparejamiento_actual": false,
+        "es_artefacto_gl_igual_gv": true,
+        "cache_entradas_crudo_equipo": [
+          8.0,
+          17.0
+        ],
+        "cache_entradas_crudo_rival": [
+          11.0,
+          10.0
+        ],
+        "fuente_fs_entradas_ft_local": "80% (8/10)",
+        "fuente_fs_entradas_ft_visitante": "65% (11/17)",
+        "explicacion": "Artefacto de la heurística antigua `gl == gv` previa a d6cdbe4: FotMob y Flashscore comparten exactamente el mismo orden Local vs Visitante (`ac_dir=2, ac_inv=0`), pero el emparejador anterior invirtió los datos de Flashscore provocando cruces en entradas/tiros libres."
+      }
+    ]
+  }
+}
