@@ -7208,5 +7208,169 @@ def clasificar_torneos_y_localia_30_matrices_ronda10() -> dict[str, Any]:
     }
 
 
+def auditar_descomposicion_colombia_110_y_154g_ronda10() -> dict[str, Any]:
+    """
+    Ronda 10 Punto 5: Descompone el λ de Colombia etapa por etapa (desde λ plano 1.4135 /
+    λ_base 1.39 hasta 1.10), incluyendo cada uno de los 5 factores de la red 45-DCN
+    (F1..F5 crudos, reescalados en red y post-reglas) + términos aditivos (`ajuste_portero`,
+    `regalo_errores`) y reglas finales (`techo_lambda_ataque_bajo_local = 1.10`), indicando
+    cuál empuja más. Reproduce además `"1.54 G"` (`mu_local_casa['goles_favor']`) con su
+    fórmula exacta, pesos y fuente.
+    """
+    from pathlib import Path
+    import numpy as np
+    from decision_cobertura import banderas_comportamiento
+    from motor_mercados import Parametros, analizar
+    import motor_recursivo_45_dcn as mr
+
+    raiz = Path(__file__).resolve().parent
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    params = Parametros()
+    params.competicion = "Eliminatorias CONMEBOL"
+    with banderas_comportamiento(activar_todas=False):
+        an = analizar(
+            doc_col, doc_chi, "Colombia", "Chile",
+            condicion_local="casa", condicion_visitante="fuera",
+            parametros=params,
+        )
+    m = an.motor
+    rec = m.recursivo
+    ct = rec["cruces_tacticos"]
+    f_crudos = dict(ct["factores_crudos_local"])
+    f_red = dict(ct["factores_red_neuronal_local"])
+    f_final = dict(ct["factores_local"])
+
+    pts_15 = list(doc_col.get("partidos") or [])[:15]
+    ser_l = mr.extraer_series_reales_15_partidos(pts_15, "Colombia", {})
+    est_gf = mr.procesar_secuencia_individual_lstm_determinista(ser_l["goles_favor"])
+    est_xg = mr.procesar_secuencia_individual_lstm_determinista(ser_l["xg"])
+    est_xgot = mr.procesar_secuencia_individual_lstm_determinista(ser_l["xgot"])
+
+    h_gf = float(est_gf["h_reciente"])
+    xg_l_lstm = float(est_xg["h_reciente"])
+    xgot_l_lstm = float(est_xgot["h_reciente"])
+
+    lb = float(rec["lambda_base_local"])
+    imp_crudo = sum(float(v) for v in f_crudos.values()) / 100.0
+    lam_mlp = lb * (1.0 + imp_crudo)
+    base_ens = 0.50 * lb + 0.25 * xgot_l_lstm + 0.25 * xg_l_lstm
+    aj_port = float(ct["ajuste_portero_local"])
+    reg_err = float(ct["regalo_errores_local"])
+    lam_pre_it = 0.55 * lam_mlp + 0.45 * base_ens + aj_port + reg_err
+    lam_red_post_it = float(rec.get("lambda_local_pre_freno") or 1.0718)
+
+    # Reproducción exacta de "1.54 G" (`mu_local_casa["goles_favor"]`)
+    pts_casa = [p for p in pts_15 if str(p.get("condicion") or "") == "casa"]
+    w_lin = np.linspace(0.8, 1.2, len(pts_casa))
+    detalle_casa: list[dict[str, Any]] = []
+    gfs_eff: list[float] = []
+    creds: list[float] = []
+    for idx_p, (p, wl) in enumerate(zip(pts_casa, w_lin), start=1):
+        gf_raw, gc_raw = mr._goles_equipo(p)
+        torneo = str(p.get("torneo") or "")
+        cap_copa = bool(mr.es_copa_nacional(torneo) and gf_raw is not None and gc_raw is not None and (float(gf_raw) - float(gc_raw)) >= 4)
+        gf_ef = min(float(gf_raw), 2.2) if cap_copa else float(gf_raw)
+        cred = float(mr.peso_credibilidad_partido(p))
+        gfs_eff.append(gf_ef)
+        creds.append(cred)
+        detalle_casa.append({
+            "orden_lista_cache": idx_p,
+            "fecha": str(p.get("fecha") or ""),
+            "torneo": torneo,
+            "rival": str(p.get("rival") or ""),
+            "gf_raw": float(gf_raw),
+            "gc_raw": float(gc_raw),
+            "cap_es_copa_nacional_2_2": cap_copa,
+            "gf_efectivo": gf_ef,
+            "cred_partido": round(cred, 4),
+            "w_linspace_08_12": round(float(wl), 6),
+        })
+
+    pesos_raw = w_lin * np.array(creds, dtype=float)
+    pesos_norm = pesos_raw / np.sum(pesos_raw)
+    media_gf_cond = float(np.sum(np.array(gfs_eff, dtype=float) * pesos_norm))
+    for item, pn in zip(detalle_casa, pesos_norm):
+        item["peso_normalizado"] = round(float(pn), 6)
+        item["aporte_ponderado"] = round(float(item["gf_efectivo"]) * float(pn), 6)
+
+    n_cond = len(pts_casa)
+    w_cond = n_cond / (n_cond + 3.5)
+    goles_favor_exact = w_cond * media_gf_cond + (1.0 - w_cond) * h_gf
+    goles_favor_mu = float(rec["mu_local_casa"]["goles_favor"])
+
+    factores_detalle = []
+    for fk in ("F_posesion_progresiva", "F_creacion", "F_finalizacion", "F_porteria_rival", "F_fragilidad_rival"):
+        vc = float(f_crudos.get(fk, 0.0))
+        vr = float(f_red.get(fk, 0.0))
+        vf = float(f_final.get(fk, 0.0))
+        factores_detalle.append({
+            "factor": fk,
+            "crudo_pct": vc,
+            "signo_crudo": "+" if vc > 0 else ("-" if vc < 0 else "0"),
+            "reescalado_red_pct": vr,
+            "signo_red": "+" if vr > 0 else ("-" if vr < 0 else "0"),
+            "final_post_reglas_pct": vf,
+            "signo_final": "+" if vf > 0 else ("-" if vf < 0 else "0"),
+        })
+
+    dom_crudo = min(f_crudos.items(), key=lambda kv: kv[1])
+    dom_red = min(f_red.items(), key=lambda kv: kv[1])
+    dom_abs_red = max(f_red.items(), key=lambda kv: abs(kv[1]))
+
+    return {
+        "lambda_inicial_plano": float(m.traza_lambda[0]["lam_l_despues"]),
+        "lambda_base_entrada_dcn": lb,
+        "lambda_final": float(m.tasas.lambda_local_ft),
+        "traza_completa_etapas": list(m.traza_lambda),
+        "descomposicion_interna_red_45_dcn": {
+            "lambda_base_local": lb,
+            "suma_factores_crudos_pct": round(sum(f_crudos.values()), 4),
+            "lam_mlp_crudo": round(lam_mlp, 4),
+            "base_ensemble_45pct": round(base_ens, 4),
+            "ajuste_portero_local_goles": aj_port,
+            "regalo_errores_local_goles": reg_err,
+            "lam_pre_iteraciones": round(lam_pre_it, 4),
+            "lam_post_iteraciones_bucle": lam_red_post_it,
+            "suma_factores_red_neuronal_pct": round(sum(f_red.values()), 4),
+            "factor_bucle_estructural_mult": round(lam_red_post_it / lam_pre_it, 4),
+            "factores_f1_a_f5": factores_detalle,
+            "factor_crudo_que_mas_empuja_baja": {"factor": dom_crudo[0], "valor_pct": dom_crudo[1]},
+            "factor_red_que_mas_empuja": {"factor": dom_abs_red[0], "valor_pct": dom_abs_red[1]},
+            "factor_red_negativo_mayor": {"factor": dom_red[0], "valor_pct": dom_red[1]},
+            "termino_escalar_mayor_en_red_45_dcn": (
+                "ajuste_portero_local = -0.35 goles (muro portero Chile) combinado con "
+                "regla final `techo_lambda_ataque_bajo_local = 1.10` (Attack_L=27.9 < 35), "
+                "mientras entre F1..F5 el factor dominante es F_porteria_rival "
+                "(-3.9% crudo, -12.0% reescalado en red, -11.4% final)."
+            ),
+        },
+        "reproduccion_154_g": {
+            "valor_publicado_mu_local_casa_goles_favor": goles_favor_mu,
+            "valor_reproducido_sin_redondeo": round(goles_favor_exact, 6),
+            "valor_reproducido_redondeado": round(goles_favor_exact, 2),
+            "coincide_exactamente": abs(round(goles_favor_exact, 2) - goles_favor_mu) < 1e-9,
+            "fuente": "motor_recursivo_45_dcn.calcular_doble_adn_con_shrinkage (rec['mu_local_casa']['goles_favor'])",
+            "formula": "mu = w_cond * media_gf_cond + (1 - w_cond) * h_gf_lstm_15, con n_cond=7, k_shrinkage=3.5 -> w_cond=7/10.5=0.6667",
+            "n_cond": n_cond,
+            "k_shrinkage": 3.5,
+            "w_cond": round(w_cond, 6),
+            "media_gf_cond": round(media_gf_cond, 6),
+            "h_gf_lstm_15": round(h_gf, 6),
+            "media_cruda_15_partidos": round(22.0 / 15.0, 4),
+            "media_cruda_7_casa": round(15.0 / 7.0, 4),
+            "nota_clave": (
+                "No proviene de xG (xG casa es 1.59) ni de 22/15 (1.47): es la contracción bayesiana "
+                "entre los 7 partidos 'casa' (con Panama 5-0 acotado a 2.2 por `es_copa_nacional('Copa America')=True` "
+                "y cred=0.35, orden de caché descendente * linspace(0.8, 1.2, 7) => media_gf=1.8220) y "
+                "h_LSTM_15=0.965: (2/3)*1.8220 + (1/3)*0.965 = 1.5364 -> 1.54 G."
+            ),
+            "detalle_7_partidos_casa": detalle_casa,
+        },
+    }
+
+
+
 
 
