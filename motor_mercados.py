@@ -4745,7 +4745,12 @@ def calcular_frecuencia_observada(
                         gf_per = sum(float(fg[k].get("anotados", 0) or 0) for k in claves_mitad)
                         gc_per = sum(float(fg[k].get("recibidos", 0) or 0) for k in claves_mitad)
                     else:
-                        gf_per, gc_per = None, None
+                        from auditoria_historica import reconstruir_marcador_mitades_partido
+                        g1, c1, g2, c2, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+                        if ok_m and g1 is not None and c1 is not None and g2 is not None and c2 is not None:
+                            gf_per, gc_per = (g1, c1) if per == "1T" else (g2, c2)
+                        else:
+                            gf_per, gc_per = None, None
             cf, cr, tf, tr = None, None, None, None
             filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
             for f in filas:
@@ -4768,6 +4773,7 @@ def calcular_frecuencia_observada(
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
     es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
+    es_al_menos = ("al_menos" in ev or "al menos" in et)
 
     # 1. Doble oportunidad (1X, X2, 12)
     if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
@@ -4814,7 +4820,11 @@ def calcular_frecuencia_observada(
         ]
         if not valid:
             return None
-        return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+        if es_under:
+            return sum(1 for g in valid if g < lin) / len(valid)
+        if es_al_menos:
+            return sum(1 for g in valid if g >= lin) / len(valid)
+        return sum(1 for g in valid if g > lin) / len(valid)
 
     # 4. Goles por equipo (respetando periodo 1T/2T)
     if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
@@ -4822,12 +4832,20 @@ def calcular_frecuencia_observada(
             valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
             if not valid:
                 return None
-            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+            if es_under:
+                return sum(1 for g in valid if g < lin) / len(valid)
+            if es_al_menos:
+                return sum(1 for g in valid if g >= lin) / len(valid)
+            return sum(1 for g in valid if g > lin) / len(valid)
         elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
             valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
             if not valid:
                 return None
-            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+            if es_under:
+                return sum(1 for g in valid if g < lin) / len(valid)
+            if es_al_menos:
+                return sum(1 for g in valid if g >= lin) / len(valid)
+            return sum(1 for g in valid if g > lin) / len(valid)
 
     # 5. Ambos anotan (BTTS)
     if "ambos_anotan" in ev or "btts" in ev:

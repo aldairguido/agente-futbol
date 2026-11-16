@@ -45,6 +45,7 @@ def test_ronda10_punto7_veto_1x_con_signo_y_frecuencia_1t() -> None:
     assert "12/15 (80.0%)" in fr["colombia"]
     assert "12/13 (92.3%)" in fr["chile_con_franjas"]
     assert "24/28 (85.7%)" in fr["combinado_28p"]
+    assert "24/30 (80.0%)" in fr["combinado_30p_con_mitades_m29_m30"]
 
-    assert f1t["frecuencia_1t_corregida_en_motor_pct"] == pytest.approx(85.7, abs=0.1)
+    assert f1t["frecuencia_1t_corregida_en_motor_pct"] == pytest.approx(80.0, abs=0.1)
     assert f1t["veto_calibracion_1t_u15_75_7_en_AB"] is False

@@ -7602,6 +7602,20 @@ def auditar_veto_1x_y_frec_1t_ronda10() -> dict[str, Any]:
             if (ge1 + gr1) < 1.5:
                 chi_mit_u15 += 1
 
+    eval_30, u15_30 = 0, 0
+    for p in (pts_col + pts_chi):
+        fg = p.get("franjas_goles") or {}
+        if fg and all(isinstance(fg.get(k), dict) for k in ("00_15", "16_30", "31_45")):
+            eval_30 += 1
+            if sum((fg[k].get("anotados", 0) or 0) + (fg[k].get("recibidos", 0) or 0) for k in ("00_15", "16_30", "31_45")) < 1.5:
+                u15_30 += 1
+        else:
+            ge1, gr1, _, _, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+            if ok_m and ge1 is not None and gr1 is not None:
+                eval_30 += 1
+                if (ge1 + gr1) < 1.5:
+                    u15_30 += 1
+
     _pr_p7 = _Par_p7()
     _pr_p7.competicion = "Eliminatorias CONMEBOL"
     with _bc_p7(activar_todas=True):
@@ -7642,6 +7656,7 @@ def auditar_veto_1x_y_frec_1t_ronda10() -> dict[str, Any]:
                 "colombia": f"{fg_u15_col}/{fg_eval_col} ({round(fg_u15_col*100.0/fg_eval_col, 1)}%)",
                 "chile_con_franjas": f"{fg_u15_chi}/{fg_eval_chi} ({round(fg_u15_chi*100.0/fg_eval_chi, 1)}%)",
                 "combinado_28p": f"{fg_u15_col + fg_u15_chi}/{fg_eval_col + fg_eval_chi} ({round((fg_u15_col + fg_u15_chi)*100.0/(fg_eval_col + fg_eval_chi), 1)}%)",
+                "combinado_30p_con_mitades_m29_m30": f"{u15_30}/{eval_30} ({round(u15_30*100.0/max(1, eval_30), 1)}%)",
             },
             "frecuencia_1t_cuadro_c_mitades": {
                 "colombia_sin_m14_0_0_inferido": f"{col_mit_u15}/{col_mit_eval} ({round(col_mit_u15*100.0/max(1,col_mit_eval), 1)}%)",

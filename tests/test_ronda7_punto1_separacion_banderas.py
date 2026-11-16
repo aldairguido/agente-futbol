@@ -118,7 +118,8 @@ def test_bugfix_al_menos_vs_menos_en_conjunto_a():
         "etiqueta": "al menos 1 goles",
         "periodo": "2T",
         "linea": 1.0,
-        "probabilidad": 0.80,
+        # Frecuencia observada real 2T >= 1 gol en Italy+France = 28/30 (93.3%); 0.85 queda dentro de 10.0 pts
+        "probabilidad": 0.85,
         "estado": "mantiene",
     }
     pod = mm.seleccionar_top_5_jugadas_recomendadas([sel_2t], motor=an_if.motor, eq_l="Italy", eq_v="France")

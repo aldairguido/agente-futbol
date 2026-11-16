@@ -18,7 +18,7 @@ from evaluacion_pronosticos import auditar_datos_ronda10
 
 
 def test_ronda10_punto8_datos_completo():
-    rep = auditar_datos_ronda10()
+    rep = auditar_datos_ronda10(guardar_ruta=None)
 
     # 8(a): M1 17 y 12 son conteos enteros, no porcentajes
     m1 = rep["m1_entradas"]

@@ -93,7 +93,8 @@ def test_punto2_tabla_impacto_diseno_soloA_vs_AB():
             "1t": (0.4878, 0.7448),
             "2t": (0.8222, 1.0452),
             "1x2": (28.74, 22.01, 49.25),
-            "top5_len": 4,
+            # Tras corregir 'al menos 1 goles' (g >= 1.0 -> 13/15=86.7% vs 73.02%, desv 13.7 > 10.0), quedan 3 líneas en Top 5
+            "top5_len": 3,
         },
         "LN": {
             "ft": (1.14, 0.86),
