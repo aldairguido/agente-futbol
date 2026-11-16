@@ -7941,3 +7941,138 @@ def auditar_datos_ronda10(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
     return res
+
+
+def auditar_doble_135_unicos_ronda10(
+    activar_b: bool = False,
+    guardar_ruta: str | None = "datos/ronda10_punto9_doble_135_unicos.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 10 — Punto 9 (DOBLE ×1.35 por partidos únicos):
+    Usa un único denominador declarado: los `73` partidos únicos reproducibles
+    (`69` cruces únicos `(equipo_local, equipo_visitante, fecha)` archivados en
+    `informes/mercados/` + `4` partidos de referencia `TB`, `IF`, `LN`, `COL_CHI`),
+    eliminando las reejecuciones repetidas (`New Zealand vs Inter Miami CF`
+    aparecía duplicado en `6318e0ead09aab95` y `cf87cad84ed3cf46`).
+    """
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    raiz = Path(__file__).resolve().parent
+    ev93 = json.loads((raiz / "informes" / "evaluacion" / "evaluacion_9393a7b9017a5365.json").read_text(encoding="utf-8"))
+    ev93_jids = {
+        str(r.get("id_trabajo") or "")
+        for r in (ev93.get("evaluaciones") or [])
+        if r.get("id_trabajo")
+    }
+
+    pares_73 = _recolectar_pares_partidos_cacheados_ronda9()
+
+    # Identificar duplicados en los 85 ejecutables para conciliar 6/85 (+1) vs 5/69 (+1)
+    mer_dir = raiz / "informes" / "mercados"
+    mer_files = sorted(mer_dir.rglob("mercados_*.json"))
+    por_cruce: dict[tuple[str, str, str], list[str]] = {}
+    sin_par_nombres = {"8ee4737c43df02a1", "390ff3918ad3cdd5", "1500e66e5e4dcbfb", "5e95b4928309ff2b"}
+    for fp in mer_files:
+        raw = json.loads(fp.read_text(encoding="utf-8-sig"))
+        md = raw.get("metadatos") or {}
+        jid_raw = str(md.get("id_trabajo") or fp.stem.replace("mercados_", ""))
+        if any(jid_raw.endswith(s) or jid_raw == s for s in sin_par_nombres):
+            continue
+        el = str(md.get("equipo_local") or "").strip().lower()
+        ev = str(md.get("equipo_visitante") or "").strip().lower()
+        fch = str(md.get("fecha_partido") or "").strip()
+        por_cruce.setdefault((el, ev, fch), []).append(f"ARCH::{jid_raw}")
+
+    duplicados_en_doble_135: list[dict[str, Any]] = []
+    for k_c, jids in sorted(por_cruce.items()):
+        if len(jids) > 1 and ("new zealand" in k_c[0] or "inter miami" in k_c[1]):
+            duplicados_en_doble_135.append({
+                "partido": f"{k_c[0]} vs {k_c[1]}",
+                "job_ids_archivados": jids,
+                "conteo_tickets_ronda9": len(jids),
+                "conteo_partido_unico_ronda10": 1,
+            })
+
+    hits_unicos: list[dict[str, Any]] = []
+    grupos_totales: dict[str, int] = {}
+    with banderas_comportamiento(activar_todas=bool(activar_b)):
+        for p in pares_73:
+            grp = str(p.get("grupo") or "archivado")
+            grupos_totales[grp] = grupos_totales.get(grp, 0) + 1
+            par = mm.Parametros()
+            if p.get("competicion"):
+                par.competicion = str(p["competicion"])
+            mot = mm.MotorMercados(
+                p["doc_local"],
+                p["doc_visitante"],
+                p["cond_l"],
+                p["cond_v"],
+                p["equipo_local"],
+                p["equipo_visitante"],
+                par,
+            )
+            mot.preparar()
+            pasos = [
+                s for s in (mot.traza_lambda or [])
+                if isinstance(s, dict) and s.get("regla") == "copa_asedio_defensa_rota"
+            ]
+            if len(pasos) >= 2:
+                jid_plain = str(p["job_id"]).replace("ARCH::", "")
+                es_oos = any(jid_plain == ej or jid_plain.endswith(ej) or ej.endswith(jid_plain) for ej in ev93_jids)
+                hits_unicos.append({
+                    "job_id": p["job_id"],
+                    "grupo": grp,
+                    "partido": p["partido"],
+                    "es_oos_ev93": bool(es_oos),
+                    "n_aplicaciones": len(pasos),
+                    "etapas": [str(s.get("etapa")) for s in pasos],
+                    "pasos": [
+                        {
+                            "paso": s.get("paso"),
+                            "etapa": s.get("etapa"),
+                            "lam_l_antes": s.get("lam_l_antes", s.get("L0")),
+                            "lam_l_despues": s.get("lam_l_despues", s.get("L1")),
+                            "lam_v_antes": s.get("lam_v_antes", s.get("V0")),
+                            "lam_v_despues": s.get("lam_v_despues", s.get("V1")),
+                        }
+                        for s in pasos
+                    ],
+                })
+
+    archivados_u = [h for h in hits_unicos if h["grupo"] == "archivado"]
+    diseno_u = [h for h in hits_unicos if h["grupo"] == "diseno"]
+    oos_u = [h for h in hits_unicos if h["es_oos_ev93"]]
+    n_denom = len(pares_73)
+
+    res = {
+        "modo_banderas": "A+B" if activar_b else "soloA",
+        "denominador_unico_declarado": n_denom,
+        "composicion_denominador": {
+            "archivados_unicos_reproducibles": grupos_totales.get("archivado", 0),
+            "referencia_diseno_control_auditoria": n_denom - grupos_totales.get("archivado", 0),
+            "grupos": grupos_totales,
+            "nota": (
+                "Mismo denominador único declarado que Punto 6 (TOPE DCN): 73 partidos únicos "
+                "reproducibles offline (69 cruces únicos de los 85 tickets ejecutables en informes/mercados "
+                "más 4 partidos de referencia TB, IF, LN y COL-CHI)."
+            ),
+        },
+        "n_archivados_unicos_doble_135": len(archivados_u),
+        "n_diseno_unicos_doble_135": len(diseno_u),
+        "n_oos_unicos_doble_135": len(oos_u),
+        "n_total_unicos_doble_135": len(hits_unicos),
+        "tasa_sobre_denominador_pct": round(len(hits_unicos) * 100.0 / max(1, n_denom), 2),
+        "conciliacion_tickets_vs_partidos_unicos": {
+            "ronda9_tickets_archivados_con_duplicados": "6/85 (+1 diseño = 7)",
+            "ronda10_partidos_unicos_sin_duplicados": f"{len(archivados_u)}/{grupos_totales.get('archivado', 0)} archivados + {len(diseno_u)} diseño = {len(hits_unicos)}/{n_denom}",
+            "duplicado_eliminado": duplicados_en_doble_135,
+        },
+        "partidos_unicos_doble_135": hits_unicos,
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+    return res
