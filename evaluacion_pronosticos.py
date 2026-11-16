@@ -2413,6 +2413,18 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
     for doc in pronosticos:
         equipos = doc.get("equipos") or {}
         clave = f"{equipos.get('local')} vs {equipos.get('visitante')}"
+        _tipo_doc = str(doc.get("tipo_partido") or (doc.get("metadatos") or {}).get("tipo_partido") or "").strip().lower()
+        _comp_doc = str(doc.get("competicion") or (doc.get("metadatos") or {}).get("competicion") or "").strip().lower()
+        if (
+            _tipo_doc == "amistoso"
+            or doc.get("entra_promedios") is False
+            or doc.get("entra_calibracion") is False
+            or any(tok in _comp_doc for tok in ("friendly", "friendlies", "amistoso"))
+        ):
+            msg_am = f"{clave}: amistoso excluido de promedios y calibración"
+            if msg_am not in limitaciones:
+                limitaciones.append(msg_am)
+            continue
         resultado = resultados.get(clave) or ResultadoPartido(
             estado="no_encontrado", local=equipos.get("local") or "",
             visitante=equipos.get("visitante") or "", consultado_en=_ahora())
@@ -3938,6 +3950,12 @@ def registrar_en_ledger_oos(
         "retroalimenta_modelo": False,
         "prev_sha256": prev_hash,
     }
+    comp_low = str(nuevo.get("competicion") or "").strip().lower()
+    tipo_low = str(nuevo.get("tipo_partido") or "").strip().lower()
+    if tipo_low == "amistoso" or any(tok in comp_low for tok in ("friendly", "friendlies", "amistoso")):
+        nuevo["tipo_partido"] = "amistoso"
+        nuevo["entra_promedios"] = False
+        nuevo["entra_calibracion"] = False
     nuevo["sha256"] = _hash_canonico_oos(nuevo)
 
     with open(ruta, "a", encoding="utf-8") as f:
@@ -4221,10 +4239,18 @@ def evaluar_promocion_regla_futura(
     diseno_extra = {_norm_rf(x) for x in (partidos_diseno_adicionales or ()) if x}
     filtradas: list[dict[str, Any]] = []
     n_excl_diseno = 0
+    n_excl_amistosos = 0
     n_sin_doble_version = 0
     partidos_brutos_observados: set[str] = set()
     for ob in observaciones_sombra:
         if not isinstance(ob, dict):
+            continue
+        if (
+            str(ob.get("tipo_partido") or "").strip().lower() == "amistoso"
+            or ob.get("entra_calibracion") is False
+            or ob.get("entra_promedios") is False
+        ):
+            n_excl_amistosos += 1
             continue
         pid = ob.get("id_partido")
         pnom = ob.get("partido")
@@ -7025,7 +7051,14 @@ def auditar_evidencia_corners_nb_ronda10(
             except Exception:
                 continue
             ts_norm = _normalizar_fecha_iso_comparacion(
-                str(reg.get("liquidado_en") or reg.get("registrado_en") or reg.get("fecha_partido") or "")
+                str(
+                    reg.get("liquidado_en")
+                    or reg.get("registrado_en_utc")
+                    or reg.get("registrado_en")
+                    or reg.get("fecha_partido")
+                    or reg.get("fecha")
+                    or ""
+                )
             )
             es_amistoso = (
                 str(reg.get("tipo_partido") or "").strip().lower() == "amistoso"
@@ -7035,8 +7068,9 @@ def auditar_evidencia_corners_nb_ronda10(
             if ts_norm and ts_norm >= corte_norm:
                 if es_amistoso:
                     amistosos_post_excluidos.append({
+                        "id_partido": reg.get("id_partido"),
                         "partido": reg.get("partido"),
-                        "fecha_partido": reg.get("fecha_partido"),
+                        "fecha_partido": reg.get("fecha_partido") or reg.get("fecha"),
                         "tipo_partido": reg.get("tipo_partido"),
                     })
                 elif not es_partido_de_diseno(reg.get("partido"), reg.get("id_partido")):
@@ -8076,3 +8110,313 @@ def auditar_doble_135_unicos_ronda10(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
     return res
+
+
+def es_registro_amistoso_excluido(reg: dict[str, Any]) -> bool:
+    """True si un registro del ledger/evaluación corresponde a amistoso o exclusión explícita."""
+    if not isinstance(reg, dict):
+        return False
+    tipo_low = str(reg.get("tipo_partido") or "").strip().lower()
+    comp_low = str(reg.get("competicion") or "").strip().lower()
+    return bool(
+        tipo_low == "amistoso"
+        or reg.get("entra_promedios") is False
+        or reg.get("entra_calibracion") is False
+        or any(tok in comp_low for tok in ("friendly", "friendlies", "amistoso"))
+    )
+
+
+def resumen_ledger_oos(
+    ruta_ledger: str | None = None,
+    *,
+    incluir_amistosos: bool = False,
+) -> dict[str, Any]:
+    """
+    Calcula promedios por partido y agregados de calibración desde `ledger_oos.jsonl`,
+    excluyendo estrictamente registros etiquetados como `amistoso` o con
+    `entra_promedios=False` / `entra_calibracion=False` por defecto.
+    """
+    ruta = ruta_ledger or LEDGER_OOS_PATH
+    verif = verificar_cadena_ledger_oos(ruta)
+    registros = cargar_ledger_oos(ruta)
+    excluidos: list[dict[str, Any]] = []
+    incluidos: list[dict[str, Any]] = []
+    for r in registros:
+        if (not incluir_amistosos) and es_registro_amistoso_excluido(r):
+            excluidos.append({
+                "indice": r.get("indice"),
+                "id_partido": r.get("id_partido"),
+                "partido": r.get("partido"),
+                "fecha": r.get("fecha"),
+                "tipo_partido": r.get("tipo_partido"),
+                "entra_promedios": r.get("entra_promedios"),
+                "entra_calibracion": r.get("entra_calibracion"),
+            })
+            continue
+        incluidos.append(r)
+
+    tasas_partido: list[float] = []
+    briers_partido: list[float] = []
+    total_ac = 0
+    total_ev = 0
+    for r in incluidos:
+        res_r = r.get("resumen") or {}
+        lineas = [ln for ln in (r.get("lineas") or []) if isinstance(ln, dict)]
+        ev_lineas = [
+            ln for ln in lineas
+            if ln.get("estado_liquidacion") in ("ganada", "perdida")
+            and ln.get("evento_ocurrio") in (0, 1)
+        ]
+        n_ev = len(ev_lineas) if ev_lineas else int(res_r.get("n_evaluables") or 0)
+        if n_ev <= 0:
+            continue
+        if ev_lineas:
+            n_ac = sum(1 for ln in ev_lineas if ln.get("evento_ocurrio") == 1)
+            probs = [float(ln.get("probabilidad_publicada")) for ln in ev_lineas if ln.get("probabilidad_publicada") is not None]
+            if len(probs) == n_ev:
+                b_p = sum((p - float(ln["evento_ocurrio"])) ** 2 for p, ln in zip(probs, ev_lineas)) / n_ev
+            else:
+                b_p = res_r.get("brier")
+        else:
+            n_ac = int(res_r.get("aciertos") or 0)
+            b_p = res_r.get("brier")
+        total_ac += n_ac
+        total_ev += n_ev
+        tasas_partido.append(n_ac / n_ev)
+        if b_p is not None:
+            briers_partido.append(float(b_p))
+
+    return {
+        "ruta_ledger": ruta,
+        "cadena_sha256_ok": bool(verif.get("ok")),
+        "n_registros_totales": len(registros),
+        "n_incluidos_promedios_calibracion": len(incluidos),
+        "n_excluidos_amistosos": len(excluidos),
+        "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
+        "amistosos_excluidos": excluidos,
+        "n_lineas_evaluables": total_ev,
+        "acierto_medio_equilibrado": (sum(tasas_partido) / len(tasas_partido)) if tasas_partido else None,
+        "brier_medio_equilibrado": (sum(briers_partido) / len(briers_partido)) if briers_partido else None,
+        "tasa_acierto_global": (total_ac / total_ev) if total_ev > 0 else None,
+    }
+
+
+def _construir_stats_flashscore_3_pantallas_colombia_chile(
+    primario: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Ejecuta `fuente_flashscore.parsear_feed_por_periodos` y el pipeline completo de
+    `ClienteFlashscore.metricas_partido` sobre las 3 pantallas reales (FT, 1T, 2T)
+    de Flashscore `2Pafs6I6`.
+    """
+    from fuente_flashscore import (
+        ClienteFlashscore,
+        parsear_feed_por_periodos,
+    )
+
+    crudo = primario.get("flashscore_por_periodo_crudo") or {}
+    titulos = {"FT": "Partido", "1T": "1er Tiempo", "2T": "2º Tiempo"}
+    bloques: list[str] = []
+    for per in ("FT", "1T", "2T"):
+        pobj = crudo.get(per) or {}
+        loc_m = pobj.get("local") or {}
+        vis_m = pobj.get("visitante") or {}
+        filas_bl: list[str] = [f"SE÷{titulos[per]}", "SF÷Estadísticas"]
+        for idx_f, (eti, v_loc) in enumerate(loc_m.items()):
+            v_vis = vis_m.get(eti, "")
+            filas_bl.append(f"SD÷{idx_f}¬SG÷{eti}¬SH÷{v_loc}¬SI÷{v_vis}")
+        bloques.extend(filas_bl)
+    texto_feed = "~".join(bloques) + "~"
+    parseado_crudo = parsear_feed_por_periodos(texto_feed)
+
+    class _ClienteFeed3Pantallas(ClienteFlashscore):
+        def _get(self, url: str, binario: bool = False):  # type: ignore[override]
+            class _R:
+                status_code = 200
+                content = b"x" * 100
+                text = texto_feed
+            return _R()
+
+    m_parsed = _ClienteFeed3Pantallas().metricas_partido(str(primario.get("match_id_flashscore") or "2Pafs6I6"))
+    metricas_por_per = m_parsed.por_periodo
+
+    no_aditivas = {
+        "posesion", "posesion_pct", "pases_pct", "pases_precision_pct",
+        "pases_largos_pct", "pases_tercio_final_pct",
+        "centros_pct", "cruces_pct", "entradas_pct", "entradas_ganadas_pct",
+    }
+    comunes = sorted(
+        set(metricas_por_per["FT"]["local"])
+        & set(metricas_por_per["1T"]["local"])
+        & set(metricas_por_per["2T"]["local"])
+    )
+    mismatches_aditivos: list[dict[str, Any]] = []
+    comprobaciones_aditivas: dict[str, dict[str, Any]] = {}
+    for k in comunes:
+        if k in no_aditivas:
+            continue
+        lft = metricas_por_per["FT"]["local"][k]
+        l1 = metricas_por_per["1T"]["local"][k]
+        l2 = metricas_por_per["2T"]["local"][k]
+        vft = metricas_por_per["FT"]["visitante"][k]
+        v1 = metricas_por_per["1T"]["visitante"][k]
+        v2 = metricas_por_per["2T"]["visitante"][k]
+        ok_l = abs((l1 + l2) - lft) <= 1e-6
+        ok_v = abs((v1 + v2) - vft) <= 1e-6
+        comprobaciones_aditivas[k] = {
+            "local_1t": l1, "local_2t": l2, "local_ft": lft, "suma_ok_local": ok_l,
+            "visitante_1t": v1, "visitante_2t": v2, "visitante_ft": vft, "suma_ok_visitante": ok_v,
+        }
+        if not (ok_l and ok_v):
+            mismatches_aditivos.append({"clave": k, **comprobaciones_aditivas[k]})
+
+    return {
+        "n_etiquetas_ft": len(parseado_crudo.get("FT") or {}),
+        "n_etiquetas_1t": len(parseado_crudo.get("1T") or {}),
+        "n_etiquetas_2t": len(parseado_crudo.get("2T") or {}),
+        "metricas_por_periodo": metricas_por_per,
+        "n_metricas_aditivas_validadas": len(comprobaciones_aditivas),
+        "mismatches_aditivos": mismatches_aditivos,
+        "comprobaciones_aditivas": comprobaciones_aditivas,
+    }
+
+
+def registrar_colombia_chile_amistoso_ronda10(
+    ruta_ledger: str | None = None,
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 10 — Punto 10: registra `Colombia vs Chile (2026-11-13, 1-0)`
+    en `ledger_oos` con `tipo_partido="amistoso"`, `entra_promedios=False` y
+    `entra_calibracion=False`, conservando intacto `goles_evitados Chile = 1.08`.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    prim = json.loads((raiz / "datos" / "colombia_chile_2026_11_13_primario.json").read_text(encoding="utf-8"))
+    mp = prim["flashscore_metricas_partido"]
+
+    stats_verif: dict[str, Any] = {}
+    for per in ("FT", "1T", "2T"):
+        loc = mp[per]["local"]
+        vis = mp[per]["visitante"]
+        g_loc, g_vis = (1, 0) if per in ("FT", "1T") else (0, 0)
+        stats_verif[per] = {
+            "goles": [g_loc, g_vis],
+            "xg": [loc["xg"], vis["xg"]],
+            "xgot": [loc["xgot"], vis["xgot"]],
+            "posesion_pct": [loc["posesion_pct"], vis["posesion_pct"]],
+            "remates_totales": [loc["remates_totales"], vis["remates_totales"]],
+            "remates_puerta": [loc["remates_puerta"], vis["remates_puerta"]],
+            "paradas": [loc["paradas"], vis["paradas"]],
+            "corners": [loc["corners"], vis["corners"]],
+            "faltas": [loc["faltas"], vis["faltas"]],
+            "tiros_libres": [loc["tiros_libres"], vis["tiros_libres"]],
+            "errores_gol": [loc["errores_gol"], vis["errores_gol"]],
+            "xgot_enfrentado": [loc["xgot_enfrentado"], vis["xgot_enfrentado"]],
+            "goles_evitados": [loc["goles_evitados"], vis["goles_evitados"]],
+        }
+
+    reg = {
+        "id_partido": str(prim["match_id_fotmob"]),
+        "id_flashscore": str(prim["match_id_flashscore"]),
+        "partido": "Colombia vs Chile",
+        "fecha": "2026-11-13",
+        "fecha_utc": str(prim["fecha_utc"]),
+        "competicion": str(prim["competicion"]),
+        "tipo_partido": "amistoso",
+        "entra_promedios": False,
+        "entra_calibracion": False,
+        "lineas": [],
+        "marcador_real": {"ft": [1, 0], "1t": [1, 0], "2t": [0, 0]},
+        "evento_gol_autogol": {
+            "minuto": 35,
+            "jugador": "Guillermo Maripán",
+            "autogol": True,
+            "error_gol_chile_flashscore": 1,
+            "explicacion_fisica": (
+                "Colombia registra 2 remates a puerta (1T=1, 2T=1), Chile 2 paradas (1T=1, 2T=1) "
+                "y 1 error conducente a gol en 1T; el único gol del 1-0 fue autogol de Guillermo Maripán "
+                "(min 35, FotMob 6539346). GEv Chile = 1.08 (0.90 1T + 0.18 2T) se conserva verbatim "
+                "tal cual la fuente sin alterarlo."
+            ),
+        },
+        "resumen": {
+            "aciertos": None,
+            "fallos": None,
+            "devoluciones": 0,
+            "n_evaluables": 0,
+            "n_publicadas": 0,
+            "no_verificables": 0,
+            "regla_no_definida": 0,
+            "brier": None,
+            "tasa_acierto": None,
+        },
+        "stats_flashscore_verificadas": stats_verif,
+    }
+    return registrar_en_ledger_oos(reg, ruta_ledger=ruta_ledger)
+
+
+def auditar_colombia_chile_amistoso_3_pantallas_ronda10(
+    ruta_ledger: str | None = None,
+    guardar_ruta: str | None = "datos/ronda10_punto10_colombia_chile_amistoso.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 10 — Punto 10: ejecuta y valida:
+      1. Registro idempotente de Colombia-Chile 2026-11-13 (1-0, Friendlies) en `ledger_oos`
+         con `tipo_partido="amistoso"`, `entra_promedios=False`, `entra_calibracion=False`.
+      2. Exclusión comprobada de promedios y calibración (`resumen_ledger_oos` y
+         `auditar_evidencia_corners_nb_ronda10`).
+      3. Prueba completa del parser de Flashscore (`parsear_feed_por_periodos`) sobre las 3
+         pantallas (`FT`, `1T`, `2T`) verificando `1T + 2T == FT` y `GEv Chile = 1.08` verbatim.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    prim = json.loads((raiz / "datos" / "colombia_chile_2026_11_13_primario.json").read_text(encoding="utf-8"))
+    reg_res = registrar_colombia_chile_amistoso_ronda10(ruta_ledger=ruta_ledger)
+    verif = verificar_cadena_ledger_oos(ruta_ledger=ruta_ledger)
+    res_led = resumen_ledger_oos(ruta_ledger=ruta_ledger, incluir_amistosos=False)
+    ev_corners = auditar_evidencia_corners_nb_ronda10(n_boot=200, seed=42)
+    parse3 = _construir_stats_flashscore_3_pantallas_colombia_chile(prim)
+
+    mp = parse3["metricas_por_periodo"]
+    out = {
+        "registro_ledger": reg_res,
+        "cadena_sha256": verif,
+        "resumen_ledger_sin_amistosos": res_led,
+        "evidencia_corners_nb_posteriores": ev_corners["partidos_oos_posteriores"],
+        "explicacion_1_0_y_gev_chile": {
+            "remates_puerta_colombia": {"1T": mp["1T"]["local"]["remates_puerta"], "2T": mp["2T"]["local"]["remates_puerta"], "FT": mp["FT"]["local"]["remates_puerta"]},
+            "paradas_chile": {"1T": mp["1T"]["visitante"]["paradas"], "2T": mp["2T"]["visitante"]["paradas"], "FT": mp["FT"]["visitante"]["paradas"]},
+            "errores_gol_chile": {"1T": mp["1T"]["visitante"]["errores_gol"], "2T": mp["2T"]["visitante"]["errores_gol"], "FT": mp["FT"]["visitante"]["errores_gol"]},
+            "autogol_fotmob_6539346": prim["eventos_gol_fotmob"],
+            "gev_chile_fuente_sin_corregir": {
+                "1T": mp["1T"]["visitante"]["goles_evitados"],
+                "2T": mp["2T"]["visitante"]["goles_evitados"],
+                "FT": mp["FT"]["visitante"]["goles_evitados"],
+                "suma_mitades": round(mp["1T"]["visitante"]["goles_evitados"] + mp["2T"]["visitante"]["goles_evitados"], 2),
+            },
+        },
+        "parser_3_pantallas_ft_1t_2t": {
+            "n_etiquetas_por_pantalla": {
+                "FT": parse3["n_etiquetas_ft"],
+                "1T": parse3["n_etiquetas_1t"],
+                "2T": parse3["n_etiquetas_2t"],
+            },
+            "n_metricas_aditivas_validadas": parse3["n_metricas_aditivas_validadas"],
+            "mismatches_aditivos": parse3["mismatches_aditivos"],
+            "tiros_libres_vs_faltas": {
+                per: {
+                    "faltas": (mp[per]["local"]["faltas"], mp[per]["visitante"]["faltas"]),
+                    "tiros_libres": (mp[per]["local"]["tiros_libres"], mp[per]["visitante"]["tiros_libres"]),
+                }
+                for per in ("FT", "1T", "2T")
+            },
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8")
+    return out
+
