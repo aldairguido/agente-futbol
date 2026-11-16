@@ -1,0 +1,140 @@
+{
+  "no_comp_jids": [
+    "0f42c568a51abbbe",
+    "61eff7f75ce40b39",
+    "62a4e4b9ef6adf62",
+    "9f46b31620767c49"
+  ],
+  "jobs": {
+    "0511af5559314a12": [
+      "informes/auditorias/2026-10-13/auditoria_arsenal_2026-10-13_113735.json",
+      "informes/auditorias/2026-10-13/auditoria_lille_2026-10-13_113758.json",
+      ""
+    ],
+    "0f42c568a51abbbe": [
+      "informes/auditorias/2026-10-17/auditoria_villarreal_2026-10-17_004353.json",
+      "informes/auditorias/2026-10-17/auditoria_elche_2026-10-17_004454.json",
+      ""
+    ],
+    "177d446a97606f01": [
+      "informes/auditorias/2026-10-17/auditoria_brentford_2026-10-17_012117.json",
+      "informes/auditorias/2026-10-20/auditoria_liverpool_2026-10-20_044340.json",
+      "2026-10-17"
+    ],
+    "193a259f96e34e49": [
+      "informes/auditorias/2026-10-13/auditoria_galatasaray_2026-10-13_101011.json",
+      "informes/auditorias/2026-10-13/auditoria_barcelona_2026-10-13.json",
+      ""
+    ],
+    "1edc8c043cfdd28a": [
+      "informes/auditorias/2026-10-17/auditoria_newcastle_united_2026-10-17_014145.json",
+      "informes/auditorias/2026-10-17/auditoria_aston_villa_2026-10-17_014243.json",
+      "2026-10-17"
+    ],
+    "1fba9ef796150d73": [
+      "informes/auditorias/2026-10-17/auditoria_everton_2026-10-17_010449.json",
+      "informes/auditorias/2026-10-17/auditoria_chelsea_2026-10-17_010545.json",
+      "2026-10-17"
+    ],
+    "29190c5332f64eb1": [
+      "informes/auditorias/2026-10-13/auditoria_inter_2026-10-13_113053.json",
+      "informes/auditorias/2026-10-13/auditoria_club_brugge_2026-10-13_113311.json",
+      ""
+    ],
+    "3b0a2acd1f21d210": [
+      "informes/auditorias/2026-10-14/auditoria_atletico_mg_2026-10-14_165924.json",
+      "informes/auditorias/2026-10-14/auditoria_montevideo_city_torque_2026-10-14_170013.json",
+      "2026-10-14"
+    ],
+    "490ae216626e701a": [
+      "informes/auditorias/2026-10-14/auditoria_fluminense_2026-10-14_165700.json",
+      "informes/auditorias/2026-10-14/auditoria_palmeiras_2026-10-14_165742.json",
+      "2026-10-14"
+    ],
+    "61eff7f75ce40b39": [
+      "informes/auditorias/2026-10-16/auditoria_real_betis_2026-10-16_193219.json",
+      "informes/auditorias/2026-10-16/auditoria_barcelona_2026-10-16_193303.json",
+      ""
+    ],
+    "62a4e4b9ef6adf62": [
+      "informes/auditorias/2026-10-17/auditoria_manchester_city_2026-10-17_013324.json",
+      "informes/auditorias/2026-10-17/auditoria_ipswich_town_2026-10-17_013435.json",
+      ""
+    ],
+    "62f014959843c34d": [
+      "informes/auditorias/2026-10-17/auditoria_valencia_2026-10-17_005416.json",
+      "informes/auditorias/2026-10-17/auditoria_athletic_club_2026-10-17_003628.json",
+      "2026-10-17"
+    ],
+    "6ada5cd1eba43a3e": [
+      "informes/auditorias/2026-10-14/auditoria_roma_2026-10-14_140607.json",
+      "informes/auditorias/2026-10-14/auditoria_real_madrid_2026-10-14_140710.json",
+      ""
+    ],
+    "895402c59f17d314": [
+      "informes/auditorias/2026-10-13/auditoria_sabah_fk_2026-10-13_113636.json",
+      "informes/auditorias/2026-10-13/auditoria_slavia_prague_2026-10-13_113702.json",
+      ""
+    ],
+    "9f46b31620767c49": [
+      "informes/auditorias/2026-10-14/auditoria_roma_2026-10-14_141629.json",
+      "informes/auditorias/2026-10-14/auditoria_real_madrid_2026-10-14_141716.json",
+      ""
+    ],
+    "a29bd308cdbe8ccc": [
+      "informes/auditorias/2026-10-13/auditoria_viking_2026-10-13_114004.json",
+      "informes/auditorias/2026-10-13/auditoria_bayern_munchen_2026-10-13_114028.json",
+      ""
+    ],
+    "b9491017b83abfab": [
+      "informes/auditorias/2026-10-13/auditoria_villarreal_2026-10-13_114102.json",
+      "informes/auditorias/2026-10-13/auditoria_napoli_2026-10-13_114129.json",
+      ""
+    ],
+    "ba49016ef08de15f": [
+      "informes/auditorias/2026-10-16/auditoria_fc_imabari_2026-10-16_235032.json",
+      "informes/auditorias/2026-10-16/auditoria_vanraure_hachinohe_2026-10-16_234256.json",
+      "2026-10-17"
+    ],
+    "bec6a556bb2c46e8": [
+      "informes/auditorias/2026-10-17/auditoria_espanyol_2026-10-17_003953.json",
+      "informes/auditorias/2026-10-17/auditoria_atletico_madrid_2026-10-17_004115.json",
+      "2026-10-17"
+    ],
+    "c056e997d152456e": [
+      "informes/auditorias/2026-10-14/auditoria_roma_2026-10-14_140607.json",
+      "informes/auditorias/2026-10-14/auditoria_real_madrid_2026-10-14_140710.json",
+      ""
+    ],
+    "c109d9b5b08e96de": [
+      "informes/auditorias/2026-10-16/auditoria_hokkaido_consadole_sapporo_2026-10-16_232738.json",
+      "informes/auditorias/2026-10-16/auditoria_blaublitz_akita_2026-10-16_232828.json",
+      "2026-10-17"
+    ],
+    "d140040001d88996": [
+      "informes/auditorias/2026-10-17/auditoria_union_berlin_2026-10-17_022555.json",
+      "informes/auditorias/2026-10-17/auditoria_borussia_dortmund_2026-10-17_022651.json",
+      "2026-10-17"
+    ],
+    "d3d45be6c72ec657": [
+      "informes/auditorias/2026-10-13/auditoria_rb_leipzig_2026-10-13_113829.json",
+      "informes/auditorias/2026-10-13/auditoria_psv_eindhoven_2026-10-13_113850.json",
+      ""
+    ],
+    "d8ffecfb201fb608": [
+      "informes/auditorias/2026-10-13/auditoria_atletico_madrid_2026-10-13_111535.json",
+      "informes/auditorias/2026-10-13/auditoria_manchester_united_2026-10-13_111555.json",
+      ""
+    ],
+    "ee5cab1ef4c05c3e": [
+      "informes/auditorias/2026-10-16/auditoria_deportivo_a_coruna_2026-10-16_012924.json",
+      "informes/auditorias/2026-10-16/auditoria_levante_2026-10-16_011821.json",
+      "2026-10-16"
+    ],
+    "f2c5227f05725c64": [
+      "informes/auditorias/2026-10-13/auditoria_lens_2026-10-13_113510.json",
+      "informes/auditorias/2026-10-13/auditoria_sporting_cp_2026-10-13_113532.json",
+      ""
+    ]
+  }
+}

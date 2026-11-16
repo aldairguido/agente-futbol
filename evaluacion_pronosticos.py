@@ -4359,7 +4359,12 @@ def verificar_no_inversion_etiquetas_modelos(observaciones: list[dict[str, Any]]
         and not es_partido_de_diseno(o.get("partido"), o.get("id_partido"))
         and _macro_familia_ronda8(str(o.get("mercado") or "")) == "Córneres"
     ]
-    res: dict[str, Any] = {"n_filas_corners_verificadas": len(filas_corners), "pares_verificados": {}}
+    res: dict[str, Any] = {
+        "n_filas_corners_universo": len(filas_corners),
+        "n_filas_corners_verificadas": 0,
+        "etiqueta_muestra_corners": "0 filas cambiadas de 0 universo Córneres",
+        "pares_verificados": {},
+    }
     if not filas_corners:
         return res
 
@@ -4367,6 +4372,7 @@ def verificar_no_inversion_etiquetas_modelos(observaciones: list[dict[str, Any]]
         (("5e8425f", "v5e84"), ("994209a", "v9942"), "994209a vs 5e8425f"),
         (("soloA",), ("A+B", "AB"), "A+B vs soloA"),
     ]
+    max_camb = 0
     for base_keys, nb_keys, nombre_par in pares_check:
         ll_base_vals: list[float] = []
         ll_nb_vals: list[float] = []
@@ -4381,11 +4387,21 @@ def verificar_no_inversion_etiquetas_modelos(observaciones: list[dict[str, Any]]
         if len(ll_base_vals) >= 3:
             m_base = sum(ll_base_vals) / len(ll_base_vals)
             m_nb = sum(ll_nb_vals) / len(ll_nb_vals)
+            n_camb = len(ll_base_vals)
+            max_camb = max(max_camb, n_camb)
+            n_univ = len(filas_corners)
+            d_ll = round(m_nb - m_base, 6)
+            d_ll_pond = round((m_nb - m_base) * n_camb / n_univ, 6) if n_univ > 0 else d_ll
             res["pares_verificados"][nombre_par] = {
-                "n_cambiadas": len(ll_base_vals),
+                "n_cambiadas": n_camb,
+                "n_sin_cambio": max(0, n_univ - n_camb),
+                "n_universo_corners": n_univ,
+                "etiqueta_muestra": f"{n_camb} filas cambiadas (de {n_univ} filas universo Córneres)",
                 "log_loss_base_sin_nb": round(m_base, 6),
                 "log_loss_con_nb": round(m_nb, 6),
-                "d_log_loss": round(m_nb - m_base, 6),
+                "d_log_loss": d_ll,
+                "d_log_loss_sobre_cambiadas": d_ll,
+                "d_log_loss_ponderado_universo": d_ll_pond,
             }
             if m_nb > m_base + 1e-6:
                 raise ValueError(
@@ -4393,6 +4409,11 @@ def verificar_no_inversion_etiquetas_modelos(observaciones: list[dict[str, Any]]
                     f"LogLoss(con_NB)={m_nb:.6f} > LogLoss(sin_NB)={m_base:.6f}. "
                     f"Las columnas base y NB/Conjunto B están intercambiadas."
                 )
+    res["n_filas_corners_verificadas"] = max_camb
+    res["n_filas_corners_cambiadas"] = max_camb
+    res["etiqueta_muestra_corners"] = (
+        f"{max_camb} filas cambiadas (de {len(filas_corners)} filas universo Córneres)"
+    )
     return res
 
 
@@ -4945,13 +4966,30 @@ def auditar_umbrales_no_oos_por_fecha(
             obs_antes.append(o)
             partidos_antes.add(pid)
 
+    def _restringir_modelos_comunes(filas: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not filas:
+            return []
+        comunes: set[str] | None = None
+        for r in filas:
+            ks = set((r.get("probs") or {}).keys())
+            comunes = ks if comunes is None else (comunes & ks)
+        if not comunes:
+            return filas
+        return [
+            {**r, "probs": {k: v for k, v in (r.get("probs") or {}).items() if k in comunes}}
+            for r in filas
+        ]
+
+    obs_antes_norm = _restringir_modelos_comunes(obs_antes)
+    obs_despues_norm = _restringir_modelos_comunes(obs_despues)
+
     comp_antes = (
-        evaluar_oos_comparativo_sin_diseno(obs_antes, n_boot=n_boot, seed=seed)
-        if obs_antes
+        evaluar_oos_comparativo_sin_diseno(obs_antes_norm, n_boot=n_boot, seed=seed)
+        if obs_antes_norm
         else {"total": {"n_filas": 0, "n_partidos_unicos": 0, "versiones": {}, "diferencias": {}}, "por_familia": {}}
     )
-    if obs_despues:
-        comp_despues = evaluar_oos_comparativo_sin_diseno(obs_despues, n_boot=n_boot, seed=seed)
+    if obs_despues_norm:
+        comp_despues = evaluar_oos_comparativo_sin_diseno(obs_despues_norm, n_boot=n_boot, seed=seed)
         estado_despues = "evaluado" if len(partidos_despues) >= 5 else "muestra_posterior_insuficiente"
     else:
         comp_despues = {
@@ -6535,3 +6573,234 @@ def auditar_doble_135_ronda9(activar_b: bool = False) -> dict[str, Any]:
             f"({conteo['n_archivados_doble_135']}/{conteo['n_archivados_analizados']} archivados + 1 de diseño `Turkey vs Belgium`)."
         ),
     }
+
+
+def _normalizar_clave_seleccion_ronda10(
+    evento: str | None,
+    periodo: str | None,
+    equipo: str | None,
+    linea: Any,
+) -> tuple[str, str, str | None, float | None]:
+    """Normaliza la clave de una selección de mercado para emparejar filas OOS sin ambigüedad."""
+    import unicodedata
+
+    def _norm(s: Any) -> str:
+        t = unicodedata.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii").lower()
+        return re.sub(r"[^a-z0-9]+", "", t)
+
+    eq_c = None if equipo in (None, "", "Total", "None") else _norm(equipo)
+    lin_c = None if linea is None else round(float(linea), 4)
+    return (_norm(evento), str(periodo or "FT").strip().upper(), eq_c, lin_c)
+
+
+def _reejecutar_etapas_oos_26_ronda10(
+    banderas_dict: dict[str, bool],
+) -> tuple[dict[str, dict[str, dict[tuple[str, str, str | None, float | None], float]]], dict[str, dict[str, Any]]]:
+    """
+    Reejecuta los 26 jobs OOS (24 partidos únicos) etapa por etapa de la cadena λ
+    con las auditorías exactas previas al partido y las banderas indicadas.
+    """
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    raiz = Path(__file__).resolve().parent
+    mapa = json.loads((raiz / "datos" / "ronda10_oos_26_jobs_map.json").read_text(encoding="utf-8"))
+    no_comp_jids = set(mapa.get("no_comp_jids") or [])
+    jobs_map = mapa["jobs"]
+
+    merc_by_job: dict[str, tuple[Path, dict[str, Any]]] = {}
+    for fp in sorted((raiz / "informes" / "mercados").rglob("mercados_*.json")):
+        d = json.loads(fp.read_text(encoding="utf-8"))
+        if d.get("id_trabajo"):
+            merc_by_job[str(d["id_trabajo"])] = (fp, d)
+
+    job_probs_etapas: dict[str, dict[str, dict[tuple[str, str, str | None, float | None], float]]] = {}
+    job_trazas: dict[str, dict[str, Any]] = {}
+
+    for jid in sorted(jobs_map):
+        fpl_rel, fpv_rel, cut = jobs_map[jid]
+        dl = json.loads((raiz / fpl_rel).read_text(encoding="utf-8"))
+        dv = json.loads((raiz / fpv_rel).read_text(encoding="utf-8"))
+        dlc = mm.filtrar_por_fecha(dl, cut) if cut else dl
+        dvc = mm.filtrar_por_fecha(dv, cut) if cut else dv
+        _, md = merc_by_job[jid]
+        meta = md["metadatos"]
+        el = str(meta["equipo_local"])
+        ev = str(meta["equipo_visitante"])
+        params = mm.Parametros()
+        if meta.get("competicion") and jid not in no_comp_jids:
+            params.competicion = str(meta["competicion"])
+
+        with banderas_comportamiento(**banderas_dict):
+            mot = mm.MotorMercados(
+                dlc,
+                dvc,
+                meta.get("condicion_local") or "casa",
+                meta.get("condicion_visitante") or "fuera",
+                el,
+                ev,
+                params,
+            )
+            mot.preparar()
+            res_s6 = mot.evaluar_catalogo()
+            p_s6 = {
+                _normalizar_clave_seleccion_ronda10(s.evento, s.periodo, s.equipo, s.linea): float(s.probabilidad)
+                for rm in res_s6
+                for s in rm.selecciones
+                if s.estimable and s.probabilidad is not None
+            }
+            etapas_lam = extraer_lambdas_etapas_cadena(
+                mot.traza_lambda,
+                (mot.tasas.lambda_local_ft, mot.tasas.lambda_visitante_ft),
+            )
+            base_l1 = getattr(mot.tasas, "lambda_local_1t", None)
+            base_l2 = getattr(mot.tasas, "lambda_local_2t", None)
+            base_v1 = getattr(mot.tasas, "lambda_visitante_1t", None)
+            base_v2 = getattr(mot.tasas, "lambda_visitante_2t", None)
+            base_lft = mot.tasas.lambda_local_ft or 1.0
+            base_vft = mot.tasas.lambda_visitante_ft or 1.0
+
+            p_etapas: dict[str, dict[tuple[str, str, str | None, float | None], float]] = {"6_mas_reglas": p_s6}
+            for ek in ETAPAS_CADENA_LAMBDA[:-1]:
+                sl, sv = etapas_lam[ek]
+                mot.tasas.lambda_local_ft = sl
+                mot.tasas.lambda_visitante_ft = sv
+                mot.matriz_ft, mot.residual_ft = mm.matriz_marcadores(sl, sv, rho=mot.p.rho)
+                if base_l1 is not None and base_l2 is not None and base_lft > 0:
+                    mot.tasas.lambda_local_1t = base_l1 * (sl / base_lft)
+                    mot.tasas.lambda_local_2t = base_l2 * (sl / base_lft)
+                if base_v1 is not None and base_v2 is not None and base_vft > 0:
+                    mot.tasas.lambda_visitante_1t = base_v1 * (sv / base_vft)
+                    mot.tasas.lambda_visitante_2t = base_v2 * (sv / base_vft)
+                if mot.tasas.lambda_local_1t is not None and mot.tasas.lambda_visitante_1t is not None:
+                    mot.matriz_1t, _ = mm.matriz_marcadores(mot.tasas.lambda_local_1t, mot.tasas.lambda_visitante_1t, rho=mot.p.rho)
+                if mot.tasas.lambda_local_2t is not None and mot.tasas.lambda_visitante_2t is not None:
+                    mot.matriz_2t, _ = mm.matriz_marcadores(mot.tasas.lambda_local_2t, mot.tasas.lambda_visitante_2t, rho=mot.p.rho)
+                res_ek = mot.evaluar_catalogo()
+                p_etapas[ek] = {
+                    _normalizar_clave_seleccion_ronda10(s.evento, s.periodo, s.equipo, s.linea): float(s.probabilidad)
+                    for rm in res_ek
+                    for s in rm.selecciones
+                    if s.estimable and s.probabilidad is not None
+                }
+
+            job_probs_etapas[jid] = p_etapas
+            job_trazas[jid] = {
+                "partido": f"{el} vs {ev}",
+                "archivo_mercados": str(merc_by_job[jid][0].relative_to(raiz).as_posix()),
+                "auditoria_local": fpl_rel,
+                "auditoria_visitante": fpv_rel,
+                "corte_fecha": cut or None,
+                "competicion": getattr(params, "competicion", None),
+                "version_motor_archivada": str((md.get("metadatos") or {}).get("version_motor") or md.get("version_motor") or ""),
+                "arch_lambda": [
+                    (md.get("lambda") or {}).get("local_ft"),
+                    (md.get("lambda") or {}).get("visitante_ft"),
+                ],
+                "etapas_lambda": {k: [round(v[0], 6), round(v[1], 6)] for k, v in etapas_lam.items()},
+                "fecha_partido": meta.get("fecha_partido"),
+                "generado_en": meta.get("generado_en"),
+            }
+    return job_probs_etapas, job_trazas
+
+
+def rehacer_ronda8_puntos_2_y_42_ronda10(
+    *,
+    regenerar: bool = False,
+    n_boot: int = 2000,
+    seed: int = 42,
+) -> dict[str, Any]:
+    """
+    Ronda 10 Punto 1: Rehace los puntos 2 (ablación etapa por etapa) y 4.2 (umbrales no OOS
+    separados por fecha de fijación) de la Ronda 8 sobre exactamente las mismas filas e
+    inversion-checked etiquetas de Ronda 9 (`n=1376`, `n=1506` y subconjunto dependiente de
+    λ de goles `n=698`), además de reportar `472` filas cambiadas en la verificación anti-inversión.
+    """
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    ruta_cache = raiz / "datos" / "ronda10_punto1_ablacion_umbrales.json"
+    if ruta_cache.exists() and not regenerar:
+        return json.loads(ruta_cache.read_text(encoding="utf-8"))
+
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1506 = list(oos["filas_1506"])
+    filas_1376 = [r for r in filas_1506 if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))]
+
+    verif_etq = verificar_no_inversion_etiquetas_modelos(filas_1376)
+
+    banderas_solo_a = {k: False for k in obtener_especificacion_columnas_modelos()["soloA"]["banderas_activas"]}
+    banderas_ab_r9 = dict(obtener_especificacion_columnas_modelos()["A+B"]["banderas_activas"])
+
+    probs_a, _ = _reejecutar_etapas_oos_26_ronda10(banderas_solo_a)
+    probs_ab, _ = _reejecutar_etapas_oos_26_ronda10(banderas_ab_r9)
+
+    def _contar_mismatches(filas: list[dict[str, Any]], mapa_probs: dict[str, Any], col_ref: str) -> int:
+        mism = 0
+        for r in filas:
+            k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+            p6 = mapa_probs[r["id_trabajo"]]["6_mas_reglas"].get(k)
+            if p6 is None or abs(float(p6) - float(r["probs"][col_ref])) > 1e-4:
+                mism += 1
+        return mism
+
+    mism_a_1506 = _contar_mismatches(filas_1506, probs_a, "soloA")
+    mism_ab_1376 = _contar_mismatches(filas_1376, probs_ab, "A+B")
+
+    obs_1506_a: list[dict[str, Any]] = []
+    obs_1376_a: list[dict[str, Any]] = []
+    obs_1376_ab: list[dict[str, Any]] = []
+    obs_goles_a: list[dict[str, Any]] = []
+    obs_goles_ab: list[dict[str, Any]] = []
+    ids_698: list[str] = []
+
+    for r in filas_1506:
+        jid = str(r["id_trabajo"])
+        k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+        p_map_a = {ek: float(probs_a[jid][ek][k]) for ek in ETAPAS_CADENA_LAMBDA}
+        row_a = {**r, "probs": {**p_map_a, "arch": float(r["probs"]["arch"]), "5e8425f": float(r["probs"]["5e8425f"]), "soloA": float(r["probs"]["soloA"])}}
+        obs_1506_a.append(row_a)
+        if all(x in (r.get("probs") or {}) for x in ("994209a", "A+B")):
+            obs_1376_a.append(row_a)
+            p_map_ab = {ek: float(probs_ab[jid][ek][k]) for ek in ETAPAS_CADENA_LAMBDA}
+            row_ab = {**r, "probs": {**p_map_ab, "arch": float(r["probs"]["arch"]), "A+B": float(r["probs"]["A+B"])}}
+            obs_1376_ab.append(row_ab)
+            if _macro_familia_ronda8(str(r.get("mercado") or "")) not in ("Córneres", "Tarjetas"):
+                ids_698.append(str(r["row_id"]))
+                obs_goles_a.append(row_a)
+                obs_goles_ab.append(row_ab)
+
+    sha_1376 = hashlib.sha256("\n".join(str(r["row_id"]) for r in obs_1376_a).encode("utf-8")).hexdigest()
+    sha_1506 = hashlib.sha256("\n".join(str(r["row_id"]) for r in obs_1506_a).encode("utf-8")).hexdigest()
+    sha_698 = hashlib.sha256("\n".join(ids_698).encode("utf-8")).hexdigest()
+
+    umbrales_1376 = auditar_umbrales_no_oos_por_fecha(filas_1376, n_boot=n_boot, seed=seed)
+    umbrales_1506 = auditar_umbrales_no_oos_por_fecha(filas_1506, n_boot=n_boot, seed=seed)
+
+    resultado = {
+        "hashes": {
+            "sha256_ids_1376": sha_1376,
+            "sha256_ids_1506": sha_1506,
+            "sha256_ids_698_goles": sha_698,
+        },
+        "paridad_reconstruccion": {
+            "mismatches_6_mas_reglas_vs_soloA_1506": mism_a_1506,
+            "mismatches_6_mas_reglas_vs_AB_1376": mism_ab_1376,
+        },
+        "verificacion_no_inversion_etiquetas": verif_etq,
+        "ablacion": {
+            "soloA_1376": analizar_ablacion_cadena_lambda_oos(obs_1376_a, n_boot=n_boot, seed=seed),
+            "soloA_1506": analizar_ablacion_cadena_lambda_oos(obs_1506_a, n_boot=n_boot, seed=seed),
+            "soloA_698_goles": analizar_ablacion_cadena_lambda_oos(obs_goles_a, n_boot=n_boot, seed=seed),
+            "AB_1376": analizar_ablacion_cadena_lambda_oos(obs_1376_ab, n_boot=n_boot, seed=seed),
+            "AB_698_goles": analizar_ablacion_cadena_lambda_oos(obs_goles_ab, n_boot=n_boot, seed=seed),
+        },
+        "umbrales_no_oos_4_2": {
+            "interseccion_1376": umbrales_1376,
+            "interseccion_1506": umbrales_1506,
+        },
+    }
+    ruta_cache.write_text(json.dumps(resultado, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return resultado
+
