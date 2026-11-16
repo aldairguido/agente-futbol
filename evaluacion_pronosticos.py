@@ -7371,6 +7371,125 @@ def auditar_descomposicion_colombia_110_y_154g_ronda10() -> dict[str, Any]:
     }
 
 
+def resumen_tope_dcn_18_ronda10(*, regenerar: bool = False) -> dict[str, Any]:
+    """
+    Ronda 10 Punto 6: Tabla exacta de toques positivos (`+18%`) vs negativos (`-18%`)
+    del tope DCN por lado (`local`/`visitante`) y etapa (`red_45_dcn`, `post_sinc_mercados`,
+    `global_cualquier_etapa`) sobre el denominador declarado de `73` partidos (`146` lados),
+    conciliando explícitamente por qué `73` difiere de `83`, `85` y `89`.
+    """
+    import csv as _csv
+    import glob as _glob
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parent
+    ruta_cache = raiz / "datos" / "ronda10_punto6_tope_dcn.json"
+    if ruta_cache.exists() and not regenerar:
+        return json.loads(ruta_cache.read_text(encoding="utf-8"))
+
+    raw = auditar_tope_dcn_18_por_lado_y_partido()
+    detalle = list(raw.get("detalle") or [])
+
+    def _contar_etapa(rk_l: str, rk_v: str) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "local": {"total": 0, "+18%": 0, "-18%": 0},
+            "visitante": {"total": 0, "+18%": 0, "-18%": 0},
+            "total": {"total": 0, "+18%": 0, "-18%": 0},
+            "partidos_al_menos_un_lado": 0,
+            "partidos_ambos_lados": 0,
+        }
+        for d in detalle:
+            hl = d.get(rk_l) or {}
+            hv = d.get(rk_v) or {}
+            tl = bool(hl.get("toco"))
+            tv = bool(hv.get("toco"))
+            if tl or tv:
+                out["partidos_al_menos_un_lado"] += 1
+            if tl and tv:
+                out["partidos_ambos_lados"] += 1
+            for lado, info, hit in (("local", hl, tl), ("visitante", hv, tv)):
+                if not hit:
+                    continue
+                sg = "+18%" if str(info.get("direccion") or "").startswith("+") else "-18%"
+                out[lado]["total"] += 1
+                out[lado][sg] += 1
+                out["total"]["total"] += 1
+                out["total"][sg] += 1
+        return out
+
+    tabla_red = _contar_etapa("red_local", "red_visitante")
+    tabla_post = _contar_etapa("post_local", "post_visitante")
+    tabla_global: dict[str, Any] = {
+        "local": {"total": 0, "+18%": 0, "-18%": 0, "ambas_direcciones": 0},
+        "visitante": {"total": 0, "+18%": 0, "-18%": 0, "ambas_direcciones": 0},
+        "total": {"total": 0, "+18%": 0, "-18%": 0, "ambas_direcciones": 0},
+        "partidos_al_menos_un_lado": int(raw["global_cualquier_etapa"]["partidos_al_menos_un_lado"]),
+        "partidos_ambos_lados": int(raw["global_cualquier_etapa"]["partidos_ambos_lados"]),
+    }
+    for d in detalle:
+        for lado, rk, pk in (("local", "red_local", "post_local"), ("visitante", "red_visitante", "post_visitante")):
+            rx = d.get(rk) or {}
+            px = d.get(pk) or {}
+            rt, pt = bool(rx.get("toco")), bool(px.get("toco"))
+            if not (rt or pt):
+                continue
+            dirs = ({"+18%" if str(rx.get("direccion") or "").startswith("+") else "-18%"} if rt else set()) | (
+                {"+18%" if str(px.get("direccion") or "").startswith("+") else "-18%"} if pt else set()
+            )
+            tabla_global[lado]["total"] += 1
+            tabla_global["total"]["total"] += 1
+            if len(dirs) == 1:
+                sg = next(iter(dirs))
+                tabla_global[lado][sg] += 1
+                tabla_global["total"][sg] += 1
+            else:
+                tabla_global[lado]["ambas_direcciones"] += 1
+                tabla_global["total"]["ambas_direcciones"] += 1
+
+    mer_files = sorted(_glob.glob(str(raiz / "informes" / "mercados" / "**" / "mercados_*.json"), recursive=True))
+    pids_banco: set[str] = set()
+    ruta_csv = raiz / "data" / "banco_partidos.csv"
+    if ruta_csv.exists():
+        with open(ruta_csv, "r", encoding="utf-8") as f:
+            for row in _csv.DictReader(f):
+                if str(row.get("equipo_clave") or "") not in ("colombia", "chile") and row.get("id_partido"):
+                    pids_banco.add(str(row["id_partido"]))
+
+    d135 = auditar_doble_135_ronda9(activar_b=False)
+    res = {
+        "denominador_declarado_partidos": int(raw["n_partidos_evaluados"]),
+        "denominador_declarado_lados": int(raw["n_lados_evaluados"]),
+        "conciliacion_denominadores": {
+            "73_tope_dcn": {
+                "valor": int(raw["n_partidos_evaluados"]),
+                "composicion": "69 cruces únicos (equipo_local, equipo_visitante, fecha) archivados en informes/mercados + 4 cruces de referencia (Turkey-Belgium, Italy-France, Londrina-Náutico, Colombia-Chile).",
+            },
+            "85_archivados_ejecutables": {
+                "valor": int(d135["n_archivados_ejecutables"]),
+                "composicion": "89 archivos mercados_*.json en informes/mercados minus 4 sin par de auditoría local; incluye 16 reejecuciones repetidas del mismo cruce+fecha (85 - 69 = 16).",
+            },
+            "89_mercados_json_totales": {
+                "valor": len(mer_files),
+                "composicion": "Total de archivos mercados_*.json en disco; 4 de ellos (`Central Español vs Atlético Madrid`, `Dalian Yingbo vs Athletic Club`, `Deportivo de A Coruña (W) vs Levante`, `Linense vs Palestina`) carecen de par de auditoría.",
+            },
+            "83_banco_partidos": {
+                "valor": len(pids_banco),
+                "composicion": "Universo distinto de 83 partidos históricos únicos almacenados en `data/banco_partidos.csv` (excluyendo Colombia y Chile de los fixtures de estudio).",
+            },
+        },
+        "tabla_por_lado_y_etapa": {
+            "en_red_45_dcn": tabla_red,
+            "en_post_sinc_mercados": tabla_post,
+            "global_cualquier_etapa": tabla_global,
+        },
+        "pct_partidos_tocados_global": round(100.0 * tabla_global["partidos_al_menos_un_lado"] / max(1, int(raw["n_partidos_evaluados"])), 2),
+        "pct_lados_tocados_global": round(100.0 * tabla_global["total"]["total"] / max(1, int(raw["n_lados_evaluados"])), 2),
+    }
+    ruta_cache.write_text(json.dumps(res, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return res
+
+
+
 
 
 

@@ -1,0 +1,86 @@
+{
+  "denominador_declarado_partidos": 73,
+  "denominador_declarado_lados": 146,
+  "conciliacion_denominadores": {
+    "73_tope_dcn": {
+      "valor": 73,
+      "composicion": "69 cruces únicos (equipo_local, equipo_visitante, fecha) archivados en informes/mercados + 4 cruces de referencia (Turkey-Belgium, Italy-France, Londrina-Náutico, Colombia-Chile)."
+    },
+    "85_archivados_ejecutables": {
+      "valor": 85,
+      "composicion": "89 archivos mercados_*.json en informes/mercados minus 4 sin par de auditoría local; incluye 16 reejecuciones repetidas del mismo cruce+fecha (85 - 69 = 16)."
+    },
+    "89_mercados_json_totales": {
+      "valor": 89,
+      "composicion": "Total de archivos mercados_*.json en disco; 4 de ellos (`Central Español vs Atlético Madrid`, `Dalian Yingbo vs Athletic Club`, `Deportivo de A Coruña (W) vs Levante`, `Linense vs Palestina`) carecen de par de auditoría."
+    },
+    "83_banco_partidos": {
+      "valor": 83,
+      "composicion": "Universo distinto de 83 partidos históricos únicos almacenados en `data/banco_partidos.csv` (excluyendo Colombia y Chile de los fixtures de estudio)."
+    }
+  },
+  "tabla_por_lado_y_etapa": {
+    "en_red_45_dcn": {
+      "local": {
+        "total": 16,
+        "+18%": 11,
+        "-18%": 5
+      },
+      "visitante": {
+        "total": 23,
+        "+18%": 18,
+        "-18%": 5
+      },
+      "total": {
+        "total": 39,
+        "+18%": 29,
+        "-18%": 10
+      },
+      "partidos_al_menos_un_lado": 34,
+      "partidos_ambos_lados": 5
+    },
+    "en_post_sinc_mercados": {
+      "local": {
+        "total": 8,
+        "+18%": 2,
+        "-18%": 6
+      },
+      "visitante": {
+        "total": 15,
+        "+18%": 13,
+        "-18%": 2
+      },
+      "total": {
+        "total": 23,
+        "+18%": 15,
+        "-18%": 8
+      },
+      "partidos_al_menos_un_lado": 20,
+      "partidos_ambos_lados": 3
+    },
+    "global_cualquier_etapa": {
+      "local": {
+        "total": 17,
+        "+18%": 11,
+        "-18%": 6,
+        "ambas_direcciones": 0
+      },
+      "visitante": {
+        "total": 27,
+        "+18%": 21,
+        "-18%": 6,
+        "ambas_direcciones": 0
+      },
+      "total": {
+        "total": 44,
+        "+18%": 32,
+        "-18%": 12,
+        "ambas_direcciones": 0
+      },
+      "partidos_al_menos_un_lado": 37,
+      "partidos_ambos_lados": 7
+    }
+  },
+  "pct_partidos_tocados_global": 50.68,
+  "pct_lados_tocados_global": 30.14
+}
