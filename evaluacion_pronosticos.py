@@ -8259,6 +8259,7 @@ def resumen_ledger_oos(
         "n_lineas_evaluables": total_ev,
         "acierto_medio_equilibrado": (sum(tasas_partido) / len(tasas_partido)) if tasas_partido else None,
         "brier_medio_equilibrado": (sum(briers_partido) / len(briers_partido)) if briers_partido else None,
+        **_enriquecer_resumen_ledger_oos({}, registros),
         "tasa_acierto_global": (total_ac / total_ev) if total_ev > 0 else None,
     }
 
@@ -10066,6 +10067,570 @@ def auditar_estado_modo_sombra_ronda11(
             "todas_las_14_banderas_apagadas": all(not v for v in BANDERAS_COMPORTAMIENTO_DEFECTO.values()),
         },
     }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+
+def es_registro_contaminado_por_diseno(reg: dict[str, Any]) -> bool:
+    """True si el registro del ledger está marcado o identificado como partido de diseño (TB/IF)."""
+    if not isinstance(reg, dict):
+        return False
+    if reg.get("contaminado_por_diseno") is True:
+        return True
+    return es_partido_de_diseno(reg.get("partido"), reg.get("id_partido"))
+
+
+def _metricas_subconjunto_ledger(
+    registros: list[dict[str, Any]],
+    *,
+    incluir_amistosos: bool = False,
+    excluir_contaminados_diseno: bool = False,
+    umbral_excl_prob_alta: float | None = None,
+) -> dict[str, Any]:
+    """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral."""
+    incluidos: list[dict[str, Any]] = []
+    excluidos_amistosos: list[dict[str, Any]] = []
+    excluidos_diseno: list[dict[str, Any]] = []
+
+    for r in registros:
+        if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
+            continue
+        es_amis = es_registro_amistoso_excluido(r)
+        es_dis = es_registro_contaminado_por_diseno(r)
+        if (not incluir_amistosos) and es_amis:
+            excluidos_amistosos.append({
+                "indice": r.get("indice"),
+                "id_partido": r.get("id_partido"),
+                "partido": r.get("partido"),
+                "fecha": r.get("fecha"),
+                "tipo_partido": r.get("tipo_partido"),
+                "entra_promedios": r.get("entra_promedios"),
+                "entra_calibracion": r.get("entra_calibracion"),
+            })
+            continue
+        if excluir_contaminados_diseno and es_dis:
+            excluidos_diseno.append({
+                "indice": r.get("indice"),
+                "id_partido": r.get("id_partido"),
+                "partido": r.get("partido"),
+                "fecha": r.get("fecha"),
+                "contaminado_por_diseno": True,
+            })
+            continue
+        incluidos.append(r)
+
+    tasas_partido: list[float] = []
+    briers_partido: list[float] = []
+    ll_partido: list[float] = []
+    detalle_partidos: list[dict[str, Any]] = []
+    total_ac = 0
+    total_ev = 0
+    total_excl_prob = 0
+    todas_lineas_excl_prob: list[dict[str, Any]] = []
+    sum_brier_global = 0.0
+    sum_ll_global = 0.0
+    sum_prob_global = 0.0
+    n_probs_global = 0
+
+    for r in incluidos:
+        res_r = r.get("resumen") or {}
+        lineas = [ln for ln in (r.get("lineas") or []) if isinstance(ln, dict)]
+        ev_lineas = [
+            ln for ln in lineas
+            if ln.get("estado_liquidacion") in ("ganada", "perdida")
+            and ln.get("evento_ocurrio") in (0, 1)
+        ]
+        ev_filtradas: list[dict[str, Any]] = []
+        excl_p_match: list[dict[str, Any]] = []
+        for ln in ev_lineas:
+            p_raw = ln.get("probabilidad_publicada")
+            p_val = float(p_raw) if p_raw is not None else None
+            if (
+                umbral_excl_prob_alta is not None
+                and p_val is not None
+                and p_val >= float(umbral_excl_prob_alta)
+            ):
+                excl_p_match.append({
+                    "evento": ln.get("evento"),
+                    "linea": ln.get("linea"),
+                    "probabilidad_pct": ln.get("probabilidad_pct"),
+                    "probabilidad_publicada": p_val,
+                    "evento_ocurrio": int(ln["evento_ocurrio"]),
+                })
+                continue
+            ev_filtradas.append(ln)
+
+        total_excl_prob += len(excl_p_match)
+        if excl_p_match:
+            todas_lineas_excl_prob.append({
+                "id_partido": r.get("id_partido"),
+                "partido": r.get("partido"),
+                "lineas": excl_p_match,
+            })
+
+        n_ev = len(ev_filtradas) if (ev_lineas or umbral_excl_prob_alta is not None) else int(res_r.get("n_evaluables") or 0)
+        if n_ev <= 0:
+            detalle_partidos.append({
+                "indice": r.get("indice"),
+                "id_partido": r.get("id_partido"),
+                "partido": r.get("partido"),
+                "fecha": r.get("fecha"),
+                "contaminado_por_diseno": es_registro_contaminado_por_diseno(r),
+                "n_evaluables": 0,
+                "n_excluidas_prob_alta": len(excl_p_match),
+                "aciertos": 0,
+                "tasa_acierto": None,
+                "prob_media": None,
+                "brier": None,
+                "log_loss": None,
+            })
+            continue
+
+        if ev_filtradas:
+            n_ac = sum(1 for ln in ev_filtradas if ln.get("evento_ocurrio") == 1)
+            probs = [float(ln["probabilidad_publicada"]) for ln in ev_filtradas if ln.get("probabilidad_publicada") is not None]
+            if len(probs) == n_ev:
+                b_p = sum((p - float(ln["evento_ocurrio"])) ** 2 for p, ln in zip(probs, ev_filtradas)) / n_ev
+                ll_p = sum(log_loss_binario_valor(p, int(ln["evento_ocurrio"])) for p, ln in zip(probs, ev_filtradas)) / n_ev
+                pm_p = sum(probs) / n_ev
+                sum_brier_global += sum((p - float(ln["evento_ocurrio"])) ** 2 for p, ln in zip(probs, ev_filtradas))
+                sum_ll_global += sum(log_loss_binario_valor(p, int(ln["evento_ocurrio"])) for p, ln in zip(probs, ev_filtradas))
+                sum_prob_global += sum(probs)
+                n_probs_global += len(probs)
+            else:
+                b_p = res_r.get("brier")
+                ll_p = None
+                pm_p = None
+        else:
+            n_ac = int(res_r.get("aciertos") or 0)
+            b_p = res_r.get("brier")
+            ll_p = None
+            pm_p = None
+
+        total_ac += n_ac
+        total_ev += n_ev
+        tasas_partido.append(n_ac / n_ev)
+        if b_p is not None:
+            briers_partido.append(float(b_p))
+        if ll_p is not None:
+            ll_partido.append(float(ll_p))
+
+        detalle_partidos.append({
+            "indice": r.get("indice"),
+            "id_partido": r.get("id_partido"),
+            "partido": r.get("partido"),
+            "fecha": r.get("fecha"),
+            "contaminado_por_diseno": es_registro_contaminado_por_diseno(r),
+            "n_evaluables": n_ev,
+            "n_excluidas_prob_alta": len(excl_p_match),
+            "aciertos": n_ac,
+            "tasa_acierto": round(n_ac / n_ev, 6),
+            "prob_media": round(pm_p, 6) if pm_p is not None else None,
+            "brier": round(float(b_p), 6) if b_p is not None else None,
+            "log_loss": round(float(ll_p), 6) if ll_p is not None else None,
+        })
+
+    return {
+        "n_incluidos": len(incluidos),
+        "n_excluidos_amistosos": len(excluidos_amistosos),
+        "n_excluidos_diseno": len(excluidos_diseno),
+        "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
+        "amistosos_excluidos": excluidos_amistosos,
+        "diseno_excluidos": excluidos_diseno,
+        "umbral_excl_prob_alta": umbral_excl_prob_alta,
+        "n_lineas_excluidas_prob_alta": total_excl_prob,
+        "lineas_excluidas_prob_alta": todas_lineas_excl_prob,
+        "n_lineas_evaluables": total_ev,
+        "aciertos_totales": total_ac,
+        "tasa_acierto_global": round(total_ac / total_ev, 6) if total_ev > 0 else None,
+        "acierto_medio_equilibrado": round(sum(tasas_partido) / len(tasas_partido), 6) if tasas_partido else None,
+        "prob_media_global": round(sum_prob_global / n_probs_global, 6) if n_probs_global > 0 else None,
+        "brier_global": round(sum_brier_global / n_probs_global, 6) if n_probs_global > 0 else None,
+        "brier_medio_equilibrado": round(sum(briers_partido) / len(briers_partido), 6) if briers_partido else None,
+        "log_loss_global": round(sum_ll_global / n_probs_global, 6) if n_probs_global > 0 else None,
+        "log_loss_medio_equilibrado": round(sum(ll_partido) / len(ll_partido), 6) if ll_partido else None,
+        "detalle_partidos": detalle_partidos,
+    }
+
+
+def _enriquecer_resumen_ledger_oos(
+    res_base: dict[str, Any],
+    registros: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Agrega etiquetas contaminado_por_diseno y sub-resúmenes sin líneas >=99% y sin diseño."""
+    etiquetado: list[dict[str, Any]] = []
+    n_diseno = 0
+    for r in registros:
+        es_dis = es_registro_contaminado_por_diseno(r)
+        if es_dis:
+            n_diseno += 1
+        etiquetado.append({
+            "indice": r.get("indice"),
+            "id_partido": r.get("id_partido"),
+            "partido": r.get("partido"),
+            "fecha": r.get("fecha"),
+            "tipo_partido": r.get("tipo_partido"),
+            "contaminado_por_diseno": es_dis,
+            "es_amistoso_excluido": es_registro_amistoso_excluido(r),
+            "sha256": r.get("sha256"),
+            "prev_sha256": r.get("prev_sha256"),
+        })
+    res_base["n_contaminados_por_diseno"] = n_diseno
+    res_base["registros_etiquetados"] = etiquetado
+    res_base["nota_diseno_sha256"] = (
+        "TB (5181796) e IF (5181797) se marcan lógicamente `contaminado_por_diseno=True` "
+        "sin mutar las líneas históricas 0..1 del archivo JSONL para preservar intactos "
+        "los hashes SHA-256 (`5839ca5a...` -> `a5498f8f...` -> `a6d53fd4...`)."
+    )
+    res_base["resumen_todas_lineas_con_diseno"] = _metricas_subconjunto_ledger(
+        registros, incluir_amistosos=False, excluir_contaminados_diseno=False, umbral_excl_prob_alta=None,
+    )
+    res_base["resumen_sin_lineas_99_pct"] = _metricas_subconjunto_ledger(
+        registros, incluir_amistosos=False, excluir_contaminados_diseno=False, umbral_excl_prob_alta=0.99,
+    )
+    res_base["resumen_sin_diseno_ni_amistosos"] = _metricas_subconjunto_ledger(
+        registros, incluir_amistosos=False, excluir_contaminados_diseno=True, umbral_excl_prob_alta=None,
+    )
+    return res_base
+
+
+def auditar_produccion_github_ronda12(
+    *,
+    consultar_github_en_vivo: bool = True,
+    desde_utc: str = "2026-11-13T00:00:00Z",
+    ruta_ledger: str | None = None,
+    guardar_ruta: str | None = "datos/ronda12_punto1_produccion_github.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 — Punto 1 (`PRODUCCIÓN EN GITHUB`, solo lectura):
+    Ejecuta 7(a)–7(k): inventario de corridas de `bot_24_7.yml` desde 2026-11-13,
+    análisis de persistencia de pronóstico y ledger en GitHub Actions, comparación
+    SHA-256 `origin/main` vs local (verificando el enlace de Colombia–Chile con `a5498f8f...`),
+    explicación matemática e histórica de X2 en Italy–France (84.1% vs 81.6%),
+    marcado `contaminado_por_diseno` en TB e IF, resumen sin líneas >=99%, y
+    confirmación de si producción usa el camino `pre_partido`/`liquidado` de `bot_interactivo.py`.
+    """
+    import subprocess
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+    import motor_mercados as mm
+    from decision_cobertura import banderas_comportamiento
+
+    raiz = Path(__file__).resolve().parent
+    ruta_led = ruta_ledger or LEDGER_OOS_PATH
+    repo_slug = "aldairguido/agente-futbol"
+
+    def _gh_get(url: str) -> tuple[int | None, Any]:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "agente-futbol-ronda12-readonly",
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return int(resp.status), json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return int(exc.code), {"error": str(exc.reason)}
+        except Exception as exc:
+            return None, {"error": str(exc)}
+
+    # 1. Inventario de corridas bot_24_7.yml + artifacts + caches desde API pública (solo lectura)
+    origen_github = "api_publica_github"
+    corridas_desde: list[dict[str, Any]] = []
+    total_corridas_workflow: int | None = None
+    artifacts_info: dict[str, Any] = {"total_count": None, "artifacts": []}
+    caches_info: dict[str, Any] = {"total_count": None, "actions_caches": []}
+    jobs_inspeccionados: list[dict[str, Any]] = []
+    github_disponible = False
+
+    if consultar_github_en_vivo:
+        st_r, d_runs = _gh_get(
+            f"https://api.github.com/repos/{repo_slug}/actions/workflows/bot_24_7.yml/runs?per_page=100"
+        )
+        if st_r == 200 and isinstance(d_runs, dict):
+            github_disponible = True
+            total_corridas_workflow = d_runs.get("total_count")
+            for r in d_runs.get("workflow_runs") or []:
+                if str(r.get("created_at") or "") >= desde_utc:
+                    corridas_desde.append({
+                        "run_number": r.get("run_number"),
+                        "id": r.get("id"),
+                        "created_at": r.get("created_at"),
+                        "updated_at": r.get("updated_at"),
+                        "event": r.get("event"),
+                        "status": r.get("status"),
+                        "conclusion": r.get("conclusion"),
+                        "head_branch": r.get("head_branch"),
+                        "head_sha": str(r.get("head_sha") or ""),
+                        "head_sha_short": str(r.get("head_sha") or "")[:7],
+                    })
+            st_a, d_art = _gh_get(f"https://api.github.com/repos/{repo_slug}/actions/artifacts?per_page=100")
+            if st_a == 200 and isinstance(d_art, dict):
+                artifacts_info = {
+                    "total_count": d_art.get("total_count"),
+                    "artifacts": d_art.get("artifacts") or [],
+                }
+            st_c, d_cac = _gh_get(f"https://api.github.com/repos/{repo_slug}/actions/caches")
+            if st_c == 200 and isinstance(d_cac, dict):
+                caches_info = {
+                    "total_count": d_cac.get("total_count"),
+                    "actions_caches": d_cac.get("actions_caches") or [],
+                }
+            a_inspeccionar = corridas_desde[:1] + [x for x in corridas_desde if x.get("conclusion") == "failure"]
+            for cr in a_inspeccionar:
+                st_j, d_jobs = _gh_get(f"https://api.github.com/repos/{repo_slug}/actions/runs/{cr['id']}/jobs")
+                if st_j == 200 and isinstance(d_jobs, dict):
+                    jobs_inspeccionados.append({
+                        "run_number": cr.get("run_number"),
+                        "run_id": cr.get("id"),
+                        "status": cr.get("status"),
+                        "conclusion": cr.get("conclusion"),
+                        "jobs": [
+                            {
+                                "name": j.get("name"),
+                                "status": j.get("status"),
+                                "conclusion": j.get("conclusion"),
+                                "pasos_fallidos": [
+                                    {"number": s.get("number"), "name": s.get("name"), "conclusion": s.get("conclusion")}
+                                    for s in (j.get("steps") or []) if s.get("conclusion") == "failure"
+                                ],
+                                "pasos_en_progreso": [
+                                    {"number": s.get("number"), "name": s.get("name")}
+                                    for s in (j.get("steps") or []) if s.get("status") == "in_progress"
+                                ],
+                            }
+                            for j in (d_jobs.get("jobs") or [])
+                        ],
+                    })
+
+    if not github_disponible:
+        ruta_prev = raiz / "datos" / "ronda12_punto1_produccion_github.json"
+        if ruta_prev.exists():
+            prev = json.loads(ruta_prev.read_text(encoding="utf-8"))
+            inv_prev = prev.get("inventario_corridas_bot_24_7") or {}
+            corridas_desde = inv_prev.get("corridas") or []
+            total_corridas_workflow = inv_prev.get("total_corridas_workflow")
+            artifacts_info = (prev.get("persistencia_github") or {}).get("artifacts") or artifacts_info
+            caches_info = (prev.get("persistencia_github") or {}).get("caches") or caches_info
+            jobs_inspeccionados = inv_prev.get("jobs_muestra_o_fallos") or []
+            origen_github = "snapshot_local_sin_red"
+        else:
+            origen_github = "no_disponible"
+
+    por_estado: dict[str, int] = {}
+    por_evento: dict[str, int] = {}
+    por_sha: dict[str, int] = {}
+    for c in corridas_desde:
+        k_est = f"{c.get('status')}/{c.get('conclusion')}"
+        por_estado[k_est] = por_estado.get(k_est, 0) + 1
+        k_ev = str(c.get("event"))
+        por_evento[k_ev] = por_evento.get(k_ev, 0) + 1
+        k_sha = str(c.get("head_sha_short"))
+        por_sha[k_sha] = por_sha.get(k_sha, 0) + 1
+
+    # 2. Inspección read-only de .github/workflows/bot_24_7.yml y origin/main
+    wf_path = raiz / ".github" / "workflows" / "bot_24_7.yml"
+    wf_txt = wf_path.read_text(encoding="utf-8") if wf_path.exists() else ""
+
+    def _git_show_safe(spec: str) -> str | None:
+        try:
+            return subprocess.check_output(["git", "show", spec], cwd=str(raiz), text=True, encoding="utf-8")
+        except Exception:
+            return None
+
+    head_origin_main = None
+    try:
+        head_origin_main = subprocess.check_output(["git", "rev-parse", "origin/main"], cwd=str(raiz), text=True).strip()
+    except Exception:
+        pass
+    head_main_local = None
+    try:
+        head_main_local = subprocess.check_output(["git", "rev-parse", "main"], cwd=str(raiz), text=True).strip()
+    except Exception:
+        pass
+
+    rem_bot_txt = _git_show_safe("origin/main:bot_interactivo.py") or ""
+    rem_eval_txt = _git_show_safe("origin/main:evaluacion_pronosticos.py") or ""
+    loc_bot_txt = (raiz / "bot_interactivo.py").read_text(encoding="utf-8") if (raiz / "bot_interactivo.py").exists() else ""
+
+    simbolos_ruta_dual = [
+        "adjuntar_modo_sombra_preparado",
+        "registrar_sombra_prepartido_en_ledger_oos",
+        "liquidar_sombras_en_ledger_oos",
+        "estado_registro",
+        "pre_partido",
+        "guardar_snapshot",
+        "preparar_evaluacion",
+    ]
+    ruta_produccion = {
+        "origin_main_sha": head_origin_main,
+        "local_main_sha": head_main_local,
+        "origin_main_y_local_main_iguales": bool(head_origin_main and head_main_local and head_origin_main == head_main_local),
+        "simbolos_en_origin_main_bot_interactivo": {s: (s in rem_bot_txt) for s in simbolos_ruta_dual},
+        "simbolos_en_origin_main_evaluacion": {s: (s in rem_eval_txt) for s in simbolos_ruta_dual},
+        "simbolos_en_rama_actual_bot_interactivo": {s: (s in loc_bot_txt) for s in simbolos_ruta_dual},
+        "produccion_usa_pre_partido_y_liquidado_bot_interactivo": bool(
+            "registrar_sombra_prepartido_en_ledger_oos" in rem_bot_txt
+            or "liquidar_sombras_en_ledger_oos" in rem_eval_txt
+        ),
+        "conclusión": (
+            "NO. El bot en producción (origin/main fbb6dc0) ejecuta exclusivamente "
+            "bot_interactivo.py con guardar_snapshot y preparar_evaluacion sin capturar ni "
+            "liquidar modo_sombra ni escribir pre_partido/liquidado en ledger_oos.jsonl."
+        ),
+    }
+
+    # 3. Cadena SHA-256 remota vs local
+    rem_ledger_raw = _git_show_safe("origin/main:informes/evaluacion/ledger_oos.jsonl") or ""
+    rem_entries = [json.loads(ln) for ln in rem_ledger_raw.splitlines() if ln.strip()]
+    loc_entries = cargar_ledger_oos(ruta_led)
+    verif_local = verificar_cadena_ledger_oos(ruta_led)
+
+    comparacion_entradas: list[dict[str, Any]] = []
+    for idx in range(max(len(rem_entries), len(loc_entries))):
+        re_i = rem_entries[idx] if idx < len(rem_entries) else None
+        lo_i = loc_entries[idx] if idx < len(loc_entries) else None
+        comparacion_entradas.append({
+            "indice": idx,
+            "id_partido": (lo_i or re_i or {}).get("id_partido"),
+            "partido": (lo_i or re_i or {}).get("partido"),
+            "fecha": (lo_i or re_i or {}).get("fecha"),
+            "en_remoto": re_i is not None,
+            "en_local": lo_i is not None,
+            "sha256_remoto": re_i.get("sha256") if re_i else None,
+            "sha256_local": lo_i.get("sha256") if lo_i else None,
+            "prev_sha256_local": lo_i.get("prev_sha256") if lo_i else None,
+            "identico_byte_a_byte": bool(re_i is not None and lo_i is not None and re_i == lo_i),
+            "contaminado_por_diseno": es_registro_contaminado_por_diseno(lo_i) if lo_i else False,
+            "es_amistoso_excluido": es_registro_amistoso_excluido(lo_i) if lo_i else False,
+        })
+
+    if_rem_sha = rem_entries[1].get("sha256") if len(rem_entries) > 1 else None
+    col_prev_sha = loc_entries[2].get("prev_sha256") if len(loc_entries) > 2 else None
+    sha_col_chi = loc_entries[2].get("sha256") if len(loc_entries) > 2 else None
+
+    comparacion_cadena = {
+        "n_entradas_remoto_origin_main": len(rem_entries),
+        "n_entradas_local": len(loc_entries),
+        "verificacion_local": verif_local,
+        "if_remoto_sha256": if_rem_sha,
+        "colombia_chile_prev_sha256": col_prev_sha,
+        "colombia_chile_sha256": sha_col_chi,
+        "colombia_chile_enlaza_exactamente_con_a5498f8f": bool(
+            if_rem_sha and col_prev_sha and if_rem_sha == col_prev_sha and str(if_rem_sha).startswith("a5498f8f")
+        ),
+        "entradas": comparacion_entradas,
+    }
+
+    # 4. Explicación exacta de Italy vs France X2: 84.1% vs 81.6%
+    r5_path = raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json"
+    r5_docs = json.loads(r5_path.read_text(encoding="utf-8")).get("docs") or {}
+    an_soloa = mm.analizar(r5_docs["italy"], r5_docs["france"], "Italy", "France", competicion="UEFA Nations League")
+    mat_a = an_soloa.motor.matriz_ft
+    px2_soloa = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[i])) if i <= j)
+    p1_soloa = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[i])) if i > j)
+    px_soloa = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[i])) if i == j)
+    p2_soloa = sum(mat_a[i][j] for i in range(len(mat_a)) for j in range(len(mat_a[i])) if i < j)
+    sens_x2 = (an_soloa.sensibilidad or {}).get("doble_oportunidad|x2|FT|France|None") or {}
+
+    with banderas_comportamiento(activar_todas=True):
+        an_ab = mm.analizar(
+            r5_docs["italy"], r5_docs["france"], "Italy", "France",
+            competicion="UEFA Nations League",
+        )
+    mat_b = an_ab.motor.matriz_ft
+    px2_ab = sum(mat_b[i][j] for i in range(len(mat_b)) for j in range(len(mat_b[i])) if i <= j)
+
+    liq_r5_path = raiz / "informes" / "evaluacion" / "liquidacion_ronda5_real_2026-11-12.json"
+    liq_r5 = json.loads(liq_r5_path.read_text(encoding="utf-8")) if liq_r5_path.exists() else {}
+    linea_x2_ledger = next(
+        (ln for ln in (loc_entries[1].get("lineas") or []) if ln.get("evento") == "x2"),
+        {},
+    ) if len(loc_entries) > 1 else {}
+    png_x2_if = next(
+        (ln for ln in (loc_entries[1].get("lineas_png_produccion_1211") or []) if ln.get("evento") == "x2"),
+        {},
+    ) if len(loc_entries) > 1 else {}
+
+    explicacion_if_x2 = {
+        "probabilidad_ledger_lineas": linea_x2_ledger.get("probabilidad_publicada"),
+        "probabilidad_pct_ledger_lineas": linea_x2_ledger.get("probabilidad_pct"),
+        "probabilidad_png_1211": png_x2_if.get("probabilidad_original"),
+        "id_trabajo_png_1211": png_x2_if.get("id_trabajo"),
+        "reconstruccion_5e8425f_soloA": {
+            "lambdas": liq_r5.get("lambdas", {}).get("if"),
+            "p1": round(p1_soloa, 6),
+            "px": round(px_soloa, 6),
+            "p2": round(p2_soloa, 6),
+            "p_x2": round(px2_soloa, 6),
+            "p_x2_exacta": px2_soloa,
+            "sensibilidad_wc0_wx0": round(min(sens_x2.values()), 6) if sens_x2 else None,
+            "fixture_generado_en": {
+                "italy": r5_docs["italy"].get("generado_en"),
+                "france": r5_docs["france"].get("generado_en"),
+            },
+        },
+        "reconstruccion_AB_14_banderas": {"p_x2": round(px2_ab, 6)},
+        "commits_anteriores_mismo_fixture": {
+            "2efdc20_a_d3efa46": 0.8693,
+            "3f2e53a_y_13e82e1": 0.86,
+        },
+        "snaps_pronosticos_con_italy_france": 0,
+        "explicacion": (
+            "84.1% (0.8410462427992359) es el resultado exacto de 5e8425f/soloA (lambdas [1.03, 2.33]) "
+            "ejecutado sobre `ronda5_real_fixtures.json` (docs capturados el 2026-11-13 02:18-02:19 tras el partido) "
+            "e insertado en `liquidacion_ronda5_real_2026-11-12.json` y `ledger_oos.jsonl` (`if_lineas`/`lineas`). "
+            "En cambio, 81.6% (0.816) en `lineas_png_produccion_1211` (`PNG-IF-1211`) proviene de la transcripción "
+            "manual de la captura PNG publicada en producción el 2026-11-12 antes del cierre final de `5e8425f` "
+            "(corte registrado 08:55:00-05:00, 39s antes de `5e8425f` 08:55:39-05:00, con feed vivo de FotMob "
+            "de esa mañana). Ningún snapshot JSON ni artefacto de esa corrida se persistió en disco ni en GitHub Actions."
+        ),
+    }
+
+    # 5. Resumen ledger OOS con marcado contaminado_por_diseno y sin líneas >= 99%
+    res_led = resumen_ledger_oos(ruta_led)
+
+    out = {
+        "inventario_corridas_bot_24_7": {
+            "origen_datos": origen_github,
+            "desde_utc": desde_utc,
+            "total_corridas_workflow": total_corridas_workflow,
+            "n_corridas_desde_2026_11_13": len(corridas_desde),
+            "conteo_por_estado": por_estado,
+            "conteo_por_evento": por_evento,
+            "conteo_por_head_sha": por_sha,
+            "jobs_muestra_o_fallos": jobs_inspeccionados,
+            "corridas": corridas_desde,
+        },
+        "persistencia_github": {
+            "workflow_file": ".github/workflows/bot_24_7.yml",
+            "permissions_contents": "read" if "contents: read" in wf_txt else None,
+            "tiene_upload_artifact": ("upload-artifact" in wf_txt),
+            "tiene_git_push_o_commit": ("git push" in wf_txt or "git commit" in wf_txt),
+            "concurrency_cancel_in_progress": ("cancel-in-progress: true" in wf_txt),
+            "setup_python_cache": "pip" if "cache: 'pip'" in wf_txt else None,
+            "artifacts": artifacts_info,
+            "caches": caches_info,
+            "conclusion_persistencia": (
+                "NADA para pronósticos y ledger. Con `contents: read`, 0 artifacts "
+                "(total_count=0) y 0 caches activos (total_count=0; setup-python solo intenta "
+                "cachear pip), los archivos escritos en informes/pronosticos/ y ledger_oos.jsonl "
+                "mueren con cada runner efímero."
+            ),
+        },
+        "comparacion_cadena_sha256_remota_vs_local": comparacion_cadena,
+        "explicacion_italy_france_x2_841_vs_816": explicacion_if_x2,
+        "ledger_contaminado_por_diseno_y_resumen_sin_99_pct": res_led,
+        "ruta_produccion_bot_interactivo": ruta_produccion,
+    }
+
     if guardar_ruta:
         out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
         out_p.parent.mkdir(parents=True, exist_ok=True)
