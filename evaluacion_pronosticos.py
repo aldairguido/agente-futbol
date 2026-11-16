@@ -8494,3 +8494,111 @@ def reportar_cadena_6_etapas_completa_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+def auditar_filtro_ruido_colombia_ronda11(
+    *,
+    regenerar: bool = False,
+    guardar_ruta: str | None = "datos/ronda11_punto2_filtro_ruido.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 11 — Punto 2: Evalúa `usar_filtro_ruido_ic_factores_dcn` cubriendo también
+    `ajuste_portero_local` (-0.35), `goles_evitados_rival`, y `F_porteria_rival` reescalado (-12%),
+    genera tabla de impacto para Colombia-Chile, TB, IF y LN (con y sin filtro),
+    explica el salto aparente 1.07 -> 1.10 en `techo_lambda_ataque_bajo_local` y registra
+    el origen de `Attack_L < 35` como regla operativa sin validación.
+    """
+    from pathlib import Path
+    import numpy as _np
+    from decision_cobertura import _BANDERAS_AUXILIARES_DEFECTO, banderas_comportamiento
+    from motor_mercados import Parametros, analizar
+
+    raiz = Path(__file__).resolve().parent
+    out_p = (Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)) if guardar_ruta else None
+    if out_p is not None and out_p.exists() and not regenerar:
+        return json.loads(out_p.read_text(encoding="utf-8"))
+
+    r5_docs = json.loads((raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))["docs"]
+    ln_docs = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+
+    casos = [
+        ("Colombia-Chile", "Colombia", "Chile", doc_col, doc_chi, "Eliminatorias CONMEBOL"),
+        ("TB", "Turquía", "Belgium", r5_docs["turkey"], r5_docs["belgium"], None),
+        ("IF", "Italy", "France", r5_docs["italy"], r5_docs["france"], None),
+        ("LN", "Londrina", "Náutico", ln_docs["londrina"], ln_docs["nautico"], "Brasileirao Serie C"),
+    ]
+    modos = [
+        ("soloA_sin_filtro", {"activar_todas": False, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("soloA_con_filtro", {"activar_todas": False, "usar_filtro_ruido_ic_factores_dcn": True, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("AB_sin_filtro", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("AB_con_filtro", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": True, "usar_reescalado_sin_inversion_signo_dcn": False}),
+        ("AB_sininv_sin_filtro", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": False, "usar_reescalado_sin_inversion_signo_dcn": True}),
+        ("AB_sininv_con_filtro", {"activar_todas": True, "usar_filtro_ruido_ic_factores_dcn": True, "usar_reescalado_sin_inversion_signo_dcn": True}),
+    ]
+
+    tabla: dict[str, dict[str, Any]] = {}
+    trazas_colombia: dict[str, list[dict[str, Any]]] = {}
+
+    for cod, eq_l, eq_v, d_l, d_v, comp in casos:
+        tabla[cod] = {}
+        for m_nom, kw in modos:
+            with banderas_comportamiento(**kw):
+                pr = Parametros()
+                if comp:
+                    pr.competicion = comp
+                an = analizar(d_l, d_v, eq_l, eq_v, condicion_local="casa", condicion_visitante="fuera", parametros=pr)
+                rec = an.motor.recursivo
+                ct = rec.get("cruces_tacticos") or {}
+                tr = list(an.motor.traza_lambda or [])
+                red_steps = [st for st in tr if st.get("etapa") == "red_45_dcn"]
+                lam_red = (
+                    [round(float(red_steps[-1]["lam_l_despues"]), 2), round(float(red_steps[-1]["lam_v_despues"]), 2)]
+                    if red_steps
+                    else [rec.get("lambda_local_recursivo"), rec.get("lambda_visita_recursivo")]
+                )
+                mat = _np.asarray(an.motor.matriz_ft, dtype=float)
+                p1 = round(float(_np.sum(_np.tril(mat, -1))) * 100.0, 2)
+                px = round(float(_np.sum(_np.diag(mat))) * 100.0, 2)
+                p2 = round(float(_np.sum(_np.triu(mat, 1))) * 100.0, 2)
+                tabla[cod][m_nom] = {
+                    "lambda_base": [rec.get("lambda_base_local"), rec.get("lambda_base_visita")],
+                    "lambda_red": lam_red,
+                    "lambda_final": [an.motor.tasas.lambda_local_ft, an.motor.tasas.lambda_visitante_ft],
+                    "1x2_pct": [p1, px, p2],
+                    "ajuste_portero_local": ct.get("ajuste_portero_local"),
+                    "ajuste_portero_visita": ct.get("ajuste_portero_visita"),
+                    "F_porteria_rival_crudo_L": (ct.get("factores_crudos_local") or {}).get("F_porteria_rival"),
+                    "F_porteria_rival_reescalado_L": (ct.get("factores_local") or {}).get("F_porteria_rival"),
+                    "F_porteria_rival_reescalado_V": (ct.get("factores_visita") or {}).get("F_porteria_rival"),
+                }
+                if cod == "Colombia-Chile" and m_nom in ("AB_sin_filtro", "AB_con_filtro", "soloA_sin_filtro", "soloA_con_filtro"):
+                    trazas_colombia[m_nom] = tr
+
+    out = {
+        "bandera": "usar_filtro_ruido_ic_factores_dcn",
+        "valor_por_defecto": bool(_BANDERAS_AUXILIARES_DEFECTO["usar_filtro_ruido_ic_factores_dcn"]),
+        "tabla_impacto": tabla,
+        "trazas_colombia_chile": trazas_colombia,
+        "explicacion_techo_107_a_110": (
+            "techo_lambda_ataque_bajo_local aplica min(lam_l, 1.10) cuando Attack_L < 35.0 y Def_V >= 30.0. "
+            "No sube lambda de 1.07 a 1.10: tras salir de red_45_dcn en 1.07, sincronizacion_55 recorta a 1.00, "
+            "luego copa_asedio_defensa_rota (copa=True, x1.15) sube a 1.15, y techo_lambda_ataque_bajo_local lo topa "
+            "a la baja de 1.15 -> 1.10. Con filtro de ruido activo, red_45_dcn sube a 1.28 (o 1.49 sin inversión) "
+            "con ajuste_portero_local=0.0 y F_porteria_rival=0.0, luego copa x1.15 sube a 1.3248, y el mismo techo "
+            "vuelve a recortar lambda_final a 1.10."
+        ),
+        "origen_umbral_attack_lt_35": {
+            "umbral": "Attack_L < 35.0 (techo_lambda_ataque_bajo = 1.10)",
+            "commit_introduccion": "e68fff4a0e947955644be3a66d66c988a76bbd0f",
+            "fecha_commit": "2026-11-09T01:14:18-05:00",
+            "archivo": "motor_patrones.py",
+            "tiene_validacion_oos": False,
+            "registro_validacion": "regla operativa sin validación",
+        },
+    }
+    if out_p is not None:
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

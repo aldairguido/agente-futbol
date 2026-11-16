@@ -36,7 +36,7 @@ umbrales:
   # Salvaguarda estructural: el bloqueo por recorte de lambda > 15% sin cronología es independiente de la calibración
   bloqueo_recorte_independiente_calibracion: true  # cautela estructural sin validación cronológica
 
-  # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0
+  # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0 (umbral 35.0 introducido heurísticamente en e68fff4a el 2026-11-09: regla operativa sin validación)
   techo_lambda_ataque_bajo: 1.10  # regla operativa, sin validación cronológica
 
   # Regla 23 / Patrón 26: Umbral de poder de cierre en 2T (sesgo diésel)

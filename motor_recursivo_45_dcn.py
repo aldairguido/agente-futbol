@@ -2590,8 +2590,12 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
                     fijos_ruido_V.append(_kf)
         if not ic_factores_L.get("F_porteria_rival", {}).get("supera_ruido", False):
             cruces_6["ajuste_portero_local"] = 0.0
+            comp_L["regalo_portero"] = 0.0
+            comp_L["goles_evitados_rival"] = 0.0
         if not ic_factores_V.get("F_porteria_rival", {}).get("supera_ruido", False):
             cruces_6["ajuste_portero_visita"] = 0.0
+            comp_V["regalo_portero"] = 0.0
+            comp_V["goles_evitados_rival"] = 0.0
     comp_L["ajuste_portero"] = cruces_6["ajuste_portero_local"]
     comp_V["ajuste_portero"] = cruces_6["ajuste_portero_visita"]
     comp_L["regalo_errores"] = cruces_6["regalo_errores_local"]
@@ -3082,6 +3086,12 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     if f_v.get("F_fragilidad_rival", 0.0) <= -1.0:
         techos_V["F_fragilidad_rival"] = -1.5
 
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _fk in fijos_ruido_L:
+            pisos_L.pop(_fk, None)
+        for _fk in fijos_ruido_V:
+            techos_V.pop(_fk, None)
+
     f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=tuple(fijos_ruido_L), pisos=pisos_L)
     if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
         for _kf in fijos_ruido_L:
@@ -3100,7 +3110,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     lam_k_L = round(float(lam_base_local * (1.0 + pct_tot_L / 100.0)), 2)
     lam_k_V = round(float(lam_base_visita * (1.0 + pct_tot_V / 100.0)), 2)
 
-    if _ba_rt("usar_tope_dcn_18_pct") and (abs(lam_k_L - lam_pre_reesc_L) > 1e-4 or abs(lam_k_V - lam_pre_reesc_V) > 1e-4):
+    if (_ba_rt("usar_tope_dcn_18_pct") or _ba_rt("usar_filtro_ruido_ic_factores_dcn")) and (abs(lam_k_L - lam_pre_reesc_L) > 1e-4 or abs(lam_k_V - lam_pre_reesc_V) > 1e-4):
         try:
             def _pmf_poisson_vec(lam_v: float, dim: int) -> np.ndarray:
                 v = np.array([math.exp(-lam_v) * (lam_v ** k) / math.factorial(k) for k in range(dim)], dtype=float)

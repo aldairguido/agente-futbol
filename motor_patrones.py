@@ -1692,6 +1692,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         lam_l = min(lam_l, 0.60)
         _trazar("freno_local_crisis_extrema_0.60", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<20 & crisis/gol_ult5={goles_ult5_local:.2f}")
     elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
+        # Regla 21b (e68fff4a, 2026-11-09): umbral Attack < 35.0 y techo 1.10 son regla operativa sin validación empírica.
         _al = lam_l
         lam_l = min(lam_l, techo_atk_bajo)
         _trazar("techo_lambda_ataque_bajo_local", _al, lam_l, lam_v, lam_v, f"en_crisis_L={en_crisis_local} o Attack_L={attack_rating_local:.1f}<35 con Def_V={defense_rating_visita:.1f}>=30 -> techo={techo_atk_bajo:.2f}")
