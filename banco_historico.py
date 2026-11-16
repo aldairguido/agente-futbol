@@ -1491,6 +1491,21 @@ def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any]) -> li
                 "periodo": "1T/2T",
                 "detalle": f"{lado}: centros FT={c_ft}, 1T={c_1t}, 2T={c_2t}",
             })
+    claves_sum_vistos = {h.get("detalle", "").split(":", 1)[0] for h in hallazgos if h.get("tipo") == "suma_mitades_distinta_ft"}
+    for inc in (partido.get("inconsistencias_aritmeticas") or []):
+        if isinstance(inc, dict) and str(inc.get("motivo") or "") == "suma_mitades_distinta_ft":
+            lado_i = str(inc.get("lado") or "")
+            cl_i = str(inc.get("clave") or "")
+            if f"{lado_i} {cl_i}" not in claves_sum_vistos:
+                claves_sum_vistos.add(f"{lado_i} {cl_i}")
+                hallazgos.append({
+                    "tipo": "suma_mitades_distinta_ft",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": "FT",
+                    "detalle": f"{lado_i} {cl_i}: FT={inc.get('FT')} != 1T({inc.get('1T')})+2T({inc.get('2T')}) [fuente cruda]",
+                })
     return hallazgos
 
 

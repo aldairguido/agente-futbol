@@ -8764,3 +8764,196 @@ def auditar_m3_y_6_empates_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+
+def auditar_m1_tackles_ronda11(
+    *,
+    guardar_ruta: str | None = "datos/ronda11_punto4_m1_tackles.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 11 — Punto 4 (M1 tackles):
+      - Muestra la fuente cruda exacta de FotMob 4653849 (`Switzerland 0-0 Colombia`, 2026-07-07):
+        FT `[12, 17]` vs `1T [6, 11]` + `2T [2, 5]` (`8` y `16`).
+      - Verifica por qué el validador anterior no lo detectó (`Pasada 3b` en
+        `consolidar_matriz_completa` reescaló proporcionalmente `[6,11]/[2,5]` -> `[9,12]/[3,5]` sin
+        dejar traza en `inconsistencias_aritmeticas`, `validar_defectos_partidos_banco` excluye
+        `colombia`/`chile`, y `validar_coherencia_1t_2t_ft` no incluye `entradas`/`entradas_ganadas`
+        al estar `entradas_pct` en `METRICAS_NO_ADITIVAS_BANCO`).
+      - Clasifica la discrepancia cruda como `suma_mitades_distinta_ft` (y verifica su registro en
+        `inconsistencias_aritmeticas` + `_evaluar_defectos_matriz_partido`) sin alterar el banco 83.
+    """
+    import copy
+    from pathlib import Path
+    import banco_historico as bh
+    import fuentes_xg as fxg
+
+    raiz = Path(__file__).resolve().parent
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8-sig"))
+    m1_cache = copy.deepcopy((doc_col.get("partidos") or [])[0])
+
+    # Fuente cruda verificada en FotMob matchDetails?matchId=4653849
+    fuente_cruda_fotmob_4653849 = {
+        "matchId": "4653849",
+        "general": {"home": "Switzerland", "away": "Colombia", "score": "0-0"},
+        "All": {
+            "group": "Defence",
+            "key": "matchstats.headers.tackles",
+            "title": "Tackles",
+            "format": "integer",
+            "stats": [12, 17],
+            "rawStats": [{"value": 12}, {"value": 17}],
+        },
+        "FirstHalf": {
+            "group": "Defence",
+            "key": "matchstats.headers.tackles",
+            "title": "Tackles",
+            "format": "integer",
+            "stats": [6, 11],
+            "rawStats": [{"value": 6}, {"value": 11}],
+        },
+        "SecondHalf": {
+            "group": "Defence",
+            "key": "matchstats.headers.tackles",
+            "title": "Tackles",
+            "format": "integer",
+            "stats": [2, 5],
+            "rawStats": [{"value": 2}, {"value": 5}],
+        },
+        "playerStats_tackles_sum": {"6717_Switzerland": 12.0, "8258_Colombia": 17.0},
+    }
+
+    desajuste_crudo = {
+        "switzerland_local_rival": {
+            "FT": 12, "1T": 6, "2T": 2, "suma_1t_2t": 8, "diferencia_ft_menos_suma": 4,
+            "coincide_ft": False,
+        },
+        "colombia_visita_equipo": {
+            "FT": 17, "1T": 11, "2T": 5, "suma_1t_2t": 16, "diferencia_ft_menos_suma": 1,
+            "coincide_ft": False,
+        },
+    }
+
+    # Reconstrucción pre-Pasada-3b para demostrar:
+    # (a) qué detecta `_evaluar_defectos_matriz_partido` sobre el dato crudo sin reescalar, y
+    # (b) qué produjo Pasada 3b al consolidar la matriz cacheada (12/8=1.5 -> 9,3; 17/16=1.0625 -> 12,5).
+    m_pre = fxg.MatrizPartido(
+        id_partido="4653849",
+        fecha="2026-07-07",
+        torneo="World Cup",
+        equipo="Colombia",
+        rival="Switzerland",
+        condicion="fuera",
+        goles_equipo=0,
+        goles_rival=0,
+    )
+    m_pre.periodos = {
+        "FT": fxg.PeriodoPartido(periodo="FT", filas=[
+            {"clave": "entradas", "equipo": 17.0, "rival": 12.0},
+            {"clave": "entradas_ganadas", "equipo": 17.0, "rival": 12.0},
+            {"clave": "entradas_pct", "equipo": 17.0, "rival": 12.0},
+        ]),
+        "1T": fxg.PeriodoPartido(periodo="1T", filas=[
+            {"clave": "entradas", "equipo": 11.0, "rival": 6.0},
+            {"clave": "entradas_ganadas", "equipo": 11.0, "rival": 6.0},
+            {"clave": "entradas_pct", "equipo": 11.0, "rival": 6.0},
+        ]),
+        "2T": fxg.PeriodoPartido(periodo="2T", filas=[
+            {"clave": "entradas", "equipo": 5.0, "rival": 2.0},
+            {"clave": "entradas_ganadas", "equipo": 5.0, "rival": 2.0},
+            {"clave": "entradas_pct", "equipo": 5.0, "rival": 2.0},
+        ]),
+    }
+
+    def _a_dict_mat(m_obj: fxg.MatrizPartido) -> dict[str, Any]:
+        return {
+            "id_partido": m_obj.id_partido,
+            "fuente_primaria": "fotmob",
+            "periodos": {
+                per: {"filas": list(bl.filas)}
+                for per, bl in (m_obj.periodos or {}).items()
+            },
+            "inconsistencias_aritmeticas": list(m_obj.inconsistencias_aritmeticas or []),
+        }
+
+    hallazgos_crudos = bh._evaluar_defectos_matriz_partido("colombia", _a_dict_mat(m_pre))
+    tipos_crudos = [h for h in hallazgos_crudos if h.get("tipo") == "suma_mitades_distinta_ft"]
+
+    # Ejecutar consolidar_matriz_completa actual (con trazabilidad de Pasada 3b en inconsistencias_aritmeticas)
+    fxg.consolidar_matriz_completa(m_pre)
+
+    def _ext_celdas(m_obj: fxg.MatrizPartido, clave: str) -> dict[str, list[Any]]:
+        res_c: dict[str, list[Any]] = {}
+        for per in ("FT", "1T", "2T"):
+            f = next((x for x in (m_obj.periodos[per].filas or []) if x.get("clave") == clave), {})
+            res_c[per] = [f.get("equipo"), f.get("rival")]
+        return res_c
+
+    hallazgos_post_consolidar = bh._evaluar_defectos_matriz_partido("colombia", _a_dict_mat(m_pre))
+    hallazgos_sobre_cache_disco = bh._evaluar_defectos_matriz_partido("colombia", m1_cache)
+    rep_banco_83 = bh.validar_defectos_partidos_banco(raiz=raiz)
+
+    def _cache_ent(per: str) -> list[Any]:
+        f = next((x for x in ((m1_cache.get("periodos") or {}).get(per) or {}).get("filas") or [] if x.get("clave") == "entradas"), {})
+        return [f.get("equipo"), f.get("rival")]
+
+    out = {
+        "id_partido": "4653849",
+        "partido": "Switzerland vs Colombia (2026-07-07)",
+        "fuente_cruda_fotmob": fuente_cruda_fotmob_4653849,
+        "desajuste_crudo_mitades": desajuste_crudo,
+        "cache_disco_colombia": {
+            "generado_en": "2026-11-14 10:26:36",
+            "entradas_ft": _cache_ent("FT"),
+            "entradas_1t": _cache_ent("1T"),
+            "entradas_2t": _cache_ent("2T"),
+            "coincide_recalculo_pasada_3b": (
+                _ext_celdas(m_pre, "entradas")["1T"] == _cache_ent("1T")
+                and _ext_celdas(m_pre, "entradas")["2T"] == _cache_ent("2T")
+            ),
+            "hallazgos_validador_sobre_cache_disco_m1": [
+                h for h in hallazgos_sobre_cache_disco if h.get("tipo") == "suma_mitades_distinta_ft"
+            ],
+        },
+        "clasificacion": {
+            "discrepancia_fuente_cruda": "suma_mitades_distinta_ft",
+            "tratamiento_mitades_si_no_se_prorratea": "sin_dato (conservando FT=[12, 17] corroborado por playerStats)",
+            "hallazgos_sobre_fuente_cruda": tipos_crudos,
+            "inconsistencias_tras_consolidar_nuevo": [
+                i for i in (m_pre.inconsistencias_aritmeticas or [])
+                if i.get("motivo") == "suma_mitades_distinta_ft" and i.get("clave") == "entradas"
+            ],
+            "hallazgos_validador_post_consolidar_nuevo": sorted(
+                [h for h in hallazgos_post_consolidar if h.get("tipo") == "suma_mitades_distinta_ft"],
+                key=lambda h: str(h.get("detalle") or ""),
+            ),
+        },
+        "por_que_no_lo_detecto_el_validador": [
+            (
+                "1) En fuentes_xg.consolidar_matriz_completa (Pasada 3b), antes de guardar "
+                "cache_fotmob_colombia_COL_False_False.json el sistema detectó 6+2=8!=12 y 11+5=16!=17 "
+                "y reescaló proporcionalmente las mitades (Suiza 12/8=1.5 -> 1T=9, 2T=3; "
+                "Colombia 17/16=1.0625 -> 1T=12, 2T=5) sin escribir traza en `inconsistencias_aritmeticas`."
+            ),
+            (
+                "2) En banco_historico.validar_defectos_partidos_banco(), las filas con equipo_clave in "
+                "('colombia', 'chile') se excluyen explícitamente y solo se cargan matrices de los 83 partidos "
+                "del banco (ronda5_real_fixtures, londrina_nautico_fixtures y auditorías Turquía/Bélgica), "
+                "por lo que 4653849 nunca entra en ese validador."
+            ),
+            (
+                "3) Además, validar_coherencia_1t_2t_ft() sobre el CSV del banco solo recorre CLAVES_45 presentes en "
+                "METRICAS_CONTEO_ADITIVAS_BANCO: `entradas_pct` figura en METRICAS_NO_ADITIVAS_BANCO y ni "
+                "`entradas` ni `entradas_ganadas` existen como columnas del CSV ni en METRICAS_CONTEO_ADITIVAS_BANCO."
+            ),
+        ],
+        "banco_83_intacto_sin_regresion": {
+            "total_pre": int(rep_banco_83["matrices_crudas_pre_saneamiento"]["total_defectos"]),
+            "total_post": int(rep_banco_83["matrices_post_sanear_partido_auditoria_45"]["total_defectos"]),
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

@@ -4921,7 +4921,7 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
 
     # Pasada 2: coherencia aritmética multitiempo (1T + 2T == FT) SOLO por identidad exacta
     # (cuando se conocen 2 de los 3 periodos, o cuando FT == 0.0 observado en una métrica no negativa)
-    todas_aditivas = METRICAS_CONTEO_ADITIVAS | METRICAS_CONTINUAS_ADITIVAS
+    todas_aditivas = tuple(sorted(METRICAS_CONTEO_ADITIVAS | METRICAS_CONTINUAS_ADITIVAS))
     for lado in ("equipo", "rival"):
         for cl in todas_aditivas:
             es_continua = cl in METRICAS_CONTINUAS_ADITIVAS
@@ -5002,6 +5002,14 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
                 suma_mitades = v_1t + v_2t
                 tol = 0.05 if es_continua else 0.001
                 if abs(suma_mitades - v_ft) > tol:
+                    inconsistencias.append({
+                        "clave": cl, "lado": lado, "periodo_afectado": "1T+2T",
+                        "FT": v_ft, "1T": v_1t, "2T": v_2t,
+                        "suma_1t_2t": round(suma_mitades, 4),
+                        "diferencia": round(v_ft - suma_mitades, 4),
+                        "motivo": "suma_mitades_distinta_ft",
+                        "reescalado_proporcional": bool(suma_mitades > 0 and cl != "goles_evitados" and v_ft != 0.0),
+                    })
                     if v_ft == 0.0 and cl != "goles_evitados":
                         por_per["1T"][lado][cl] = 0.0
                         por_per["2T"][lado][cl] = 0.0
