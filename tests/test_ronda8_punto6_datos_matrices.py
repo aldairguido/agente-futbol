@@ -51,29 +51,30 @@ def test_ronda8_punto6_pases_total_partidos_29_y_30():
     p29 = pts[28]  # Matriz [29/30]: New Zealand (rival/Local) vs Chile (equipo/Visita)
     p30 = pts[29]  # Matriz [30/30]: Chile (equipo/Local) vs Cape Verde (rival/Visita)
 
-    # Partido 29: New Zealand (rival) FT=479 (1T=213, 2T=266), Chile (equipo) FT=278 (1T=133, 2T=145)
-    assert _fila(p29, "FT", "pases_total")["rival"] == 479.0
+    # Partido 29: New Zealand (rival) FT=478 (1T=213, 2T=265), Chile (equipo) FT=278 (1T=133, 2T=145)
+    # Ronda 9 Punto 5: pases_total (#08) coincide exactamente con el denominador observado en pases_ratio (#10).
+    assert _fila(p29, "FT", "pases_total")["rival"] == 478.0
     assert _fila(p29, "1T", "pases_total")["rival"] == 213.0
-    assert _fila(p29, "2T", "pases_total")["rival"] == 266.0
+    assert _fila(p29, "2T", "pases_total")["rival"] == 265.0
     assert _fila(p29, "FT", "pases_total")["equipo"] == 278.0
     assert _fila(p29, "1T", "pases_total")["equipo"] == 133.0
     assert _fila(p29, "2T", "pases_total")["equipo"] == 145.0
 
     md29 = formatear_matriz_45_partido(p29, k=29, total_partidos=30)
-    assert "| 08 | Pases totales (`pases_total`) | 479 | 278 | 213 | 133 | 266 | 145 |" in md29
-    assert "| 10 | Pases (completados/totales) (`pases_ratio`) | 413/479 (86%) | 204/278 (73%) | 180/213 (85%) | 94/133 (71%) | 233/266 (88%) | 110/145 (76%) |" in md29
+    assert "| 08 | Pases totales (`pases_total`) | 478 | 278 | 213 | 133 | 265 | 145 |" in md29
+    assert "| 10 | Pases (completados/totales) (`pases_ratio`) | 413/478 (86%) | 204/278 (73%) | 180/213 (85%) | 94/133 (71%) | 233/265 (88%) | 110/145 (76%) |" in md29
 
-    # Partido 30: Chile (equipo) FT=419 (1T=228, 2T=191), Cape Verde (rival) FT=382 (1T=191, 2T=191)
-    assert _fila(p30, "FT", "pases_total")["equipo"] == 419.0
-    assert _fila(p30, "1T", "pases_total")["equipo"] == 228.0
+    # Partido 30: Chile (equipo) FT=420 (1T=229, 2T=191), Cape Verde (rival) FT=382 (1T=190, 2T=192)
+    assert _fila(p30, "FT", "pases_total")["equipo"] == 420.0
+    assert _fila(p30, "1T", "pases_total")["equipo"] == 229.0
     assert _fila(p30, "2T", "pases_total")["equipo"] == 191.0
     assert _fila(p30, "FT", "pases_total")["rival"] == 382.0
-    assert _fila(p30, "1T", "pases_total")["rival"] == 191.0
-    assert _fila(p30, "2T", "pases_total")["rival"] == 191.0
+    assert _fila(p30, "1T", "pases_total")["rival"] == 190.0
+    assert _fila(p30, "2T", "pases_total")["rival"] == 192.0
 
     md30 = formatear_matriz_45_partido(p30, k=30, total_partidos=30)
-    assert "| 08 | Pases totales (`pases_total`) | 419 | 382 | 228 | 191 | 191 | 191 |" in md30
-    assert "| 10 | Pases (completados/totales) (`pases_ratio`) | 356/419 (85%) | 317/382 (83%) | 201/228 (88%) | 160/191 (84%) | 155/191 (81%) | 157/191 (82%) |" in md30
+    assert "| 08 | Pases totales (`pases_total`) | 420 | 382 | 229 | 190 | 191 | 192 |" in md30
+    assert "| 10 | Pases (completados/totales) (`pases_ratio`) | 356/420 (85%) | 317/382 (83%) | 201/229 (88%) | 160/190 (84%) | 155/191 (81%) | 157/192 (82%) |" in md30
 
 
 def test_ronda8_punto6_partido_3_entradas_tiros_libres_y_centros():
@@ -88,7 +89,10 @@ def test_ronda8_punto6_partido_3_entradas_tiros_libres_y_centros():
         for lado in ("equipo", "rival"):
             assert eg[lado] <= et[lado]
 
-    assert "| 32 | Entradas (tackles ganados) (`entradas_pct`) | 5/15 (33%) | 8/9 (89%) | 3/6 (50%) | 4/5 (80%) | 2/9 (22%) | 4/4 (100%) |" in md3
+    # Ronda 9 Punto 5: denominadores resueltos desde fuente (FotMob + Flashscore sin bandos_invertidos en 0-0):
+    # Colombia (equipo): 8/15 (53%) FT | 2/6 (33%) 1T | 6/9 (67%) 2T
+    # Portugal (rival):  5/9  (56%) FT | 3/5 (60%) 1T | 2/4 (50%) 2T
+    assert "| 32 | Entradas (tackles ganados) (`entradas_pct`) | 8/15 (53%) | 5/9 (56%) | 2/6 (33%) | 3/5 (60%) | 6/9 (67%) | 2/4 (50%) |" in md3
     assert "| 5/4 (" not in md3
     assert "125%" not in md3
 
@@ -96,12 +100,12 @@ def test_ronda8_punto6_partido_3_entradas_tiros_libres_y_centros():
     assert "| 25 | Tiros libres directos (`tiros_libres`) | 6 | 12 | 4 | 3 | 2 | 9 |" in md3
     assert "| 31 | Faltas cometidas (`faltas`) | 12 | 6 | 3 | 4 | 9 | 2 |" in md3
 
-    # Centros por mitad (#28) en partidos 1 y 3: 1T + 2T == FT
-    assert "| 28 | Cruces / centros precisos (`cruces_pct`) | 3/11 (27%) | 2/13 (15%) | 0/4 (0%) | 0/8 (0%) | 3/7 (43%) | 2/5 (40%) |" in md3
+    # Ronda 9 Punto 5: Centros por mitad (#28) en partidos 1 y 3 -> si la fuente no da intentos por mitad, deja sin_dato.
+    assert "| 28 | Cruces / centros precisos (`cruces_pct`) | 3/11 (27%) | 2/13 (15%) | sin_dato | sin_dato | sin_dato | sin_dato |" in md3
 
     p1 = pts[0]  # Matriz [1/30]: Switzerland vs Colombia (2026-09-24)
     md1 = formatear_matriz_45_partido(p1, k=1, total_partidos=30)
-    assert "| 28 | Cruces / centros precisos (`cruces_pct`) | 1/14 (7%) | 3/19 (16%) | 1/4 (25%) | 1/9 (11%) | 0/10 (0%) | 2/10 (20%) |" in md1
+    assert "| 28 | Cruces / centros precisos (`cruces_pct`) | 1/14 (7%) | 3/19 (16%) | sin_dato | sin_dato | sin_dato | sin_dato |" in md1
 
 
 def test_ronda8_punto6_bloqueos_sin_dato_y_formato_100_partido_29():

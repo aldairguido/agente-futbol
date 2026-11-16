@@ -957,10 +957,19 @@ def emparejar_partido(datos: dict[str, Any], candidatos: list[dict[str, Any]],
         except ValueError:
             continue
         mismo = (c.get("goles_local") == gl and c.get("goles_visitante") == gv)
-        invertido = (c.get("goles_local") == gv and c.get("goles_visitante") == gl)
-        if not (mismo or invertido):
+        invertido_cand = (c.get("goles_local") == gv and c.get("goles_visitante") == gl)
+        if not (mismo or invertido_cand):
             continue
-        aciertos, ambos = nombres_cuadran(c, invertido)
+        if mismo and invertido_cand:
+            ac_dir, amb_dir = nombres_cuadran(c, False)
+            ac_inv, amb_inv = nombres_cuadran(c, True)
+            if ac_inv > ac_dir:
+                invertido, aciertos, ambos = True, ac_inv, amb_inv
+            else:
+                invertido, aciertos, ambos = False, ac_dir, amb_dir
+        else:
+            invertido = invertido_cand and (not mismo)
+            aciertos, ambos = nombres_cuadran(c, invertido)
         if dif <= tolerancia_dias:
             # Dentro de la tolerancia general: basta el marcador exacto
             aceptados.append((c, invertido, aciertos, dif))
