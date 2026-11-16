@@ -86,11 +86,12 @@ def test_r9_p6d_validador_defectos_83_partidos_banco():
     assert pre["por_fuente"]["fotmob"] == 121
     assert pre["por_fuente"]["fotmob+flashscore"] == 31
 
-    # Post-saneamiento elimina falso_denominador_100 y entradas_ganadas>intentadas
+    # Post-saneamiento elimina falso_denominador_100, entradas_ganadas>intentadas y los 17 tiros_libres_sin_invertir
     post = rep["matrices_post_sanear_partido_auditoria_45"]
-    assert post["total_defectos"] == 24
+    assert post["total_defectos"] == 7
     assert "falso_denominador_100" not in post["por_tipo"]
     assert "entradas_ganadas_mayor_intentadas" not in post["por_tipo"]
+    assert "tiros_libres_sin_invertir_igual_faltas" not in post["por_tipo"]
 
 
 def test_r9_p6e_bloqueo_contradicciones_texto_vs_cifras():

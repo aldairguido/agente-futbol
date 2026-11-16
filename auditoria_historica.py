@@ -3235,22 +3235,24 @@ def sanear_partido_auditoria_45(partido: dict[str, Any]) -> dict[str, Any]:
                         if isinstance(fp, dict):
                             fp[lado] = float(vc)
 
-    # ── 3) Tiros libres (#25) no invertidos respecto a faltas (#31) en partido 3 (4999441) ──
-    if es_partido_3_col_por:
-        for per, fmap in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
-            fl_f = fmap.get("faltas")
-            tl_f = fmap.get("tiros_libres")
-            if isinstance(fl_f, dict) and isinstance(tl_f, dict):
-                fe = fl_f.get("equipo")
-                fr = fl_f.get("rival")
-                te = tl_f.get("equipo")
-                tr = tl_f.get("rival")
-                if fe is not None and fr is not None and te == fe and tr == fr and fe != fr:
-                    tl_f["equipo"] = float(fr)
-                    tl_f["rival"] = float(fe)
-                    if per == "FT" and isinstance(res_claves, dict) and isinstance(res_claves.get("tiros_libres"), dict):
-                        res_claves["tiros_libres"]["equipo"] = float(fr)
-                        res_claves["tiros_libres"]["rival"] = float(fe)
+    # ── 3) Tiros libres (#25) no invertidos respecto a faltas (#31) en cualquier partido ──
+    # Regla verificada (incl. Colombia-Portugal M3 y Colombia-Chile 2026-11-13 FT/1T/2T):
+    # cuando el fallback de Flashscore/bandos invertidos copia tiros_libres == faltas con
+    # valores distintos entre bandos (fe != fr), se invierte a tiros_libres propios = faltas rival.
+    for per, fmap in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+        fl_f = fmap.get("faltas")
+        tl_f = fmap.get("tiros_libres")
+        if isinstance(fl_f, dict) and isinstance(tl_f, dict):
+            fe = fl_f.get("equipo")
+            fr = fl_f.get("rival")
+            te = tl_f.get("equipo")
+            tr = tl_f.get("rival")
+            if fe is not None and fr is not None and te == fe and tr == fr and fe != fr:
+                tl_f["equipo"] = float(fr)
+                tl_f["rival"] = float(fe)
+                if per == "FT" and isinstance(res_claves, dict) and isinstance(res_claves.get("tiros_libres"), dict):
+                    res_claves["tiros_libres"]["equipo"] = float(fr)
+                    res_claves["tiros_libres"]["rival"] = float(fe)
 
     # ── 4) Bloqueos (#38) en 0 donde corresponde sin_dato (partidos 14, 19 y 22) ──
     es_bloq_sin_dato = (

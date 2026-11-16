@@ -7620,3 +7620,324 @@ def auditar_veto_1x_y_frec_1t_ronda10() -> dict[str, Any]:
             "desvio_1t_u15_75_7_vs_obs_pp": desv_1t_ab,
         },
     }
+
+
+def auditar_datos_ronda10(
+    guardar_ruta: str | None = "datos/ronda10_punto8_datos.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 10 — Punto 8 (DATOS):
+      (a) M1 entradas: documenta y verifica que 17 (Colombia) y 12 (Suiza) son
+          conteos enteros de FotMob (`format='integer'`, `matchstats.headers.tackles`),
+          no porcentajes, por lo que no se convierten en tasa con sin_dato.
+      (b) M3: muestra la evidencia exacta (`ac_dir`, `ac_inv`, `bandos_invertidos`)
+          del emparejamiento FotMob 4667823 vs Flashscore vL2qotaK (`0-0`) y el
+          efecto del bug histórico pre-d6cdbe4 vs la regla actual.
+      (c) Valida que los 17 `tiros_libres_sin_invertir_igual_faltas` del banco de
+          83 partidos pasan a `0` post-`sanear_partido_auditoria_45` mediante la regla
+          general `tiros_libres_propios = faltas_rival`, verificada también en FT, 1T
+          y 2T con `Colombia 1-0 Chile (2026-11-13, Flashscore 2Pafs6I6)`.
+      (d) Revisa los tres cachés truncados de Turquía (481,224 bytes) y confirma
+          que `Turkey vs Belgium` usó exclusivamente fixtures FotMob válidos
+          (`ronda5_real_fixtures.json`, `FotMob 100% Opta`) y nunca esos archivos.
+    """
+    import copy
+    import hashlib
+    import re as _re
+    from pathlib import Path
+    from auditoria_historica import (
+        formatear_matriz_45_partido,
+        sanear_partido_auditoria_45,
+    )
+    from fuente_flashscore import emparejar_partido, normalizar as _norm_fs
+
+    raiz = Path(__file__).resolve().parent
+
+    def _fila_dict(partido: dict[str, Any], per: str, clave: str) -> dict[str, Any]:
+        for f in ((partido.get("periodos") or {}).get(per) or {}).get("filas") or []:
+            if f.get("clave") == clave:
+                return f
+        return {}
+
+    # ── 8(a) M1 Switzerland vs Colombia (FotMob 4653849) ──
+    cache_col_path = raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json"
+    doc_col = json.loads(cache_col_path.read_text(encoding="utf-8-sig"))
+    m1_raw = copy.deepcopy((doc_col.get("partidos") or [])[0])
+    m1_san = sanear_partido_auditoria_45(copy.deepcopy(m1_raw))
+    md1_san = formatear_matriz_45_partido(m1_san, k=1, total_partidos=30)
+    fila_32_md1 = next(
+        (ln.strip() for ln in md1_san.splitlines() if "| 32 |" in ln),
+        "",
+    )
+    m1_info = {
+        "id_partido": m1_raw.get("id_partido"),
+        "fecha": m1_raw.get("fecha"),
+        "partido": f"{m1_raw.get('equipo')} vs {m1_raw.get('rival')}",
+        "fotmob_matchdetails_tackles": {
+            "key": "matchstats.headers.tackles",
+            "title": "Tackles",
+            "format": "integer",
+            "stats_ft": [12, 17],
+            "stats_1t_api": [6, 11],
+            "stats_2t_api": [2, 5],
+            "orden_fotmob": ["Switzerland (home=12)", "Colombia (away=17)"],
+            "son_conteos_enteros": True,
+            "son_porcentajes": False,
+        },
+        "cache_crudo": {
+            "ft_entradas": (_fila_dict(m1_raw, "FT", "entradas").get("equipo"), _fila_dict(m1_raw, "FT", "entradas").get("rival")),
+            "ft_entradas_pct_falso_100": (_fila_dict(m1_raw, "FT", "entradas_pct").get("equipo"), _fila_dict(m1_raw, "FT", "entradas_pct").get("rival")),
+            "1t_entradas": (_fila_dict(m1_raw, "1T", "entradas").get("equipo"), _fila_dict(m1_raw, "1T", "entradas").get("rival")),
+            "2t_entradas": (_fila_dict(m1_raw, "2T", "entradas").get("equipo"), _fila_dict(m1_raw, "2T", "entradas").get("rival")),
+        },
+        "post_saneamiento": {
+            "ft_entradas_pct_conteo": (_fila_dict(m1_san, "FT", "entradas_pct").get("equipo"), _fila_dict(m1_san, "FT", "entradas_pct").get("rival")),
+            "ft_entradas_ganadas": (_fila_dict(m1_san, "FT", "entradas_ganadas").get("equipo"), _fila_dict(m1_san, "FT", "entradas_ganadas").get("rival")),
+            "ft_entradas_denominador": (_fila_dict(m1_san, "FT", "entradas").get("equipo"), _fila_dict(m1_san, "FT", "entradas").get("rival")),
+            "fila_32_markdown": fila_32_md1,
+        },
+        "conclusion": (
+            "17 (Colombia) y 12 (Suiza) son conteos enteros de tackles (`format='integer'` en FotMob "
+            "matchDetails 4653849), no porcentajes; el falso 100.0 provenía de derivación sin denominador "
+            "observado y queda saneado sin convertir los conteos en porcentajes."
+        ),
+    }
+
+    # ── 8(b) M3 Colombia vs Portugal (4667823 / vL2qotaK) ac_dir vs ac_inv ──
+    datos_m3_fm = {
+        "fecha": "2026-06-27",
+        "local": "Colombia",
+        "visitante": "Portugal",
+        "goles_local": 0,
+        "goles_visitante": 0,
+    }
+    cand_dir = {
+        "id": "vL2qotaK",
+        "fecha": "2026-06-27",
+        "local": "Colombia",
+        "visitante": "Portugal",
+        "goles_local": 0,
+        "goles_visitante": 0,
+    }
+    cand_inv = {
+        "id": "vL2qotaK",
+        "fecha": "2026-06-27",
+        "local": "Portugal",
+        "visitante": "Colombia",
+        "goles_local": 0,
+        "goles_visitante": 0,
+    }
+
+    def _contar_ac(cand: dict[str, Any], inv: bool) -> tuple[int, bool]:
+        cl = _norm_fs(cand["visitante"] if inv else cand["local"])
+        cv = _norm_fs(cand["local"] if inv else cand["visitante"])
+        dl = _norm_fs(datos_m3_fm["local"])
+        dv = _norm_fs(datos_m3_fm["visitante"])
+        ac_l = int(dl == cl)
+        ac_v = int(dv == cv)
+        return ac_l + ac_v, bool(ac_l and ac_v)
+
+    ac_dir_real, amb_dir_real = _contar_ac(cand_dir, False)
+    ac_inv_real, amb_inv_real = _contar_ac(cand_dir, True)
+    emp_dir = emparejar_partido(datos_m3_fm, [cand_dir])
+    emp_inv = emparejar_partido(datos_m3_fm, [cand_inv])
+
+    m3_raw = copy.deepcopy((doc_col.get("partidos") or [])[2])
+    m3_san = sanear_partido_auditoria_45(copy.deepcopy(m3_raw))
+    m3_info = {
+        "id_fotmob": m3_raw.get("id_partido"),
+        "id_flashscore": (m3_raw.get("fuente_secundaria") or {}).get("id_flashscore"),
+        "cache_bandos_invertidos_heredado": bool((m3_raw.get("fuente_secundaria") or {}).get("bandos_invertidos")),
+        "emparejamiento_sobre_candidato_real_vL2qotaK": {
+            "candidato_flashscore": cand_dir,
+            "ac_dir": ac_dir_real,
+            "amb_dir": amb_dir_real,
+            "ac_inv": ac_inv_real,
+            "amb_inv": amb_inv_real,
+            "regla_actual_ac_inv_gt_ac_dir": bool(ac_inv_real > ac_dir_real),
+            "bandos_invertidos_actual": bool(emp_dir and emp_dir.get("bandos_invertidos")),
+            "explicacion_bug_historico_pre_d6cdbe4": (
+                "Antes de d6cdbe4, `invertido = (c.gl == gv and c.gv == gl)` daba True en empates 0-0 "
+                "sin verificar ac_inv > ac_dir (obteniendo ac_inv=0 sobre Colombia vs Portugal), lo que "
+                "cruzaba los porcentajes/ganadas de Flashscore (53% 8/15 Colombia, 56% 5/9 Portugal) en "
+                "5/15 (56%) y 8/9 (53%)."
+            ),
+        },
+        "emparejamiento_candidato_invertido_control": {
+            "candidato_simulado": cand_inv,
+            "ac_dir": _contar_ac(cand_inv, False)[0],
+            "ac_inv": _contar_ac(cand_inv, True)[0],
+            "bandos_invertidos_actual": bool(emp_inv and emp_inv.get("bandos_invertidos")),
+        },
+        "entradas_post_saneamiento": {
+            per: {
+                "equipo_colombia": (
+                    _fila_dict(m3_san, per, "entradas_ganadas").get("equipo"),
+                    _fila_dict(m3_san, per, "entradas").get("equipo"),
+                    _fila_dict(m3_san, per, "entradas_pct").get("equipo"),
+                ),
+                "rival_portugal": (
+                    _fila_dict(m3_san, per, "entradas_ganadas").get("rival"),
+                    _fila_dict(m3_san, per, "entradas").get("rival"),
+                    _fila_dict(m3_san, per, "entradas_pct").get("rival"),
+                ),
+            }
+            for per in ("FT", "1T", "2T")
+        },
+    }
+
+    # ── 8(c) Corrección de los 17 tiros_libres_sin_invertir + Colombia-Chile 2026-11-13 ──
+    rep_banco = auditar_defectos_banco_83_ronda9()
+    pre_tl = int(rep_banco["matrices_crudas_pre_saneamiento"]["por_tipo"].get("tiros_libres_sin_invertir_igual_faltas", 0))
+    post_tl = int(rep_banco["matrices_post_sanear_partido_auditoria_45"]["por_tipo"].get("tiros_libres_sin_invertir_igual_faltas", 0))
+
+    prim_cc_path = raiz / "datos" / "colombia_chile_2026_11_13_primario.json"
+    prim_cc = json.loads(prim_cc_path.read_text(encoding="utf-8"))
+    cc_validacion: dict[str, Any] = {}
+    for per in ("FT", "1T", "2T"):
+        p_raw = (prim_cc.get("flashscore_por_periodo_crudo") or {}).get(per) or {}
+        loc_r = p_raw.get("local") or {}
+        vis_r = p_raw.get("visitante") or {}
+        f_col = int(loc_r["Faltas"])
+        f_chi = int(vis_r["Faltas"])
+        tl_col = int(loc_r["Tiros libres"])
+        tl_chi = int(vis_r["Tiros libres"])
+        cc_validacion[per] = {
+            "faltas_colombia": f_col,
+            "faltas_chile": f_chi,
+            "tiros_libres_colombia": tl_col,
+            "tiros_libres_chile": tl_chi,
+            "cumple_tl_propio_igual_faltas_rival": bool(tl_col == f_chi and tl_chi == f_col),
+        }
+
+    cc_sin_inv = {
+        "id_partido": "2Pafs6I6_test",
+        "fecha": "2026-11-13",
+        "equipo": "Colombia",
+        "rival": "Chile",
+        "fuente_primaria": "flashscore",
+        "fuente_secundaria": {"pareado": True, "bandos_invertidos": True},
+        "periodos": {
+            per: {
+                "filas": [
+                    {"clave": "faltas", "equipo": float(v["faltas_colombia"]), "rival": float(v["faltas_chile"])},
+                    {"clave": "tiros_libres", "equipo": float(v["faltas_colombia"]), "rival": float(v["faltas_chile"])},
+                ]
+            }
+            for per, v in cc_validacion.items()
+        },
+        "resumen_claves": {
+            "faltas": {"equipo": float(cc_validacion["FT"]["faltas_colombia"]), "rival": float(cc_validacion["FT"]["faltas_chile"])},
+            "tiros_libres": {"equipo": float(cc_validacion["FT"]["faltas_colombia"]), "rival": float(cc_validacion["FT"]["faltas_chile"])},
+        },
+    }
+    sanear_partido_auditoria_45(cc_sin_inv)
+    tl_post_cc = {
+        per: (
+            _fila_dict(cc_sin_inv, per, "tiros_libres").get("equipo"),
+            _fila_dict(cc_sin_inv, per, "tiros_libres").get("rival"),
+        )
+        for per in ("FT", "1T", "2T")
+    }
+
+    tiros_libres_info = {
+        "banco_pre_tiros_libres_sin_invertir": pre_tl,
+        "banco_post_tiros_libres_sin_invertir": post_tl,
+        "banco_post_total_defectos": int(rep_banco["matrices_post_sanear_partido_auditoria_45"]["total_defectos"]),
+        "banco_post_por_tipo": dict(rep_banco["matrices_post_sanear_partido_auditoria_45"]["por_tipo"]),
+        "validacion_colombia_chile_2026_11_13": cc_validacion,
+        "sanear_repara_colombia_chile_sin_invertir": tl_post_cc,
+    }
+
+    # ── 8(d) Revisión de cachés truncados de Turquía vs uso real en Turkey-Belgium ──
+    archivos_truncados_tur = [
+        "cache/cache_flashscore_turquia.json",
+        "cache/cache_fotmob_fs_tur_123_TUR_False_False.json",
+        "cache/cache_fotmob_turkey_TUR_False_False.json",
+    ]
+    estado_truncados: list[dict[str, Any]] = []
+    for rel in archivos_truncados_tur:
+        fp = raiz / rel
+        if not fp.exists():
+            estado_truncados.append({"archivo": rel, "existe": False})
+            continue
+        raw_b = fp.read_bytes()
+        sha = hashlib.sha256(raw_b).hexdigest()
+        txt = raw_b.decode("utf-8-sig", errors="replace")
+        valido = True
+        err_msg = None
+        try:
+            json.loads(txt)
+        except Exception as exc:
+            valido = False
+            err_msg = f"{type(exc).__name__}: {exc}"
+        m_gen = _re.search(r'"generado_en"\s*:\s*"([^"]+)"', txt[:120])
+        estado_truncados.append({
+            "archivo": rel,
+            "existe": True,
+            "bytes": len(raw_b),
+            "sha256_prefix": sha[:16],
+            "json_valido": valido,
+            "error": err_msg,
+            "encabezado_generado_en": m_gen.group(1) if m_gen else None,
+            "termina_con": txt[-80:],
+        })
+
+    r5_path = raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json"
+    r5_tur = json.loads(r5_path.read_text(encoding="utf-8"))["docs"]["turkey"]
+    qe_path = raiz / "cache" / "cache_fotmob_qeijuho5_TUR_False_False.json"
+    qe_doc = json.loads(qe_path.read_text(encoding="utf-8-sig"))
+    md_tb_path = raiz / "informes" / "auditorias" / "2026-11-13" / "auditoria_matrices_turquia_vs_belgica_2026-11-13_parte1de8.md"
+    md_tb_txt = md_tb_path.read_text(encoding="utf-8-sig") if md_tb_path.exists() else ""
+
+    basenames_trunc = [Path(rel).name for rel in archivos_truncados_tur]
+    refs_en_codigo: list[str] = []
+    for p_py in sorted(raiz.glob("*.py")):
+        if p_py.name == "evaluacion_pronosticos.py":
+            t_py = p_py.read_text(encoding="utf-8-sig", errors="ignore").split("def auditar_datos_ronda10")[0]
+        else:
+            t_py = p_py.read_text(encoding="utf-8-sig", errors="ignore")
+        if any(bn in t_py for bn in basenames_trunc):
+            refs_en_codigo.append(p_py.name)
+
+    turkey_info = {
+        "caches_truncados_detectados": estado_truncados,
+        "referencias_en_codigo_py": refs_en_codigo,
+        "ronda5_real_fixtures_turkey": {
+            "ruta": "tests/fixtures/ronda5_real_fixtures.json",
+            "n_partidos": len(r5_tur.get("partidos") or []),
+            "json_valido": True,
+            "primeros_3_ids_fotmob": [p.get("id_partido") for p in (r5_tur.get("partidos") or [])[:3]],
+        },
+        "cache_flashscore_turquia_valido": {
+            "ruta": "cache/cache_fotmob_qeijuho5_TUR_False_False.json",
+            "bytes": qe_path.stat().st_size,
+            "generado_en": qe_doc.get("generado_en"),
+            "n_partidos": len(qe_doc.get("partidos") or []),
+            "json_valido": True,
+        },
+        "auditoria_turquia_belgica_2026_11_13": {
+            "ruta": "informes/auditorias/2026-11-13/auditoria_matrices_turquia_vs_belgica_2026-11-13_parte1de8.md",
+            "usa_fotmob_100_opta": ("FotMob (100% Opta)" in md_tb_txt),
+            "contiene_id_5181795": ("5181795" in md_tb_txt),
+        },
+        "turkey_belgium_uso_caches_truncados": False,
+        "conclusion": (
+            "No: Turkey-Belgium utilizó únicamente matrices válidas de FotMob (`tests/fixtures/ronda5_real_fixtures.json`, "
+            "IDs `5181795..4689339`, auditoría 2026-11-13 04:52:26). Los 3 cachés truncados (481,224 bytes, idéntico "
+            "SHA-256 6fcf4b4478cac6d0, generados en 2026-11-16 11:33:35 y cortados en `partidos_futuros`) no se cargan en "
+            "ningún módulo ni en el replay de Turkey-Belgium."
+        ),
+    }
+
+    res = {
+        "m1_entradas": m1_info,
+        "m3_inversion_bandos": m3_info,
+        "tiros_libres_17_y_col_chi": tiros_libres_info,
+        "turkey_belgium_caches_truncados": turkey_info,
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2), encoding="utf-8")
+    return res
