@@ -1,0 +1,206 @@
+{
+  "bandera": {
+    "nombre": "usar_tercer_brazo_plano_sombra",
+    "estado_por_defecto": {
+      "usar_tercer_brazo_plano_sombra_defecto": false,
+      "banderas_set_b_todas_false": true,
+      "en_banderas_auxiliares": true,
+      "fuera_de_set_b_14": true
+    },
+    "activa_con_activar_todas": false
+  },
+  "ciclo_prepartido_postpartido_galatasaray_barcelona": {
+    "con_bandera_apagada_defecto": {
+      "esquema": "sombra-v1",
+      "lambdas_base": {
+        "local_ft": 1.08,
+        "visitante_ft": 3.13,
+        "local_1t": 0.4423,
+        "visitante_1t": 0.9743,
+        "local_2t": 0.6377,
+        "visitante_2t": 2.1557
+      },
+      "lambdas_sombra": {
+        "local_ft": 1.08,
+        "visitante_ft": 2.85,
+        "local_1t": 0.4552,
+        "visitante_1t": 0.9944,
+        "local_2t": 0.6248,
+        "visitante_2t": 1.8556
+      },
+      "lambdas_plano": null,
+      "pre_partido_registrado": true,
+      "pre_partido_sha256": "0638ad05d88b75c913e0108e4a86a74d0f6d9e55fe849e8970a652abe123a424",
+      "pre_tiene_lambdas_plano": false,
+      "pre_tiene_prob_plano_en_comp": false,
+      "n_liquidados_nuevos": 1,
+      "cadena_sha256_ok": true,
+      "n_observaciones": 308,
+      "claves_probs_obs": [
+        "base",
+        "sombra"
+      ]
+    },
+    "con_bandera_activa": {
+      "esquema": "sombra-v2-tribrazo",
+      "lambdas_base": {
+        "local_ft": 1.08,
+        "visitante_ft": 3.13,
+        "local_1t": 0.4423,
+        "visitante_1t": 0.9743,
+        "local_2t": 0.6377,
+        "visitante_2t": 2.1557
+      },
+      "lambdas_sombra": {
+        "local_ft": 1.08,
+        "visitante_ft": 2.85,
+        "local_1t": 0.4552,
+        "visitante_1t": 0.9944,
+        "local_2t": 0.6248,
+        "visitante_2t": 1.8556
+      },
+      "lambdas_plano": {
+        "local_ft": 1.5556858111024778,
+        "visitante_ft": 2.7231381766381766,
+        "local_1t": 0.6370401558684045,
+        "visitante_1t": 0.8476942714871329,
+        "local_2t": 0.9186456552340734,
+        "visitante_2t": 1.8754439051510439
+      },
+      "pre_partido_registrado": true,
+      "pre_partido_sha256": "3474e0f1135cea706e7a43fdd10b67ed956592d21ce8a10ec2a319f2877a96b1",
+      "pre_tiene_lambdas_plano": true,
+      "pre_tiene_prob_plano_en_comp": true,
+      "n_liquidados_nuevos": 1,
+      "cadena_sha256_ok": true,
+      "n_observaciones": 308,
+      "claves_probs_obs": [
+        "base",
+        "plano",
+        "sombra"
+      ]
+    }
+  },
+  "benchmark_24_oos_1376_filas": {
+    "n_partidos_unicos": 24,
+    "n_filas": 1311,
+    "rho_dixon_coles": -0.11,
+    "versiones": {
+      "plano_poisson_nb": {
+        "brier": 0.188207,
+        "log_loss": 0.597777,
+        "brier_ic95": [
+          0.1482,
+          0.227965
+        ],
+        "log_loss_ic95": [
+          0.474511,
+          0.720716
+        ]
+      },
+      "plano_dixon_coles_nb": {
+        "brier": 0.188099,
+        "log_loss": 0.597646,
+        "brier_ic95": [
+          0.148001,
+          0.227813
+        ],
+        "log_loss_ic95": [
+          0.475025,
+          0.720353
+        ]
+      },
+      "soloA": {
+        "brier": 0.19632,
+        "log_loss": 0.681143,
+        "brier_ic95": [
+          0.150075,
+          0.241973
+        ],
+        "log_loss_ic95": [
+          0.507672,
+          0.859013
+        ]
+      },
+      "A+B": {
+        "brier": 0.193278,
+        "log_loss": 0.623405,
+        "brier_ic95": [
+          0.149879,
+          0.236463
+        ],
+        "log_loss_ic95": [
+          0.485873,
+          0.762893
+        ]
+      }
+    },
+    "diferencias": {
+      "plano_dixon_coles_nb - plano_poisson_nb": {
+        "d_brier": -0.000108,
+        "d_brier_ic95": [
+          -0.000535,
+          0.000276
+        ],
+        "d_log_loss": -0.000131,
+        "d_log_loss_ic95": [
+          -0.001309,
+          0.000971
+        ]
+      },
+      "soloA - plano_poisson_nb": {
+        "d_brier": 0.008113,
+        "d_brier_ic95": [
+          -0.00219,
+          0.017575
+        ],
+        "d_log_loss": 0.083366,
+        "d_log_loss_ic95": [
+          0.022588,
+          0.146037
+        ]
+      },
+      "A+B - plano_poisson_nb": {
+        "d_brier": 0.005071,
+        "d_brier_ic95": [
+          -0.002655,
+          0.012318
+        ],
+        "d_log_loss": 0.025628,
+        "d_log_loss_ic95": [
+          -0.000935,
+          0.052158
+        ]
+      },
+      "soloA - plano_dixon_coles_nb": {
+        "d_brier": 0.008221,
+        "d_brier_ic95": [
+          -0.002032,
+          0.017712
+        ],
+        "d_log_loss": 0.083497,
+        "d_log_loss_ic95": [
+          0.02249,
+          0.145984
+        ]
+      },
+      "A+B - plano_dixon_coles_nb": {
+        "d_brier": 0.005179,
+        "d_brier_ic95": [
+          -0.002418,
+          0.01235
+        ],
+        "d_log_loss": 0.025759,
+        "d_log_loss_ic95": [
+          -0.000904,
+          0.052207
+        ]
+      }
+    },
+    "nota_cadena_r11": {
+      "brier_etapa1_poisson_sin_nb_soloA": 0.189577,
+      "logloss_etapa1_poisson_sin_nb_soloA": 0.651246
+    }
+  },
+  "n_partidos_oos_lambdas_plano": 26
+}

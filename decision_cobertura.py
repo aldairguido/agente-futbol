@@ -51,6 +51,7 @@ BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
 _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_filtro_ruido_ic_factores_dcn": False,
     "usar_reescalado_sin_inversion_signo_dcn": False,
+    "usar_tercer_brazo_plano_sombra": False,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -62,6 +63,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_excluir_primer_gol_top5",
     "usar_filtro_ruido_ic_factores_dcn",
     "usar_reescalado_sin_inversion_signo_dcn",
+    "usar_tercer_brazo_plano_sombra",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
@@ -197,6 +199,14 @@ def bandera_activa(nombre: str, umbrales: Optional[Dict[str, Any]] = None) -> bo
     """Consulta segura de una bandera de comportamiento (apagada por defecto)."""
     if nombre in _OVERRIDES_BANDERAS:
         return bool(_OVERRIDES_BANDERAS[nombre])
+    if nombre in _BANDERAS_AUXILIARES_DEFECTO:
+        u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
+        flags_sub = u.get("flags_comportamiento") if isinstance(u.get("flags_comportamiento"), dict) else {}
+        if nombre in u and isinstance(u.get(nombre), bool):
+            return bool(u[nombre])
+        if nombre in flags_sub and isinstance(flags_sub.get(nombre), bool):
+            return bool(flags_sub[nombre])
+        return bool(_BANDERAS_AUXILIARES_DEFECTO[nombre])
     return bool(obtener_banderas_comportamiento(umbrales).get(nombre, False))
 
 

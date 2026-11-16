@@ -4172,7 +4172,7 @@ def adjuntar_modo_sombra_preparado(
         banderas_candidatas=cands,
         version_sombra="A+B" if banderas_candidatas is None else "candidata",
     )
-    preparado["modo_sombra"] = sombra
+    preparado["modo_sombra"] = _aplicar_tercer_brazo_plano_si_activo(sombra, preparado, analisis, dl, dv, eq_l, eq_v, kw)
     return sombra
 
 
@@ -9700,7 +9700,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "tipo_partido": str(meta.get("tipo_partido") or ctx.get("tipo_partido") or ""),
         "generado_en": str(meta.get("generado_en") or ""),
         "snapshot_sha256": snapshot_sha,
-        "sombra_comparaciones_sha256": comp_sha,
+        "sombra_comparaciones_sha256": _hash_sombra_comparaciones_tribrazo(payload_sombra, sombra, comp_sha),
         "modo_sombra": payload_sombra,
     }
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
@@ -9868,7 +9868,7 @@ def liquidar_sombras_en_ledger_oos(
                 "observaciones": obs_sombra,
             },
         }
-        r_ins = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
+        r_ins = _registrar_liquidacion_tribrazo(registro, sombra, ruta_ledger)
         if r_ins.get("registrado"):
             registrados.append({
                 "id_trabajo": id_trab,
@@ -10629,6 +10629,498 @@ def auditar_produccion_github_ronda12(
         "explicacion_italy_france_x2_841_vs_816": explicacion_if_x2,
         "ledger_contaminado_por_diseno_y_resumen_sin_99_pct": res_led,
         "ruta_produccion_bot_interactivo": ruta_produccion,
+    }
+
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+
+def ejecutar_tercer_brazo_plano_analisis(
+    doc_local: Any,
+    doc_visitante: Any,
+    equipo_local: str,
+    equipo_visitante: str,
+    *,
+    parametros_base: Any = None,
+    rho_override: float | None = None,
+    **analizar_kwargs: Any,
+) -> Any:
+    """
+    Ejecuta la variante 'plano' (tercer brazo de modo_sombra):
+      - λ plano (Etapa 1: tasas_goles_plano, sin moduladores, sin λ_efectivo,
+        sin Doble ADN / red 45-DCN / reglas y sin cola ancha),
+      - Matriz de goles Poisson / Dixon-Coles (`matriz_marcadores(..., rho=rho)`),
+      - Córneres con sobredispersión Binomial Negativa (`usar_sobredispersion_nb_corners=True`).
+    """
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    p_b = parametros_base or mm.Parametros()
+    rho_eff = float(rho_override if rho_override is not None else getattr(p_b, "rho", 0.0))
+    params_plano = mm.Parametros(
+        w_condicion=getattr(p_b, "w_condicion", mm.W_CONDICION_DEFECTO),
+        w_xg=getattr(p_b, "w_xg", mm.W_XG_DEFECTO),
+        umbral=getattr(p_b, "umbral", mm.UMBRAL_DEFECTO),
+        k_nb=getattr(p_b, "k_nb", 10.0),
+        distribucion_conteos=getattr(p_b, "distribucion_conteos", "poisson"),
+        k_credibilidad=getattr(p_b, "k_credibilidad", mm.K_CREDIBILIDAD_DEFECTO),
+        rho=rho_eff,
+        aplicar_moduladores=False,
+        aplicar_motor_recursivo=False,
+        mc_simulaciones=getattr(p_b, "mc_simulaciones", 100_000),
+        aplicar_lambda_efectivo=False,
+        aplicar_cola_ancha=False,
+    )
+    kw = dict(analizar_kwargs)
+    kw.pop("parametros", None)
+    with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
+        return mm.analizar(
+            doc_local,
+            doc_visitante,
+            equipo_local,
+            equipo_visitante,
+            parametros=params_plano,
+            **kw,
+        )
+
+
+def _enriquecer_sombra_con_brazo_plano(
+    sombra: dict[str, Any],
+    analisis_plano: Any,
+) -> dict[str, Any]:
+    """Adjunta el tercer brazo `plano` (Etapa 1 + Poisson/DC + NB córneres) a `modo_sombra`."""
+    if not isinstance(sombra, dict) or analisis_plano is None:
+        return sombra
+    mot_p = getattr(analisis_plano, "motor", None)
+    tas_p = getattr(mot_p, "tasas", None)
+    p_p = getattr(mot_p, "p", None)
+    lam_plano = (
+        {
+            "local_ft": getattr(tas_p, "lambda_local_ft", None),
+            "visitante_ft": getattr(tas_p, "lambda_visitante_ft", None),
+            "local_1t": getattr(tas_p, "lambda_local_1t", None),
+            "visitante_1t": getattr(tas_p, "lambda_visitante_1t", None),
+            "local_2t": getattr(tas_p, "lambda_local_2t", None),
+            "visitante_2t": getattr(tas_p, "lambda_visitante_2t", None),
+        }
+        if tas_p is not None
+        else {}
+    )
+    m_plano: dict[tuple[str, str, str, Any], dict[str, Any]] = {}
+    for rm in (getattr(analisis_plano, "mercados", None) or []):
+        for s in (getattr(rm, "selecciones", None) or []):
+            if not getattr(s, "estimable", False) or getattr(s, "probabilidad", None) is None:
+                continue
+            lin = getattr(s, "linea", None)
+            k = (
+                str(getattr(s, "evento", "") or ""),
+                str(getattr(s, "periodo", "FT") or "FT").strip().upper(),
+                str(getattr(s, "equipo", None) or ""),
+                None if lin is None else round(float(lin), 4),
+            )
+            m_plano[k] = {
+                "mercado": getattr(s, "mercado", None),
+                "evento": k[0],
+                "periodo": k[1],
+                "equipo": getattr(s, "equipo", None),
+                "linea": lin,
+                "prob": round(float(s.probabilidad), 6),
+            }
+
+    comps = list(sombra.get("comparaciones") or [])
+    vistos: set[tuple[str, str, str, Any]] = set()
+    for item in comps:
+        lin = item.get("linea")
+        k = (
+            str(item.get("evento") or ""),
+            str(item.get("periodo") or "FT").strip().upper(),
+            str(item.get("equipo") or ""),
+            None if lin is None else round(float(lin), 4),
+        )
+        vistos.add(k)
+        p_pl = m_plano.get(k)
+        item["prob_plano"] = p_pl["prob"] if p_pl is not None else None
+    for k, pl in m_plano.items():
+        if k not in vistos:
+            comps.append({
+                "mercado": pl["mercado"],
+                "evento": pl["evento"],
+                "periodo": pl["periodo"],
+                "equipo": pl["equipo"],
+                "linea": pl["linea"],
+                "prob_base": None,
+                "prob_sombra": None,
+                "prob_plano": pl["prob"],
+            })
+
+    sombra["esquema"] = "sombra-v2-tribrazo"
+    sombra["version_plano"] = "plano"
+    sombra["lambdas_plano"] = lam_plano
+    sombra["reglas_brazo_plano"] = {
+        "bandera": "usar_tercer_brazo_plano_sombra",
+        "etapa_lambda": "1_lambda_plano",
+        "goles_matriz": "poisson_dixon_coles",
+        "rho": float(getattr(p_p, "rho", 0.0) or 0.0),
+        "corners": "binomial_negativa_sobredispersa",
+    }
+    sombra["brazos"] = {
+        "soloA": {"version": sombra.get("version_base") or "soloA", "lambdas": sombra.get("lambdas_base") or {}},
+        "A+B": {"version": sombra.get("version_sombra") or "A+B", "lambdas": sombra.get("lambdas_sombra") or {}},
+        "plano": {"version": "plano", "lambdas": lam_plano},
+    }
+    sombra["comparaciones"] = comps
+    return sombra
+
+
+def _aplicar_tercer_brazo_plano_si_activo(
+    sombra: dict[str, Any],
+    preparado: dict[str, Any],
+    analisis: Any,
+    dl: Any,
+    dv: Any,
+    eq_l: str,
+    eq_v: str,
+    kw: dict[str, Any],
+) -> dict[str, Any]:
+    """Adjunta el tercer brazo `plano` solo cuando `usar_tercer_brazo_plano_sombra` está activa."""
+    from decision_cobertura import bandera_activa as _ba_pl
+
+    if not _ba_pl("usar_tercer_brazo_plano_sombra"):
+        return sombra
+    params_base = kw.get("parametros") or getattr(analisis, "parametros", None)
+    an_plano = ejecutar_tercer_brazo_plano_analisis(
+        dl,
+        dv,
+        eq_l,
+        eq_v,
+        parametros_base=params_base,
+        **{k: v for k, v in (kw or {}).items() if k != "parametros"},
+    )
+    preparado["analisis_plano"] = an_plano
+    return _enriquecer_sombra_con_brazo_plano(sombra, an_plano)
+
+
+def _hash_sombra_comparaciones_tribrazo(
+    payload_sombra: dict[str, Any],
+    sombra: dict[str, Any],
+    comp_sha_base: str,
+) -> str:
+    """Enriquece `payload_sombra` pre-partido cuando trae `lambdas_plano` sin alterar el modo dual previo."""
+    if not isinstance(sombra, dict) or "lambdas_plano" not in sombra:
+        return comp_sha_base
+    payload_sombra["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
+    payload_sombra["version_plano"] = str(sombra.get("version_plano") or "plano")
+    payload_sombra["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
+    if isinstance(sombra.get("reglas_brazo_plano"), dict):
+        payload_sombra["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
+    if isinstance(sombra.get("brazos"), dict):
+        payload_sombra["brazos"] = dict(sombra["brazos"])
+    return _hash_canonico_oos({
+        "lambdas_base": payload_sombra["lambdas_base"],
+        "lambdas_sombra": payload_sombra["lambdas_sombra"],
+        "lambdas_plano": payload_sombra["lambdas_plano"],
+        "comparaciones": payload_sombra["comparaciones"],
+    })
+
+
+def _registrar_liquidacion_tribrazo(
+    registro: dict[str, Any],
+    sombra: dict[str, Any],
+    ruta_ledger: str | None,
+) -> dict[str, Any]:
+    """Completa métricas del brazo `plano` en liquidación sin alterar registros duales previos."""
+    if isinstance(sombra, dict) and "lambdas_plano" in sombra:
+        ms = registro.get("modo_sombra") or {}
+        ms["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
+        ms["version_plano"] = str(sombra.get("version_plano") or "plano")
+        ms["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
+        if isinstance(sombra.get("reglas_brazo_plano"), dict):
+            ms["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
+        if isinstance(sombra.get("brazos"), dict):
+            ms["brazos"] = dict(sombra["brazos"])
+
+        mapa_plano: dict[tuple[str, str, str, Any], float] = {}
+        for item in (sombra.get("comparaciones") or []):
+            pp = item.get("prob_plano") if isinstance(item, dict) else None
+            if pp is None:
+                continue
+            lin = item.get("linea")
+            k = (
+                str(item.get("evento") or ""),
+                str(item.get("periodo") or "FT").strip().upper(),
+                str(item.get("equipo") or ""),
+                None if lin is None else round(float(lin), 4),
+            )
+            mapa_plano[k] = float(pp)
+
+        obs_list = ms.get("observaciones") or []
+        lineas_liq = registro.get("lineas") or []
+        b_pl = 0.0
+        ll_pl = 0.0
+        n_pl = 0
+        for idx, ob in enumerate(obs_list):
+            lin = ob.get("linea")
+            k = (
+                str(ob.get("evento") or ""),
+                str(ob.get("periodo") or "FT").strip().upper(),
+                str(ob.get("equipo") or ""),
+                None if lin is None else round(float(lin), 4),
+            )
+            pp_val = mapa_plano.get(k)
+            if pp_val is not None:
+                pp_r = round(pp_val, 6)
+                ob.setdefault("probs", {})["plano"] = pp_r
+                if idx < len(lineas_liq) and isinstance(lineas_liq[idx], dict):
+                    lineas_liq[idx]["probabilidad_plano"] = pp_r
+                y = int(ob["evento_ocurrio"])
+                ppc = min(max(pp_val, 1e-15), 1.0 - 1e-15)
+                b_pl += (pp_val - y) ** 2
+                ll_pl += -(y * math.log(ppc) + (1 - y) * math.log(1.0 - ppc))
+                n_pl += 1
+        if n_pl > 0:
+            ms["brier_plano"] = round(b_pl / n_pl, 6)
+            ms["log_loss_plano"] = round(ll_pl / n_pl, 6)
+            ms["n_comparables_plano"] = n_pl
+        else:
+            ms["brier_plano"] = None
+            ms["log_loss_plano"] = None
+            ms["n_comparables_plano"] = 0
+        registro["modo_sombra"] = ms
+    return registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
+
+
+def auditar_tercer_brazo_plano_sombra_ronda12(
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+    guardar_ruta: str | None = "datos/ronda12_punto2_tercer_brazo_plano.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 — Punto 2 (`TERCER BRAZO "PLANO"`):
+      - Verifica que la bandera `usar_tercer_brazo_plano_sombra` está apagada por defecto (False)
+        y excluida de `activar_todas=True`, sin cambiar defectos de `soloA` ni del `modo_sombra` previo.
+      - Con la bandera activa, verifica el flujo completo `pre_partido` -> `liquidado` guardando
+        simultáneamente `soloA`, `A+B` y `plano` (Etapa 1 + Poisson/Dixon-Coles + NB córneres).
+      - Mide Brier/LogLoss empírico de los brazos (`plano` rho=0.0 + NB, `plano_dc` rho=-0.11 + NB,
+        `soloA`, `A+B`) sobre los 24 partidos OOS (1376 filas) con IC95 por partido.
+    """
+    import hashlib
+    import tempfile
+    from pathlib import Path
+    import motor_mercados as mm
+    from decision_cobertura import (
+        BANDERAS_COMPORTAMIENTO_DEFECTO,
+        _BANDERAS_AUXILIARES_DEFECTO,
+        bandera_activa,
+        banderas_comportamiento,
+        obtener_banderas_comportamiento,
+    )
+
+    raiz = Path(__file__).resolve().parent
+    estado_defecto = {
+        "usar_tercer_brazo_plano_sombra_defecto": bandera_activa("usar_tercer_brazo_plano_sombra"),
+        "banderas_set_b_todas_false": all(not v for v in obtener_banderas_comportamiento().values()),
+        "en_banderas_auxiliares": "usar_tercer_brazo_plano_sombra" in _BANDERAS_AUXILIARES_DEFECTO,
+        "fuera_de_set_b_14": "usar_tercer_brazo_plano_sombra" not in BANDERAS_COMPORTAMIENTO_DEFECTO,
+    }
+    with banderas_comportamiento(activar_todas=True):
+        estado_con_activar_todas = bandera_activa("usar_tercer_brazo_plano_sombra")
+
+    # Prueba de flujo pre_partido -> liquidado sobre Galatasaray vs Barcelona 2026-10-13 en tmp
+    aud_dir = raiz / "informes" / "auditorias" / "2026-10-13"
+    dl_raw = json.loads((aud_dir / "auditoria_galatasaray_2026-10-13_102501.json").read_text(encoding="utf-8"))
+    dv_raw = json.loads((aud_dir / "auditoria_barcelona_2026-10-13_102522.json").read_text(encoding="utf-8"))
+    dl_c = {"equipo": dl_raw.get("equipo"), "partidos": [x for x in dl_raw.get("partidos", []) if str(x.get("fecha") or "")[:10] < "2026-10-13"]}
+    dv_c = {"equipo": dv_raw.get("equipo"), "partidos": [x for x in dv_raw.get("partidos", []) if str(x.get("fecha") or "")[:10] < "2026-10-13"]}
+
+    with banderas_comportamiento(activar_todas=False):
+        an_of = mm.analizar(dl_c, dv_c, "Galatasaray", "Barcelona", fecha_partido="2026-10-13")
+    an_of.metadatos["fecha_partido"] = "2026-10-13"
+    an_of.metadatos["generado_en"] = "2026-10-13T10:00:00"
+    an_of.metadatos["competicion"] = "UEFA Champions League"
+
+    def _run_ciclo(activar_tercer_brazo: bool) -> dict[str, Any]:
+        prep = {
+            "id_trabajo": f"SOMBRA_R12_P2_{int(activar_tercer_brazo)}",
+            "analisis": an_of,
+            "contexto": {
+                "doc_local": dl_c,
+                "doc_visitante": dv_c,
+                "equipo_local": "Galatasaray",
+                "equipo_visitante": "Barcelona",
+                "fecha_partido": "2026-10-13",
+                "competicion": "UEFA Champions League",
+                "condicion_local": "casa",
+                "condicion_visitante": "fuera",
+            },
+        }
+        with banderas_comportamiento(activar_todas=False, usar_tercer_brazo_plano_sombra=activar_tercer_brazo):
+            somb = adjuntar_modo_sombra_preparado(prep)
+        with tempfile.TemporaryDirectory() as td:
+            ruta_snap = guardar_snapshot(snapshot_desde_analisis(prep), directorio=str(Path(td) / "snaps"))
+            ruta_led = str(Path(td) / "ledger.jsonl")
+            r_pre = registrar_sombra_prepartido_en_ledger_oos(prep, ruta_snapshot=ruta_snap, ruta_ledger=ruta_led)
+            snap_loaded = json.loads(Path(ruta_snap).read_text(encoding="utf-8"))
+            pre_regs = cargar_ledger_oos(ruta_led)
+            res_part = ResultadoPartido(
+                id_partido="6106338",
+                estado="finalizado",
+                local="Galatasaray",
+                visitante="Barcelona",
+                goles_local=1, goles_visitante=2,
+                goles_local_1t=0, goles_visitante_1t=1,
+                inicio_utc="2026-10-13T19:00:00Z",
+                competicion="UEFA Champions League",
+                fuente="fotmob",
+                consultado_en="2026-10-14T00:00:00Z",
+                corners_local={"FT": 5, "1T": 2, "2T": 3},
+                corners_visitante={"FT": 6, "1T": 3, "2T": 3},
+                amarillas_local={"FT": 2, "1T": 1, "2T": 1},
+                amarillas_visitante={"FT": 2, "1T": 1, "2T": 1},
+                rojas_local=0, rojas_visitante=0,
+            )
+            r_liq = liquidar_sombras_en_ledger_oos(
+                [snap_loaded],
+                {"Galatasaray vs Barcelona": res_part},
+                ruta_ledger=ruta_led,
+            )
+            obs_ext = extraer_observaciones_sombra_desde_ledger(ruta_led)
+            cad_ok = verificar_cadena_ledger_oos(ruta_led).get("ok")
+        pre_ms = (pre_regs[0].get("modo_sombra") or {}) if pre_regs else {}
+        return {
+            "esquema": somb.get("esquema") if somb else None,
+            "lambdas_base": somb.get("lambdas_base") if somb else None,
+            "lambdas_sombra": somb.get("lambdas_sombra") if somb else None,
+            "lambdas_plano": somb.get("lambdas_plano") if somb else None,
+            "pre_partido_registrado": bool(r_pre.get("registrado")),
+            "pre_partido_sha256": r_pre.get("sha256"),
+            "pre_tiene_lambdas_plano": "lambdas_plano" in pre_ms,
+            "pre_tiene_prob_plano_en_comp": any("prob_plano" in c for c in (pre_ms.get("comparaciones") or [])),
+            "n_liquidados_nuevos": int(r_liq.get("n_liquidados_nuevos") or 0),
+            "cadena_sha256_ok": bool(cad_ok),
+            "n_observaciones": int(obs_ext.get("n_observaciones") or 0),
+            "claves_probs_obs": sorted((obs_ext.get("observaciones") or [{}])[0].get("probs", {}).keys()),
+        }
+
+    ciclo_bandera_apagada = _run_ciclo(False)
+    ciclo_bandera_activa = _run_ciclo(True)
+
+    # Benchmark OOS sobre los 24 partidos (1376 filas) comparando soloA, A+B, plano (rho=0) y plano_dc (rho=-0.11)
+    corpus_7 = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1376 = [
+        r for r in (corpus_7.get("filas_1506") or [])
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    mapa_r10 = json.loads((raiz / "datos" / "ronda10_oos_26_jobs_map.json").read_text(encoding="utf-8"))
+    no_comp_jids = set(mapa_r10.get("no_comp_jids") or [])
+    jobs_map = mapa_r10.get("jobs") or {}
+
+    merc_by_job: dict[str, dict[str, Any]] = {}
+    for fp in sorted((raiz / "informes" / "mercados").rglob("mercados_*.json")):
+        md_i = json.loads(fp.read_text(encoding="utf-8"))
+        if md_i.get("id_trabajo"):
+            merc_by_job[str(md_i["id_trabajo"])] = md_i
+
+    jobs_oos = sorted({str(f["id_trabajo"]) for f in filas_1376 if str(f.get("id_trabajo") or "") in jobs_map})
+    probs_plano_por_job: dict[tuple[str, float], dict[tuple[str, str, str | None, float | None], float]] = {}
+    lambdas_plano_muestra: dict[str, list[float]] = {}
+    for rho_v in (0.0, mm.RHO_DIXON_COLES):
+        for jid in jobs_oos:
+            fpl_rel, fpv_rel, cut_j = jobs_map[jid]
+            dl_j = json.loads((raiz / fpl_rel).read_text(encoding="utf-8"))
+            dv_j = json.loads((raiz / fpv_rel).read_text(encoding="utf-8"))
+            dlc_j = mm.filtrar_por_fecha(dl_j, cut_j) if cut_j else dl_j
+            dvc_j = mm.filtrar_por_fecha(dv_j, cut_j) if cut_j else dv_j
+            meta_j = (merc_by_job[jid].get("metadatos") or {}) if jid in merc_by_job else {}
+            el_j = str(meta_j.get("equipo_local") or "Local")
+            ev_j = str(meta_j.get("equipo_visitante") or "Visitante")
+            p_pl_j = mm.Parametros(
+                rho=rho_v,
+                aplicar_moduladores=False,
+                aplicar_motor_recursivo=False,
+                aplicar_lambda_efectivo=False,
+                aplicar_cola_ancha=False,
+            )
+            if meta_j.get("competicion") and jid not in no_comp_jids:
+                p_pl_j.competicion = str(meta_j["competicion"])
+            with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
+                mot_pj = mm.MotorMercados(
+                    dlc_j,
+                    dvc_j,
+                    meta_j.get("condicion_local") or "casa",
+                    meta_j.get("condicion_visitante") or "fuera",
+                    el_j,
+                    ev_j,
+                    p_pl_j,
+                )
+                mot_pj.preparar()
+                res_pj = mot_pj.evaluar_catalogo()
+            if rho_v == 0.0:
+                lambdas_plano_muestra[jid] = [
+                    round(float(mot_pj.tasas.lambda_local_ft or 0.0), 4),
+                    round(float(mot_pj.tasas.lambda_visitante_ft or 0.0), 4),
+                ]
+            mp_j: dict[tuple[str, str, str | None, float | None], float] = {}
+            for rm in (res_pj or []):
+                for s in (rm.selecciones or []):
+                    if s.estimable and s.probabilidad is not None:
+                        mp_j[_normalizar_clave_seleccion_ronda10(s.evento, s.periodo, s.equipo, s.linea)] = float(s.probabilidad)
+            probs_plano_por_job[(jid, rho_v)] = mp_j
+
+    cadena_6 = json.loads((raiz / "datos" / "ronda11_punto1_cadena_6_etapas.json").read_text(encoding="utf-8"))
+    observaciones_4_brazos: list[tuple[str, int, dict[str, float]]] = []
+    for f in filas_1376:
+        jid = str(f.get("id_trabajo") or "")
+        clave = _normalizar_clave_seleccion_ronda10(f.get("evento"), f.get("periodo"), f.get("equipo"), f.get("linea"))
+        p_pl = probs_plano_por_job.get((jid, 0.0), {}).get(clave)
+        p_dc = probs_plano_por_job.get((jid, mm.RHO_DIXON_COLES), {}).get(clave)
+        pr_dict = f.get("probs") or {}
+        p_sa = pr_dict.get("soloA")
+        p_ab = pr_dict.get("A+B")
+        if p_pl is None or p_dc is None or p_sa is None or p_ab is None:
+            continue
+        observaciones_4_brazos.append((
+            str(f.get("id_partido")),
+            int(f["evento_ocurrio"]),
+            {
+                "plano_poisson_nb": float(p_pl),
+                "plano_dixon_coles_nb": float(p_dc),
+                "soloA": float(p_sa),
+                "A+B": float(p_ab),
+            },
+        ))
+
+    boot_brazos = bootstrap_brier_logloss_por_partido(observaciones_4_brazos, n_boot=n_boot, seed=seed)
+
+    out = {
+        "bandera": {
+            "nombre": "usar_tercer_brazo_plano_sombra",
+            "estado_por_defecto": estado_defecto,
+            "activa_con_activar_todas": estado_con_activar_todas,
+        },
+        "ciclo_prepartido_postpartido_galatasaray_barcelona": {
+            "con_bandera_apagada_defecto": ciclo_bandera_apagada,
+            "con_bandera_activa": ciclo_bandera_activa,
+        },
+        "benchmark_24_oos_1376_filas": {
+            "n_partidos_unicos": boot_brazos.get("n_partidos_unicos"),
+            "n_filas": boot_brazos.get("n_filas"),
+            "rho_dixon_coles": mm.RHO_DIXON_COLES,
+            "versiones": boot_brazos.get("versiones"),
+            "diferencias": {
+                k: v for k, v in (boot_brazos.get("diferencias") or {}).items()
+                if any(arm in k for arm in ("plano_poisson_nb", "plano_dixon_coles_nb"))
+            },
+            "nota_cadena_r11": {
+                "brier_etapa1_poisson_sin_nb_soloA": ((cadena_6.get("cohortes") or {}).get("soloA_1376") or {}).get("versiones", {}).get("1_lambda_plano", {}).get("brier"),
+                "logloss_etapa1_poisson_sin_nb_soloA": ((cadena_6.get("cohortes") or {}).get("soloA_1376") or {}).get("versiones", {}).get("1_lambda_plano", {}).get("log_loss"),
+            },
+        },
+        "n_partidos_oos_lambdas_plano": len(lambdas_plano_muestra),
     }
 
     if guardar_ruta:
