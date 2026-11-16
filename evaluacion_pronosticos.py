@@ -11128,3 +11128,298 @@ def auditar_tercer_brazo_plano_sombra_ronda12(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+
+def _clasificar_categoria_regla_lambda(regla: str) -> str:
+    r = str(regla or "")
+    if r in ("tasas_goles_plano", "moduladores_tacticos", "lambda_efectivo_finalizacion", "doble_adn_60_40", "ajuste_coef_liga_tier", "red_recursiva_45_dcn_bucle"):
+        return "cadena_principal"
+    if "doble_x135" in r:
+        return "doble_x135"
+    if r == "copa_asedio_defensa_rota":
+        return "copa_asedio_defensa_rota"
+    if "sincronizacion_" in r:
+        return "sincronizacion"
+    if "clamp" in r:
+        return "clamp"
+    if "piso_" in r or "reaplicacion_piso_" in r:
+        return "pisos"
+    if "techo_" in r or "freno_" in r or "fortin_" in r or "prohibicion_inflacion" in r or "reaplicacion_" in r or "gigante_visitante" in r or "reescalado_caja_azul" in r or "tope_dcn" in r:
+        return "techos_y_frenos"
+    return "otra_regla"
+
+
+def auditar_reglas_que_pesan_ronda12(
+    *,
+    guardar_ruta: str | None = "datos/ronda12_punto3_reglas_que_pesan.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 — Punto 3 (`REGLAS QUE PESAN`):
+    Sobre los 73 registros únicos (`_recolectar_pares_partidos_cacheados_ronda9`),
+    inventaría TODAS las reglas que modifican λ (techos, pisos, clamp, copa,
+    sincronización, doble ×1.35, `techo_lambda_ataque_bajo_local`, etc.) tanto en
+    `soloA` como en `A+B`, con número de activaciones, partidos únicos `/73` y
+    efecto medio en λ (condicional al disparo y prorrateado sobre los 73 registros).
+    """
+    from pathlib import Path
+    from decision_cobertura import banderas_comportamiento
+    import motor_mercados as mm
+
+    raiz = Path(__file__).resolve().parent
+    pares_73 = _recolectar_pares_partidos_cacheados_ronda9()
+
+    def _evaluar_variante(*, activar_todas_b: bool) -> dict[str, Any]:
+        acc_regla: dict[str, list[dict[str, Any]]] = {}
+        acc_regla_etapa: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        detalle_73: list[dict[str, Any]] = []
+
+        with banderas_comportamiento(activar_todas=activar_todas_b):
+            for idx_r, reg in enumerate(pares_73):
+                jid = str(reg.get("job_id") or "")
+                partido = str(reg.get("partido") or f"{reg['equipo_local']} vs {reg['equipo_visitante']}")
+                params = mm.Parametros()
+                if reg.get("competicion"):
+                    params.competicion = str(reg["competicion"])
+                mot = mm.MotorMercados(
+                    reg["doc_local"],
+                    reg["doc_visitante"],
+                    reg.get("cond_l", "casa"),
+                    reg.get("cond_v", "fuera"),
+                    reg["equipo_local"],
+                    reg["equipo_visitante"],
+                    params,
+                )
+                mot.preparar()
+                traza = list(getattr(mot, "traza_lambda", None) or [])
+                rec = getattr(mot, "recursivo", None) or {}
+
+                def _registrar(clave_r: str, etapa_r: str, al: float, dl: float, av: float, dv: float, mot_txt: str = "") -> None:
+                    d_l = float(dl) - float(al)
+                    d_v = float(dv) - float(av)
+                    if abs(d_l) <= 1e-6 and abs(d_v) <= 1e-6:
+                        return
+                    ev_rec = {
+                        "job_id": jid,
+                        "partido": partido,
+                        "etapa": etapa_r,
+                        "lam_l_antes": round(float(al), 4),
+                        "lam_l_despues": round(float(dl), 4),
+                        "lam_v_antes": round(float(av), 4),
+                        "lam_v_despues": round(float(dv), 4),
+                        "delta_l": round(d_l, 4),
+                        "delta_v": round(d_v, 4),
+                        "delta_total": round(d_l + d_v, 4),
+                        "delta_pct_l": round((d_l / al) * 100.0, 2) if (al and abs(d_l) > 1e-6) else None,
+                        "delta_pct_v": round((d_v / av) * 100.0, 2) if (av and abs(d_v) > 1e-6) else None,
+                        "motivo": mot_txt,
+                    }
+                    acc_regla.setdefault(clave_r, []).append(ev_rec)
+                    acc_regla_etapa.setdefault((clave_r, etapa_r), []).append(ev_rec)
+
+                hits_dr_con_cambio: list[dict[str, Any]] = []
+                for st in traza:
+                    if not isinstance(st, dict):
+                        continue
+                    regla_s = str(st.get("regla") or "")
+                    etapa_s = str(st.get("etapa") or "")
+                    al = st.get("lam_l_antes")
+                    dl = st.get("lam_l_despues")
+                    av = st.get("lam_v_antes")
+                    dv = st.get("lam_v_despues")
+                    if None in (al, dl, av, dv):
+                        continue
+                    al_f, dl_f, av_f, dv_f = float(al), float(dl), float(av), float(dv)
+                    _registrar(regla_s, etapa_s, al_f, dl_f, av_f, dv_f, str(st.get("motivo") or ""))
+                    if regla_s == "copa_asedio_defensa_rota" and (abs(dl_f - al_f) > 1e-6 or abs(dv_f - av_f) > 1e-6):
+                        mot_dr = str(st.get("motivo") or "")
+                        if ("def_rota_V=x" in mot_dr and "def_rota_V=x1.00" not in mot_dr) or (
+                            "def_rota_L=x" in mot_dr and "def_rota_L=x1.00" not in mot_dr
+                        ):
+                            hits_dr_con_cambio.append({
+                                "etapa": etapa_s,
+                                "al": al_f, "dl": dl_f, "av": av_f, "dv": dv_f,
+                                "motivo": mot_dr,
+                            })
+
+                # Si defensa rota x1.35 aplicó 2 veces (en red_45_dcn y en post_sinc_mercados), registrar explícitamente doble ×1.35
+                if len(hits_dr_con_cambio) >= 2:
+                    h2 = hits_dr_con_cambio[1]
+                    _registrar(
+                        "doble_x135_defensa_rota_2da_aplicacion",
+                        "post_sinc_mercados",
+                        h2["al"], h2["dl"], h2["av"], h2["dv"],
+                        f"2da aplicacion defensa rota ({h2['motivo']})",
+                    )
+
+                # Tope DCN ±18% post-sinc (si bandera usar_tope_dcn_18_pct modificó lam)
+                tp = rec.get("tope_dcn_18_post_sinc")
+                if isinstance(tp, dict) and tp.get("activo"):
+                    tl = tp.get("local") or {}
+                    tv = tp.get("visitante") or {}
+                    if tl.get("toco") or tv.get("toco"):
+                        al_tp = float(tl.get("lam_pre") or mot.tasas.lambda_local_ft or 0.0)
+                        dl_tp = float(tl.get("lam_post") or al_tp)
+                        av_tp = float(tv.get("lam_pre") or mot.tasas.lambda_visitante_ft or 0.0)
+                        dv_tp = float(tv.get("lam_post") or av_tp)
+                        _registrar(
+                            "tope_dcn_18_post_sinc",
+                            "post_sinc_mercados",
+                            al_tp, dl_tp, av_tp, dv_tp,
+                            f"L:{tl.get('direccion')} V:{tv.get('direccion')}",
+                        )
+
+                detalle_73.append({
+                    "job_id": jid,
+                    "partido": partido,
+                    "lam_plano": [
+                        traza[0].get("lam_l_despues") if traza else None,
+                        traza[0].get("lam_v_despues") if traza else None,
+                    ],
+                    "lam_final": [
+                        round(float(mot.tasas.lambda_local_ft), 4) if mot.tasas.lambda_local_ft is not None else None,
+                        round(float(mot.tasas.lambda_visitante_ft), 4) if mot.tasas.lambda_visitante_ft is not None else None,
+                    ],
+                    "n_pasos_con_cambio": sum(
+                        1 for st in traza
+                        if st.get("lam_l_antes") is not None
+                        and (abs(float(st["lam_l_despues"]) - float(st["lam_l_antes"])) > 1e-6 or abs(float(st["lam_v_despues"]) - float(st["lam_v_antes"])) > 1e-6)
+                    ),
+                })
+
+        n_reg = len(pares_73)
+
+        def _resumir_bucket(regla_nombre: str, eventos: list[dict[str, Any]], etapa_fija: str | None = None) -> dict[str, Any]:
+            pids = sorted({e["job_id"] for e in eventos})
+            dls = [e["delta_l"] for e in eventos]
+            dvs = [e["delta_v"] for e in eventos]
+            dts = [e["delta_total"] for e in eventos]
+            pcts_l = [e["delta_pct_l"] for e in eventos if e["delta_pct_l"] is not None]
+            pcts_v = [e["delta_pct_v"] for e in eventos if e["delta_pct_v"] is not None]
+            n_ch_l = sum(1 for x in dls if abs(x) > 1e-6)
+            n_ch_v = sum(1 for x in dvs if abs(x) > 1e-6)
+            # Promedio por partido único (cuando se activa)
+            por_part_tot: dict[str, float] = {}
+            por_part_l: dict[str, float] = {}
+            por_part_v: dict[str, float] = {}
+            for e in eventos:
+                por_part_tot[e["job_id"]] = por_part_tot.get(e["job_id"], 0.0) + e["delta_total"]
+                por_part_l[e["job_id"]] = por_part_l.get(e["job_id"], 0.0) + e["delta_l"]
+                por_part_v[e["job_id"]] = por_part_v.get(e["job_id"], 0.0) + e["delta_v"]
+
+            return {
+                "regla": regla_nombre,
+                **({"etapa": etapa_fija} if etapa_fija else {"etapas": sorted({e["etapa"] for e in eventos})}),
+                "categoria": _clasificar_categoria_regla_lambda(regla_nombre),
+                "n_activaciones": len(eventos),
+                "n_partidos_unicos": len(pids),
+                "pct_partidos_73": round((len(pids) / n_reg) * 100.0, 2) if n_reg else None,
+                "n_cambia_local": n_ch_l,
+                "n_cambia_visita": n_ch_v,
+                "d_lam_l_medio_por_evento": round(sum(dls) / len(dls), 4),
+                "d_lam_v_medio_por_evento": round(sum(dvs) / len(dvs), 4),
+                "d_lam_total_medio_por_evento": round(sum(dts) / len(dts), 4),
+                "d_lam_l_medio_por_partido_activo": round(sum(por_part_l.values()) / len(pids), 4) if pids else None,
+                "d_lam_v_medio_por_partido_activo": round(sum(por_part_v.values()) / len(pids), 4) if pids else None,
+                "d_lam_total_medio_por_partido_activo": round(sum(por_part_tot.values()) / len(pids), 4) if pids else None,
+                "d_lam_l_medio_sobre_73": round(sum(dls) / n_reg, 4) if n_reg else None,
+                "d_lam_v_medio_sobre_73": round(sum(dvs) / n_reg, 4) if n_reg else None,
+                "d_lam_total_medio_sobre_73": round(sum(dts) / n_reg, 4) if n_reg else None,
+                "d_pct_l_medio_cuando_cambia_l": round(sum(pcts_l) / len(pcts_l), 2) if pcts_l else None,
+                "d_pct_v_medio_cuando_cambia_v": round(sum(pcts_v) / len(pcts_v), 2) if pcts_v else None,
+                "ejemplos": [
+                    {
+                        "job_id": e["job_id"],
+                        "partido": e["partido"],
+                        "etapa": e["etapa"],
+                        "L": f"{e['lam_l_antes']}->{e['lam_l_despues']} ({e['delta_l']:+.4f})",
+                        "V": f"{e['lam_v_antes']}->{e['lam_v_despues']} ({e['delta_v']:+.4f})",
+                    }
+                    for e in eventos[:5]
+                ],
+            }
+
+        tabla_agregada = sorted(
+            [_resumir_bucket(k, v) for k, v in acc_regla.items()],
+            key=lambda x: (-abs(x["d_lam_total_medio_sobre_73"] or 0.0), -x["n_activaciones"], x["regla"]),
+        )
+        # Asegurar entrada explícita para techo_lambda_ataque_bajo_local incluso si 0
+        if "techo_lambda_ataque_bajo_local" not in acc_regla:
+            tabla_agregada.append({
+                "regla": "techo_lambda_ataque_bajo_local",
+                "etapas": [],
+                "categoria": "techos_y_frenos",
+                "n_activaciones": 0,
+                "n_partidos_unicos": 0,
+                "pct_partidos_73": 0.0,
+                "n_cambia_local": 0,
+                "n_cambia_visita": 0,
+                "d_lam_l_medio_por_evento": None,
+                "d_lam_v_medio_por_evento": None,
+                "d_lam_total_medio_por_evento": None,
+                "d_lam_l_medio_por_partido_activo": None,
+                "d_lam_v_medio_por_partido_activo": None,
+                "d_lam_total_medio_por_partido_activo": None,
+                "d_lam_l_medio_sobre_73": 0.0,
+                "d_lam_v_medio_sobre_73": 0.0,
+                "d_lam_total_medio_sobre_73": 0.0,
+                "d_pct_l_medio_cuando_cambia_l": None,
+                "d_pct_v_medio_cuando_cambia_v": None,
+                "ejemplos": [],
+            })
+
+        tabla_por_etapa = sorted(
+            [_resumir_bucket(k[0], v, etapa_fija=k[1]) for k, v in acc_regla_etapa.items()],
+            key=lambda x: (x["etapa"], -x["n_activaciones"], x["regla"]),
+        )
+
+        # Resumen agrupado por familia de regla (techos, pisos, clamp, copa, sincronización, doble ×1.35)
+        resumen_categorias: dict[str, dict[str, Any]] = {}
+        for item in tabla_agregada:
+            cat = item["categoria"]
+            rc = resumen_categorias.setdefault(cat, {
+                "categoria": cat,
+                "reglas": [],
+                "suma_activaciones": 0,
+                "suma_d_lam_total_sobre_73": 0.0,
+                "suma_d_lam_l_sobre_73": 0.0,
+                "suma_d_lam_v_sobre_73": 0.0,
+            })
+            rc["reglas"].append(item["regla"])
+            rc["suma_activaciones"] += int(item["n_activaciones"])
+            rc["suma_d_lam_total_sobre_73"] = round(rc["suma_d_lam_total_sobre_73"] + float(item["d_lam_total_medio_sobre_73"] or 0.0), 4)
+            rc["suma_d_lam_l_sobre_73"] = round(rc["suma_d_lam_l_sobre_73"] + float(item["d_lam_l_medio_sobre_73"] or 0.0), 4)
+            rc["suma_d_lam_v_sobre_73"] = round(rc["suma_d_lam_v_sobre_73"] + float(item["d_lam_v_medio_sobre_73"] or 0.0), 4)
+
+        return {
+            "n_registros": n_reg,
+            "tabla_reglas": tabla_agregada,
+            "tabla_reglas_por_etapa": tabla_por_etapa,
+            "resumen_por_categoria": resumen_categorias,
+            "techo_lambda_ataque_bajo_local": next(
+                (x for x in tabla_agregada if x["regla"] == "techo_lambda_ataque_bajo_local"),
+                None,
+            ),
+            "doble_x135_defensa_rota_2da_aplicacion": next(
+                (x for x in tabla_agregada if x["regla"] == "doble_x135_defensa_rota_2da_aplicacion"),
+                {
+                    "regla": "doble_x135_defensa_rota_2da_aplicacion",
+                    "n_activaciones": 0,
+                    "n_partidos_unicos": 0,
+                    "d_lam_total_medio_sobre_73": 0.0,
+                },
+            ),
+            "detalle_73_resumen": detalle_73,
+        }
+
+    out = {
+        "n_registros_unicos": len(pares_73),
+        "soloA": _evaluar_variante(activar_todas_b=False),
+        "A+B": _evaluar_variante(activar_todas_b=True),
+    }
+
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
