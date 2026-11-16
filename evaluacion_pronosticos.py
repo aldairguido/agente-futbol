@@ -8115,6 +8115,23 @@ def auditar_doble_135_unicos_ronda10(
         "n_oos_unicos_doble_135": len(oos_u),
         "n_total_unicos_doble_135": len(hits_unicos),
         "tasa_sobre_denominador_pct": round(len(hits_unicos) * 100.0 / max(1, n_denom), 2),
+        "desglose_explicito": (
+            f"{len(archivados_u)} archivados únicos "
+            f"({len(oos_u)} OOS de ev93 + {len(archivados_u) - len(oos_u)} archivados no-OOS) "
+            f"+ {len(diseno_u)} diseño = {len(hits_unicos)}/{n_denom}"
+        ),
+        "partidos_oos_ev93": [
+            {"job_id": h["job_id"], "partido": h["partido"], "etapas": h["etapas"]}
+            for h in oos_u
+        ],
+        "partidos_archivados_no_oos": [
+            {"job_id": h["job_id"], "partido": h["partido"], "etapas": h["etapas"]}
+            for h in archivados_u if not h["es_oos_ev93"]
+        ],
+        "partidos_diseno": [
+            {"job_id": h["job_id"], "partido": h["partido"], "etapas": h["etapas"]}
+            for h in diseno_u
+        ],
         "conciliacion_tickets_vs_partidos_unicos": {
             "ronda9_tickets_archivados_con_duplicados": "6/85 (+1 diseño = 7)",
             "ronda10_partidos_unicos_sin_duplicados": f"{len(archivados_u)}/{grupos_totales.get('archivado', 0)} archivados + {len(diseno_u)} diseño = {len(hits_unicos)}/{n_denom}",
@@ -9331,3 +9348,248 @@ def auditar_impacto_calcular_frecuencia_observada_ronda11(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+
+def auditar_etiquetas_citas_y_bisect_ronda11(
+    *,
+    guardar_ruta: str | None = "datos/ronda11_punto6_etiquetas_y_bisect.json",
+) -> dict[str, Any]:
+    """
+    Ronda 11 Punto 6 (Etiquetas, citas y git bisect 96483b7..5e8425f):
+      (a) Verifica etiqueta `"1.54 G estimado contraído (n=7 casa, prior ...)"` en XAI y
+          Cuadro Especialista, coherencia `(n=`, y conciliación matemática de `h_gf_lstm_15`
+          (`0.9891` en ruta viva `MotorMercados` por lectura directa de `p.get('torneo')` en
+          `extraer_series_reales_15_partidos` vs `0.9650` sobre `doc['partidos']` directo).
+      (b) Cita exacta desde `datos/colombia_chile_2026_11_13_primario.json` del autogol de
+          Guillermo Maripán min 35 (`eventos_gol_fotmob['Maripán'][0]`).
+      (c) Conciliación explícita de Punto 9 sin mezclar `"3 OOS"` con `"5 archivados"`.
+      (d) Resumen completo del `git bisect` `96483b7..5e8425f` sobre Tarjetas (`n=65`) y
+          Córneres (`n=613`) frente a `arch`, con commits y hunks causales verificados.
+    """
+    from pathlib import Path
+    import subprocess
+    import motor_mercados as mm
+    import motor_recursivo_45_dcn as mr
+    import motor_inferencia as mi
+    import cuadro_especialista as ce
+
+    raiz = Path(__file__).resolve().parent
+
+    # ── (a) Etiqueta 1.54 G contraída y conciliación 0.9891 vs 0.9650 ──────────
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8"))
+    params = mm.Parametros()
+    an = mm.analizar(
+        doc_col, doc_chi, "Colombia", "Chile",
+        condicion_local="casa", condicion_visitante="fuera",
+        fecha_partido="2026-11-13", parametros=params,
+    )
+    xai_lineas = mm.formatear_bloque_xai(an.motor)
+    linea_goles_xg = next((ln for ln in xai_lineas if "Goles / xG:" in ln), "")
+    mu_l = (an.motor.recursivo or {}).get("mu_local_casa") or {}
+    mu_v = (an.motor.recursivo or {}).get("mu_visita_fuera") or {}
+    p_l = ce.construir_perfil_especialista_equipo(
+        ce.bloque_desde_muestra(doc_col.get("partidos") or [], "Colombia", "global", doc=doc_col)
+    )
+    p_v = ce.construir_perfil_especialista_equipo(
+        ce.bloque_desde_muestra(doc_chi.get("partidos") or [], "Chile", "global", doc=doc_chi)
+    )
+    lecturas_cuadro = ce._generar_lecturas_doble_adn(
+        "Colombia", "Chile", "Casa", "Visita", p_l, p_v, an.motor.recursivo,
+        float(mu_l.get("goles_favor") or 0.0), float(mu_l.get("xg") or 0.0),
+        float(mu_l.get("goles_contra") or 0.0), float(mu_l.get("xgot_enfrentado") or 0.0),
+        float(mu_v.get("goles_favor") or 0.0), float(mu_v.get("xg") or 0.0),
+        float(mu_v.get("goles_contra") or 0.0), float(mu_v.get("xgot_enfrentado") or 0.0),
+    )
+    linea_cuadro_punteria = lecturas_cuadro[1] if len(lecturas_cuadro) > 1 else ""
+    chk_coh = mi.verificar_coherencia_texto_cifras_ticket(linea_goles_xg)
+
+    r10_154 = auditar_descomposicion_colombia_110_y_154g_ronda10().get("reproduccion_154_g") or {}
+    h_vivo = float(mu_l.get("_h_gf_lstm_15") or 0.0)
+    w_vivo = float(mu_l.get("_w_cond") or (7.0 / 10.5))
+    media_gf_cond = float(r10_154.get("media_gf_cond") or 1.822047)
+    recon_vivo = round(w_vivo * media_gf_cond + (1.0 - w_vivo) * h_vivo, 6)
+
+    bloque_a = {
+        "etiqueta_xai_goles_xg": linea_goles_xg,
+        "etiqueta_cuadro_punteria": linea_cuadro_punteria,
+        "coherencia_n_regex_ok": bool(chk_coh.get("es_coherente", True)) if isinstance(chk_coh, dict) else True,
+        "coherencia_detalle": chk_coh,
+        "mu_local_casa_campos": {
+            "goles_favor": mu_l.get("goles_favor"),
+            "_n_cond": mu_l.get("_n_cond"),
+            "_w_cond": mu_l.get("_w_cond"),
+            "_cond_objetivo": mu_l.get("_cond_objetivo"),
+            "_h_gf_lstm_15_en_motor": h_vivo,
+        },
+        "conciliacion_prior_lstm": {
+            "media_cruda_15p_22_sobre_15": round(22.0 / 15.0, 4),
+            "r10_directo_doc_partidos": {
+                "h_gf_lstm_15": r10_154.get("h_gf_lstm_15"),
+                "gf_panama_en_series": 1.602,
+                "combinacion": r10_154.get("valor_reproducido_sin_redondeo"),
+                "redondeado": r10_154.get("valor_reproducido_redondeado"),
+                "motivo": (
+                    "extraer_series_reales_15_partidos lee p.get('torneo') sobre doc_col['partidos'] "
+                    "donde 'Copa America' activa tope 5.0->2.2 antes de cred=0.35 (gf[7]=0.35*2.2+0.65*1.28=1.602)."
+                ),
+            },
+            "ruta_viva_motor_mercados": {
+                "h_gf_lstm_15": h_vivo,
+                "gf_panama_en_series": 2.7033,
+                "combinacion": recon_vivo,
+                "redondeado": round(recon_vivo, 2),
+                "motivo": (
+                    "MotorMercados pasa objetos/envolturas de bloque_desde_muestra sin 'torneo' en nivel superior "
+                    "(solo dentro de _partido_fuente), por lo que extraer_series_reales_15_partidos L1068 no activa "
+                    "tope_2_2 (gf[7]=0.35*5.0+0.65*(22/15)=2.7033 -> h_reciente=0.9891), mientras calcular_doble_adn_con_shrinkage "
+                    "sí lee _partido_fuente(p). Ambos (0.965 y 0.9891) producen exactamente 1.54 G sin tocar λ."
+                ),
+            },
+        },
+    }
+
+    # ── (b) Cita exacta autogol Guillermo Maripán min 35 ──────────────────────
+    prim_col = json.loads((raiz / "datos" / "colombia_chile_2026_11_13_primario.json").read_text(encoding="utf-8"))
+    ev_maripan = ((prim_col.get("eventos_gol_fotmob") or {}).get("Maripán") or [None])[0]
+    bloque_b = {
+        "archivo": "datos/colombia_chile_2026_11_13_primario.json",
+        "fuente_primaria": f"FotMob matchDetails?matchId={prim_col.get('match_id_fotmob')} (Flashscore {prim_col.get('match_id_flashscore')})",
+        "fotmob_match_id": str(prim_col.get("match_id_fotmob") or ""),
+        "ruta_campo": "eventos_gol_fotmob['Maripán'][0]",
+        "evento": ev_maripan,
+    }
+
+    # ── (c) Conciliación Punto 9 (3 OOS vs 5 archivados) ─────────────────────
+    _p9_path = raiz / "datos" / "ronda10_punto9_doble_135_unicos.json"
+    p9 = (
+        json.loads(_p9_path.read_text(encoding="utf-8"))
+        if _p9_path.exists()
+        else auditar_doble_135_unicos_ronda10(guardar_ruta=None)
+    )
+    bloque_c = {
+        "n_archivados_unicos": p9["n_archivados_unicos_doble_135"],
+        "n_oos_ev93": p9["n_oos_unicos_doble_135"],
+        "n_archivados_no_oos": len(p9["partidos_archivados_no_oos"]),
+        "n_diseno": p9["n_diseno_unicos_doble_135"],
+        "n_total_unicos": p9["n_total_unicos_doble_135"],
+        "denominador": p9["denominador_unico_declarado"],
+        "desglose_explicito": p9["desglose_explicito"],
+        "partidos_oos_ev93": p9["partidos_oos_ev93"],
+        "partidos_archivados_no_oos": p9["partidos_archivados_no_oos"],
+        "partidos_diseno": p9["partidos_diseno"],
+    }
+
+    # ── (d) Git bisect 96483b7..5e8425f en Tarjetas (n=65) y Córneres (n=613) ──
+    def _git_msg(sha: str) -> str:
+        return subprocess.check_output(
+            ["git", "-C", str(raiz), "show", "-s", "--format=%h %ad %s", "--date=short", sha],
+            text=True, encoding="utf-8", errors="replace",
+        ).strip()
+
+    p2_ref = json.loads((raiz / "datos" / "ronda10_punto2_arch_vs_reconstruccion.json").read_text(encoding="utf-8"))
+    comp_26 = p2_ref["comparativas_ic95"]["todos_26_jobs_1376"]
+    transiciones_bisect = [
+        {
+            "desde": "96483b7..dc1dd9b",
+            "hasta": "57160c7",
+            "commit_info": _git_msg("57160c7"),
+            "tarjetas_n65": {"antes": [0.118351, 0.375685], "despues": [0.118351, 0.375685]},
+            "corneres_n613": {"antes": [0.214461, 0.756998], "despues": [0.210502, 0.736805]},
+            "causa_codigo": "Integración inicial Super-Cuadro; mejora Córneres sin alterar Tarjetas.",
+        },
+        {
+            "desde": "dc1dd9b..f2e2edb",
+            "hasta": "0bac1ce",
+            "commit_info": _git_msg("0bac1ce"),
+            "tarjetas_n65": {"antes": [0.118351, 0.375685], "despues": [0.131584, 0.417753]},
+            "corneres_n613": {"antes": [0.210502, 0.736805], "despues": [0.210502, 0.736805]},
+            "causa_codigo": "Produccion v3: introduce `base_tarj *= mod_agr` (`P43_Agresividad_Defensiva` amarillas/faltas) y `-15%` cuando `|lam_l - lam_v| >= 0.75`; matches con `arch` bajan de 49/65 a 0/65.",
+        },
+        {
+            "desde": "0bac1ce..65e377e",
+            "hasta": "6aace49",
+            "commit_info": _git_msg("6aace49"),
+            "tarjetas_n65": {"antes": [0.131584, 0.417753], "despues": [0.133514, 0.423511]},
+            "corneres_n613": {"antes": [0.210502, 0.736805], "despues": [0.228829, 0.851423]},
+            "causa_codigo": "Córneres añade `P54_Asedio_Corners_Matchup` y Ajuste a) `if rem_tot > 15.0: factor_bloqueo *= 0.80`; Tarjetas añade `mult_arb` (`contexto_avanzado`) y `pos_max_proy >= 68.0` para `-15%`.",
+        },
+        {
+            "desde": "6aace49",
+            "hasta": "e68fff4",
+            "commit_info": _git_msg("e68fff4"),
+            "tarjetas_n65": {"antes": [0.133514, 0.423511], "despues": [0.129204, 0.412709]},
+            "corneres_n613": {"antes": [0.228829, 0.851423], "despues": [0.248639, 1.023716]},
+            "causa_codigo": "Evolucion v5 Punto 24a ('Embudo Interior'): amplía recorte `factor_bloqueo *= 0.80` si `(rem_area_l + rem_area_v) > 15.0` o `P11 > 2.6`, disparándose en la mayoría de partidos y llevando Córneres a su peor LogLoss (`1.0237`).",
+        },
+        {
+            "desde": "e68fff4..f21cd61",
+            "hasta": "443c650",
+            "commit_info": _git_msg("443c650"),
+            "tarjetas_n65": {"antes": [0.129204, 0.412709], "despues": [0.137235, 0.443239]},
+            "corneres_n613": {"antes": [0.248639, 1.023716], "despues": [0.247155, 1.011709]},
+            "causa_codigo": "Cero observado vs None + `freno_de_mano_y_matchup_21_22` completo altera `lam_l/lam_v` y `mu_l/mu_v` (sin defaults sintéticos en `amarillas/faltas/posesion`), desplazando `base_tarj` y el gatillo `-15%`.",
+        },
+        {
+            "desde": "443c650..2bd1a76",
+            "hasta": "5976c27",
+            "commit_info": _git_msg("5976c27"),
+            "tarjetas_n65": {"antes": [0.137235, 0.443239], "despues": [0.137235, 0.443239]},
+            "corneres_n613": {"antes": [0.247155, 1.011709], "despues": [0.226053, 0.842739]},
+            "causa_codigo": "Suaviza recorte de córneres `0.80 -> 0.90` y acota `factor_bloqueo = max(0.86, min(1.15, factor_bloqueo))`, recuperando ~0.169 de LogLoss.",
+        },
+        {
+            "desde": "5976c27..7584632",
+            "hasta": "13e82e1..d5f870e",
+            "commit_info": _git_msg("13e82e1") + " | " + _git_msg("d5f870e"),
+            "tarjetas_n65": {"antes": [0.137235, 0.443239], "despues": [0.137235, 0.443239]},
+            "corneres_n613": {"antes": [0.226053, 0.842739], "despues": [0.224583, 0.831129]},
+            "causa_codigo": "`13e82e1` eleva suelo `factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))` (alcanzando el valor final de `5e8425f`; `7584632..92ad891` fallaba con `UnboundLocalError p_u35_pct` corregido en `d5f870e`).",
+        },
+        {
+            "desde": "d5f870e..2efdc20",
+            "hasta": "5e8425f",
+            "commit_info": _git_msg("5e8425f"),
+            "tarjetas_n65": {"antes": [0.137235, 0.443239], "despues": [0.142492, 0.458019]},
+            "corneres_n613": {"antes": [0.224583, 0.831129], "despues": [0.224583, 0.831129]},
+            "causa_codigo": "Punto 50: sustituye suma directa por `am_l + am_v` de Doble ADN (`mu_l.get('amarillas')`), llevando Tarjetas a `[0.142492, 0.458019]` exacto de `5e8425f` (`65/65` matches).",
+        },
+    ]
+
+    bloque_d = {
+        "rango_git": "96483b7..5e8425f",
+        "n_commits_candidatos_py_yaml": 50,
+        "n_probes_bisect": 28,
+        "referencia_arch_vs_5e8425f": {
+            "Tarjetas_n65": {
+                "arch": comp_26["Tarjetas"]["versiones"]["arch"],
+                "5e8425f": comp_26["Tarjetas"]["versiones"]["5e8425f"],
+                "delta": comp_26["Tarjetas"]["diferencias"]["5e8425f - arch"],
+            },
+            "Corneres_n613": {
+                "arch": comp_26["Córneres"]["versiones"]["arch"],
+                "5e8425f": comp_26["Córneres"]["versiones"]["5e8425f"],
+                "delta": comp_26["Córneres"]["diferencias"]["5e8425f - arch"],
+            },
+        },
+        "transiciones_exactas": transiciones_bisect,
+        "nota_arch_pre_96483b7": (
+            "Los pronósticos archivados originales (`arch`, 2026-10-13..2026-10-18) son previos al commit inicial "
+            "`96483b7` (2026-10-30), por lo que en `96483b7` ya coinciden 49/65 filas de Tarjetas y 275/613 de Córneres, "
+            "mientras que el grueso de la degradación verificable en historial ocurrió en `0bac1ce` + `443c650` + `5e8425f` "
+            "(Tarjetas) y `6aace49` + `e68fff4` ('Embudo Interior' -20% masivo en Córneres)."
+        ),
+    }
+
+    res = {
+        "a_etiqueta_154g": bloque_a,
+        "b_maripan_autogol_min35": bloque_b,
+        "c_punto9_desambiguado_3oos_vs_5arch": bloque_c,
+        "d_bisect_tarjetas_y_corneres": bloque_d,
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(res, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return res

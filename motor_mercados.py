@@ -4477,10 +4477,29 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
             except (ValueError, TypeError):
                 return f"{def_val:{fmt}}{suf}{tag_n}"
 
+        def _fmt_gf_contraido(
+            d: dict, def_val: float, n_map: dict | None, tiene_doc: bool, cond_fb: str | None
+        ) -> str:
+            base_txt = _fmt_m(d, "goles_favor", def_val, ".2f", " G", n_map, tiene_doc)
+            prior_h = d.get("_h_gf_lstm_15")
+            if prior_h is None or base_txt.startswith("sin dato"):
+                return base_txt
+            info_n = (n_map or {}).get("goles_favor") if isinstance(n_map, dict) else None
+            if isinstance(info_n, dict) and info_n.get("n_cond") is not None:
+                nc = int(info_n["n_cond"])
+            elif d.get("_n_cond") is not None:
+                nc = int(round(float(d["_n_cond"])))
+            else:
+                nc = 0
+            cond_lbl = str(d.get("_cond_objetivo") or cond_fb or "casa").strip().lower()
+            v = d.get("goles_favor")
+            val = float(v) if v is not None else float(def_val)
+            return f"{val:.2f} G estimado contraído (n={nc} {cond_lbl}, prior {float(prior_h):.3f})"
+
         lineas.extend([
             "🧬 ADN del Enfrentamiento (Local en Casa vs. Rival de Visita):",
             f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%', n_met_l, tiene_doc_l)}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%', n_met_v, tiene_doc_v)}",
-            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_favor', 1.3, '.2f', ' G', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'xg', 1.3, '.2f', ' xG', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_favor', 1.2, '.2f', ' G', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'xg', 1.2, '.2f', ' xG', n_met_v, tiene_doc_v)}]",
+            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_gf_contraido(mu_l, 1.3, n_met_l, tiene_doc_l, getattr(motor, 'cond_local', None))} / {_fmt_m(mu_l, 'xg', 1.3, '.2f', ' xG', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_gf_contraido(mu_v, 1.2, n_met_v, tiene_doc_v, getattr(motor, 'cond_visitante', None))} / {_fmt_m(mu_v, 'xg', 1.2, '.2f', ' xG', n_met_v, tiene_doc_v)}]",
             f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f', ' Gc', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f', ' xGOTc', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f', ' Gc', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f', ' xGOTc', n_met_v, tiene_doc_v)}]",
             f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f', '', n_met_v, tiene_doc_v)}]",
             f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'corners', 5.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'corners', 4.5, '.1f', '', n_met_v, tiene_doc_v)}]",

@@ -17,6 +17,61 @@
   "n_oos_unicos_doble_135": 3,
   "n_total_unicos_doble_135": 6,
   "tasa_sobre_denominador_pct": 8.22,
+  "desglose_explicito": "5 archivados únicos (3 OOS de ev93 + 2 archivados no-OOS) + 1 diseño = 6/73",
+  "partidos_oos_ev93": [
+    {
+      "job_id": "ARCH::1fba9ef796150d73",
+      "partido": "Everton vs Chelsea",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::1edc8c043cfdd28a",
+      "partido": "Newcastle United vs Aston Villa",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::d140040001d88996",
+      "partido": "Union Berlin vs Borussia Dortmund",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
+  "partidos_archivados_no_oos": [
+    {
+      "job_id": "ARCH::6318e0ead09aab95",
+      "partido": "New Zealand vs Inter Miami CF",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::3839ca85a762a2db",
+      "partido": "Barcelona vs Aston Villa",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
+  "partidos_diseno": [
+    {
+      "job_id": "DESIGN::TB",
+      "partido": "Turkey vs Belgium",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
   "conciliacion_tickets_vs_partidos_unicos": {
     "ronda9_tickets_archivados_con_duplicados": "6/85 (+1 diseño = 7)",
     "ronda10_partidos_unicos_sin_duplicados": "5/69 archivados + 1 diseño = 6/73",

@@ -1343,9 +1343,20 @@ def _generar_lecturas_doble_adn(
         f"{toq_V:.1f} toques, {cor_V:.1f} córn. y {desp_V:.1f} despejes."
     )
     # 2. Puntería y Portería (100% sincronizado con la columna xG / xGOT A FAVOR de la tabla superior)
+    def _fmt_gf_cuadro(mu_d: dict, gf_v: float, cond_v: str, n_fb: int) -> str:
+        prior_h = mu_d.get("_h_gf_lstm_15")
+        nc_raw = mu_d.get("_n_cond")
+        nc = int(round(float(nc_raw))) if nc_raw is not None else int(n_fb)
+        cond_lbl = str(mu_d.get("_cond_objetivo") or cond_v or "").strip().lower() or cond_v.lower()
+        if prior_h is not None:
+            return f"{gf_v:.2f} G estimado contraído (n={nc} {cond_lbl}, prior {float(prior_h):.3f})"
+        return f"{gf_v:.2f} G estimado contraído (n={nc} {cond_lbl})"
+
+    _gf_lbl_L = _fmt_gf_cuadro(mu_l, gf_L, cond_l, n_casa_l)
+    _gf_lbl_V = _fmt_gf_cuadro(mu_v, gf_V, cond_v, n_fuera_v)
     v2 = (
-        f"Puntería y Portería: {eq_L} promedia {gf_L:.2f} G ({xg_tab_L:.2f} xG / {xgot_tab_L:.2f} xGOT, "
-        f"portero {gev_L:+.2f} GEv) vs {eq_V} con {gf_V:.2f} G ({xg_tab_V:.2f} xG / {xgot_tab_V:.2f} xGOT, "
+        f"Puntería y Portería: {eq_L} {_gf_lbl_L} ({xg_tab_L:.2f} xG / {xgot_tab_L:.2f} xGOT, "
+        f"portero {gev_L:+.2f} GEv) vs {eq_V} con {_gf_lbl_V} ({xg_tab_V:.2f} xG / {xgot_tab_V:.2f} xGOT, "
         f"portero {gev_V:+.2f} GEv y {gc_V:.2f} Gc)."
     )
     # 3. Disciplina y Balón Parado (Puntos 1.2 y 1.7: sin 50.0% sintético y con base [15P general])

@@ -1,0 +1,439 @@
+{
+  "a_etiqueta_154g": {
+    "etiqueta_xai_goles_xg": "▸ Goles / xG: Colombia [1.54 G estimado contraído (n=7 casa, prior 0.989) / 1.59 xG (n=6c/11g)]  vs  Chile [0.83 G estimado contraído (n=9 fuera, prior 1.093) / 1.12 xG (n=3c/5g)]",
+    "etiqueta_cuadro_punteria": "Puntería y Portería: Colombia 1.54 G estimado contraído (n=7 casa, prior 0.989) (1.35 xG / 1.35 xGOT, portero +0.04 GEv) vs Chile con 0.83 G estimado contraído (n=9 fuera, prior 1.093) (1.35 xG / 1.35 xGOT, portero +0.31 GEv y 1.12 Gc).",
+    "coherencia_n_regex_ok": true,
+    "coherencia_detalle": {
+      "es_coherente": true,
+      "bloqueado": false,
+      "contradicciones": [],
+      "diff_1x2_pp": null,
+      "flujo_76_90": null,
+      "jugada_optima_pct": null
+    },
+    "mu_local_casa_campos": {
+      "goles_favor": 1.54,
+      "_n_cond": 7.0,
+      "_w_cond": 0.6667,
+      "_cond_objetivo": "casa",
+      "_h_gf_lstm_15_en_motor": 0.9891
+    },
+    "conciliacion_prior_lstm": {
+      "media_cruda_15p_22_sobre_15": 1.4667,
+      "r10_directo_doc_partidos": {
+        "h_gf_lstm_15": 0.965,
+        "gf_panama_en_series": 1.602,
+        "combinacion": 1.536365,
+        "redondeado": 1.54,
+        "motivo": "extraer_series_reales_15_partidos lee p.get('torneo') sobre doc_col['partidos'] donde 'Copa America' activa tope 5.0->2.2 antes de cred=0.35 (gf[7]=0.35*2.2+0.65*1.28=1.602)."
+      },
+      "ruta_viva_motor_mercados": {
+        "h_gf_lstm_15": 0.9891,
+        "gf_panama_en_series": 2.7033,
+        "combinacion": 1.544426,
+        "redondeado": 1.54,
+        "motivo": "MotorMercados pasa objetos/envolturas de bloque_desde_muestra sin 'torneo' en nivel superior (solo dentro de _partido_fuente), por lo que extraer_series_reales_15_partidos L1068 no activa tope_2_2 (gf[7]=0.35*5.0+0.65*(22/15)=2.7033 -> h_reciente=0.9891), mientras calcular_doble_adn_con_shrinkage sí lee _partido_fuente(p). Ambos (0.965 y 0.9891) producen exactamente 1.54 G sin tocar λ."
+      }
+    }
+  },
+  "b_maripan_autogol_min35": {
+    "archivo": "datos/colombia_chile_2026_11_13_primario.json",
+    "fuente_primaria": "FotMob matchDetails?matchId=6539346 (Flashscore 2Pafs6I6)",
+    "fotmob_match_id": "6539346",
+    "ruta_campo": "eventos_gol_fotmob['Maripán'][0]",
+    "evento": {
+      "reactKey": "1473207735Goal402830undefinedtrue",
+      "timeStr": 35,
+      "type": "Goal",
+      "time": 35,
+      "overloadTime": null,
+      "eventId": 14732077,
+      "player": {
+        "id": 402830,
+        "name": "Guillermo Maripán",
+        "profileUrl": "/players/402830/guillermo-maripan"
+      },
+      "homeScore": 0,
+      "awayScore": 0,
+      "profileUrl": "/players/402830/guillermo-maripan",
+      "overloadTimeStr": false,
+      "isHome": true,
+      "ownGoal": true,
+      "goalDescription": "Own goal",
+      "goalDescriptionKey": "owngoal",
+      "suffix": "OG",
+      "suffixKey": "own_goal_short",
+      "isPenaltyShootoutEvent": false,
+      "nameStr": "Guillermo Maripán",
+      "firstName": "Guillermo",
+      "lastName": "Maripán",
+      "fullName": "Guillermo Maripán",
+      "playerId": 402830,
+      "newScore": [
+        1,
+        0
+      ],
+      "penShootoutScore": null,
+      "shotmapEvent": null,
+      "assistStr": null,
+      "assistProfileUrl": null
+    }
+  },
+  "c_punto9_desambiguado_3oos_vs_5arch": {
+    "n_archivados_unicos": 5,
+    "n_oos_ev93": 3,
+    "n_archivados_no_oos": 2,
+    "n_diseno": 1,
+    "n_total_unicos": 6,
+    "denominador": 73,
+    "desglose_explicito": "5 archivados únicos (3 OOS de ev93 + 2 archivados no-OOS) + 1 diseño = 6/73",
+    "partidos_oos_ev93": [
+      {
+        "job_id": "ARCH::1fba9ef796150d73",
+        "partido": "Everton vs Chelsea",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      },
+      {
+        "job_id": "ARCH::1edc8c043cfdd28a",
+        "partido": "Newcastle United vs Aston Villa",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      },
+      {
+        "job_id": "ARCH::d140040001d88996",
+        "partido": "Union Berlin vs Borussia Dortmund",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      }
+    ],
+    "partidos_archivados_no_oos": [
+      {
+        "job_id": "ARCH::6318e0ead09aab95",
+        "partido": "New Zealand vs Inter Miami CF",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      },
+      {
+        "job_id": "ARCH::3839ca85a762a2db",
+        "partido": "Barcelona vs Aston Villa",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      }
+    ],
+    "partidos_diseno": [
+      {
+        "job_id": "DESIGN::TB",
+        "partido": "Turkey vs Belgium",
+        "etapas": [
+          "red_45_dcn",
+          "post_sinc_mercados"
+        ]
+      }
+    ]
+  },
+  "d_bisect_tarjetas_y_corneres": {
+    "rango_git": "96483b7..5e8425f",
+    "n_commits_candidatos_py_yaml": 50,
+    "n_probes_bisect": 28,
+    "referencia_arch_vs_5e8425f": {
+      "Tarjetas_n65": {
+        "arch": {
+          "brier": 0.113779,
+          "log_loss": 0.364129,
+          "brier_ic95": [
+            0.051499,
+            0.174575
+          ],
+          "log_loss_ic95": [
+            0.201388,
+            0.534264
+          ]
+        },
+        "5e8425f": {
+          "brier": 0.142492,
+          "log_loss": 0.458019,
+          "brier_ic95": [
+            0.073898,
+            0.199986
+          ],
+          "log_loss_ic95": [
+            0.268031,
+            0.621765
+          ]
+        },
+        "delta": {
+          "d_brier": 0.028713,
+          "d_brier_ic95": [
+            0.00746,
+            0.054518
+          ],
+          "d_log_loss": 0.09389,
+          "d_log_loss_ic95": [
+            0.023196,
+            0.174599
+          ]
+        }
+      },
+      "Corneres_n613": {
+        "arch": {
+          "brier": 0.219514,
+          "log_loss": 0.783772,
+          "brier_ic95": [
+            0.148895,
+            0.28247
+          ],
+          "log_loss_ic95": [
+            0.508925,
+            1.036568
+          ]
+        },
+        "5e8425f": {
+          "brier": 0.224583,
+          "log_loss": 0.831128,
+          "brier_ic95": [
+            0.149886,
+            0.292847
+          ],
+          "log_loss_ic95": [
+            0.517693,
+            1.133489
+          ]
+        },
+        "delta": {
+          "d_brier": 0.005069,
+          "d_brier_ic95": [
+            -0.001897,
+            0.011736
+          ],
+          "d_log_loss": 0.047356,
+          "d_log_loss_ic95": [
+            -0.003122,
+            0.099337
+          ]
+        }
+      }
+    },
+    "transiciones_exactas": [
+      {
+        "desde": "96483b7..dc1dd9b",
+        "hasta": "57160c7",
+        "commit_info": "57160c7 2026-11-05 Super-Cuadro Especialista con Umbral >=70% integrado, foto 15P separada y fix 4 fallas post-auditoria",
+        "tarjetas_n65": {
+          "antes": [
+            0.118351,
+            0.375685
+          ],
+          "despues": [
+            0.118351,
+            0.375685
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.214461,
+            0.756998
+          ],
+          "despues": [
+            0.210502,
+            0.736805
+          ]
+        },
+        "causa_codigo": "Integración inicial Super-Cuadro; mejora Córneres sin alterar Tarjetas."
+      },
+      {
+        "desde": "dc1dd9b..f2e2edb",
+        "hasta": "0bac1ce",
+        "commit_info": "0bac1ce 2026-11-07 Produccion v3: Especificacion maestra completa de 20 puntos implementada y validada",
+        "tarjetas_n65": {
+          "antes": [
+            0.118351,
+            0.375685
+          ],
+          "despues": [
+            0.131584,
+            0.417753
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.210502,
+            0.736805
+          ],
+          "despues": [
+            0.210502,
+            0.736805
+          ]
+        },
+        "causa_codigo": "Produccion v3: introduce `base_tarj *= mod_agr` (`P43_Agresividad_Defensiva` amarillas/faltas) y `-15%` cuando `|lam_l - lam_v| >= 0.75`; matches con `arch` bajan de 49/65 a 0/65."
+      },
+      {
+        "desde": "0bac1ce..65e377e",
+        "hasta": "6aace49",
+        "commit_info": "6aace49 2026-11-07 Nivel Top 1%: Arquitectura Dual FotMob-Flashscore, 5 Modulos de Contexto (contexto_avanzado.py) y 5 Ajustes Matematicos Finos",
+        "tarjetas_n65": {
+          "antes": [
+            0.131584,
+            0.417753
+          ],
+          "despues": [
+            0.133514,
+            0.423511
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.210502,
+            0.736805
+          ],
+          "despues": [
+            0.228829,
+            0.851423
+          ]
+        },
+        "causa_codigo": "Córneres añade `P54_Asedio_Corners_Matchup` y Ajuste a) `if rem_tot > 15.0: factor_bloqueo *= 0.80`; Tarjetas añade `mult_arb` (`contexto_avanzado`) y `pos_max_proy >= 68.0` para `-15%`."
+      },
+      {
+        "desde": "6aace49",
+        "hasta": "e68fff4",
+        "commit_info": "e68fff4 2026-11-09 Evolucion v5 unificada (Puntos 21-30): Freno de Mano, Techo Caja Azul, Reemplazo 1T por 2T, Triple Convergencia y Limpieza Seccion 1",
+        "tarjetas_n65": {
+          "antes": [
+            0.133514,
+            0.423511
+          ],
+          "despues": [
+            0.129204,
+            0.412709
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.228829,
+            0.851423
+          ],
+          "despues": [
+            0.248639,
+            1.023716
+          ]
+        },
+        "causa_codigo": "Evolucion v5 Punto 24a ('Embudo Interior'): amplía recorte `factor_bloqueo *= 0.80` si `(rem_area_l + rem_area_v) > 15.0` o `P11 > 2.6`, disparándose en la mayoría de partidos y llevando Córneres a su peor LogLoss (`1.0237`)."
+      },
+      {
+        "desde": "e68fff4..f21cd61",
+        "hasta": "443c650",
+        "commit_info": "443c650 2026-11-10 Implementacion y verificacion integral del agente de futbol (Puntos 33 al 43): Cobertura real de 4 niveles, control 270 celdas, cero observado vs None, Cuadros B y C sin invencion de eventos, eliminacion de apilamiento en copa y asedio, fecha America/Lima 90m, ajuste gigante visitante, estudio Punto 43 y particionado markdown menor a 30KB",
+        "tarjetas_n65": {
+          "antes": [
+            0.129204,
+            0.412709
+          ],
+          "despues": [
+            0.137235,
+            0.443239
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.248639,
+            1.023716
+          ],
+          "despues": [
+            0.247155,
+            1.011709
+          ]
+        },
+        "causa_codigo": "Cero observado vs None + `freno_de_mano_y_matchup_21_22` completo altera `lam_l/lam_v` y `mu_l/mu_v` (sin defaults sintéticos en `amarillas/faltas/posesion`), desplazando `base_tarj` y el gatillo `-15%`."
+      },
+      {
+        "desde": "443c650..2bd1a76",
+        "hasta": "5976c27",
+        "commit_info": "5976c27 2026-11-11 fix(calibracion): correcciones posdespliegue post-Londrina vs Nautico (EV real, Cuadro C < 10P, Cuadro B sin dato, sincronizacion, trazabilidad lambda y corners)",
+        "tarjetas_n65": {
+          "antes": [
+            0.137235,
+            0.443239
+          ],
+          "despues": [
+            0.137235,
+            0.443239
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.247155,
+            1.011709
+          ],
+          "despues": [
+            0.226053,
+            0.842739
+          ]
+        },
+        "causa_codigo": "Suaviza recorte de córneres `0.80 -> 0.90` y acota `factor_bloqueo = max(0.86, min(1.15, factor_bloqueo))`, recuperando ~0.169 de LogLoss."
+      },
+      {
+        "desde": "5976c27..7584632",
+        "hasta": "13e82e1..d5f870e",
+        "commit_info": "13e82e1 2026-11-11 fix(bloque1): reconstruccion mitades 1T/2T, supresion xg sintetico [27/30], pases ratio/tercio, sincronizacion ticket y pruebas reales londrina-nautico | d5f870e 2026-11-12 fix(punto-48): definicion incondicional de p_u35_pct y erradicacion de variables indefinidas y UnboundLocalError en renderizado",
+        "tarjetas_n65": {
+          "antes": [
+            0.137235,
+            0.443239
+          ],
+          "despues": [
+            0.137235,
+            0.443239
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.226053,
+            0.842739
+          ],
+          "despues": [
+            0.224583,
+            0.831129
+          ]
+        },
+        "causa_codigo": "`13e82e1` eleva suelo `factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))` (alcanzando el valor final de `5e8425f`; `7584632..92ad891` fallaba con `UnboundLocalError p_u35_pct` corregido en `d5f870e`)."
+      },
+      {
+        "desde": "d5f870e..2efdc20",
+        "hasta": "5e8425f",
+        "commit_info": "5e8425f 2026-11-12 fix(punto-50): consistencia lambda tarjetas seccion 1 veredicto adn topes y uefa",
+        "tarjetas_n65": {
+          "antes": [
+            0.137235,
+            0.443239
+          ],
+          "despues": [
+            0.142492,
+            0.458019
+          ]
+        },
+        "corneres_n613": {
+          "antes": [
+            0.224583,
+            0.831129
+          ],
+          "despues": [
+            0.224583,
+            0.831129
+          ]
+        },
+        "causa_codigo": "Punto 50: sustituye suma directa por `am_l + am_v` de Doble ADN (`mu_l.get('amarillas')`), llevando Tarjetas a `[0.142492, 0.458019]` exacto de `5e8425f` (`65/65` matches)."
+      }
+    ],
+    "nota_arch_pre_96483b7": "Los pronósticos archivados originales (`arch`, 2026-10-13..2026-10-18) son previos al commit inicial `96483b7` (2026-10-30), por lo que en `96483b7` ya coinciden 49/65 filas de Tarjetas y 275/613 de Córneres, mientras que el grueso de la degradación verificable en historial ocurrió en `0bac1ce` + `443c650` + `5e8425f` (Tarjetas) y `6aace49` + `e68fff4` ('Embudo Interior' -20% masivo en Córneres)."
+  }
+}

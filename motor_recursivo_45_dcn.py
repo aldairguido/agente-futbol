@@ -1767,6 +1767,9 @@ def calcular_doble_adn_con_shrinkage(
     mu["goles_contra"] = round(w_cond * media_gc + (1.0 - w_cond) * h_gc, 2)
     mu["_n_cond"] = float(n_cond)
     mu["_w_cond"] = round(w_cond, 4)
+    mu["_cond_objetivo"] = str(cond_target)
+    mu["_h_gf_lstm_15"] = round(float(h_gf), 4)
+    mu["_h_gc_lstm_15"] = round(float(h_gc), 4)
 
     return mu
 
