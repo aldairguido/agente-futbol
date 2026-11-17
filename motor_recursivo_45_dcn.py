@@ -955,6 +955,12 @@ def extraer_series_reales_15_partidos(
 
     # Primera pasada: valores reales + reconstrucción de métricas sin tracking + ajuste relativo de división
     crudos: Dict[str, List[Optional[float]]] = {}
+    _unificar_h_lstm = False
+    try:
+        from decision_cobertura import bandera_activa as _ba_h_u
+        _unificar_h_lstm = bool(_ba_h_u("usar_unificacion_h_gf_lstm_15"))
+    except Exception:
+        _unificar_h_lstm = False
     factores_of_partido = []
     factores_def_partido = []
 
@@ -1016,7 +1022,8 @@ def extraer_series_reales_15_partidos(
                 v = max(1.0, float(rem_fuera_riv - palo_riv))
 
             if v is not None:
-                torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+                _src_1019 = _partido_fuente(p) if _unificar_h_lstm else p
+                torneo_p = str(_src_1019.get("torneo") or _src_1019.get("competition") or _src_1019.get("competicion") or p.get("torneo") or "").lower()
                 if es_copa_nacional(torneo_p) and (gf_p - gc_p) >= 4:
                     if clave in ("xg", "xgot", "xg_juego_abierto", "xg_sin_penalti"):
                         v = min(float(v), 2.2)
@@ -1065,7 +1072,8 @@ def extraer_series_reales_15_partidos(
         if gf is None or gc is None:
             gf = _safe_float(m.get("goles_favor", m.get("goles_favor_est")), 1.30)
             gc = _safe_float(m.get("goles_contra", m.get("goles_contra_real")), 1.25)
-        torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+        _src_1068 = _partido_fuente(p) if _unificar_h_lstm else p
+        torneo_p = str(_src_1068.get("torneo") or _src_1068.get("competition") or _src_1068.get("competicion") or p.get("torneo") or "").lower()
         if es_copa_nacional(torneo_p) and (gf - gc) >= 4:
             gf = min(float(gf), 2.2)
         gf = gf * factores_of_partido[idx_p]

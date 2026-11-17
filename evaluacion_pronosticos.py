@@ -11849,3 +11849,267 @@ def auditar_pasada_3b_y_banco_ronda12(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+def auditar_unificacion_h_gf_lstm_15_ronda12(
+    *,
+    guardar_ruta: str | None = "datos/ronda12_punto5_unificacion_h_lstm.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 - Punto 5 (`h_gf_lstm_15`):
+      1. Verifica que `usar_unificacion_h_gf_lstm_15` (apagada por defecto) unifica al 100%
+         la ruta directa (`extraer_series_reales_15_partidos(pts, ...)`) y la ruta viva
+         (`MotorMercados` -> `cuadro_especialista.partidos_para_red_neuronal` -> `_partido_fuente`).
+      2. Muestra el efecto exacto en `h_gf_lstm` (y en λ) para todos los equipos de los 73 registros.
+      3. Explica paso a paso por qué el prior LSTM de Colombia es `0.9891` (~0.99) en ruta viva por defecto
+         (y `0.9650` unificado) pese a que la media simple de 15 partidos es `22/15 = 1.4667` (~1.47).
+    """
+    import math as _m5
+    from pathlib import Path
+    import numpy as _np5
+    import cuadro_especialista as ce
+    from decision_cobertura import bandera_activa, banderas_comportamiento
+    import motor_mercados as mm
+    import motor_recursivo_45_dcn as mr
+
+    raiz = Path(__file__).resolve().parent
+    pares_73 = _recolectar_pares_partidos_cacheados_ronda9()
+
+    def _correr(flag_on: bool) -> dict[str, Any]:
+        por_reg: dict[str, dict[str, Any]] = {}
+        dif_equipos: list[dict[str, Any]] = []
+        n_diff_l = 0
+        n_diff_v = 0
+        with banderas_comportamiento(usar_unificacion_h_gf_lstm_15=flag_on):
+            for reg in pares_73:
+                jid = str(reg.get("job_id") or "")
+                dl = reg["doc_local"]
+                dv = reg["doc_visitante"]
+                el = reg["equipo_local"]
+                ev = reg["equipo_visitante"]
+                comp_str = reg.get("competicion") or ""
+
+                par = mm.Parametros()
+                if comp_str:
+                    par.competicion = str(comp_str)
+                mot = mm.MotorMercados(
+                    dl, dv,
+                    reg.get("cond_l", "casa"), reg.get("cond_v", "fuera"),
+                    el, ev, par,
+                )
+                mot.preparar()
+                rec = mot.recursivo or {}
+                hl_viva = (rec.get("mu_local_casa") or {}).get("_h_gf_lstm_15")
+                hv_viva = (rec.get("mu_visita_fuera") or {}).get("_h_gf_lstm_15")
+
+                pts_l = (dl or {}).get("partidos") or []
+                pts_v = (dv or {}).get("partidos") or []
+                pl_ce = ce.construir_perfil_especialista_equipo(ce.bloque_desde_muestra(pts_l, el, "global", doc=dl))
+                pv_ce = ce.construir_perfil_especialista_equipo(ce.bloque_desde_muestra(pts_v, ev, "global", doc=dv))
+                tL = mr.obtener_tier_equipo(pts_l, pl_ce)
+                tV = mr.obtener_tier_equipo(pts_v, pv_ce)
+                icf = mr.obtener_coefs_torneo_anclados(pts_l, pts_v, pl_ce, pv_ce, el, ev, competicion_str=comp_str)
+                ser_l = mr.extraer_series_reales_15_partidos(pts_l, el, pl_ce, tier_rival=tV, factor_uefa=icf["fu_L"])
+                ser_v = mr.extraer_series_reales_15_partidos(pts_v, ev, pv_ce, tier_rival=tL, factor_uefa=icf["fu_V"])
+                hl_dir = mr.procesar_secuencia_individual_lstm_determinista(ser_l["goles_favor"])["h_reciente"]
+                hv_dir = mr.procesar_secuencia_individual_lstm_determinista(ser_v["goles_favor"])["h_reciente"]
+
+                if hl_viva is not None and abs(float(hl_viva) - float(hl_dir)) > 1e-4:
+                    n_diff_l += 1
+                    dif_equipos.append({
+                        "job_id": jid,
+                        "partido": f"{el} vs {ev}",
+                        "lado": "local",
+                        "equipo": el,
+                        "h_directa": round(float(hl_dir), 4),
+                        "h_viva": round(float(hl_viva), 4),
+                        "delta_viva_menos_directa": round(float(hl_viva) - float(hl_dir), 4),
+                    })
+                if hv_viva is not None and abs(float(hv_viva) - float(hv_dir)) > 1e-4:
+                    n_diff_v += 1
+                    dif_equipos.append({
+                        "job_id": jid,
+                        "partido": f"{el} vs {ev}",
+                        "lado": "visitante",
+                        "equipo": ev,
+                        "h_directa": round(float(hv_dir), 4),
+                        "h_viva": round(float(hv_viva), 4),
+                        "delta_viva_menos_directa": round(float(hv_viva) - float(hv_dir), 4),
+                    })
+                por_reg[jid] = {
+                    "job_id": jid,
+                    "partido": f"{el} vs {ev}",
+                    "equipo_local": el,
+                    "equipo_visitante": ev,
+                    "hl_directa": round(float(hl_dir), 4),
+                    "hl_viva": round(float(hl_viva), 4) if hl_viva is not None else None,
+                    "hv_directa": round(float(hv_dir), 4),
+                    "hv_viva": round(float(hv_viva), 4) if hv_viva is not None else None,
+                    "lambda_local_ft": mot.tasas.lambda_local_ft,
+                    "lambda_visitante_ft": mot.tasas.lambda_visitante_ft,
+                }
+        return {
+            "n_registros": len(pares_73),
+            "n_lados_con_diferencia_directa_vs_viva": n_diff_l + n_diff_v,
+            "n_local_con_diferencia": n_diff_l,
+            "n_visitante_con_diferencia": n_diff_v,
+            "partidos_con_diferencia": len({d["job_id"] for d in dif_equipos}),
+            "diferencias_directa_vs_viva": dif_equipos,
+            "por_registro": por_reg,
+        }
+
+    off_res = _correr(False)
+    on_res = _correr(True)
+
+    tabla_efecto: list[dict[str, Any]] = []
+    cambios_solo_h = 0
+    cambios_lambda = 0
+    for reg in pares_73:
+        jid = str(reg.get("job_id") or "")
+        a = off_res["por_registro"][jid]
+        b = on_res["por_registro"][jid]
+        dl_h = (b["hl_viva"] - a["hl_viva"]) if (a["hl_viva"] is not None and b["hl_viva"] is not None) else None
+        dv_h = (b["hv_viva"] - a["hv_viva"]) if (a["hv_viva"] is not None and b["hv_viva"] is not None) else None
+        dh_cambia = (dl_h is not None and abs(dl_h) > 1e-6) or (dv_h is not None and abs(dv_h) > 1e-6)
+        d_lam_l = (b["lambda_local_ft"] - a["lambda_local_ft"]) if (a["lambda_local_ft"] is not None and b["lambda_local_ft"] is not None) else None
+        d_lam_v = (b["lambda_visitante_ft"] - a["lambda_visitante_ft"]) if (a["lambda_visitante_ft"] is not None and b["lambda_visitante_ft"] is not None) else None
+        lam_cambia = (d_lam_l is not None and abs(d_lam_l) > 1e-6) or (d_lam_v is not None and abs(d_lam_v) > 1e-6)
+        if dh_cambia:
+            cambios_solo_h += 1
+        if lam_cambia:
+            cambios_lambda += 1
+        if dh_cambia or lam_cambia:
+            tabla_efecto.append({
+                "job_id": jid,
+                "partido": a["partido"],
+                "hl_viva_antes": a["hl_viva"],
+                "hl_viva_despues": b["hl_viva"],
+                "delta_hl": round(float(dl_h), 4) if dl_h is not None else None,
+                "hv_viva_antes": a["hv_viva"],
+                "hv_viva_despues": b["hv_viva"],
+                "delta_hv": round(float(dv_h), 4) if dv_h is not None else None,
+                "lambda_antes": [a["lambda_local_ft"], a["lambda_visitante_ft"]],
+                "lambda_despues": [b["lambda_local_ft"], b["lambda_visitante_ft"]],
+                "delta_lambda_l": round(float(d_lam_l), 4) if d_lam_l is not None else None,
+                "delta_lambda_v": round(float(d_lam_v), 4) if d_lam_v is not None else None,
+            })
+
+    # Trazado paso a paso de por que Colombia tiene prior ~0.99 (0.9891 / 0.9650) vs media 15P = 1.47 (22/15)
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8-sig"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8-sig"))
+    pts_col = doc_col.get("partidos") or []
+    pts_cron = list(reversed(pts_col))
+    p_l = ce.construir_perfil_especialista_equipo(ce.bloque_desde_muestra(pts_col, "Colombia", "global", doc=doc_col))
+    p_v = ce.construir_perfil_especialista_equipo(ce.bloque_desde_muestra(doc_chi.get("partidos") or [], "Chile", "global", doc=doc_chi))
+    icf_cc = mr.obtener_coefs_torneo_anclados(pts_col, doc_chi.get("partidos") or [], p_l, p_v, "Colombia", "Chile", competicion_str="Amistoso")
+    tV_cc = mr.obtener_tier_equipo(doc_chi.get("partidos") or [], p_v)
+    alpha_cc = 1.0 - _m5.exp(-_m5.log(2.0) / 4.2)
+
+    def _traza_colombia_lstm(flag_on: bool) -> dict[str, Any]:
+        with banderas_comportamiento(usar_unificacion_h_gf_lstm_15=flag_on):
+            ser = mr.extraer_series_reales_15_partidos(
+                ce.partidos_para_red_neuronal(pts_col, "Colombia"),
+                "Colombia", p_l, tier_rival=tV_cc, factor_uefa=icf_cc["fu_L"],
+            )
+        gfs = [float(x) for x in ser["goles_favor"]]
+        vals = _np5.array(gfs, dtype=float)
+        c_mem = float(_np5.mean(vals))
+        std_v = float(_np5.std(vals))
+        escala = max(0.30, abs(c_mem), std_v)
+        h_t = float(vals[0])
+        pasos: list[dict[str, Any]] = []
+        for idx, (pt_raw, x_p) in enumerate(zip(pts_cron, gfs)):
+            gf_cr, gc_cr = mr._goles_equipo(pt_raw)
+            sorp = min(1.8, abs(x_p - h_t) / escala)
+            gi = max(0.15, min(0.65, alpha_cc * (1.0 + 0.25 * sorp)))
+            h_t = (1.0 - gi) * h_t + gi * x_p
+            pasos.append({
+                "idx_cronologico": idx,
+                "fecha": pt_raw.get("fecha"),
+                "rival": pt_raw.get("rival"),
+                "torneo": pt_raw.get("torneo"),
+                "gf_crudo": gf_cr,
+                "gc_crudo": gc_cr,
+                "gf_entrada_lstm": round(x_p, 4),
+                "gate_i": round(gi, 4),
+                "h_t": round(h_t, 4),
+            })
+        m_u5 = float(_np5.mean(vals[-5:]))
+        h_rec = round(0.60 * float(pasos[-1]["h_t"]) + 0.40 * m_u5, 4)
+        return {
+            "serie_entrada_lstm": [round(x, 4) for x in gfs],
+            "panama_5_0_idx7_entrada": round(gfs[7], 4),
+            "c_memoria": round(c_mem, 4),
+            "std": round(std_v, 4),
+            "escala": round(escala, 4),
+            "alpha_semivida_4_2": round(alpha_cc, 4),
+            "estado_h_final_idx14": round(h_t, 4),
+            "ultimos_5_entrada": [round(x, 4) for x in gfs[-5:]],
+            "media_ult5": round(m_u5, 4),
+            "formula_060_h14_mas_040_u5": f"0.60 * {round(h_t, 4)} + 0.40 * {round(m_u5, 4)} = {h_rec}",
+            "h_gf_lstm_15": h_rec,
+            "pasos_15_partidos": pasos,
+        }
+
+    goles_crudos_col = [mr._goles_equipo(p)[0] for p in pts_cron]
+    traza_off = _traza_colombia_lstm(False)
+    traza_on = _traza_colombia_lstm(True)
+
+    out = {
+        "bandera_usar_unificacion_h_gf_lstm_15_defecto": bandera_activa("usar_unificacion_h_gf_lstm_15"),
+        "resumen_unificacion": {
+            "denominador_registros": len(pares_73),
+            "con_bandera_apagada_defecto": {
+                "n_lados_con_diferencia_directa_vs_viva": off_res["n_lados_con_diferencia_directa_vs_viva"],
+                "n_local_con_diferencia": off_res["n_local_con_diferencia"],
+                "n_visitante_con_diferencia": off_res["n_visitante_con_diferencia"],
+                "n_partidos_con_diferencia": off_res["partidos_con_diferencia"],
+                "causa_tecnica": (
+                    "En `motor_recursivo_45_dcn.extraer_series_reales_15_partidos`, las líneas L1019 y L1068 "
+                    "leían `p.get('torneo')` en lugar de `_partido_fuente(p)`. En la ruta viva (`cuadro_especialista."
+                    "partidos_para_red_neuronal`), el diccionario envoltorio no incluye `'torneo'` en el nivel raíz "
+                    "(solo dentro de `_partido`), por lo que no activaba `es_copa_nacional(torneo_p)` ni el recorte de "
+                    "goleadas (>=4 goles) a 2.2 antes del blend de credibilidad (0.35), mientras la ruta directa sí lo activaba."
+                ),
+            },
+            "con_bandera_activa": {
+                "n_lados_con_diferencia_directa_vs_viva": on_res["n_lados_con_diferencia_directa_vs_viva"],
+                "n_local_con_diferencia": on_res["n_local_con_diferencia"],
+                "n_visitante_con_diferencia": on_res["n_visitante_con_diferencia"],
+                "n_partidos_con_diferencia": on_res["partidos_con_diferencia"],
+                "unificacion_100_pct": bool(on_res["n_lados_con_diferencia_directa_vs_viva"] == 0),
+            },
+        },
+        "efecto_sobre_73_registros": {
+            "n_partidos_con_cambio_h_gf_lstm": cambios_solo_h,
+            "n_lados_con_cambio_h_gf_lstm": off_res["n_lados_con_diferencia_directa_vs_viva"],
+            "n_partidos_con_cambio_lambda": cambios_lambda,
+            "n_partidos_sin_cambio": len(pares_73) - len(tabla_efecto),
+            "registros_afectados": tabla_efecto,
+        },
+        "explicacion_prior_099_vs_media_147": {
+            "media_simple_15p_crudos": {
+                "goles_favor_cronologicos": goles_crudos_col,
+                "suma_goles": int(sum(goles_crudos_col)),
+                "n_partidos": len(goles_crudos_col),
+                "media_simple": round(sum(goles_crudos_col) / len(goles_crudos_col), 4),
+            },
+            "primeros_8_vs_ultimos_7_crudos": {
+                "media_primeros_8_idx0_7": round(sum(goles_crudos_col[:8]) / 8.0, 4),
+                "media_ultimos_7_idx8_14": round(sum(goles_crudos_col[8:]) / 7.0, 4),
+                "media_ultimos_5_idx10_14": round(sum(goles_crudos_col[10:]) / 5.0, 4),
+            },
+            "ruta_viva_bandera_apagada_09891": traza_off,
+            "ruta_unificada_bandera_activa_09650": traza_on,
+            "sintesis_tres_factores": [
+                "1) Penalización por credibilidad en el 5-0 vs Panamá (Copa América, idx=7, peso=0.35): en ruta viva por defecto 5.0 pasa a 0.35*5.0 + 0.65*(22/15) = 2.7033 (c_memoria baja de 1.4667 a 1.3136); en ruta unificada L1068 recorta primero 5.0 -> 2.2 por Copa América y luego mezcla 0.35*2.2 + 0.65*(19.2/15) = 1.6020 (c_memoria baja a 1.2401).",
+                "2) Decaimiento exponencial LSTM secuencial (semivida=4.2 -> alpha_input=0.1521 más compuerta de sorpresa hasta 0.20): tras alcanzar h_7=1.8114 (ruta viva) en el idx 7, los últimos 7 partidos suman solo 6 goles [1, 0, 3, 1, 0, 1, 0] (media 0.857), haciendo caer el estado oculto hasta h_14=0.9819 (o 0.9417 unificado).",
+                "3) Mezcla final 60/40 con los últimos 5 partidos (`h_reciente = 0.60 * h_14 + 0.40 * media_ult5`): como los últimos 5 partidos [3, 1, 0, 1, 0] promedian 1.0000, `0.60 * 0.9819 + 0.40 * 1.0000 = 0.9891` (~0.99 en ruta viva) y `0.60 * 0.9417 + 0.40 * 1.0000 = 0.9650` (~0.97 unificado).",
+            ],
+        },
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
