@@ -89,12 +89,34 @@ _hilos_activos: set[threading.Thread] = set()
 _hilos_lock = threading.Lock()
 _cola_persistencia_lock = threading.Lock()
 _cola_persistencia: Any = None
+_estado_persistencia_lock = threading.Lock()
+_alerta_persistencia_fn: Any = None
+_estado_persistencia: dict[str, Any] = {
+    "estado": "inactiva",
+    "motivo": "",
+    "rama_datos": None,
+    "ultimo_ok_utc": None,
+    "ultimo_error": None,
+    "ultimo_error_utc": None,
+    "fallos_consecutivos": 0,
+    "aviso_error_enviado": False,
+}
 
 
 def _censurar_token(texto: str) -> str:
     s = str(texto or "")
     if TOKEN and len(TOKEN) >= 6:
         s = s.replace(TOKEN, "***TOKEN***")
+    tok_rem = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
+    url_rem = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
+    try:
+        from persistencia_produccion import _censurar_secreto
+        s = _censurar_secreto(s, tok_rem, url_rem)
+    except Exception:
+        if tok_rem and len(tok_rem) >= 4:
+            s = s.replace(tok_rem, "***")
+        if url_rem and url_rem in s:
+            s = s.replace(url_rem, "[remoto-datos]")
     return s
 
 
@@ -116,15 +138,188 @@ def _extraer_telegram_meta_mensaje(message: Any, chat_id: Any = None) -> dict[st
     }
 
 
+def reiniciar_estado_persistencia() -> None:
+    """Reinicia el estado de salud y el aviso único de persistencia (uso en pruebas/reinicio)."""
+    with _estado_persistencia_lock:
+        _estado_persistencia.update({
+            "estado": "inactiva",
+            "motivo": "",
+            "rama_datos": None,
+            "ultimo_ok_utc": None,
+            "ultimo_error": None,
+            "ultimo_error_utc": None,
+            "fallos_consecutivos": 0,
+            "aviso_error_enviado": False,
+        })
+
+
+def _enviar_aviso_unico_persistencia(
+    mensaje: str,
+    *,
+    enviar_alerta_fn: Any = None,
+) -> bool:
+    fn = enviar_alerta_fn or _alerta_persistencia_fn
+    try:
+        if fn is not None:
+            fn(mensaje)
+            return True
+        if TOKEN and CHAT_ID_AUTORIZADO:
+            bot.send_message(CHAT_ID_AUTORIZADO, mensaje, disable_web_page_preview=True)
+            return True
+    except Exception as exc_tg:
+        print(f"[PERSISTENCIA] ⚠️ No se pudo enviar alerta a Telegram: {_censurar_token(str(exc_tg))}")
+    return False
+
+
+def registrar_configuracion_persistencia(
+    cfg: Any,
+    *,
+    enviar_alerta_fn: Any = None,
+) -> dict[str, Any]:
+    """Registra el resultado de validar la configuración de persistencia y alerta una vez si fue rechazada."""
+    cod = str(getattr(cfg, "codigo_estado", "inactiva") or "inactiva")
+    mot = _censurar_token(str(getattr(cfg, "motivo_estado", "") or ""))
+    rama = getattr(cfg, "rama_datos", None)
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    debe_avisar = False
+    with _estado_persistencia_lock:
+        _estado_persistencia["rama_datos"] = rama
+        if getattr(cfg, "habilitada", False):
+            if _estado_persistencia["estado"] != "ok":
+                _estado_persistencia["estado"] = "activa"
+            _estado_persistencia["motivo"] = ""
+        else:
+            _estado_persistencia["estado"] = cod
+            _estado_persistencia["motivo"] = mot
+            if cod in ("desactivada_falta_remoto_url", "rechazada_url_igual_origin", "rechazada_rama_prohibida"):
+                _estado_persistencia["ultimo_error"] = mot
+                _estado_persistencia["ultimo_error_utc"] = ahora
+                if not _estado_persistencia["aviso_error_enviado"]:
+                    _estado_persistencia["aviso_error_enviado"] = True
+                    debe_avisar = True
+        snap_est = dict(_estado_persistencia)
+
+    if debe_avisar:
+        _enviar_aviso_unico_persistencia(
+            f"⚠️ [PERSISTENCIA DESACTIVADA] {mot}\n"
+            "El bot no escribirá datos en el repositorio público.",
+            enviar_alerta_fn=enviar_alerta_fn,
+        )
+    return snap_est
+
+
+def registrar_resultado_persistencia(
+    res: dict[str, Any] | None,
+    *,
+    contexto: str = "sync",
+    rama_datos: str | None = None,
+    enviar_alerta_fn: Any = None,
+) -> dict[str, Any]:
+    """Actualiza salud de persistencia y emite un único aviso en Telegram al entrar en fallo."""
+    if not isinstance(res, dict):
+        return obtener_estado_persistencia()
+    ok = bool(res.get("ok"))
+    ahora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    errs = res.get("errores")
+    err_raw = res.get("error") or ("; ".join(str(x) for x in errs) if isinstance(errs, list) and errs else "")
+    err_safe = _censurar_token(str(err_raw or "error desconocido de persistencia"))
+
+    debe_avisar = False
+    with _estado_persistencia_lock:
+        if rama_datos:
+            _estado_persistencia["rama_datos"] = rama_datos
+        if ok:
+            _estado_persistencia["estado"] = "ok"
+            _estado_persistencia["motivo"] = ""
+            _estado_persistencia["ultimo_ok_utc"] = ahora
+            _estado_persistencia["ultimo_error"] = None
+            _estado_persistencia["fallos_consecutivos"] = 0
+            _estado_persistencia["aviso_error_enviado"] = False
+        else:
+            _estado_persistencia["estado"] = "error"
+            _estado_persistencia["motivo"] = err_safe
+            _estado_persistencia["ultimo_error"] = err_safe
+            _estado_persistencia["ultimo_error_utc"] = ahora
+            _estado_persistencia["fallos_consecutivos"] = int(_estado_persistencia.get("fallos_consecutivos") or 0) + 1
+            if not _estado_persistencia["aviso_error_enviado"]:
+                _estado_persistencia["aviso_error_enviado"] = True
+                debe_avisar = True
+        snap_est = dict(_estado_persistencia)
+
+    if not ok:
+        print(f"[PERSISTENCIA] ❌ Fallo en {contexto}: {err_safe}")
+    if debe_avisar:
+        _enviar_aviso_unico_persistencia(
+            f"🚨 [PERSISTENCIA] Fallo persistente ({contexto}): {err_safe}\n"
+            "Revisa PERSISTENCIA_REMOTO_URL / PERSISTENCIA_REMOTO_TOKEN. "
+            "Los análisis continúan en memoria/disco local del runner.",
+            enviar_alerta_fn=enviar_alerta_fn,
+        )
+    return snap_est
+
+
+def obtener_estado_persistencia() -> dict[str, Any]:
+    """Devuelve instantánea del estado actual de persistencia (evalúa entorno si aún está inactiva)."""
+    with _estado_persistencia_lock:
+        est = str(_estado_persistencia.get("estado") or "inactiva")
+    if est == "inactiva" and _cola_persistencia is None:
+        try:
+            from persistencia_produccion import ConfigPersistencia, persistencia_activa
+            if persistencia_activa():
+                cfg = ConfigPersistencia.desde_entorno(BASE_DIR)
+                return registrar_configuracion_persistencia(cfg)
+        except Exception:
+            pass
+    with _estado_persistencia_lock:
+        return dict(_estado_persistencia)
+
+
+def formatear_linea_estado_persistencia() -> str:
+    """Formatea el estado de persistencia para /estado sin exponer secretos ni URLs privadas."""
+    st = obtener_estado_persistencia()
+    cod = st.get("estado") or "inactiva"
+    rama = st.get("rama_datos") or "produccion-datos"
+    if cod == "ok":
+        return f"🟢 Activa en `{rama}` (último sync: `{st.get('ultimo_ok_utc')}`)"
+    if cod == "activa":
+        return f"🟡 Activa en `{rama}` (pendiente primer sync)"
+    if cod == "error":
+        err = str(st.get("ultimo_error") or "error de remoto").replace("`", "'")
+        return f"🔴 FALLO (`{err}`; fallos={st.get('fallos_consecutivos', 1)})"
+    if cod == "desactivada_falta_remoto_url":
+        return "⚠️ Desactivada (falta `PERSISTENCIA_REMOTO_URL`; nunca escribe en repo público)"
+    if cod == "rechazada_url_igual_origin":
+        return "⛔ Rechazada (`PERSISTENCIA_REMOTO_URL` coincide con `origin` público)"
+    if cod == "rechazada_rama_prohibida":
+        return "⛔ Rechazada (rama de datos por defecto prohibida)"
+    return "⚪ Desactivada (`PERSISTENCIA_PRODUCCION_ACTIVA` inactiva)"
+
+
 def configurar_persistencia_bot(cfg: Any = None, cola: Any = None) -> Any:
     """Permite inyectar una configuración/cola de persistencia (producción o pruebas)."""
     global _cola_persistencia
     with _cola_persistencia_lock:
         if cola is not None:
             _cola_persistencia = cola
+            if getattr(cola, "_on_resultado", None) is None:
+                cola._on_resultado = lambda res: registrar_resultado_persistencia(res, contexto="cola_git")
         elif cfg is not None:
-            from persistencia_produccion import ColaPersistenciaGit
-            _cola_persistencia = ColaPersistenciaGit(cfg)
+            from persistencia_produccion import ColaPersistenciaGit, validar_config_persistencia
+            ok_v, cod_v, msg_v = validar_config_persistencia(cfg)
+            if not ok_v:
+                cfg.habilitada = False
+                cfg.codigo_estado = cod_v
+                cfg.motivo_estado = msg_v
+                registrar_configuracion_persistencia(cfg)
+                _cola_persistencia = None
+            else:
+                registrar_configuracion_persistencia(cfg)
+                _cola_persistencia = ColaPersistenciaGit(
+                    cfg,
+                    on_resultado=lambda res: registrar_resultado_persistencia(
+                        res, contexto="cola_git", rama_datos=cfg.rama_datos
+                    ),
+                )
         else:
             _cola_persistencia = None
         return _cola_persistencia
@@ -138,10 +333,19 @@ def obtener_cola_persistencia() -> Any | None:
         try:
             from persistencia_produccion import ConfigPersistencia, ColaPersistenciaGit, persistencia_activa
             if persistencia_activa():
-                _cola_persistencia = ColaPersistenciaGit(ConfigPersistencia.desde_entorno(BASE_DIR))
+                cfg = ConfigPersistencia.desde_entorno(BASE_DIR)
+                registrar_configuracion_persistencia(cfg)
+                if not cfg.habilitada:
+                    return None
+                _cola_persistencia = ColaPersistenciaGit(
+                    cfg,
+                    on_resultado=lambda res: registrar_resultado_persistencia(
+                        res, contexto="cola_git", rama_datos=cfg.rama_datos
+                    ),
+                )
                 return _cola_persistencia
         except Exception as exc:
-            print(f"[PERSISTENCIA] ⚠️ No se pudo inicializar cola Git: {exc}")
+            print(f"[PERSISTENCIA] ⚠️ No se pudo inicializar cola Git: {_censurar_token(str(exc))}")
         return None
 
 
@@ -477,6 +681,7 @@ def cmd_estado(message):
         f"• *Modelo LLM:* 🧠 Google Gemini `{getattr(conciencia, 'modelo', getattr(config, 'GEMINI_MODEL', 'gemini-2.5-flash'))}` "
         f"(Pool rotativo: {pool_modelos} modelos)\n"
         "• *Modo Operativo:* 🧪 Paper Trading (Simulación de Capital)\n"
+        f"• *Persistencia:* {formatear_linea_estado_persistencia()}\n"
         f"• *Zona Horaria:* 🕒 `{config.TIMEZONE}`\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "💡 Envía /agente <consulta o duelo> para activar el razonamiento multi-agente.\n"
@@ -2133,15 +2338,25 @@ def iniciar_servidor_bot():
         from persistencia_produccion import ConfigPersistencia, hidratar_desde_remoto_datos, persistencia_activa
         if persistencia_activa():
             cfg_p = ConfigPersistencia.desde_entorno(BASE_DIR)
-            res_hid = hidratar_desde_remoto_datos(cfg_p)
-            print(
-                f"[PERSISTENCIA] 🔄 Hidratación {cfg_p.rama_datos}: "
-                f"pronosticos={res_hid.get('n_pronosticos_hidratados')} "
-                f"evaluaciones={res_hid.get('n_evaluaciones_hidratadas')} "
-                f"ledger={((res_hid.get('ledger') or {}).get('n_final'))}"
-            )
+            registrar_configuracion_persistencia(cfg_p)
+            if cfg_p.habilitada:
+                res_hid = hidratar_desde_remoto_datos(cfg_p)
+                registrar_resultado_persistencia(
+                    res_hid,
+                    contexto="hidratacion_inicial",
+                    rama_datos=cfg_p.rama_datos,
+                )
+                if res_hid.get("ok"):
+                    print(
+                        f"[PERSISTENCIA] 🔄 Hidratación {cfg_p.rama_datos}: "
+                        f"pronosticos={res_hid.get('n_pronosticos_hidratados')} "
+                        f"evaluaciones={res_hid.get('n_evaluaciones_hidratadas')} "
+                        f"ledger={((res_hid.get('ledger') or {}).get('n_final'))}"
+                    )
     except Exception as exc_hid:
-        print(f"[PERSISTENCIA] ⚠️ Hidratación inicial omitida: {_censurar_token(str(exc_hid))}")
+        err_h = _censurar_token(str(exc_hid))
+        registrar_resultado_persistencia({"ok": False, "error": err_h}, contexto="hidratacion_inicial")
+        print(f"[PERSISTENCIA] ⚠️ Hidratación inicial omitida: {err_h}")
 
     iniciar_servidor_keep_alive()
 

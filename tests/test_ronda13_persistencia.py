@@ -46,10 +46,11 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _init_remoto_local_y_runner(tmp_path: Path, nombre_runner: str = "runner_1") -> tuple[Path, Path]:
-    remoto = tmp_path / "remoto_simulado.git"
-    if not remoto.exists():
-        remoto.mkdir(parents=True, exist_ok=True)
-        _git(remoto, "init", "--bare")
+    remoto_codigo = tmp_path / "remoto_codigo_publico.git"
+    remoto_datos = tmp_path / "remoto_datos_privado.git"
+    if not remoto_codigo.exists():
+        remoto_codigo.mkdir(parents=True, exist_ok=True)
+        _git(remoto_codigo, "init", "--bare")
 
         seed = tmp_path / "_seed"
         seed.mkdir(parents=True, exist_ok=True)
@@ -60,16 +61,20 @@ def _init_remoto_local_y_runner(tmp_path: Path, nombre_runner: str = "runner_1")
         _git(seed, "add", "README.md")
         _git(seed, "commit", "-m", "init main")
         _git(seed, "branch", "-M", "main")
-        _git(seed, "remote", "add", "origin", str(remoto))
+        _git(seed, "remote", "add", "origin", str(remoto_codigo))
         _git(seed, "push", "-u", "origin", "main")
 
+    if not remoto_datos.exists():
+        remoto_datos.mkdir(parents=True, exist_ok=True)
+        _git(remoto_datos, "init", "--bare")
+
     runner = tmp_path / nombre_runner
-    _git(tmp_path, "clone", str(remoto), str(runner))
+    _git(tmp_path, "clone", str(remoto_codigo), str(runner))
     _git(runner, "config", "user.name", "Test Bot")
     _git(runner, "config", "user.email", "bot@local")
     (runner / "informes" / "pronosticos").mkdir(parents=True, exist_ok=True)
     (runner / "informes" / "evaluacion").mkdir(parents=True, exist_ok=True)
-    return remoto, runner
+    return remoto_datos, runner
 
 
 def _entrada_pre_falsa(id_trabajo: str, id_partido: str, partido: str, fecha: str) -> dict:
@@ -118,8 +123,8 @@ def test_ronda13_conflicto_push_reconstruye_ledger_desde_remoto(tmp_path):
     remoto, runner_a = _init_remoto_local_y_runner(tmp_path, "runner_a")
     _, runner_b = _init_remoto_local_y_runner(tmp_path, "runner_b")
 
-    cfg_a = pp.ConfigPersistencia(workspace_dir=runner_a, remote="origin", rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
-    cfg_b = pp.ConfigPersistencia(workspace_dir=runner_b, remote="origin", rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
+    cfg_a = pp.ConfigPersistencia(workspace_dir=runner_a, remote="datos", remote_url=str(remoto), rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
+    cfg_b = pp.ConfigPersistencia(workspace_dir=runner_b, remote="datos", remote_url=str(remoto), rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
 
     # Runner A empuja partido 1
     rel_1 = _escribir_snapshot_falso(runner_a, "job_001", "P001", "Equipo A", "Equipo B", "2026-11-18")
@@ -175,7 +180,7 @@ def test_ronda13_conflicto_push_reconstruye_ledger_desde_remoto(tmp_path):
 
 def test_ronda13_cancelacion_a_mitad_sigterm_drena_y_persiste(tmp_path, monkeypatch):
     remoto, runner = _init_remoto_local_y_runner(tmp_path, "runner_sig")
-    cfg = pp.ConfigPersistencia(workspace_dir=runner, remote="origin", rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
+    cfg = pp.ConfigPersistencia(workspace_dir=runner, remote="datos", remote_url=str(remoto), rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
     cola = pp.ColaPersistenciaGit(cfg)
 
     monkeypatch.setattr(bi, "BASE_DIR", runner)
@@ -229,7 +234,7 @@ def test_ronda13_cancelacion_a_mitad_sigterm_drena_y_persiste(tmp_path, monkeypa
 
 def test_ronda13_reinicio_completo_y_evaluar_tras_reinicio(tmp_path, monkeypatch):
     remoto, runner_1 = _init_remoto_local_y_runner(tmp_path, "runner_1")
-    cfg_1 = pp.ConfigPersistencia(workspace_dir=runner_1, remote="origin", rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
+    cfg_1 = pp.ConfigPersistencia(workspace_dir=runner_1, remote="datos", remote_url=str(remoto), rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
 
     # Datos reales de tests/fixtures/ronda5_real_fixtures.json recortados para un partido pre-partido determinista
     fix_path = Path(ROOT) / "tests" / "fixtures" / "ronda5_real_fixtures.json"
@@ -298,7 +303,7 @@ def test_ronda13_reinicio_completo_y_evaluar_tras_reinicio(tmp_path, monkeypatch
     # Reinicio: runner_2 arranca limpio solo con checkout de main e hidrata desde remoto
     _, runner_2 = _init_remoto_local_y_runner(tmp_path, "runner_2")
     assert not (runner_2 / "informes" / "pronosticos" / "r13_restart_it_fr.json").exists()
-    cfg_2 = pp.ConfigPersistencia(workspace_dir=runner_2, remote="origin", rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
+    cfg_2 = pp.ConfigPersistencia(workspace_dir=runner_2, remote="datos", remote_url=str(remoto), rama_datos="produccion-datos", habilitada=True, backoff_base_s=0.02)
     hid = pp.hidratar_desde_remoto_datos(cfg_2)
     assert hid["rama_existe"] is True
     assert hid["n_pronosticos_hidratados"] == 1
@@ -419,7 +424,7 @@ def test_ronda13_reinicio_completo_y_evaluar_tras_reinicio(tmp_path, monkeypatch
 
 def test_ronda13_workflow_prueba_sin_telegram_y_bot_24_7_intacto(tmp_path):
     remoto, runner = _init_remoto_local_y_runner(tmp_path, "runner_smoke")
-    res_smoke = pp.ejecutar_smoke_prueba(runner, remote="origin", rama_pruebas="pruebas-persistencia-datos")
+    res_smoke = pp.ejecutar_smoke_prueba(runner, remote="datos", remote_url=str(remoto), rama_pruebas="pruebas-persistencia-datos")
     assert res_smoke["ok"] is True
     assert res_smoke["rama_pruebas"] == "pruebas-persistencia-datos"
 
@@ -452,7 +457,8 @@ def test_ronda13_workflow_prueba_sin_telegram_y_bot_24_7_intacto(tmp_path):
     assert "bot-telegram-24-7" not in wf_test
     assert "TELEGRAM" not in wf_test
     assert "timeout -k 60 285m" in wf_test
-    assert "contents: write" in wf_test
+    assert "contents: read" in wf_test
+    assert "contents: write" not in wf_test
 
 
 def test_ronda13_none_no_se_vuelve_cero_y_token_censurado(tmp_path):

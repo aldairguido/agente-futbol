@@ -27,6 +27,7 @@ import os
 from pathlib import Path
 import queue
 import random
+import re
 import shutil
 import stat
 import subprocess
@@ -43,6 +44,7 @@ RUTA_REGISTRO_EVAL_REL = "informes/evaluacion/registro_evaluaciones.json"
 DIR_PRONOSTICOS_REL = "informes/pronosticos"
 DIR_EVALUACION_REL = "informes/evaluacion"
 DIR_EVENTOS_REL = "informes/evaluacion/eventos"
+RAMAS_DEFECTO_PROHIBIDAS = frozenset({"main", "master", "principal"})
 
 
 def persistencia_activa() -> bool:
@@ -51,12 +53,71 @@ def persistencia_activa() -> bool:
     return val in ("1", "true", "si", "sí", "yes", "on")
 
 
+def normalizar_url_git(url: str | None) -> str:
+    """Normaliza URLs HTTPS/SSH o rutas locales para comparar equivalencia con `origin`."""
+    raw = str(url or "").strip()
+    if not raw:
+        return ""
+    m_ssh = re.match(r"^(?:[^@/\s]+@)?([A-Za-z0-9._-]+):(.+)$", raw)
+    if m_ssh and not re.match(r"^[A-Za-z]:[\\/]", raw) and "://" not in raw:
+        host = m_ssh.group(1).lower()
+        path = m_ssh.group(2).strip("/")
+        if path.lower().endswith(".git"):
+            path = path[:-4]
+        return f"{host}/{path.lower()}"
+    if "://" in raw:
+        p = urlsplit(raw)
+        host = (p.hostname or p.netloc.split("@")[-1]).lower()
+        port = f":{p.port}" if p.port else ""
+        path = p.path.strip("/")
+        if path.lower().endswith(".git"):
+            path = path[:-4]
+        return f"{host}{port}/{path.lower()}".rstrip("/")
+    try:
+        return str(Path(raw).resolve()).replace("\\", "/").rstrip("/").lower()
+    except OSError:
+        return raw.replace("\\", "/").rstrip("/").lower()
+
+
+def obtener_url_origin(ws: Path | str) -> str:
+    """Obtiene la URL configurada para `origin` en `ws`, o cadena vacía si no existe."""
+    cp = subprocess.run(
+        ["git", "remote", "get-url", "origin"],
+        cwd=str(ws),
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+        check=False,
+    )
+    return cp.stdout.strip() if cp.returncode == 0 else ""
+
+
+def validar_rama_datos(
+    rama_datos: str | None,
+    *,
+    rama_defecto_remota: str | None = None,
+) -> str:
+    """Bloquea el uso de ramas por defecto (`main`, `master`, `principal` o HEAD remota)."""
+    rama = str(rama_datos or "").strip()
+    if not rama:
+        raise ValueError("Rama de datos vacía o inválida.")
+    rl = rama.lower()
+    if rl in RAMAS_DEFECTO_PROHIBIDAS:
+        raise ValueError(f"La rama por defecto {rama!r} está prohibida como rama de datos.")
+    if rama_defecto_remota and rl == str(rama_defecto_remota).strip().lower():
+        raise ValueError(
+            f"La rama {rama!r} coincide con la rama por defecto remota {rama_defecto_remota!r} y está prohibida."
+        )
+    return rama
+
+
 @dataclass
 class ConfigPersistencia:
     workspace_dir: Path
     remote: str = "origin"
     rama_datos: str = "produccion-datos"
-    remote_url: str = ""
+    remote_url: str = field(default="", repr=False)
     remote_token: str = field(default="", repr=False)
     worktree_dir: Path | None = None
     habilitada: bool = False
@@ -65,25 +126,72 @@ class ConfigPersistencia:
     author_name: str = "Agente Futbol Bot"
     author_email: str = "bot@agente-futbol.local"
     archivos_extra_rel: tuple[str, ...] = field(default_factory=tuple)
+    codigo_estado: str = "inactiva"
+    motivo_estado: str = ""
 
     @classmethod
     def desde_entorno(cls, workspace_dir: Path | str | None = None) -> "ConfigPersistencia":
         raiz = Path(workspace_dir) if workspace_dir else Path(__file__).resolve().parent
-        return cls(
+        activa_env = persistencia_activa()
+        r_url = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
+        r_tok = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
+        rama = os.getenv("PERSISTENCIA_RAMA_DATOS", "produccion-datos").strip() or "produccion-datos"
+        wt_s = os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip()
+
+        cfg = cls(
             workspace_dir=raiz,
             remote=os.getenv("PERSISTENCIA_REMOTE", "origin").strip() or "origin",
-            rama_datos=os.getenv("PERSISTENCIA_RAMA_DATOS", "produccion-datos").strip() or "produccion-datos",
-            remote_url=os.getenv("PERSISTENCIA_REMOTO_URL", "").strip(),
-            remote_token=os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip(),
-            worktree_dir=(
-                Path(os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip())
-                if os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip()
-                else None
-            ),
-            habilitada=persistencia_activa(),
+            rama_datos=rama,
+            remote_url=r_url,
+            remote_token=r_tok,
+            worktree_dir=Path(wt_s) if wt_s else None,
+            habilitada=activa_env,
             max_reintentos_push=max(1, int(os.getenv("PERSISTENCIA_MAX_REINTENTOS", "4") or "4")),
             backoff_base_s=max(0.02, float(os.getenv("PERSISTENCIA_BACKOFF_S", "0.35") or "0.35")),
         )
+        if not activa_env:
+            cfg.habilitada = False
+            cfg.codigo_estado = "inactiva"
+            cfg.motivo_estado = "PERSISTENCIA_PRODUCCION_ACTIVA desactivada en entorno."
+            return cfg
+
+        ok, cod, msg = validar_config_persistencia(cfg)
+        if not ok:
+            cfg.habilitada = False
+            cfg.codigo_estado = cod
+            cfg.motivo_estado = msg
+            print(f"[PERSISTENCIA] ⚠️ Desactivada/rechazada ({cod}): {msg}")
+        else:
+            cfg.habilitada = True
+            cfg.codigo_estado = "activa"
+            cfg.motivo_estado = ""
+        return cfg
+
+
+def validar_config_persistencia(cfg: ConfigPersistencia) -> tuple[bool, str, str]:
+    """
+    Exige remoto externo dedicado (`remote_url` obligatorio, distinto de `origin`) y
+    rama de datos no por defecto. Nunca permite escribir datos en el repo público.
+    """
+    url_cfg = (cfg.remote_url or "").strip()
+    if not url_cfg:
+        return (
+            False,
+            "desactivada_falta_remoto_url",
+            "Falta PERSISTENCIA_REMOTO_URL; producción nunca escribe datos en el repo público ni usa GITHUB_TOKEN.",
+        )
+    origin_url = obtener_url_origin(cfg.workspace_dir)
+    if origin_url and normalizar_url_git(url_cfg) == normalizar_url_git(origin_url):
+        return (
+            False,
+            "rechazada_url_igual_origin",
+            "PERSISTENCIA_REMOTO_URL coincide con 'origin'; rechazado para no escribir datos en el repo público.",
+        )
+    try:
+        validar_rama_datos(cfg.rama_datos)
+    except ValueError as exc:
+        return (False, "rechazada_rama_prohibida", str(exc))
+    return (True, "ok", "")
 
 
 def escribir_atomico_texto(ruta: Path | str, contenido: str) -> Path:
@@ -250,11 +358,21 @@ def reconstruir_ledger_desde_remoto(
             pass
 
 
-def _censurar_secreto(texto: str, token: str | None) -> str:
+def _censurar_secreto(
+    texto: str,
+    token: str | None = None,
+    remote_url: str | None = None,
+) -> str:
     s = str(texto or "")
     tok = (token or "").strip()
     if tok and tok in s:
         s = s.replace(tok, "***")
+    s = re.sub(r"(https?://)[^/@\s]+@", r"\1***@", s)
+    rurl = (remote_url or "").strip()
+    if rurl and rurl.lower().startswith(("http://", "https://")):
+        s = s.replace(rurl, "[remoto-datos]")
+        if rurl.endswith(".git"):
+            s = s.replace(rurl[:-4], "[remoto-datos]")
     return s
 
 
@@ -272,15 +390,38 @@ def _run_git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedP
 
 def resolver_objetivo_remoto(ws: Path, cfg: ConfigPersistencia) -> tuple[str, str]:
     """
-    Resuelve `(alias_remoto, url_efectiva)` sin hardcodear repositorios:
-    prioriza `cfg.remote_url` (`PERSISTENCIA_REMOTO_URL`) sobre `git remote get-url <remote>`.
+    Resuelve `(alias_remoto, url_efectiva)` exigiendo remoto dedicado distinto de `origin`.
     """
-    url_cfg = (cfg.remote_url or "").strip()
-    if url_cfg:
-        return (cfg.remote or "origin"), url_cfg
-    cp_url = _run_git(ws, "remote", "get-url", cfg.remote, check=False)
-    url_loc = cp_url.stdout.strip() if (cp_url.returncode == 0 and cp_url.stdout.strip()) else str(ws)
-    return (cfg.remote or "origin"), url_loc
+    ok, _, msg = validar_config_persistencia(cfg)
+    if not ok:
+        raise ValueError(msg)
+    return (cfg.remote or "datos"), (cfg.remote_url or "").strip()
+
+
+def detectar_rama_defecto_remota(
+    ws: Path,
+    cfg: ConfigPersistencia,
+    target_url: str,
+) -> tuple[bool, str | None, str | None]:
+    """Consulta `HEAD` remoto con auth; devuelve `(ok, rama_defecto, error_censurado)`."""
+    cp = _run_git_con_auth(
+        ws,
+        cfg,
+        "ls-remote",
+        "--symref",
+        target_url,
+        "HEAD",
+        target_url=target_url,
+        check=False,
+    )
+    if cp.returncode != 0:
+        err = _censurar_secreto((cp.stderr or cp.stdout or "fallo ls-remote HEAD").strip(), cfg.remote_token, target_url)
+        return (False, None, err)
+    for ln in (cp.stdout or "").splitlines():
+        m = re.match(r"^ref:\s+refs/heads/([^\s]+)\s+HEAD$", ln.strip())
+        if m:
+            return (True, m.group(1).strip(), None)
+    return (True, None, None)
 
 
 def _crear_script_askpass(dir_tmp: Path) -> Path:
@@ -346,8 +487,8 @@ def _run_git_con_auth(
         cp = subprocess.CompletedProcess(
             args=cp.args,
             returncode=cp.returncode,
-            stdout=_censurar_secreto(cp.stdout, tok),
-            stderr=_censurar_secreto(cp.stderr, tok),
+            stdout=_censurar_secreto(cp.stdout, tok, target_url),
+            stderr=_censurar_secreto(cp.stderr, tok, target_url),
         )
         if check and cp.returncode != 0:
             raise subprocess.CalledProcessError(cp.returncode, ["git", *args], output=cp.stdout, stderr=cp.stderr)
@@ -393,28 +534,74 @@ def _listar_archivos_git_ref(repo_dir: Path, ref: str, prefix: str) -> list[str]
 
 def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
     """
-    Al iniciar un runner limpio, trae de `<remoto>/<rama_datos>` todos los snapshots,
-    evaluaciones, eventos y reconstruye `ledger_oos.jsonl` desde la copia remota.
+    Al iniciar un runner limpio, trae del remoto privado (`cfg.remote_url`) en `cfg.rama_datos`
+    los snapshots, evaluaciones, eventos y reconstruye `ledger_oos.jsonl` desde la copia remota.
+    Distingue explícitamente un remoto válido sin `rama_datos` (`ok=True, rama_existe=False`)
+    de un fallo de autenticación/red (`ok=False`).
     """
+    ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
+    if not ok_cfg:
+        return {
+            "ok": False,
+            "codigo_error": cod_cfg,
+            "error": msg_cfg,
+            "rama_existe": None,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+        }
+
     ws = cfg.workspace_dir
     _, target_url = resolver_objetivo_remoto(ws, cfg)
-    if (cfg.remote_url or "").strip():
-        ref_full = f"refs/persistencia_remoto/{cfg.rama_datos}"
-        objetivo = target_url
-    else:
-        ref_full = f"refs/remotes/{cfg.remote}/{cfg.rama_datos}"
-        objetivo = cfg.remote
-    cp_fetch = _run_git_con_auth(
+    ok_head, rama_def_rem, err_head = detectar_rama_defecto_remota(ws, cfg, target_url)
+    if not ok_head:
+        return {
+            "ok": False,
+            "codigo_error": "error_remoto_auth_o_red",
+            "error": err_head or "No se pudo consultar el remoto de datos.",
+            "rama_existe": None,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+        }
+    try:
+        validar_rama_datos(cfg.rama_datos, rama_defecto_remota=rama_def_rem)
+    except ValueError as exc_r:
+        return {
+            "ok": False,
+            "codigo_error": "rechazada_rama_prohibida",
+            "error": str(exc_r),
+            "rama_existe": None,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+        }
+
+    cp_ls = _run_git_con_auth(
         ws,
         cfg,
-        "fetch",
-        objetivo,
-        f"refs/heads/{cfg.rama_datos}:{ref_full}",
+        "ls-remote",
+        "--heads",
+        target_url,
+        f"refs/heads/{cfg.rama_datos}",
         target_url=target_url,
         check=False,
     )
-    cp_rev = _run_git(ws, "rev-parse", "--verify", ref_full, check=False)
-    if cp_fetch.returncode != 0 or cp_rev.returncode != 0:
+    if cp_ls.returncode != 0:
+        return {
+            "ok": False,
+            "codigo_error": "error_remoto_auth_o_red",
+            "error": _censurar_secreto((cp_ls.stderr or cp_ls.stdout or "fallo ls-remote").strip(), cfg.remote_token, target_url),
+            "rama_existe": None,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+        }
+    if not (cp_ls.stdout or "").strip():
         return {
             "ok": True,
             "rama_existe": False,
@@ -422,6 +609,29 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
             "n_evaluaciones_hidratadas": 0,
             "n_eventos_hidratados": 0,
             "ledger": {"ok": True, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+        }
+
+    ref_full = f"refs/persistencia_remoto/{cfg.rama_datos}"
+    cp_fetch = _run_git_con_auth(
+        ws,
+        cfg,
+        "fetch",
+        target_url,
+        f"refs/heads/{cfg.rama_datos}:{ref_full}",
+        target_url=target_url,
+        check=False,
+    )
+    cp_rev = _run_git(ws, "rev-parse", "--verify", ref_full, check=False)
+    if cp_fetch.returncode != 0 or cp_rev.returncode != 0:
+        return {
+            "ok": False,
+            "codigo_error": "error_fetch_remoto",
+            "error": _censurar_secreto((cp_fetch.stderr or cp_fetch.stdout or "fallo fetch").strip(), cfg.remote_token, target_url),
+            "rama_existe": True,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
         }
 
     n_pron = 0
@@ -541,6 +751,10 @@ def _preparar_staging_git(cfg: ConfigPersistencia, stage_dir: Path) -> bool:
 
     ws = cfg.workspace_dir
     _, remote_url = resolver_objetivo_remoto(ws, cfg)
+    ok_head, rama_def_rem, err_head = detectar_rama_defecto_remota(ws, cfg, remote_url)
+    if not ok_head:
+        raise RuntimeError(err_head or "No se pudo consultar el remoto de datos.")
+    validar_rama_datos(cfg.rama_datos, rama_defecto_remota=rama_def_rem)
 
     _run_git(stage_dir, "init")
     _run_git(stage_dir, "config", "user.name", cfg.author_name)
@@ -572,12 +786,17 @@ def sincronizar_y_push_datos(
     entradas_ledger: list[dict[str, Any]] | None = None,
     mensaje_commit: str | None = None,
     simular_antes_de_push: Callable[[int], None] | None = None,
+    solo_archivos_indicados: bool = False,
 ) -> dict[str, Any]:
     """
-    Ejecuta en un repositorio staging aislado:
-      fetch remoto -> reconstruir ledger desde copia remota -> copiar archivos ->
-      commit -> push con reintentos ante conflictos.
+    Ejecuta en un repositorio staging aislado contra `cfg.remote_url`:
+      validar remoto/rama -> fetch remoto -> reconstruir ledger desde copia remota ->
+      copiar archivos -> commit -> push con reintentos ante conflictos.
     """
+    ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
+    if not ok_cfg:
+        return {"ok": False, "pushed": False, "codigo_error": cod_cfg, "errores": [msg_cfg]}
+
     ws = cfg.workspace_dir
     base_tmp = cfg.worktree_dir if cfg.worktree_dir is not None else Path(tempfile.gettempdir()) / "agente_futbol_persistencia"
     base_tmp.mkdir(parents=True, exist_ok=True)
@@ -590,12 +809,13 @@ def sincronizar_y_push_datos(
 
             # 1. Copiar archivos nuevos/actualizados de pronósticos, evaluación y eventos
             candidatos_rel: set[str] = set()
-            for d_rel in (DIR_PRONOSTICOS_REL, DIR_EVALUACION_REL, DIR_EVENTOS_REL):
-                src_dir = ws / d_rel
-                if src_dir.exists():
-                    for p in src_dir.glob("*"):
-                        if p.is_file() and (p.suffix in (".json", ".md")) and p.name != "registro_evaluaciones.json":
-                            candidatos_rel.add(p.relative_to(ws).as_posix())
+            if not solo_archivos_indicados:
+                for d_rel in (DIR_PRONOSTICOS_REL, DIR_EVALUACION_REL, DIR_EVENTOS_REL):
+                    src_dir = ws / d_rel
+                    if src_dir.exists():
+                        for p in src_dir.glob("*"):
+                            if p.is_file() and (p.suffix in (".json", ".md")) and p.name != "registro_evaluaciones.json":
+                                candidatos_rel.add(p.relative_to(ws).as_posix())
             for r_ex in (archivos_rel or []):
                 candidatos_rel.add(Path(r_ex).as_posix())
             for r_cfg in cfg.archivos_extra_rel:
@@ -664,7 +884,7 @@ def sincronizar_y_push_datos(
                     "ledger": {k: v for k, v in res_led.items() if k != "contenido"},
                 }
 
-            err_txt = _censurar_secreto((cp_push.stderr or cp_push.stdout or "push fallido").strip(), cfg.remote_token)
+            err_txt = _censurar_secreto((cp_push.stderr or cp_push.stdout or "push fallido").strip(), cfg.remote_token, remote_url)
             errores.append(f"intento {intento}: {err_txt}")
             if intento < cfg.max_reintentos_push:
                 time.sleep(cfg.backoff_base_s * intento + random.uniform(0.0, cfg.backoff_base_s * 0.5))
@@ -685,8 +905,14 @@ class ColaPersistenciaGit:
     snapshots y actualizaciones de `ledger_oos.jsonl` a la rama de datos.
     """
 
-    def __init__(self, cfg: ConfigPersistencia) -> None:
+    def __init__(
+        self,
+        cfg: ConfigPersistencia,
+        *,
+        on_resultado: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self.cfg = cfg
+        self._on_resultado = on_resultado
         self._q: queue.Queue[dict[str, Any] | None] = queue.Queue()
         self._lock = threading.Lock()
         self._worker: threading.Thread | None = None
@@ -719,9 +945,11 @@ class ColaPersistenciaGit:
                     entradas_ledger=item.get("entradas_ledger"),
                     mensaje_commit=item.get("mensaje_commit"),
                     simular_antes_de_push=item.get("simular_antes_de_push"),
+                    solo_archivos_indicados=bool(item.get("solo_archivos_indicados", False)),
                 )
             except Exception as exc:
-                res = {"ok": False, "pushed": False, "errores": [f"{type(exc).__name__}: {exc}"]}
+                err_c = _censurar_secreto(f"{type(exc).__name__}: {exc}", self.cfg.remote_token, self.cfg.remote_url)
+                res = {"ok": False, "pushed": False, "errores": [err_c]}
             finally:
                 with self._lock:
                     item["resultado"] = res
@@ -730,6 +958,11 @@ class ColaPersistenciaGit:
                         "id_trabajo": item.get("id_trabajo"),
                         **res,
                     })
+                if self._on_resultado is not None:
+                    try:
+                        self._on_resultado(dict(res))
+                    except Exception:
+                        pass
                 if ev_done is not None:
                     ev_done.set()
                 self._q.task_done()
@@ -743,6 +976,7 @@ class ColaPersistenciaGit:
         entradas_ledger: list[dict[str, Any]] | None = None,
         mensaje_commit: str | None = None,
         simular_antes_de_push: Callable[[int], None] | None = None,
+        solo_archivos_indicados: bool = False,
         esperar: bool = False,
         timeout: float = 30.0,
     ) -> dict[str, Any]:
@@ -758,6 +992,7 @@ class ColaPersistenciaGit:
             "entradas_ledger": list(entradas_ledger or []),
             "mensaje_commit": mensaje_commit,
             "simular_antes_de_push": simular_antes_de_push,
+            "solo_archivos_indicados": solo_archivos_indicados,
             "evento_done": ev,
             "resultado": None,
         }
@@ -784,10 +1019,147 @@ class ColaPersistenciaGit:
         return not self._worker.is_alive()
 
 
+def inicializar_produccion_limpia(
+    workspace_dir: Path | str | None = None,
+    *,
+    remote: str = "datos",
+    remote_url: str | None = None,
+    remote_token: str | None = None,
+    rama_datos: str = "produccion-datos",
+) -> dict[str, Any]:
+    """
+    Crea de forma idempotente la rama `produccion-datos` en el remoto privado externo
+    con un `ledger_oos.jsonl` limpio que contenga únicamente entradas reales válidas
+    (TB, IF y Colombia-Chile), excluyendo cualquier registro de prueba sintético.
+    Si la rama ya existe en el remoto, no la sobrescribe.
+    """
+    ws = Path(workspace_dir) if workspace_dir else Path(__file__).resolve().parent
+    rama_norm = (rama_datos or "").strip()
+    if rama_norm != "produccion-datos":
+        raise ValueError(f"La rama de producción debe ser 'produccion-datos', recibido: {rama_datos!r}")
+
+    r_url = (remote_url if remote_url is not None else os.getenv("PERSISTENCIA_REMOTO_URL", "")).strip()
+    r_tok = (remote_token if remote_token is not None else os.getenv("PERSISTENCIA_REMOTO_TOKEN", "")).strip()
+    cfg = ConfigPersistencia(
+        workspace_dir=ws,
+        remote=remote,
+        rama_datos=rama_norm,
+        remote_url=r_url,
+        remote_token=r_tok,
+        habilitada=True,
+    )
+    ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
+    if not ok_cfg:
+        return {"ok": False, "codigo_error": cod_cfg, "error": msg_cfg}
+
+    ok_head, rama_def_rem, err_head = detectar_rama_defecto_remota(ws, cfg, cfg.remote_url)
+    if not ok_head:
+        return {"ok": False, "codigo_error": "error_remoto_auth_o_red", "error": err_head or "Fallo remoto"}
+    validar_rama_datos(rama_norm, rama_defecto_remota=rama_def_rem)
+
+    cp_ls = _run_git_con_auth(
+        ws,
+        cfg,
+        "ls-remote",
+        "--heads",
+        cfg.remote_url,
+        f"refs/heads/{rama_norm}",
+        target_url=cfg.remote_url,
+        check=False,
+    )
+    if cp_ls.returncode != 0:
+        return {
+            "ok": False,
+            "codigo_error": "error_remoto_auth_o_red",
+            "error": _censurar_secreto((cp_ls.stderr or cp_ls.stdout or "fallo ls-remote").strip(), cfg.remote_token, cfg.remote_url),
+        }
+    rem_line = (cp_ls.stdout or "").strip()
+    if rem_line:
+        return {
+            "ok": True,
+            "creada": False,
+            "ya_existia": True,
+            "rama": rama_norm,
+            "remoto_sha": rem_line.split()[0],
+        }
+
+    loc_ledger = ws / RUTA_LEDGER_REL
+    if not loc_ledger.exists():
+        return {"ok": False, "codigo_error": "sin_ledger_base", "error": f"No existe {RUTA_LEDGER_REL}"}
+    entries_raw = _parsear_jsonl(loc_ledger.read_text(encoding="utf-8"))
+    limpias = [
+        e for e in entries_raw
+        if not e.get("es_registro_prueba_mentira")
+        and str(e.get("estado_registro") or "").strip().lower() != "simulado_prueba"
+        and str(e.get("tipo_partido") or "").strip().lower() != "simulado_prueba"
+    ]
+    if not limpias:
+        return {"ok": False, "codigo_error": "ledger_limpio_vacio", "error": "El ledger limpio quedó vacío."}
+
+    import evaluacion_pronosticos as ep
+    stage_dir = Path(tempfile.mkdtemp(prefix=f"init_prod_{os.getpid()}_"))
+    try:
+        _run_git(stage_dir, "init")
+        _run_git(stage_dir, "config", "user.name", cfg.author_name)
+        _run_git(stage_dir, "config", "user.email", cfg.author_email)
+        _run_git(stage_dir, "checkout", "--orphan", rama_norm)
+        _run_git(stage_dir, "remote", "add", cfg.remote, cfg.remote_url)
+
+        dst_ledger = stage_dir / RUTA_LEDGER_REL
+        fd_tmp, tmp_src = tempfile.mkstemp(prefix=".clean_src_", suffix=".jsonl")
+        os.close(fd_tmp)
+        try:
+            escribir_atomico_texto(
+                tmp_src,
+                "\n".join(json.dumps(r, ensure_ascii=False, sort_keys=True) for r in limpias) + "\n",
+            )
+            ver_clean = ep.verificar_cadena_ledger_oos(tmp_src)
+            if not ver_clean.get("ok"):
+                raise ValueError(f"Ledger base limpio inválido: {ver_clean.get('errores')}")
+            escribir_atomico_texto(dst_ledger, Path(tmp_src).read_text(encoding="utf-8"))
+        finally:
+            try:
+                Path(tmp_src).unlink(missing_ok=True)
+            except OSError:
+                pass
+
+        _run_git(stage_dir, "add", RUTA_LEDGER_REL)
+        _run_git(stage_dir, "commit", "-m", "datos(init): crear rama produccion-datos con ledger limpio (TB, IF, Colombia vs Chile)")
+        cp_push = _run_git_con_auth(
+            stage_dir,
+            cfg,
+            "push",
+            cfg.remote,
+            f"HEAD:refs/heads/{rama_norm}",
+            target_url=cfg.remote_url,
+            check=False,
+        )
+        if cp_push.returncode != 0:
+            return {
+                "ok": False,
+                "codigo_error": "error_push_init",
+                "error": _censurar_secreto((cp_push.stderr or cp_push.stdout or "fallo push").strip(), cfg.remote_token, cfg.remote_url),
+            }
+        commit_sha = _run_git(stage_dir, "rev-parse", "HEAD", check=True).stdout.strip()
+        return {
+            "ok": True,
+            "creada": True,
+            "ya_existia": False,
+            "rama": rama_norm,
+            "commit_sha": commit_sha,
+            "archivos_escritos": [RUTA_LEDGER_REL],
+            "n_entradas": int(ver_clean.get("entradas") or 0),
+            "ultimo_sha256": ver_clean.get("ultimo_sha256"),
+            "partidos": [str(r.get("partido") or "") for r in limpias],
+        }
+    finally:
+        _rmtree_seguro(stage_dir)
+
+
 def ejecutar_smoke_prueba(
     workspace_dir: Path | str | None = None,
     *,
-    remote: str = "origin",
+    remote: str = "datos",
     remote_url: str | None = None,
     remote_token: str | None = None,
     rama_pruebas: str = "pruebas-persistencia-datos",
@@ -796,10 +1168,11 @@ def ejecutar_smoke_prueba(
     """
     Escribe un registro sintético claramente etiquetado (`es_registro_prueba_mentira=True`,
     `tipo_partido='simulado_prueba'`, `entra_promedios=False`, `entra_calibracion=False`)
-    en una ruta de pruebas y, si `solo_local_sin_push=False`, lo sincroniza en `rama_pruebas`.
+    en una ruta de pruebas y, si `solo_local_sin_push=False`, lo sincroniza en `rama_pruebas`
+    del remoto externo privado (`PERSISTENCIA_REMOTO_URL`, nunca `origin`).
     """
-    rama_norm = (rama_pruebas or "").strip()
-    if not rama_norm or rama_norm in ("main", "master", "produccion-datos"):
+    rama_norm = validar_rama_datos(rama_pruebas)
+    if rama_norm == "produccion-datos":
         raise ValueError(f"Rama de pruebas inválida o protegida: {rama_pruebas!r}")
     ws = Path(workspace_dir) if workspace_dir else Path(__file__).resolve().parent
     ts = datetime.now(timezone.utc)
@@ -864,14 +1237,27 @@ def ejecutar_smoke_prueba(
         remote_token=r_tok,
         habilitada=True,
     )
+    ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
+    if not ok_cfg:
+        return {"ok": False, "codigo_error": cod_cfg, "error": msg_cfg}
+
     hid = hidratar_desde_remoto_datos(cfg)
+    if not hid.get("ok"):
+        return {
+            "ok": False,
+            "id_trabajo": id_trabajo,
+            "rama_pruebas": rama_norm, "remoto_configurado": "url_externa_env",
+            "hidratacion": hid,
+            "push": {"ok": False, "pushed": False, "errores": [hid.get("error") or "fallo hidratacion"]},
+        }
     cola = ColaPersistenciaGit(cfg)
     res_push = cola.encolar(
         tipo="smoke_prueba",
         id_trabajo=id_trabajo,
         archivos_rel=[rel_snap],
         entradas_ledger=[entrada_fake],
-        mensaje_commit=f"test(r14): registro smoke ficticio {id_trabajo} [skip ci]",
+        mensaje_commit=f"test(r15): registro smoke ficticio {id_trabajo} [skip ci]",
+        solo_archivos_indicados=True,
         esperar=True,
         timeout=60.0,
     )
@@ -879,8 +1265,8 @@ def ejecutar_smoke_prueba(
     return {
         "ok": bool(res_push.get("ok")),
         "id_trabajo": id_trabajo,
-        "rama_pruebas": rama_norm,
-        "remoto_configurado": "url_externa_env" if r_url else remote,
+        "rama_pruebas": rama_norm, "remoto_configurado": "url_externa_env",
+        "archivos_escritos": [rel_snap, RUTA_LEDGER_REL],
         "hidratacion": hid,
         "push": res_push,
     }
@@ -889,16 +1275,26 @@ def ejecutar_smoke_prueba(
 def _main_cli() -> int:
     parser = argparse.ArgumentParser(description="Utilidad CLI de persistencia Git")
     parser.add_argument("--smoke-prueba", action="store_true", help="Ejecuta prueba de escritura ficticia en rama de pruebas.")
+    parser.add_argument("--inicializar-produccion-limpia", action="store_true", help="Crea produccion-datos en el remoto privado con el ledger limpio (sin registros de prueba).")
     parser.add_argument(
         "--rama-pruebas",
         default=os.getenv("PERSISTENCIA_RAMA_DATOS", "").strip() or "pruebas-persistencia-datos",
         help="Rama de pruebas destino.",
     )
-    parser.add_argument("--remote", default=os.getenv("PERSISTENCIA_REMOTE", "").strip() or "origin", help="Nombre del remoto Git.")
-    parser.add_argument("--remote-url", default=None, help="URL opcional del remoto de datos.")
+    parser.add_argument("--rama-produccion", default="produccion-datos", help="Rama de producción destino.")
+    parser.add_argument("--remote", default=os.getenv("PERSISTENCIA_REMOTE", "").strip() or "datos", help="Alias del remoto Git.")
+    parser.add_argument("--remote-url", default=None, help="URL opcional del remoto de datos (preferir PERSISTENCIA_REMOTO_URL).")
     parser.add_argument("--solo-local", action="store_true", help="No hace push; solo genera registro local de prueba.")
     args = parser.parse_args()
 
+    if args.inicializar_produccion_limpia:
+        out = inicializar_produccion_limpia(
+            remote=args.remote,
+            remote_url=args.remote_url,
+            rama_datos=args.rama_produccion,
+        )
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        return 0 if out.get("ok") else 1
     if args.smoke_prueba:
         out = ejecutar_smoke_prueba(
             remote=args.remote,

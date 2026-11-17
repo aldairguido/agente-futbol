@@ -132,11 +132,16 @@ def test_ronda14_workflow_prueba_disparadores_remoto_configurable_y_sin_hardcode
     assert "workflow_dispatch:" in wf
     assert "!contains(github.event.head_commit.message, '[skip ci]')" in wf
 
-    # Remoto configurable por variable o secreto (sin URL ni repo hardcodeado)
-    assert "vars.PERSISTENCIA_REMOTO_URL" in wf
+    # Remoto privado configurado únicamente vía secretos (nunca github.token, nunca vars, nunca repo hardcodeado)
     assert "secrets.PERSISTENCIA_REMOTO_URL" in wf
     assert "secrets.PERSISTENCIA_REMOTO_TOKEN" in wf
-    assert "vars.PERSISTENCIA_RAMA_DATOS" in wf
+    assert "vars.PERSISTENCIA_REMOTO_URL" not in wf
+    assert "github.token" not in wf
+    assert "GITHUB_TOKEN" not in wf
+    assert "contents: read" in wf
+    assert "contents: write" not in wf
+    assert "upload-artifact" not in wf
+    assert "--inicializar-produccion-limpia" in wf
     assert "github.com/" not in wf
     assert "aldairguido" not in wf
     assert "ghp_" not in wf

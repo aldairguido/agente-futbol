@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       rama_pruebas:
-        description: Rama dedicada de pruebas (nunca main ni produccion-datos)
+        description: Rama dedicada de pruebas en el repositorio privado de datos
         required: false
         default: pruebas-persistencia-datos
         type: string
@@ -17,17 +17,15 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   smoke_persistencia_datos:
     if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout completo del repositorio
+      - name: Checkout del repositorio público
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Configurar Python 3.11
         uses: actions/setup-python@v5
@@ -39,24 +37,24 @@ jobs:
           pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
           pip install --no-cache-dir -r requirements.txt
 
-      - name: Escribir registro ficticio append-only bajo timeout -k 60 285m (sin Telegram)
+      - name: Inicializar rama produccion-datos limpia en repo privado si no existe
         env:
           MPLBACKEND: "Agg"
           PYTHONIOENCODING: "utf-8"
           PERSISTENCIA_PRODUCCION_ACTIVA: "1"
-          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || vars.PERSISTENCIA_RAMA_DATOS || 'pruebas-persistencia-datos' }}
-          PERSISTENCIA_REMOTO_URL: ${{ vars.PERSISTENCIA_REMOTO_URL || secrets.PERSISTENCIA_REMOTO_URL }}
-          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN || github.token }}
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+        run: |
+          python -u -m persistencia_produccion --inicializar-produccion-limpia --rama-produccion produccion-datos
+
+      - name: Smoke test contra repositorio privado bajo timeout -k 60 285m (sin Telegram)
+        env:
+          MPLBACKEND: "Agg"
+          PYTHONIOENCODING: "utf-8"
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
         run: |
           mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
           timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}"
-
-      - name: Subir respaldo forense en Artefactos
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-persistencia-datos-${{ github.run_id }}
-          path: |
-            informes/evaluacion/ledger_oos.jsonl
-            informes/evaluacion/eventos/
-          retention-days: 14
