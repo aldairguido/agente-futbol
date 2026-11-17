@@ -3054,6 +3054,27 @@ def enviar_analisis(
         marcar_estado(id_trabajo, "envio_en_curso", {"tipo": "foto", "ruta": ruta_imagen})
         try:
             ids_telegram: list[Any] = []
+            fechas_telegram: list[int] = []
+            eventos_envio_telegram: list[dict[str, Any]] = []
+
+            def _registrar_respuesta_tg(etiqueta_parte: str, resp_tg: Any) -> None:
+                if not isinstance(resp_tg, dict):
+                    return
+                mid = resp_tg.get("message_id")
+                mdt = resp_tg.get("date")
+                if mid is not None:
+                    ids_telegram.append(mid)
+                if mdt is not None:
+                    try:
+                        fechas_telegram.append(int(mdt))
+                    except (TypeError, ValueError):
+                        pass
+                if mid is not None or mdt is not None:
+                    eventos_envio_telegram.append({
+                        "parte": etiqueta_parte,
+                        "message_id": mid,
+                        "message_date": int(mdt) if mdt is not None else None,
+                    })
 
             # 0) Análisis de texto detallado (3 párrafos) ANTES de enviar las imágenes
             texto_3p = (preparado.get("analisis_texto_3_parrafos") or "").strip()
@@ -3069,8 +3090,7 @@ def enviar_analisis(
                         encabezado_3p = adv_txt + f"🧠 ANÁLISIS CUANTITATIVO Y VEREDICTO DE VALOR — {eq_l} vs {eq_v}\n" + ("━" * 38) + "\n\n"
                         for parte_3p in partir_mensaje(encabezado_3p + texto_3p):
                             res_txt_3p = texto_sender(parte_3p, chat_id=chat_id)
-                            if isinstance(res_txt_3p, dict) and res_txt_3p.get("message_id") is not None:
-                                ids_telegram.append(res_txt_3p["message_id"])
+                            _registrar_respuesta_tg("texto_3_parrafos", res_txt_3p)
                     except Exception as e_txt_3p:
                         print(f"[SERVICIO MERCADOS] ⚠️ Aviso al enviar análisis de 3 párrafos: {e_txt_3p}")
 
@@ -3078,14 +3098,35 @@ def enviar_analisis(
             resultado = foto_sender(ruta_imagen, caption=caption, chat_id=chat_id)
 
             if preparado.get("abstenido"):
-                marcar_estado(id_trabajo, "envio_confirmado", {"tipo": "foto_abstencion", "ruta": ruta_imagen})
-                return {"enviado": True, "id_trabajo": id_trabajo, "estado": "abstenido_enviado", "rutas": preparado.get("rutas")}
+                _registrar_respuesta_tg("ticket_abstencion", resultado)
+                tg_env_abs = {
+                    "message_id": (eventos_envio_telegram[-1]["message_id"] if eventos_envio_telegram else (ids_telegram[-1] if ids_telegram else None)),
+                    "message_date": (fechas_telegram[-1] if fechas_telegram else None),
+                    "message_date_utc": (
+                        datetime.fromtimestamp(int(fechas_telegram[-1]), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                        if fechas_telegram else None
+                    ),
+                    "ids_telegram": ids_telegram,
+                    "eventos": eventos_envio_telegram,
+                }
+                marcar_estado(id_trabajo, "envio_confirmado", {
+                    "tipo": "foto_abstencion",
+                    "ruta": ruta_imagen,
+                    "ids_telegram": ids_telegram,
+                    "telegram_envio": tg_env_abs,
+                })
+                return {
+                    "enviado": True,
+                    "id_trabajo": id_trabajo,
+                    "estado": "abstenido_enviado",
+                    "rutas": preparado.get("rutas"),
+                    "ids_telegram": ids_telegram,
+                    "telegram_envio": tg_env_abs,
+                }
             if isinstance(resultado, dict):
                 if not resultado.get("ok", True):
                     raise RuntimeError(resultado.get("error") or "envío de foto no confirmado")
-                msg_id = resultado.get("message_id")
-                if msg_id is not None:
-                    ids_telegram.append(msg_id)
+                _registrar_respuesta_tg("ticket_principal", resultado)
             elif resultado is False:
                 raise RuntimeError("el adaptador de foto devolvió False")
 
@@ -3107,8 +3148,7 @@ def enviar_analisis(
                     if res_valor is False:
                         raise RuntimeError("el adaptador devolvió False para el Ticket de Valor")
                     ticket_valor_enviado = True
-                    if isinstance(res_valor, dict) and res_valor.get("message_id") is not None:
-                        ids_telegram.append(res_valor["message_id"])
+                    _registrar_respuesta_tg("ticket_valor", res_valor)
                 except Exception as e_val_send:
                     motivo_ticket_valor = f"{type(e_val_send).__name__}: {e_val_send}"
                     print(f"[SERVICIO MERCADOS] ⚠️ Ticket de Valor no enviado: {motivo_ticket_valor}")
@@ -3131,8 +3171,7 @@ def enviar_analisis(
                     if res_cuadro is False:
                         raise RuntimeError("el adaptador devolvió False para el cuadro")
                     cuadro_enviado = True
-                    if isinstance(res_cuadro, dict) and res_cuadro.get("message_id") is not None:
-                        ids_telegram.append(res_cuadro["message_id"])
+                    _registrar_respuesta_tg("cuadro_especialista", res_cuadro)
                 except Exception as e_cuadro:
                     motivo_cuadro = f"{type(e_cuadro).__name__}: {e_cuadro}"
                     print(f"[SERVICIO MERCADOS] ⚠️ Cuadro Especialista no enviado: "
@@ -3165,8 +3204,7 @@ def enviar_analisis(
                     if res_h2h is False:
                         raise RuntimeError("el adaptador devolvió False para el cuadro H2H")
                     cuadro_h2h_enviado = True
-                    if isinstance(res_h2h, dict) and res_h2h.get("message_id") is not None:
-                        ids_telegram.append(res_h2h["message_id"])
+                    _registrar_respuesta_tg("cuadro_h2h", res_h2h)
                 except Exception as e_h2h_send:
                     motivo_cuadro_h2h = f"{type(e_h2h_send).__name__}: {e_h2h_send}"
                     print(f"[SERVICIO MERCADOS] ⚠️ Cuadro H2H 2024–2026 no enviado: "
@@ -3191,8 +3229,7 @@ def enviar_analisis(
                     if res_15p is False:
                         raise RuntimeError("el adaptador devolvió False para auditoría 15P")
                     auditoria_15p_enviado = True
-                    if isinstance(res_15p, dict) and res_15p.get("message_id") is not None:
-                        ids_telegram.append(res_15p["message_id"])
+                    _registrar_respuesta_tg("auditoria_15p", res_15p)
                 except Exception as e_15p_send:
                     motivo_auditoria_15p = f"{type(e_15p_send).__name__}: {e_15p_send}"
                     print(f"[SERVICIO MERCADOS] ⚠️ Auditoría 15P no enviada: {motivo_auditoria_15p}")
@@ -3204,6 +3241,16 @@ def enviar_analisis(
                 + (1 if cuadro_h2h_enviado else 0)
                 + (1 if auditoria_15p_enviado else 0)
             )
+            tg_envio = {
+                "message_id": (eventos_envio_telegram[-1]["message_id"] if eventos_envio_telegram else (ids_telegram[-1] if ids_telegram else None)),
+                "message_date": (fechas_telegram[-1] if fechas_telegram else None),
+                "message_date_utc": (
+                    datetime.fromtimestamp(int(fechas_telegram[-1]), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                    if fechas_telegram else None
+                ),
+                "ids_telegram": ids_telegram,
+                "eventos": eventos_envio_telegram,
+            }
             marcar_estado(id_trabajo, "envio_confirmado",
                           {"tipo": "foto", "ruta_imagen": ruta_imagen,
                            "ruta_ticket_valor": ruta_ticket_valor if ticket_valor_enviado else None,
@@ -3215,7 +3262,8 @@ def enviar_analisis(
                            "motivo_cuadro_h2h": motivo_cuadro_h2h,
                            "ruta_auditoria_15p": ruta_auditoria_15p if auditoria_15p_enviado else None,
                            "motivo_auditoria_15p": motivo_auditoria_15p,
-                           "ids_telegram": ids_telegram})
+                           "ids_telegram": ids_telegram,
+                           "telegram_envio": tg_envio})
             return {"enviado": True, "tipo": "foto", "ruta_imagen": ruta_imagen,
                     "ruta_ticket_valor": ruta_ticket_valor,
                     "ticket_valor_enviado": ticket_valor_enviado,
@@ -3229,7 +3277,8 @@ def enviar_analisis(
                     "ruta_auditoria_15p": ruta_auditoria_15p,
                     "auditoria_15p_enviado": auditoria_15p_enviado,
                     "motivo_auditoria_15p": motivo_auditoria_15p,
-                    "ids_telegram": ids_telegram, "partes": partes_enviadas,
+                    "ids_telegram": ids_telegram, "telegram_envio": tg_envio,
+                    "partes": partes_enviadas,
                     "id_trabajo": id_trabajo, "estado": "envio_confirmado"}
         except Exception as e:
             marcar_estado(id_trabajo, "envio_fallido",
@@ -3243,20 +3292,47 @@ def enviar_analisis(
     marcar_estado(id_trabajo, "envio_en_curso", {"partes": len(partes)})
 
     ids_telegram: list[Any] = []
+    fechas_telegram: list[int] = []
+    eventos_envio_telegram: list[dict[str, Any]] = []
     try:
         for parte in partes:
             resultado = enviar_fn(parte, chat_id)
             if isinstance(resultado, dict):
                 if not resultado.get("ok", True):
                     raise RuntimeError(resultado.get("error") or "envío no confirmado")
-                if resultado.get("message_id") is not None:
-                    ids_telegram.append(resultado["message_id"])
+                mid = resultado.get("message_id")
+                mdt = resultado.get("date")
+                if mid is not None:
+                    ids_telegram.append(mid)
+                if mdt is not None:
+                    try:
+                        fechas_telegram.append(int(mdt))
+                    except (TypeError, ValueError):
+                        pass
+                if mid is not None or mdt is not None:
+                    eventos_envio_telegram.append({
+                        "parte": "texto",
+                        "message_id": mid,
+                        "message_date": int(mdt) if mdt is not None else None,
+                    })
             elif resultado is False:
                 raise RuntimeError("el adaptador devolvió False")
+        tg_envio = {
+            "message_id": (eventos_envio_telegram[-1]["message_id"] if eventos_envio_telegram else (ids_telegram[-1] if ids_telegram else None)),
+            "message_date": (fechas_telegram[-1] if fechas_telegram else None),
+            "message_date_utc": (
+                datetime.fromtimestamp(int(fechas_telegram[-1]), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if fechas_telegram else None
+            ),
+            "ids_telegram": ids_telegram,
+            "eventos": eventos_envio_telegram,
+        }
         marcar_estado(id_trabajo, "envio_confirmado",
                       {"partes": len(partes), "ids_telegram": ids_telegram,
+                       "telegram_envio": tg_envio,
                        "caracteres": len(mensaje)})
         return {"enviado": True, "partes": len(partes), "ids_telegram": ids_telegram,
+                "telegram_envio": tg_envio,
                 "id_trabajo": id_trabajo, "estado": "envio_confirmado"}
     except Exception as e:
         marcar_estado(id_trabajo, "envio_fallido",
@@ -3304,7 +3380,7 @@ def enviar_fn_telegram(texto: str, chat_id: int | str | None = None,
                           json=payload, timeout=30)
         datos = r.json() if r.content else {}
         if r.status_code == 200 and datos.get("ok"):
-            return {"ok": True, "message_id": (datos.get("result") or {}).get("message_id")}
+            return {"ok": True, "message_id": (datos.get("result") or {}).get("message_id"), "date": (datos.get("result") or {}).get("date")}
         # 429: se respeta retry_after sin reintentar a ciegas
         if r.status_code == 429:
             return {"ok": False,
@@ -3358,7 +3434,7 @@ def enviar_fn_telegram_foto(ruta: str, caption: str = "",
                               data=datos_form, files={"photo": fh}, timeout=60)
         datos = r.json() if r.content else {}
         if r.status_code == 200 and datos.get("ok"):
-            return {"ok": True, "message_id": (datos.get("result") or {}).get("message_id")}
+            return {"ok": True, "message_id": (datos.get("result") or {}).get("message_id"), "date": (datos.get("result") or {}).get("date")}
         if r.status_code == 429:
             return {"ok": False,
                     "error": f"rate limit: retry_after="

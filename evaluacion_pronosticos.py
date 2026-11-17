@@ -191,6 +191,10 @@ class SnapshotPronostico:
     motivo_abstencion: str | None = None
     decision_cobertura: dict[str, Any] | None = None
     modo_sombra: dict[str, Any] | None = None
+    telegram_message_id: int | None = None
+    telegram_message_date: int | None = None
+    telegram_origen: dict[str, Any] | None = None
+    telegram_envio: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -215,6 +219,14 @@ class SnapshotPronostico:
         }
         if self.modo_sombra is not None:
             out["modo_sombra"] = self.modo_sombra
+        if self.telegram_message_id is not None:
+            out["telegram_message_id"] = self.telegram_message_id
+        if self.telegram_message_date is not None:
+            out["telegram_message_date"] = self.telegram_message_date
+        if self.telegram_origen is not None:
+            out["telegram_origen"] = self.telegram_origen
+        if self.telegram_envio is not None:
+            out["telegram_envio"] = self.telegram_envio
         return out
 
 
@@ -225,22 +237,102 @@ def ruta_snapshot(id_trabajo: str, directorio: str | None = None) -> str:
 def guardar_snapshot(snapshot: SnapshotPronostico | dict[str, Any],
                      directorio: str | None = None) -> str:
     """
-    Escribe el snapshot UNA sola vez. Si ya existe, NO se sobrescribe: el pasado
-    no se reescribe. Devuelve la ruta.
+    Escribe el snapshot UNA sola vez de forma atómica. Si ya existe, NO se
+    sobrescribe: el pasado no se reescribe. Devuelve la ruta.
     """
+    import tempfile as _tmp_snap
     datos = snapshot.a_dict() if isinstance(snapshot, SnapshotPronostico) else snapshot
     destino = ruta_snapshot(str(datos.get("id_trabajo")), directorio)
-    os.makedirs(os.path.dirname(destino), exist_ok=True)
+    parent_dir = os.path.dirname(destino)
+    os.makedirs(parent_dir, exist_ok=True)
     if os.path.exists(destino):
         return destino
-    with open(destino, "w", encoding="utf-8") as f:
-        json.dump(datos, f, ensure_ascii=False, indent=1)
+    fd, tmp_ruta = _tmp_snap.mkstemp(prefix=".snap_", suffix=".json", dir=parent_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(datos, f, ensure_ascii=False, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        if not os.path.exists(destino):
+            os.replace(tmp_ruta, destino)
+        else:
+            os.unlink(tmp_ruta)
+    except Exception:
+        try:
+            os.unlink(tmp_ruta)
+        except OSError:
+            pass
+        raise
     return destino
+
+
+def adjuntar_acuse_telegram_snapshot(
+    ruta_snapshot: str,
+    *,
+    telegram_envio: dict[str, Any] | None = None,
+    ids_telegram: list[Any] | None = None,
+    message_id: int | None = None,
+    message_date: int | None = None,
+) -> dict[str, Any]:
+    """
+    Adjunta metadatos de entrega Telegram (`telegram_envio`, `message_id`, `message.date`)
+    sobre un snapshot ya emitido SIN alterar selecciones, lambdas, modelo ni modo_sombra.
+    """
+    import tempfile as _tmp_tg
+    if not ruta_snapshot or not os.path.exists(ruta_snapshot):
+        return {"actualizado": False, "motivo": "snapshot_inexistente"}
+    with open(ruta_snapshot, "r", encoding="utf-8") as f:
+        doc = json.load(f)
+
+    env_doc = dict(telegram_envio or {})
+    if ids_telegram is not None and "ids_telegram" not in env_doc:
+        env_doc["ids_telegram"] = list(ids_telegram)
+    if message_id is not None and env_doc.get("message_id") is None:
+        env_doc["message_id"] = message_id
+    if message_date is not None and env_doc.get("message_date") is None:
+        env_doc["message_date"] = int(message_date)
+    if env_doc.get("message_date") is not None and env_doc.get("message_date_utc") is None:
+        env_doc["message_date_utc"] = datetime.fromtimestamp(
+            int(env_doc["message_date"]), tz=timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if not env_doc and ids_telegram is None:
+        return {"actualizado": False, "motivo": "sin_metadatos_telegram"}
+
+    doc["telegram_envio"] = env_doc
+    if env_doc.get("message_id") is not None:
+        doc["telegram_message_id"] = env_doc.get("message_id")
+    if env_doc.get("message_date") is not None:
+        doc["telegram_message_date"] = env_doc.get("message_date")
+    if doc.get("publicado_en") is None and env_doc.get("message_date_utc") is not None:
+        doc["publicado_en"] = env_doc.get("message_date_utc")
+
+    parent_dir = os.path.dirname(ruta_snapshot)
+    fd, tmp_ruta = _tmp_tg.mkstemp(prefix=".snap_tg_", suffix=".json", dir=parent_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(doc, f, ensure_ascii=False, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_ruta, ruta_snapshot)
+    except Exception:
+        try:
+            os.unlink(tmp_ruta)
+        except OSError:
+            pass
+        raise
+    return {
+        "actualizado": True,
+        "ruta": ruta_snapshot,
+        "telegram_message_id": doc.get("telegram_message_id"),
+        "telegram_message_date": doc.get("telegram_message_date"),
+    }
 
 
 def snapshot_desde_analisis(preparado: dict[str, Any],
                             publicado_en: str | None = None,
-                            modo_sombra: dict[str, Any] | None = None) -> SnapshotPronostico:
+                            modo_sombra: dict[str, Any] | None = None,
+                            telegram_meta: dict[str, Any] | None = None) -> SnapshotPronostico:
     """
     Construye el snapshot a partir del resultado de `preparar_analisis`.
     Guarda TODAS las selecciones estimables (incluidas las inferiores al umbral)
@@ -248,6 +340,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     """
     analisis = preparado["analisis"]
     metadatos = getattr(analisis, "metadatos", {}) or {}
+    tg_m = telegram_meta if telegram_meta is not None else preparado.get("telegram_meta")
+    tg_org = dict(tg_m) if isinstance(tg_m, dict) else None
+    tg_mid = tg_org.get("message_id") if isinstance(tg_org, dict) else None
+    tg_mdt = tg_org.get("message_date") if isinstance(tg_org, dict) else None
     abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
     if abstenido:
         dec_cob = metadatos.get("decision_cobertura") or {}
@@ -278,6 +374,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             estado_cobertura=est_cob,
             motivo_abstencion=mot_abs,
             decision_cobertura=dec_cob,
+            telegram_message_id=tg_mid,
+            telegram_message_date=tg_mdt,
+            telegram_origen=tg_org,
         )
     motor = analisis.motor
     umbral = float(analisis.parametros.umbral)
@@ -334,6 +433,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         referencia=preparado.get("rutas", {}).get("informe", ""),
         origen="nuevo",
         modo_sombra=modo_sombra if modo_sombra is not None else preparado.get("modo_sombra"),
+        telegram_message_id=tg_mid,
+        telegram_message_date=tg_mdt,
+        telegram_origen=tg_org,
     )
 
 
@@ -9730,6 +9832,12 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "sombra_comparaciones_sha256": _hash_sombra_comparaciones_tribrazo(payload_sombra, sombra, comp_sha),
         "modo_sombra": payload_sombra,
     }
+    tg_m = preparado.get("telegram_meta")
+    if isinstance(tg_m, dict):
+        if tg_m.get("message_id") is not None:
+            registro["telegram_message_id"] = tg_m.get("message_id")
+        if tg_m.get("message_date") is not None:
+            registro["telegram_message_date"] = tg_m.get("message_date")
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
     res["estado_registro"] = "pre_partido"
     res["snapshot_sha256"] = snapshot_sha

@@ -35,8 +35,11 @@ Permite interactuar con el Agente Cuantitativo desde el smartphone:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
+import random
 import re
+import signal
 import sys
 import time
 import functools
@@ -77,10 +80,135 @@ CHAT_ID_AUTORIZADO = (
 
 print(f"[BOT TELEGRAM] 🔑 Token Telegram configurado: {'sí' if TOKEN else 'no'}")
 
-# Variable global de control de concurrencia
+# Variable global de control de concurrencia y apagado ordenado (SIGTERM)
 lock_analisis = threading.Lock()
 analisis_en_curso = False
 auditoria_en_curso = False
+_shutdown_event = threading.Event()
+_hilos_activos: set[threading.Thread] = set()
+_hilos_lock = threading.Lock()
+_cola_persistencia_lock = threading.Lock()
+_cola_persistencia: Any = None
+
+
+def _censurar_token(texto: str) -> str:
+    s = str(texto or "")
+    if TOKEN and len(TOKEN) >= 6:
+        s = s.replace(TOKEN, "***TOKEN***")
+    return s
+
+
+def _extraer_telegram_meta_mensaje(message: Any, chat_id: Any = None) -> dict[str, Any] | None:
+    if message is None:
+        return None
+    mid = getattr(message, "message_id", None)
+    mdt = getattr(message, "date", None)
+    cid = getattr(getattr(message, "chat", None), "id", None) or chat_id
+    mdt_int = int(mdt) if mdt is not None else None
+    return {
+        "chat_id": str(cid) if cid is not None else None,
+        "message_id": mid,
+        "message_date": mdt_int,
+        "message_date_utc": (
+            datetime.fromtimestamp(mdt_int, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if mdt_int is not None else None
+        ),
+    }
+
+
+def configurar_persistencia_bot(cfg: Any = None, cola: Any = None) -> Any:
+    """Permite inyectar una configuración/cola de persistencia (producción o pruebas)."""
+    global _cola_persistencia
+    with _cola_persistencia_lock:
+        if cola is not None:
+            _cola_persistencia = cola
+        elif cfg is not None:
+            from persistencia_produccion import ColaPersistenciaGit
+            _cola_persistencia = ColaPersistenciaGit(cfg)
+        else:
+            _cola_persistencia = None
+        return _cola_persistencia
+
+
+def obtener_cola_persistencia() -> Any | None:
+    global _cola_persistencia
+    with _cola_persistencia_lock:
+        if _cola_persistencia is not None:
+            return _cola_persistencia
+        try:
+            from persistencia_produccion import ConfigPersistencia, ColaPersistenciaGit, persistencia_activa
+            if persistencia_activa():
+                _cola_persistencia = ColaPersistenciaGit(ConfigPersistencia.desde_entorno(BASE_DIR))
+                return _cola_persistencia
+        except Exception as exc:
+            print(f"[PERSISTENCIA] ⚠️ No se pudo inicializar cola Git: {exc}")
+        return None
+
+
+def _encolar_persistencia_segura(**kwargs: Any) -> dict[str, Any] | None:
+    cola = obtener_cola_persistencia()
+    if cola is None:
+        return None
+    try:
+        return cola.encolar(**kwargs)
+    except Exception as exc:
+        print(f"[PERSISTENCIA] ⚠️ No se pudo encolar operación: {exc}")
+        return None
+
+
+def _registrar_hilo_actual() -> None:
+    t = threading.current_thread()
+    with _hilos_lock:
+        _hilos_activos.add(t)
+
+
+def _desregistrar_hilo_actual() -> None:
+    t = threading.current_thread()
+    with _hilos_lock:
+        _hilos_activos.discard(t)
+
+
+def _al_recibir_senal_salida(signum: int, _frame: Any = None) -> None:
+    print(f"[BOT TELEGRAM] 🛑 Señal recibida ({signum}): deteniendo polling y drenando tareas...")
+    _shutdown_event.set()
+    try:
+        bot.stop_polling()
+    except Exception:
+        pass
+
+
+def instalar_manejadores_apagado() -> None:
+    """Instala manejo de SIGTERM y SIGINT en el hilo principal."""
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for sig_name in ("SIGTERM", "SIGINT"):
+        sig_obj = getattr(signal, sig_name, None)
+        if sig_obj is not None:
+            try:
+                signal.signal(sig_obj, _al_recibir_senal_salida)
+            except Exception:
+                pass
+
+
+def _cerrar_ordenadamente_bot(timeout_hilos: float = 35.0, timeout_cola: float = 20.0) -> dict[str, Any]:
+    _shutdown_event.set()
+    try:
+        bot.stop_polling()
+    except Exception:
+        pass
+    fin = time.monotonic() + timeout_hilos
+    with _hilos_lock:
+        pendientes = [h for h in _hilos_activos if h is not threading.current_thread()]
+    for h in pendientes:
+        restante = max(0.1, fin - time.monotonic())
+        h.join(timeout=restante)
+    cola = obtener_cola_persistencia()
+    cola_cerrada = True
+    if cola is not None:
+        cola.esperar_vacia(timeout=timeout_cola)
+        cola_cerrada = bool(cola.cerrar(timeout=timeout_cola))
+    vivos = [h.name for h in pendientes if h.is_alive()]
+    return {"hilos_esperados": len(pendientes), "hilos_aun_vivos": vivos, "cola_cerrada": cola_cerrada}
 
 
 def verificar_credenciales() -> bool:
@@ -1508,12 +1636,14 @@ def cmd_mercados(message):
             es_reply=True,
         )
         return
-    _lanzar_mercados(message.chat.id, a, b, umbral, limite, borrador, liga=liga_info)
+    tg_meta = _extraer_telegram_meta_mensaje(message, chat_id=message.chat.id)
+    _lanzar_mercados(message.chat.id, a, b, umbral, limite, borrador, liga=liga_info, telegram_meta=tg_meta)
 
 
 def _lanzar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                      umbral: float, limite: int, borrador: bool = False,
-                     liga: dict[str, Any] | None = None) -> None:
+                     liga: dict[str, Any] | None = None,
+                     telegram_meta: dict[str, Any] | None = None) -> None:
     """
     Acuse inmediato + lanzamiento del análisis en un hilo aparte.
 
@@ -1521,6 +1651,11 @@ def _lanzar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
     que el comando fue reconocido mientras el scraper trabaja en segundo plano.
     """
     global auditoria_en_curso
+    if _shutdown_event.is_set():
+        enviar_seguro(
+            bot, chat_id,
+            "🔄 *El bot está completando un reinicio programado.* Reintenta en unos segundos.")
+        return
     with lock_analisis:
         if auditoria_en_curso:
             # Nunca se deja al usuario sin respuesta: se explica y se le dice qué hacer
@@ -1560,16 +1695,19 @@ def _lanzar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
     print(f"[BOT TELEGRAM] ⏳ Acuse enviado para {equipo_a} vs {equipo_b}")
 
     hilo = threading.Thread(target=_hilo_ejecutar_mercados,
-                            args=(chat_id, equipo_a, equipo_b, umbral, limite, borrador, liga),
+                            args=(chat_id, equipo_a, equipo_b, umbral, limite, borrador, liga, telegram_meta),
                             daemon=True)
     hilo.start()
 
 
 def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                             umbral: float, limite: int, borrador: bool,
-                            liga: dict[str, Any] | None = None) -> None:
+                            liga: dict[str, Any] | None = None,
+                            telegram_meta: dict[str, Any] | None = None) -> None:
     """Ejecuta el análisis de mercados y despacha el mensaje filtrado."""
     global auditoria_en_curso
+    _registrar_hilo_actual()
+    ruta_snap: str | None = None
     try:
         print(f"[BOT TELEGRAM] 🎯 Mercados solicitados: {equipo_a} vs {equipo_b} "
               f"(umbral {umbral:.0%})")
@@ -1599,13 +1737,15 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
         # Guarda TODAS las selecciones estimables (también las inferiores al
         # umbral) para poder evaluar el modelo completo, y marca aparte las
         # publicadas. El pasado no se reescribe: si ya existe, no se toca.
+        if telegram_meta is not None:
+            preparado["telegram_meta"] = dict(telegram_meta)
         try:
             import evaluacion_pronosticos as evaluacion
             try:
                 evaluacion.adjuntar_modo_sombra_preparado(preparado)
             except Exception as _e_somb:
                 print(f"[BOT TELEGRAM] ⚠️ Modo sombra no bloqueante omitido: {_e_somb}")
-            snapshot = evaluacion.snapshot_desde_analisis(preparado)
+            snapshot = evaluacion.snapshot_desde_analisis(preparado, telegram_meta=telegram_meta)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
             try:
                 res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
@@ -1618,6 +1758,16 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                     )
             except Exception as _e_led:
                 print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
+            try:
+                rel_snap = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
+            except Exception:
+                rel_snap = os.path.relpath(ruta_snap, str(BASE_DIR)).replace("\\", "/")
+            _encolar_persistencia_segura(
+                tipo="mercados_pre",
+                id_trabajo=str(preparado.get("id_trabajo") or ""),
+                archivos_rel=[rel_snap],
+                mensaje_commit=f"datos(mercados): pre_partido {preparado.get('id_trabajo')}",
+            )
             print(f"[BOT TELEGRAM] 🗂️  Snapshot de pronóstico guardado: {ruta_snap} "
                   f"({len(snapshot.selecciones)} estimables, "
                   f"{len(snapshot.selecciones_publicadas)} > umbral)")
@@ -1665,6 +1815,26 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                     f"El análisis y el ticket gráfico quedan guardados en:\n"
                     f"{ruta_guardada}")
         else:
+            if ruta_snap:
+                try:
+                    import evaluacion_pronosticos as evaluacion
+                    evaluacion.adjuntar_acuse_telegram_snapshot(
+                        ruta_snap,
+                        telegram_envio=resultado.get("telegram_envio"),
+                        ids_telegram=resultado.get("ids_telegram"),
+                    )
+                    try:
+                        rel_snap_ack = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
+                    except Exception:
+                        rel_snap_ack = os.path.relpath(ruta_snap, str(BASE_DIR)).replace("\\", "/")
+                    _encolar_persistencia_segura(
+                        tipo="mercados_acuse_tg",
+                        id_trabajo=str(preparado.get("id_trabajo") or ""),
+                        archivos_rel=[rel_snap_ack],
+                        mensaje_commit=f"datos(mercados): acuse telegram {preparado.get('id_trabajo')}",
+                    )
+                except Exception as _e_tg_ack:
+                    print(f"[BOT TELEGRAM] ⚠️ No se pudo adjuntar acuse Telegram al snapshot: {_e_tg_ack}")
             print(f"[BOT TELEGRAM] ✅ Ticket gráfico de mercados enviado exitosamente como PNG "
                   f"(id {preparado['id_trabajo']})")
             if resultado.get("ticket_valor_enviado"):
@@ -1690,15 +1860,16 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 enviar_seguro(bot, chat_id, "ℹ️ H2H (2024–2026): Sin enfrentamientos directos en 2024–2026.")
 
     except Exception as e:
-        diag = _formatear_diagnostico_excepcion(e)
-        print(f"[BOT TELEGRAM] ❌ Error en el análisis de mercados{diag}: {type(e).__name__}: {e}")
+        diag = _censurar_token(_formatear_diagnostico_excepcion(e))
+        msg_err = _censurar_token(f"{type(e).__name__}: {e}")
+        print(f"[BOT TELEGRAM] ❌ Error en el análisis de mercados{diag}: {msg_err}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ El análisis de «{equipo_a} vs {equipo_b}» falló{diag}:\n"
-                          f"{type(e).__name__}: {e}")
+                          f"❌ El análisis de «{equipo_a} vs {equipo_b}» falló{diag}:\n{msg_err}")
         except Exception:
             pass
     finally:
+        _desregistrar_hilo_actual()
         with lock_analisis:
             auditoria_en_curso = False
 
@@ -1752,6 +1923,11 @@ def cmd_evaluar(message):
         /evaluar [filtro] borrador       → prepara el resumen sin enviarlo
     """
     chat_id = message.chat.id
+    if _shutdown_event.is_set():
+        enviar_seguro(
+            bot, chat_id,
+            "🔄 *El bot está completando un reinicio programado.* Reintenta /evaluar en unos segundos.")
+        return
     filtro_equipos, borrador, texto_filtro = _parsear_argumentos_evaluar(getattr(message, "text", "") or "")
 
     if texto_filtro:
@@ -1777,6 +1953,7 @@ def _hilo_ejecutar_evaluacion(chat_id, borrador: bool,
                               filtro_equipos: list[str] | None = None,
                               texto_filtro: str = "") -> None:
     """Ejecuta la evaluación y despacha el resumen."""
+    _registrar_hilo_actual()
     try:
         import evaluacion_pronosticos as evaluacion
         import servicio_mercados as servicio
@@ -1797,6 +1974,20 @@ def _hilo_ejecutar_evaluacion(chat_id, borrador: bool,
         informe = preparado["informe"]
         evidencia = informe.evidencia
 
+        arch_eval: list[str] = []
+        for rv in (preparado.get("rutas") or {}).values():
+            if rv and os.path.exists(str(rv)):
+                try:
+                    arch_eval.append(Path(str(rv)).resolve().relative_to(BASE_DIR.resolve()).as_posix())
+                except Exception:
+                    arch_eval.append(os.path.relpath(str(rv), str(BASE_DIR)).replace("\\", "/"))
+        _encolar_persistencia_segura(
+            tipo="evaluar_liquidado",
+            id_trabajo=str(preparado.get("id_ejecucion") or ""),
+            archivos_rel=arch_eval,
+            mensaje_commit=f"datos(evaluar): liquidacion {preparado.get('id_ejecucion')}",
+        )
+
         if borrador:
             filtro_txt = f" ({preparado['filtro']})" if preparado.get("filtro") else ""
             enviar_seguro(
@@ -1812,6 +2003,13 @@ def _hilo_ejecutar_evaluacion(chat_id, borrador: bool,
         resultado = evaluacion.enviar_resumen(
             preparado, enviar_fn=servicio.enviar_fn_telegram, chat_id=chat_id,
             imagenes=preparado.get("imagenes"))
+        _encolar_persistencia_segura(
+            tipo="evaluar_envio_confirmado",
+            id_trabajo=str(preparado.get("id_ejecucion") or ""),
+            archivos_rel=arch_eval,
+            mensaje_commit=f"datos(evaluar): acuse envio {preparado.get('id_ejecucion')}",
+        )
+
         if not resultado.get("enviado"):
             enviar_seguro(
                 bot, chat_id,
@@ -1826,13 +2024,16 @@ def _hilo_ejecutar_evaluacion(chat_id, borrador: bool,
                   f"{resultado.get('imagenes_enviadas')} imagen(es))")
 
     except Exception as e:
-        diag = _formatear_diagnostico_excepcion(e)
-        print(f"[BOT TELEGRAM] ❌ Error en la evaluación{diag}: {type(e).__name__}: {e}")
+        diag = _censurar_token(_formatear_diagnostico_excepcion(e))
+        msg_err = _censurar_token(f"{type(e).__name__}: {e}")
+        print(f"[BOT TELEGRAM] ❌ Error en la evaluación{diag}: {msg_err}")
         try:
             enviar_seguro(bot, chat_id,
-                          f"❌ La evaluación falló{diag}:\n{type(e).__name__}: {e}")
+                          f"❌ La evaluación falló{diag}:\n{msg_err}")
         except Exception:
             pass
+    finally:
+        _desregistrar_hilo_actual()
 
 
 @bot.message_handler(func=lambda m: getattr(m, "text", "") and bool(re.match(r"^[.\s]*/", str(m.text).strip())))
@@ -1921,9 +2122,26 @@ def iniciar_servidor_keep_alive(host: str = "0.0.0.0", port: int | None = None) 
 
 
 def iniciar_servidor_bot():
-    """Bucle infinito de escucha de Telegram (Long Polling resiliente e inmortal)."""
+    """Bucle infinito de escucha de Telegram (Long Polling resiliente con SIGTERM limpio)."""
     if not verificar_credenciales():
         sys.exit(1)
+
+    _shutdown_event.clear()
+    instalar_manejadores_apagado()
+
+    try:
+        from persistencia_produccion import ConfigPersistencia, hidratar_desde_remoto_datos, persistencia_activa
+        if persistencia_activa():
+            cfg_p = ConfigPersistencia.desde_entorno(BASE_DIR)
+            res_hid = hidratar_desde_remoto_datos(cfg_p)
+            print(
+                f"[PERSISTENCIA] 🔄 Hidratación {cfg_p.rama_datos}: "
+                f"pronosticos={res_hid.get('n_pronosticos_hidratados')} "
+                f"evaluaciones={res_hid.get('n_evaluaciones_hidratadas')} "
+                f"ledger={((res_hid.get('ledger') or {}).get('n_final'))}"
+            )
+    except Exception as exc_hid:
+        print(f"[PERSISTENCIA] ⚠️ Hidratación inicial omitida: {_censurar_token(str(exc_hid))}")
 
     iniciar_servidor_keep_alive()
 
@@ -1944,24 +2162,38 @@ def iniciar_servidor_bot():
     telebot.apihelper.RETRY_ON_ERROR = True
 
     reintentos = 0
-    while True:
-        try:
-            # Si una desconexión previa activó stop_polling internamente en TeleBot, lo limpiamos para reintentar
-            if hasattr(bot, "_TeleBot__stop_polling"):
-                bot._TeleBot__stop_polling.clear()
-            # Los handlers de trabajo pesado (/auditar, /h2h, /mercados) devuelven
-            # el control de inmediato lanzando un hilo propio, por lo que este
-            # bucle de recepción no se bloquea y el acuse llega al instante.
-            bot.infinity_polling(timeout=20, long_polling_timeout=25, skip_pending=False)
-            time.sleep(2)
-        except KeyboardInterrupt:
-            print("\n🛑 Deteniendo bot interactivo a petición del operador...")
-            break
-        except Exception as e:
-            reintentos += 1
-            espera = min(30, 2 + reintentos * 2)
-            print(f"[BOT TELEGRAM] ⚠️ Error en polling ({type(e).__name__}: {e}). Reconectando en {espera}s (intento {reintentos})...")
-            time.sleep(espera)
+    try:
+        while not _shutdown_event.is_set():
+            try:
+                # Si una desconexión previa activó stop_polling internamente en TeleBot, lo limpiamos para reintentar
+                if hasattr(bot, "_TeleBot__stop_polling"):
+                    bot._TeleBot__stop_polling.clear()
+                # Los handlers de trabajo pesado (/auditar, /h2h, /mercados) devuelven
+                # el control de inmediato lanzando un hilo propio, por lo que este
+                # bucle de recepción no se bloquea y el acuse llega al instante.
+                bot.infinity_polling(timeout=20, long_polling_timeout=25, skip_pending=False)
+                if _shutdown_event.is_set():
+                    break
+                _shutdown_event.wait(2.0)
+            except KeyboardInterrupt:
+                print("\n🛑 Deteniendo bot interactivo a petición del operador...")
+                break
+            except Exception as e:
+                if _shutdown_event.is_set():
+                    break
+                reintentos += 1
+                msg_limpio = _censurar_token(str(e))
+                es_409 = ("409" in msg_limpio) or ("terminated by other getupdates" in msg_limpio.lower())
+                if es_409:
+                    espera = min(45.0, 5.0 + reintentos * 3.0 + random.uniform(0.5, 2.5))
+                    print(f"[BOT TELEGRAM] ⚠️ Conflicto 409 getUpdates (otra instancia saliendo). Reintento en {espera:.1f}s...")
+                else:
+                    espera = min(30.0, 2.0 + reintentos * 2.0)
+                    print(f"[BOT TELEGRAM] ⚠️ Error en polling ({type(e).__name__}: {msg_limpio}). Reconectando en {espera:.1f}s (intento {reintentos})...")
+                _shutdown_event.wait(espera)
+    finally:
+        res_cierre = _cerrar_ordenadamente_bot()
+        print(f"[BOT TELEGRAM] 🧹 Apagado limpio completado: {res_cierre}")
 
 
 if __name__ == "__main__":
