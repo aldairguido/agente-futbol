@@ -69,7 +69,10 @@ def test_r9_p6d_validador_defectos_83_partidos_banco():
     rep = auditar_defectos_banco_83_ronda9()
     assert rep["n_partidos_unicos_banco_csv"] == 83
     assert rep["n_pares_equipo_partido_banco_csv"] == 94
-    assert rep["n_partidos_unicos_con_matriz_fuente"] == 81
+    assert rep["n_partidos_unicos_con_matriz_fuente"] == 111
+    assert rep["incluye_colombia_chile"] is True
+    assert rep["incluye_entradas"] is True
+    assert rep["n_partidos_unicos_colombia_chile"] == 30
 
     # En el CSV normalizado del banco hay 1 discrepancia (5067299 remates rechazados)
     assert rep["banco_csv_normalizado"]["total_defectos"] == 1
@@ -77,18 +80,24 @@ def test_r9_p6d_validador_defectos_83_partidos_banco():
 
     # En las matrices crudas de los partidos del banco se detectan los 5 tipos reales por fuente
     pre = rep["matrices_crudas_pre_saneamiento"]
-    assert pre["total_defectos"] == 152
-    assert pre["partidos_unicos_con_defecto"] == 59
-    assert pre["por_tipo"]["empate_con_bandos_invertidos"] == 6
-    assert pre["por_tipo"]["entradas_ganadas_mayor_intentadas"] == 6
+    assert pre["total_defectos"] == 157
+    assert pre["partidos_unicos_con_defecto"] == 68
+    assert pre["por_tipo"]["empate_con_bandos_invertidos"] == 4  # solo Colombia/Chile heredado; 0 en banco_83 tras R12 P4
+    assert pre["por_tipo"]["entradas_falso_100_pct_sin_denominador"] == 30
     assert pre["por_tipo"]["falso_denominador_100"] == 122
-    assert pre["por_tipo"]["tiros_libres_sin_invertir_igual_faltas"] == 17
-    assert pre["por_fuente"]["fotmob"] == 121
-    assert pre["por_fuente"]["fotmob+flashscore"] == 31
+    assert "entradas_ganadas_mayor_intentadas" not in pre["por_tipo"]
+    assert "tiros_libres_sin_invertir_igual_faltas" not in pre["por_tipo"]
+    assert pre["por_fuente"]["fotmob"] == 151
+    assert pre["por_fuente"]["fotmob+flashscore"] == 6
+    b83 = rep["resumen_por_ambito"]["banco_83"]
+    assert b83["pre_total_defectos"] == 123
+    assert b83["post_total_defectos"] == 1
+    assert rep["resumen_por_ambito"]["colombia_chile_30"]["pre_total_defectos"] == 34
+    assert rep["resumen_por_ambito"]["colombia_chile_30"]["post_total_defectos"] == 4
 
     # Post-saneamiento elimina falso_denominador_100, entradas_ganadas>intentadas y los 17 tiros_libres_sin_invertir
     post = rep["matrices_post_sanear_partido_auditoria_45"]
-    assert post["total_defectos"] == 7
+    assert post["total_defectos"] == 5
     assert "falso_denominador_100" not in post["por_tipo"]
     assert "entradas_ganadas_mayor_intentadas" not in post["por_tipo"]
     assert "tiros_libres_sin_invertir_igual_faltas" not in post["por_tipo"]

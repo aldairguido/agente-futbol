@@ -4991,6 +4991,17 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
         )
 
     # Pasada 3b: reconciliación estricta 1T + 2T == FT cuando ambos 1T y 2T están presentes
+    _usar_sin_dato_mitades = False
+    try:
+        from decision_cobertura import bandera_activa as _ba_3b
+        _usar_sin_dato_mitades = bool(_ba_3b("usar_sin_dato_si_mitades_no_suman_ft"))
+    except Exception:
+        _usar_sin_dato_mitades = False
+    _alias_3b: dict[str, set[str]] = {}
+    for _a3, _b3 in PARES_ALIAS_CATALOGO:
+        _grupo3 = _alias_3b.get(_a3, {_a3}) | _alias_3b.get(_b3, {_b3})
+        for _k3 in _grupo3:
+            _alias_3b[_k3] = _grupo3
     for lado in ("equipo", "rival"):
         for cl in todas_aditivas:
             es_continua = cl in METRICAS_CONTINUAS_ADITIVAS
@@ -5008,9 +5019,16 @@ def consolidar_matriz_completa(matriz: MatrizPartido) -> None:
                         "suma_1t_2t": round(suma_mitades, 4),
                         "diferencia": round(v_ft - suma_mitades, 4),
                         "motivo": "suma_mitades_distinta_ft",
-                        "reescalado_proporcional": bool(suma_mitades > 0 and cl != "goles_evitados" and v_ft != 0.0),
+                        "reescalado_proporcional": False if _usar_sin_dato_mitades else bool(suma_mitades > 0 and cl != "goles_evitados" and v_ft != 0.0),
+                        **({"tratamiento": "mitades_sin_dato"} if _usar_sin_dato_mitades else {}),
                     })
-                    if v_ft == 0.0 and cl != "goles_evitados":
+                    if _usar_sin_dato_mitades:
+                        for _cl_lim in _alias_3b.get(cl, {cl}):
+                            por_per["1T"][lado][_cl_lim] = None
+                            por_per["2T"][lado][_cl_lim] = None
+                            estimados_por_per["1T"][lado].discard(_cl_lim)
+                            estimados_por_per["2T"][lado].discard(_cl_lim)
+                    elif v_ft == 0.0 and cl != "goles_evitados":
                         por_per["1T"][lado][cl] = 0.0
                         por_per["2T"][lado][cl] = 0.0
                     elif suma_mitades > 0 and cl != "goles_evitados":

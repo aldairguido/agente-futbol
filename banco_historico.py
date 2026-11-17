@@ -351,6 +351,7 @@ def validar_coherencia_1t_2t_ft(
     fila_1t: dict[str, Any] | None,
     fila_2t: dict[str, Any] | None,
     tolerancia_float: float = TOLERANCIA_ADITIVIDAD_FLOAT,
+    incluir_entradas: bool = True,
 ) -> dict[str, Any]:
     """
     Valida `1T + 2T == FT` para goles (`goles_favor`, `goles_contra`) y las 36
@@ -361,6 +362,8 @@ def validar_coherencia_1t_2t_ft(
     discrepancias: list[dict[str, Any]] = []
     verificadas = 0
     variables_objetivo = ("goles_favor", "goles_contra") + tuple(
+        ("entradas", "entradas_ganadas") if incluir_entradas else ()
+    ) + tuple(
         cl for cl in CLAVES_45
         if cl in METRICAS_CONTEO_ADITIVAS_BANCO or cl in METRICAS_CONTINUAS_ADITIVAS_BANCO
     )
@@ -373,7 +376,7 @@ def validar_coherencia_1t_2t_ft(
         v_1t = _a_numero_o_none(f_1t.get(var))
         v_2t = _a_numero_o_none(f_2t.get(var))
 
-        es_conteo = var in METRICAS_CONTEO_ADITIVAS_BANCO
+        es_conteo = var in METRICAS_CONTEO_ADITIVAS_BANCO or (incluir_entradas and var in ("entradas", "entradas_ganadas"))
         tol = 1e-6 if es_conteo else tolerancia_float
 
         if v_ft is not None and v_1t is not None and v_2t is not None:
@@ -401,6 +404,23 @@ def validar_coherencia_1t_2t_ft(
                         "suma_1t_2t": None,
                         "diferencia": round(v_m - v_ft, 4),
                         "motivo": f"mitad_{tag_m}_supera_ft",
+                    })
+
+    if incluir_entradas:
+        for _tag_e, _fp_e in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+            _et_e = _a_numero_o_none(_fp_e.get("entradas"))
+            _eg_e = _a_numero_o_none(_fp_e.get("entradas_ganadas"))
+            if _et_e is not None and _eg_e is not None:
+                verificadas += 1
+                if _eg_e > _et_e + 1e-6:
+                    discrepancias.append({
+                        "variable": "entradas_ganadas",
+                        "ft": round(_eg_e, 4) if _tag_e == "FT" else None,
+                        "1t": round(_eg_e, 4) if _tag_e == "1T" else None,
+                        "2t": round(_eg_e, 4) if _tag_e == "2T" else None,
+                        "suma_1t_2t": None,
+                        "diferencia": round(_eg_e - _et_e, 4),
+                        "motivo": f"entradas_ganadas_mayor_intentadas_{_tag_e}",
                     })
 
     return {
@@ -1322,14 +1342,14 @@ def guardar_en_banco_no_bloqueante(
         return None
 
 
-def _cargar_pares_matrices_banco_83(raiz: Path) -> tuple[list[tuple[str, dict[str, Any]]], set[str]]:
+def _cargar_pares_matrices_banco_83(raiz: Path, incluir_colombia_chile: bool = True, londrina_nautico_path: str | Path | None = None) -> tuple[list[tuple[str, dict[str, Any]]], set[str]]:
     """Reúne las matrices fuente disponibles correspondientes a los 83 partidos únicos del banco."""
     pares: list[tuple[str, dict[str, Any]]] = []
     pids_con_matriz: set[str] = set()
 
     rutas_json = [
         ("ronda5_docs", raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json", True),
-        ("londrina_nautico", raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json", False),
+        ("londrina_nautico", Path(londrina_nautico_path) if londrina_nautico_path else (raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json"), False),
     ]
     for _origen, fp, tiene_docs in rutas_json:
         if not fp.exists():
@@ -1365,10 +1385,26 @@ def _cargar_pares_matrices_banco_83(raiz: Path) -> tuple[list[tuple[str, dict[st
                         break
             except Exception:
                 pass
+    if incluir_colombia_chile:
+        for fn_cc, eq_cc in (
+            ("cache_fotmob_colombia_COL_False_False.json", "colombia"),
+            ("cache_fotmob_chile_CHL_False_False.json", "chile"),
+        ):
+            fp_cc = raiz / "cache" / fn_cc
+            if not fp_cc.exists():
+                continue
+            try:
+                doc_cc = json.loads(fp_cc.read_text(encoding="utf-8-sig"))
+                for p in doc_cc.get("partidos") or []:
+                    if isinstance(p, dict) and p.get("id_partido"):
+                        pids_con_matriz.add(str(p["id_partido"]))
+                        pares.append((eq_cc, p))
+            except Exception:
+                pass
     return pares, pids_con_matriz
 
 
-def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any]) -> list[dict[str, Any]]:
+def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any], *, incluir_entradas: bool = True) -> list[dict[str, Any]]:
     """Detecta defectos estructurales y de proveedor sobre una matriz 45-métricas."""
     pid = str(partido.get("id_partido") or "")
     fuente_pri = str(partido.get("fuente_primaria") or "fotmob").strip().lower() or "fotmob"
@@ -1408,8 +1444,8 @@ def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any]) -> li
                     "detalle": f"{lado}: pases_completados={pc} > pases_total={pt}",
                 })
 
-            eg = _a_numero_o_none((m.get("entradas_ganadas") or {}).get(lado))
-            et = _a_numero_o_none((m.get("entradas") or {}).get(lado))
+            eg = _a_numero_o_none((m.get("entradas_ganadas") or {}).get(lado)) if incluir_entradas else None
+            et = _a_numero_o_none((m.get("entradas") or {}).get(lado)) if incluir_entradas else None
             if eg is not None and et is not None and eg > et:
                 hallazgos.append({
                     "tipo": "entradas_ganadas_mayor_intentadas",
@@ -1463,7 +1499,12 @@ def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any]) -> li
                     "detalle": f"faltas=({fe},{fr}) == tiros_libres=({te},{tr})",
                 })
 
-    for cl in ("remates_totales", "remates_puerta", "corners", "faltas", "pases_total", "pases_completados", "entradas", "entradas_ganadas", "centros", "bloqueos"):
+    _claves_sum_val = (
+        ("remates_totales", "remates_puerta", "corners", "faltas", "pases_total", "pases_completados", "entradas", "entradas_ganadas", "centros", "bloqueos")
+        if incluir_entradas
+        else ("remates_totales", "remates_puerta", "corners", "faltas", "pases_total", "pases_completados", "centros", "bloqueos")
+    )
+    for cl in _claves_sum_val:
         for lado in ("equipo", "rival"):
             vft = _a_numero_o_none((per_map["FT"].get(cl) or {}).get(lado))
             v1t = _a_numero_o_none((per_map["1T"].get(cl) or {}).get(lado))
@@ -1514,6 +1555,9 @@ def validar_defectos_partidos_banco(
     csv_path: str | Path | None = None,
     db_path: str | Path | None = None,
     raiz: str | Path | None = None,
+    incluir_colombia_chile: bool = True,
+    incluir_entradas: bool = True,
+    londrina_nautico_path: str | Path | None = None,
 ) -> dict[str, Any]:
     """
     Ronda 9 Punto 6(D): Validador integral de defectos sobre los 83 partidos únicos del banco
@@ -1526,10 +1570,13 @@ def validar_defectos_partidos_banco(
     raiz_p = Path(raiz) if raiz else Path(__file__).resolve().parent
     _, def_csv = resolver_rutas_banco(db_path=db_path, csv_path=csv_path)
     filas_csv = cargar_banco_csv(def_csv)
-    filas_banco = [
-        r for r in filas_csv
-        if str(r.get("equipo_clave") or "") not in ("colombia", "chile")
-    ]
+    if incluir_colombia_chile:
+        filas_banco = list(filas_csv)
+    else:
+        filas_banco = [
+            r for r in filas_csv
+            if str(r.get("equipo_clave") or "") not in ("colombia", "chile")
+        ]
     por_par_csv: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
     pids_banco: set[str] = set()
     for r in filas_banco:
@@ -1547,7 +1594,7 @@ def validar_defectos_partidos_banco(
         if int((ft_r or next(iter(pm.values()))).get("flashscore_pareado") or 0) == 1:
             src_c = f"{src_c}+flashscore"
         if ft_r and t1_r and t2_r:
-            val = validar_coherencia_1t_2t_ft(ft_r, t1_r, t2_r)
+            val = validar_coherencia_1t_2t_ft(ft_r, t1_r, t2_r, incluir_entradas=incluir_entradas)
             for d in val.get("discrepancias") or []:
                 defectos_csv.append({
                     "tipo": str(d.get("motivo") or "suma_mitades_distinta_ft"),
@@ -1570,15 +1617,24 @@ def validar_defectos_partidos_banco(
                     "detalle": f"pases_completados={pc} > pases_total={pt}",
                 })
 
-    pares_mat, pids_mat = _cargar_pares_matrices_banco_83(raiz_p)
-    pares_83 = [(eq, p) for eq, p in pares_mat if str(p.get("id_partido") or "") in pids_banco]
+    pares_mat, pids_mat = _cargar_pares_matrices_banco_83(raiz_p, incluir_colombia_chile=incluir_colombia_chile, londrina_nautico_path=londrina_nautico_path)
+    pids_col_chi = {
+        str(p.get("id_partido") or "")
+        for eq, p in pares_mat
+        if eq in ("colombia", "chile") and p.get("id_partido")
+    }
+    pares_83 = [
+        (eq, p) for eq, p in pares_mat
+        if (str(p.get("id_partido") or "") in pids_banco)
+        or (incluir_colombia_chile and eq in ("colombia", "chile"))
+    ]
 
     hallazgos_crudos: list[dict[str, Any]] = []
     hallazgos_post_sanear: list[dict[str, Any]] = []
     for eq_key, p in pares_83:
-        hallazgos_crudos.extend(_evaluar_defectos_matriz_partido(eq_key, p))
+        hallazgos_crudos.extend(_evaluar_defectos_matriz_partido(eq_key, p, incluir_entradas=incluir_entradas))
         p_san = _sanear_p45(_copy_bh.deepcopy(p))
-        hallazgos_post_sanear.extend(_evaluar_defectos_matriz_partido(eq_key, p_san))
+        hallazgos_post_sanear.extend(_evaluar_defectos_matriz_partido(eq_key, p_san, incluir_entradas=incluir_entradas))
 
     def _agrupar(items: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int], int]:
         por_tipo: dict[str, int] = {}
@@ -1596,11 +1652,19 @@ def validar_defectos_partidos_banco(
     cr_tipo, cr_fuente, cr_pids = _agrupar(hallazgos_crudos)
     ps_tipo, ps_fuente, ps_pids = _agrupar(hallazgos_post_sanear)
     csv_tipo, csv_fuente, csv_pids = _agrupar(defectos_csv)
+    cr_b83_t, cr_b83_f, cr_b83_p = _agrupar([x for x in hallazgos_crudos if x.get("equipo") not in ("colombia", "chile")])
+    ps_b83_t, ps_b83_f, ps_b83_p = _agrupar([x for x in hallazgos_post_sanear if x.get("equipo") not in ("colombia", "chile")])
+    cr_cc_t, cr_cc_f, cr_cc_p = _agrupar([x for x in hallazgos_crudos if x.get("equipo") in ("colombia", "chile")])
+    ps_cc_t, ps_cc_f, ps_cc_p = _agrupar([x for x in hallazgos_post_sanear if x.get("equipo") in ("colombia", "chile")])
 
     return {
         "n_partidos_unicos_banco_csv": len(pids_banco),
         "n_pares_equipo_partido_banco_csv": len(por_par_csv),
-        "n_partidos_unicos_con_matriz_fuente": len(pids_mat & pids_banco),
+        "incluye_colombia_chile": bool(incluir_colombia_chile),
+        "incluye_entradas": bool(incluir_entradas),
+        "n_partidos_unicos_colombia_chile": len(pids_col_chi) if incluir_colombia_chile else 0,
+        "n_matrices_evaluadas": len(pares_83),
+        "n_partidos_unicos_con_matriz_fuente": len(pids_mat & (pids_banco | (pids_col_chi if incluir_colombia_chile else set()))),
         "ids_sin_matriz_cruda_en_fixtures": sorted(pids_banco - pids_mat),
         "banco_csv_normalizado": {
             "total_defectos": len(defectos_csv),
@@ -1622,5 +1686,23 @@ def validar_defectos_partidos_banco(
             "por_tipo": ps_tipo,
             "por_fuente": ps_fuente,
             "ejemplos": hallazgos_post_sanear[:12],
+        },
+        "resumen_por_ambito": {
+            "banco_83": {
+                "pre_total_defectos": sum(cr_b83_t.values()),
+                "pre_partidos_unicos_con_defecto": cr_b83_p,
+                "pre_por_tipo": cr_b83_t,
+                "post_total_defectos": sum(ps_b83_t.values()),
+                "post_partidos_unicos_con_defecto": ps_b83_p,
+                "post_por_tipo": ps_b83_t,
+            },
+            "colombia_chile_30": {
+                "pre_total_defectos": sum(cr_cc_t.values()),
+                "pre_partidos_unicos_con_defecto": cr_cc_p,
+                "pre_por_tipo": cr_cc_t,
+                "post_total_defectos": sum(ps_cc_t.values()),
+                "post_partidos_unicos_con_defecto": ps_cc_p,
+                "post_por_tipo": ps_cc_t,
+            },
         },
     }

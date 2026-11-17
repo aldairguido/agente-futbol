@@ -7864,7 +7864,18 @@ def auditar_datos_ronda10(
     }
 
     # ── 8(c) Corrección de los 17 tiros_libres_sin_invertir + Colombia-Chile 2026-11-13 ──
-    rep_banco = auditar_defectos_banco_83_ronda9()
+    _resp_r12_p4 = raiz / "datos" / "respaldos" / "ronda12_p4_pre_correccion"
+    if (_resp_r12_p4 / "tests" / "fixtures" / "londrina_nautico_fixtures.json").exists():
+        from banco_historico import validar_defectos_partidos_banco as _vdpb_r10
+        rep_banco = _vdpb_r10(
+            csv_path=_resp_r12_p4 / "data" / "banco_partidos.csv",
+            db_path=_resp_r12_p4 / "data" / "banco_partidos.db",
+            raiz=raiz,
+            incluir_colombia_chile=False,
+            londrina_nautico_path=_resp_r12_p4 / "tests" / "fixtures" / "londrina_nautico_fixtures.json",
+        )
+    else:
+        rep_banco = auditar_defectos_banco_83_ronda9()
     pre_tl = int(rep_banco["matrices_crudas_pre_saneamiento"]["por_tipo"].get("tiros_libres_sin_invertir_igual_faltas", 0))
     post_tl = int(rep_banco["matrices_post_sanear_partido_auditoria_45"]["por_tipo"].get("tiros_libres_sin_invertir_igual_faltas", 0))
 
@@ -8726,8 +8737,17 @@ def auditar_m3_y_6_empates_ronda11(
         "5190670": {"id": "Ekd0vm5U", "fecha": "2026-08-23", "local": "Sao Bernardo", "visitante": "Nautico", "goles_local": 1, "goles_visitante": 1, "fs_ft_local": "80% (8/10)", "fs_ft_visitante": "65% (11/17)"},
     }
 
-    pares, _ = bh._cargar_pares_matrices_banco_83(raiz)
-    rep_banco = bh.validar_defectos_partidos_banco(raiz=raiz)
+    _resp_ln_r11 = raiz / "datos" / "respaldos" / "ronda12_p4_pre_correccion" / "tests" / "fixtures" / "londrina_nautico_fixtures.json"
+    _ln_hist = _resp_ln_r11 if _resp_ln_r11.exists() else None
+    pares, _ = bh._cargar_pares_matrices_banco_83(raiz, incluir_colombia_chile=False, londrina_nautico_path=_ln_hist)
+    _resp_r11_p3 = raiz / "datos" / "respaldos" / "ronda12_p4_pre_correccion"
+    rep_banco = bh.validar_defectos_partidos_banco(
+        csv_path=(_resp_r11_p3 / "data" / "banco_partidos.csv") if (_resp_r11_p3 / "data" / "banco_partidos.csv").exists() else None,
+        db_path=(_resp_r11_p3 / "data" / "banco_partidos.db") if (_resp_r11_p3 / "data" / "banco_partidos.db").exists() else None,
+        raiz=raiz,
+        incluir_colombia_chile=False,
+        londrina_nautico_path=_ln_hist,
+    )
     n_empates_reportados = int(rep_banco["matrices_post_sanear_partido_auditoria_45"]["por_tipo"].get("empate_con_bandos_invertidos", 0))
 
     def _aciertos_dir_inv(loc_fm: str, vis_fm: str, cand: dict[str, Any]) -> tuple[int, bool, int, bool]:
@@ -8937,7 +8957,14 @@ def auditar_m1_tackles_ronda11(
 
     hallazgos_post_consolidar = bh._evaluar_defectos_matriz_partido("colombia", _a_dict_mat(m_pre))
     hallazgos_sobre_cache_disco = bh._evaluar_defectos_matriz_partido("colombia", m1_cache)
-    rep_banco_83 = bh.validar_defectos_partidos_banco(raiz=raiz)
+    _resp_r11_p4 = raiz / "datos" / "respaldos" / "ronda12_p4_pre_correccion"
+    rep_banco_83 = bh.validar_defectos_partidos_banco(
+        csv_path=(_resp_r11_p4 / "data" / "banco_partidos.csv") if (_resp_r11_p4 / "data" / "banco_partidos.csv").exists() else None,
+        db_path=(_resp_r11_p4 / "data" / "banco_partidos.db") if (_resp_r11_p4 / "data" / "banco_partidos.db").exists() else None,
+        raiz=raiz,
+        incluir_colombia_chile=False,
+        londrina_nautico_path=(_resp_r11_p4 / "tests" / "fixtures" / "londrina_nautico_fixtures.json") if (_resp_r11_p4 / "tests" / "fixtures" / "londrina_nautico_fixtures.json").exists() else None,
+    )
 
     def _cache_ent(per: str) -> list[Any]:
         f = next((x for x in ((m1_cache.get("periodos") or {}).get(per) or {}).get("filas") or [] if x.get("clave") == "entradas"), {})
@@ -11418,6 +11445,405 @@ def auditar_reglas_que_pesan_ronda12(
         "A+B": _evaluar_variante(activar_todas_b=True),
     }
 
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+def auditar_pasada_3b_y_banco_ronda12(
+    *,
+    ejecutar_vivo: bool = True,
+    guardar_ruta: str | None = "datos/ronda12_punto4_pasada3b_y_banco.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 - Punto 4 (PRORRATEO "Pasada 3b", validador extendido y 6 empates):
+      1. Inventario en disco y en fuente viva FotMob de celdas prorrateadas/ajustadas
+         por Pasada 3b sobre las 30 matrices (Colombia/Chile) y los 83 partidos del banco.
+      2. Verificación comparada con `usar_sin_dato_si_mitades_no_suman_ft` False vs True
+         (si `1T + 2T != FT`, el FT permanece y ambas mitades quedan `None` / `sin_dato`).
+      3. Ejecución del validador extendido a Colombia, Chile y `entradas`/`entradas_ganadas`.
+      4. Evidencia antes/después de los 6 empates del banco corregidos desde Flashscore
+         con respaldo en `datos/respaldos/ronda12_p4_pre_correccion/`.
+    """
+    import copy as _copy_r12p4
+    from pathlib import Path
+    import banco_historico as bh
+    import fuentes_xg as fxg
+    from decision_cobertura import bandera_activa, banderas_comportamiento
+    from motor_mercados import analizar
+
+    raiz = Path(__file__).resolve().parent
+    respaldo_dir = raiz / "datos" / "respaldos" / "ronda12_p4_pre_correccion"
+
+    doc_col = json.loads((raiz / "cache" / "cache_fotmob_colombia_COL_False_False.json").read_text(encoding="utf-8-sig"))
+    doc_chi = json.loads((raiz / "cache" / "cache_fotmob_chile_CHL_False_False.json").read_text(encoding="utf-8-sig"))
+    pares_b83, _ = bh._cargar_pares_matrices_banco_83(raiz, incluir_colombia_chile=False)
+    rows_csv = bh.cargar_banco_csv(raiz / "data" / "banco_partidos.csv")
+    pids_b83 = {str(r.get("id_partido") or "") for r in rows_csv if str(r.get("equipo_clave") or "") not in ("colombia", "chile")}
+    pares_b83 = [(eq, p) for eq, p in pares_b83 if str((p or {}).get("id_partido") or "") in pids_b83]
+
+    todas_aditivas = tuple(sorted(fxg.METRICAS_CONTEO_ADITIVAS | fxg.METRICAS_CONTINUAS_ADITIVAS))
+
+    def _inventario_disco_grupo(pares_list: list[tuple[str, dict[str, Any]]]) -> dict[str, Any]:
+        incons_guardadas: list[dict[str, Any]] = []
+        discrepancias_residuales: list[dict[str, Any]] = []
+        est_modelo = 0
+        vistas: set[tuple[str, str]] = set()
+        for eq_k, p in pares_list:
+            pid = str(p.get("id_partido") or "")
+            if (eq_k, pid) in vistas:
+                continue
+            vistas.add((eq_k, pid))
+            for inc in (p.get("inconsistencias_aritmeticas") or []):
+                if isinstance(inc, dict):
+                    incons_guardadas.append({"equipo": eq_k, "id_partido": pid, **inc})
+            per_map: dict[str, dict[str, dict[str, Any]]] = {}
+            for per in ("FT", "1T", "2T"):
+                per_map[per] = {
+                    str(f.get("clave")): f
+                    for f in (((p.get("periodos") or {}).get(per) or {}).get("filas") or [])
+                    if isinstance(f, dict) and f.get("clave")
+                }
+                pr = ((p.get("procedencia") or {}).get(per) or {})
+                for lado in ("equipo", "rival"):
+                    for v_p in (pr.get(lado) or {}).values():
+                        if v_p == "estimacion_modelo":
+                            est_modelo += 1
+            for cl in todas_aditivas:
+                tol = 0.05 if cl in fxg.METRICAS_CONTINUAS_ADITIVAS else 0.001
+                for lado in ("equipo", "rival"):
+                    v_ft = (per_map["FT"].get(cl) or {}).get(lado)
+                    v_1t = (per_map["1T"].get(cl) or {}).get(lado)
+                    v_2t = (per_map["2T"].get(cl) or {}).get(lado)
+                    if v_ft is not None and v_1t is not None and v_2t is not None:
+                        if abs((float(v_1t) + float(v_2t)) - float(v_ft)) > tol:
+                            discrepancias_residuales.append({
+                                "equipo": eq_k,
+                                "id_partido": pid,
+                                "lado": lado,
+                                "clave": cl,
+                                "FT": v_ft,
+                                "1T": v_1t,
+                                "2T": v_2t,
+                                "suma_1t_2t": round(float(v_1t) + float(v_2t), 4),
+                            })
+        return {
+            "n_matrices": len(vistas),
+            "inconsistencias_guardadas_en_disco": len(incons_guardadas),
+            "discrepancias_1t_2t_ft_residuales_en_disco": len(discrepancias_residuales),
+            "detalle_residuales": discrepancias_residuales,
+            "celdas_estimacion_modelo_en_disco": est_modelo,
+        }
+
+    pares_col = [("colombia", p) for p in (doc_col.get("partidos") or [])]
+    pares_chi = [("chile", p) for p in (doc_chi.get("partidos") or [])]
+    inv_disco = {
+        "colombia_15": _inventario_disco_grupo(pares_col),
+        "chile_15": _inventario_disco_grupo(pares_chi),
+        "matrices_30": _inventario_disco_grupo(pares_col + pares_chi),
+        "banco_83": _inventario_disco_grupo(pares_b83),
+    }
+
+    inv_vivo: dict[str, Any] | None = None
+    ruta_p = Path(guardar_ruta) if (guardar_ruta and os.path.isabs(guardar_ruta)) else ((raiz / guardar_ruta) if guardar_ruta else (raiz / "datos" / "ronda12_punto4_pasada3b_y_banco.json"))
+    if ejecutar_vivo:
+        def _build_pf(p_dict: dict[str, Any], eq_nombre: str) -> tuple[fxg.PartidoFinalizado, dict[str, Any]]:
+            es_loc = str(p_dict.get("condicion") or "") == "casa"
+            rival_n = str(p_dict.get("rival") or "Rival")
+            loc_n = eq_nombre if es_loc else rival_n
+            vis_n = rival_n if es_loc else eq_nombre
+            marc = p_dict.get("marcador") or {}
+            ge, gr = marc.get("equipo"), marc.get("rival")
+            gl = int(ge) if (ge is not None and es_loc) else (int(gr) if gr is not None else None)
+            gv = int(gr) if (gr is not None and es_loc) else (int(ge) if ge is not None else None)
+            if not es_loc and ge is not None and gr is not None:
+                gl, gv = int(gr), int(ge)
+            pf = fxg.PartidoFinalizado(
+                id_partido=str(p_dict.get("id_partido") or ""),
+                fecha=str(p_dict.get("fecha") or ""),
+                torneo=str(p_dict.get("torneo") or p_dict.get("competicion") or ""),
+                local=loc_n,
+                visitante=vis_n,
+                goles_local=gl,
+                goles_visitante=gv,
+                es_local_el_equipo=es_loc,
+                url=str(p_dict.get("url") or ""),
+            )
+            return pf, {"nombre": eq_nombre}
+
+        equipo_nombres_b83 = {
+            "italy": "Italy",
+            "france": "France",
+            "turkey": "Turkiye",
+            "belgium": "Belgium",
+            "londrina": "Londrina",
+            "nautico": "Nautico",
+        }
+        items_vivos: list[tuple[str, str, dict[str, Any], str]] = []
+        vistos_v: set[tuple[str, str]] = set()
+        for grp,plist,nom_def in (
+            ("colombia_15", pares_col, "Colombia"),
+            ("chile_15", pares_chi, "Chile"),
+            ("banco_83", pares_b83, ""),
+        ):
+            for eq_k, p in plist:
+                pid = str((p or {}).get("id_partido") or "")
+                if not pid or (grp, pid) in vistos_v:
+                    continue
+                vistos_v.add((grp, pid))
+                nom = nom_def or equipo_nombres_b83.get(eq_k, str(p.get("equipo") or eq_k))
+                items_vivos.append((grp, eq_k, p, nom))
+
+        cache_pre_por_pid: dict[tuple[str, bool], fxg.MatrizPartido] = {}
+        res_grupos_vivo: dict[str, dict[str, Any]] = {
+            g: {
+                "n_partidos_grupo": 0,
+                "n_fotmob_numericos_evaluados": 0,
+                "pids_flashscore_no_numericos": [],
+                "flag_off_total_inconsistencias": 0,
+                "flag_off_prorrateadas": 0,
+                "flag_off_ft_cero_ceros": 0,
+                "flag_off_suma_mitades_cero_ft_pos": 0,
+                "flag_on_mitades_sin_dato": 0,
+                "flag_on_prorrateadas": 0,
+                "flag_on_ft_intacto_y_mitades_none": True,
+                "por_metrica_prorrateada": {},
+                "ejemplos_prorrateadas": [],
+            }
+            for g in ("colombia_15", "chile_15", "banco_83")
+        }
+
+        orig_consolidar = fxg.consolidar_matriz_completa
+        captura_box: dict[str, Any] = {}
+
+        def _hook_capturar(mat: fxg.MatrizPartido) -> None:
+            captura_box["pre"] = _copy_r12p4.deepcopy(mat)
+            return orig_consolidar(mat)
+
+        try:
+            fxg.consolidar_matriz_completa = _hook_capturar  # type: ignore[assignment]
+            with fxg.FuenteFotMob() as fm:
+                for grp, eq_k, p, eq_nom in items_vivos:
+                    res_g = res_grupos_vivo[grp]
+                    res_g["n_partidos_grupo"] += 1
+                    pid = str(p.get("id_partido") or "")
+                    if not pid.isdigit():
+                        res_g["pids_flashscore_no_numericos"].append({"equipo": eq_k, "id_partido": pid})
+                        continue
+                    es_loc = str(p.get("condicion") or "") == "casa"
+                    key_cache = (pid, es_loc)
+                    if key_cache not in cache_pre_por_pid:
+                        captura_box.clear()
+                        pf, eq_obj = _build_pf(p, eq_nom)
+                        with banderas_comportamiento(usar_sin_dato_si_mitades_no_suman_ft=False):
+                            _ = fm.matriz_partido(pf, eq_obj)
+                        if "pre" in captura_box:
+                            cache_pre_por_pid[key_cache] = captura_box["pre"]
+                    mat_pre = cache_pre_por_pid.get(key_cache)
+                    if mat_pre is None:
+                        continue
+                    res_g["n_fotmob_numericos_evaluados"] += 1
+                    mat_off = _copy_r12p4.deepcopy(mat_pre)
+                    mat_on = _copy_r12p4.deepcopy(mat_pre)
+                    with banderas_comportamiento(usar_sin_dato_si_mitades_no_suman_ft=False):
+                        orig_consolidar(mat_off)
+                    with banderas_comportamiento(usar_sin_dato_si_mitades_no_suman_ft=True):
+                        orig_consolidar(mat_on)
+
+                    def _val_mat(m_obj: fxg.MatrizPartido, per_s: str, cl_s: str, lado_s: str) -> Any:
+                        filas_p = (m_obj.periodos.get(per_s).filas if m_obj.periodos.get(per_s) else [])
+                        for ff in filas_p:
+                            if ff.get("clave") == cl_s:
+                                return ff.get(lado_s)
+                        return None
+
+                    for inc in (mat_off.inconsistencias_aritmeticas or []):
+                        cl_i = str(inc.get("clave") or "")
+                        ld_i = str(inc.get("lado") or "")
+                        res_g["flag_off_total_inconsistencias"] += 1
+                        if inc.get("reescalado_proporcional"):
+                            res_g["flag_off_prorrateadas"] += 1
+                            res_g["por_metrica_prorrateada"][cl_i] = res_g["por_metrica_prorrateada"].get(cl_i, 0) + 1
+                            if len(res_g["ejemplos_prorrateadas"]) < 15:
+                                res_g["ejemplos_prorrateadas"].append({
+                                    "id_partido": pid,
+                                    "equipo": eq_k,
+                                    "lado": ld_i,
+                                    "clave": cl_i,
+                                    "crudo_FT": inc.get("FT"),
+                                    "crudo_1T": inc.get("1T"),
+                                    "crudo_2T": inc.get("2T"),
+                                    "off_1T": _val_mat(mat_off, "1T", cl_i, ld_i),
+                                    "off_2T": _val_mat(mat_off, "2T", cl_i, ld_i),
+                                    "on_FT": _val_mat(mat_on, "FT", cl_i, ld_i),
+                                    "on_1T": _val_mat(mat_on, "1T", cl_i, ld_i),
+                                    "on_2T": _val_mat(mat_on, "2T", cl_i, ld_i),
+                                    "on_proc_1T": (((mat_on.procedencia or {}).get("1T") or {}).get(ld_i) or {}).get(cl_i),
+                                    "on_proc_2T": (((mat_on.procedencia or {}).get("2T") or {}).get(ld_i) or {}).get(cl_i),
+                                })
+                        elif float(inc.get("FT") or 0.0) == 0.0 and cl_i != "goles_evitados":
+                            res_g["flag_off_ft_cero_ceros"] += 1
+                        elif float(inc.get("suma_1t_2t") or 0.0) == 0.0:
+                            res_g["flag_off_suma_mitades_cero_ft_pos"] += 1
+
+                    for inc_on in (mat_on.inconsistencias_aritmeticas or []):
+                        cl_o = str(inc_on.get("clave") or "")
+                        ld_o = str(inc_on.get("lado") or "")
+                        if inc_on.get("reescalado_proporcional"):
+                            res_g["flag_on_prorrateadas"] += 1
+                        vft_o = _val_mat(mat_on, "FT", cl_o, ld_o)
+                        v1_o = _val_mat(mat_on, "1T", cl_o, ld_o)
+                        v2_o = _val_mat(mat_on, "2T", cl_o, ld_o)
+                        pr1_o = (((mat_on.procedencia or {}).get("1T") or {}).get(ld_o) or {}).get(cl_o)
+                        pr2_o = (((mat_on.procedencia or {}).get("2T") or {}).get(ld_o) or {}).get(cl_o)
+                        if vft_o is not None and v1_o is None and v2_o is None and pr1_o == "sin_dato" and pr2_o == "sin_dato":
+                            res_g["flag_on_mitades_sin_dato"] += 1
+                        else:
+                            res_g["flag_on_ft_intacto_y_mitades_none"] = False
+        finally:
+            fxg.consolidar_matriz_completa = orig_consolidar
+
+        m30 = {
+            "n_partidos_grupo": res_grupos_vivo["colombia_15"]["n_partidos_grupo"] + res_grupos_vivo["chile_15"]["n_partidos_grupo"],
+            "n_fotmob_numericos_evaluados": res_grupos_vivo["colombia_15"]["n_fotmob_numericos_evaluados"] + res_grupos_vivo["chile_15"]["n_fotmob_numericos_evaluados"],
+            "flag_off_total_inconsistencias": res_grupos_vivo["colombia_15"]["flag_off_total_inconsistencias"] + res_grupos_vivo["chile_15"]["flag_off_total_inconsistencias"],
+            "flag_off_prorrateadas": res_grupos_vivo["colombia_15"]["flag_off_prorrateadas"] + res_grupos_vivo["chile_15"]["flag_off_prorrateadas"],
+            "flag_off_ft_cero_ceros": res_grupos_vivo["colombia_15"]["flag_off_ft_cero_ceros"] + res_grupos_vivo["chile_15"]["flag_off_ft_cero_ceros"],
+            "flag_off_suma_mitades_cero_ft_pos": res_grupos_vivo["colombia_15"]["flag_off_suma_mitades_cero_ft_pos"] + res_grupos_vivo["chile_15"]["flag_off_suma_mitades_cero_ft_pos"],
+            "flag_on_mitades_sin_dato": res_grupos_vivo["colombia_15"]["flag_on_mitades_sin_dato"] + res_grupos_vivo["chile_15"]["flag_on_mitades_sin_dato"],
+            "flag_on_prorrateadas": res_grupos_vivo["colombia_15"]["flag_on_prorrateadas"] + res_grupos_vivo["chile_15"]["flag_on_prorrateadas"],
+            "flag_on_ft_intacto_y_mitades_none": res_grupos_vivo["colombia_15"]["flag_on_ft_intacto_y_mitades_none"] and res_grupos_vivo["chile_15"]["flag_on_ft_intacto_y_mitades_none"],
+        }
+        inv_vivo = {
+            "fuente": "FuenteFotMob (live /matchDetails + Flashscore pairing)",
+            "bandera_defecto": bandera_activa("usar_sin_dato_si_mitades_no_suman_ft"),
+            "colombia_15": res_grupos_vivo["colombia_15"],
+            "chile_15": res_grupos_vivo["chile_15"],
+            "matrices_30": m30,
+            "banco_83": res_grupos_vivo["banco_83"],
+        }
+    elif ruta_p.exists():
+        try:
+            prev_j = json.loads(ruta_p.read_text(encoding="utf-8"))
+            inv_vivo = prev_j.get("inventario_pasada_3b_fuente_viva")
+        except Exception:
+            inv_vivo = None
+
+    # 3. Validador extendido (live post-R12 vs respaldo pre-R12)
+    val_live_full = bh.validar_defectos_partidos_banco(raiz=raiz, incluir_colombia_chile=True, incluir_entradas=True)
+    val_live_83 = bh.validar_defectos_partidos_banco(raiz=raiz, incluir_colombia_chile=False, incluir_entradas=True)
+    val_respaldo_83 = None
+    if (respaldo_dir / "tests" / "fixtures" / "londrina_nautico_fixtures.json").exists():
+        val_respaldo_83 = bh.validar_defectos_partidos_banco(
+            csv_path=respaldo_dir / "data" / "banco_partidos.csv",
+            db_path=respaldo_dir / "data" / "banco_partidos.db",
+            raiz=raiz,
+            incluir_colombia_chile=False,
+            incluir_entradas=True,
+            londrina_nautico_path=respaldo_dir / "tests" / "fixtures" / "londrina_nautico_fixtures.json",
+        )
+
+    prueba_val_entradas = bh.validar_coherencia_1t_2t_ft(
+        {"entradas": 15, "entradas_ganadas": 10},
+        {"entradas": 8, "entradas_ganadas": 9},
+        {"entradas": 5, "entradas_ganadas": 4},
+        incluir_entradas=True,
+    )
+
+    # 4. Evidencia de los 6 empates corregidos (respaldo vs live + invarianza lambda LN)
+    ids6 = ("5190761", "5190682", "5190774", "5190743", "5190716", "5190670")
+    ln_live = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    ln_back = json.loads((respaldo_dir / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8")) if (respaldo_dir / "tests" / "fixtures" / "londrina_nautico_fixtures.json").exists() else None
+    manifest_p = respaldo_dir / "manifest_respaldo.json"
+    manifest = json.loads(manifest_p.read_text(encoding="utf-8")) if manifest_p.exists() else None
+
+    comp_6: list[dict[str, Any]] = []
+    if ln_back is not None:
+        idx_back = {
+            str(p.get("id_partido")): (ek, p)
+            for ek in ("londrina", "nautico")
+            for p in (ln_back[ek].get("partidos") or [])
+        }
+        idx_live = {
+            str(p.get("id_partido")): (ek, p)
+            for ek in ("londrina", "nautico")
+            for p in (ln_live[ek].get("partidos") or [])
+        }
+        for pid in ids6:
+            ek_b, pb = idx_back[pid]
+            ek_l, pl = idx_live[pid]
+            def _ext(p_obj: dict[str, Any]) -> dict[str, Any]:
+                fmap = {f["clave"]: (f.get("equipo"), f.get("rival")) for f in ((p_obj.get("periodos") or {}).get("FT") or {}).get("filas") or []}
+                return {
+                    "bandos_invertidos": bool((p_obj.get("fuente_secundaria") or {}).get("bandos_invertidos")),
+                    "id_flashscore": (p_obj.get("fuente_secundaria") or {}).get("id_flashscore"),
+                    "tiros_libres": fmap.get("tiros_libres"),
+                    "entradas": fmap.get("entradas"),
+                    "entradas_ganadas": fmap.get("entradas_ganadas"),
+                    "entradas_ganadas_pct": fmap.get("entradas_ganadas_pct"),
+                    "pases_tercio_final": fmap.get("pases_tercio_final"),
+                    "pases_tercio_final_pct": fmap.get("pases_tercio_final_pct"),
+                    "xa_equipo": fmap.get("xa_equipo"),
+                    "errores_remate": fmap.get("errores_remate"),
+                    "saques_puerta": fmap.get("saques_puerta"),
+                }
+            comp_6.append({
+                "id_partido": pid,
+                "equipo_clave": ek_l,
+                "fecha": pl.get("fecha"),
+                "condicion": pl.get("condicion"),
+                "rival": pl.get("rival"),
+                "antes_respaldo": _ext(pb),
+                "despues_flashscore": _ext(pl),
+            })
+
+    invarianza_ln: dict[str, Any] = {}
+    for lbl, act_b in (("soloA", False), ("AB", True)):
+        with banderas_comportamiento(activar_todas=act_b):
+            an_live = analizar(ln_live["londrina"], ln_live["nautico"], "Londrina", "Náutico")
+            t_l = an_live.motor.tasas
+            val_live = (t_l.lambda_local_ft, t_l.lambda_visitante_ft)
+            val_back = None
+            if ln_back is not None:
+                an_back = analizar(ln_back["londrina"], ln_back["nautico"], "Londrina", "Náutico")
+                t_b = an_back.motor.tasas
+                val_back = (t_b.lambda_local_ft, t_b.lambda_visitante_ft)
+            invarianza_ln[lbl] = {
+                "antes": list(val_back) if val_back else None,
+                "despues": list(val_live),
+                "invariante": (val_back == val_live) if val_back else None,
+            }
+
+    out = {
+        "bandera_usar_sin_dato_si_mitades_no_suman_ft_defecto": bandera_activa("usar_sin_dato_si_mitades_no_suman_ft"),
+        "inventario_en_disco": inv_disco,
+        "inventario_pasada_3b_fuente_viva": inv_vivo,
+        "validador_extendido": {
+            "live_completo_con_colombia_chile_y_entradas": val_live_full,
+            "live_banco_83": {
+                "pre_total": val_live_83["matrices_crudas_pre_saneamiento"]["total_defectos"],
+                "pre_por_tipo": val_live_83["matrices_crudas_pre_saneamiento"]["por_tipo"],
+                "post_total": val_live_83["matrices_post_sanear_partido_auditoria_45"]["total_defectos"],
+                "post_por_tipo": val_live_83["matrices_post_sanear_partido_auditoria_45"]["por_tipo"],
+            },
+            "respaldo_pre_r12_banco_83": {
+                "pre_total": val_respaldo_83["matrices_crudas_pre_saneamiento"]["total_defectos"],
+                "pre_por_tipo": val_respaldo_83["matrices_crudas_pre_saneamiento"]["por_tipo"],
+                "post_total": val_respaldo_83["matrices_post_sanear_partido_auditoria_45"]["total_defectos"],
+                "post_por_tipo": val_respaldo_83["matrices_post_sanear_partido_auditoria_45"]["por_tipo"],
+            } if val_respaldo_83 else None,
+            "prueba_sintetica_validar_coherencia_entradas": prueba_val_entradas,
+        },
+        "correccion_6_empates_banco": {
+            "respaldo_dir": "datos/respaldos/ronda12_p4_pre_correccion",
+            "n_archivos_respaldados": len(manifest) if manifest else 0,
+            "manifest_respaldo": manifest,
+            "comparacion_6_partidos": comp_6,
+            "invarianza_lambda_londrina_nautico": invarianza_ln,
+        },
+    }
     if guardar_ruta:
         out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
         out_p.parent.mkdir(parents=True, exist_ok=True)
