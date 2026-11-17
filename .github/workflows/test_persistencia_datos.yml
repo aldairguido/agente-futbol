@@ -26,6 +26,8 @@ jobs:
     steps:
       - name: Checkout del repositorio público
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Configurar Python 3.11
         uses: actions/setup-python@v5
@@ -45,7 +47,7 @@ jobs:
           PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
           PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
         run: |
-          python -u -m persistencia_produccion --inicializar-produccion-limpia --rama-produccion produccion-datos
+          python -u -m persistencia_produccion --inicializar-produccion-limpia --rama-produccion produccion-datos --ci-anotacion
 
       - name: Smoke test contra repositorio privado bajo timeout -k 60 285m (sin Telegram)
         env:
@@ -57,4 +59,4 @@ jobs:
           PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
         run: |
           mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
-          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}"
+          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}" --ci-anotacion

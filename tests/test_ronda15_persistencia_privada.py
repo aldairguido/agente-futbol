@@ -412,3 +412,65 @@ def test_ronda15_ledger_local_base_limpio_y_bot_24_7_sin_tocar():
     ).replace("\r\n", "\n")
     bot_disk = (Path(ROOT) / ".github" / "workflows" / "bot_24_7.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
     assert bot_main == bot_disk
+
+
+def test_ronda15_auth_git_anula_extraheader_heredado_y_censura_anotacion_ci(
+    tmp_path, monkeypatch, capsys
+):
+    import base64
+    import http.server
+    import threading
+
+    seen_auths = []
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            seen_auths.append(self.headers.get_all("Authorization") or [])
+            self.send_response(404)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        ws = tmp_path / "ws_checkout"
+        ws.mkdir(parents=True, exist_ok=True)
+        _git(ws, "init")
+        _git(ws, "config", f"http.http://127.0.0.1:{port}/.extraheader", "AUTHORIZATION: basic PUBLIC_GH_TOKEN_B64")
+
+        tok_priv = "github_pat_PRIVADO_NO_DEBE_FILTRAR_123"
+        url_priv = f"http://127.0.0.1:{port}/privado/datos.git"
+        monkeypatch.setenv("PERSISTENCIA_REMOTO_TOKEN", tok_priv)
+        monkeypatch.setenv("PERSISTENCIA_REMOTO_URL", url_priv)
+        cfg = pp.ConfigPersistencia(
+            workspace_dir=ws,
+            remote="datos",
+            remote_url=url_priv,
+            remote_token=tok_priv,
+            habilitada=True,
+        )
+        ok_h, _, err_h = pp.detectar_rama_defecto_remota(ws, cfg, url_priv)
+        assert ok_h is False
+        assert err_h is not None
+        assert tok_priv not in err_h
+        assert "127.0.0.1" not in err_h
+
+        assert len(seen_auths) >= 1
+        assert seen_auths[0] == [
+            "Basic " + base64.b64encode(f"x-access-token:{tok_priv}".encode("utf-8")).decode("ascii")
+        ]
+
+        pp._emitir_anotacion_ci_segura(
+            "init_prod",
+            {"ok": False, "codigo_error": "error_remoto_auth_o_red", "error": f"fallo {tok_priv} en {url_priv}"},
+        )
+        out_ci = capsys.readouterr().out
+        assert "::error::init_prod" in out_ci
+        assert tok_priv not in out_ci
+        assert url_priv not in out_ci
+    finally:
+        srv.shutdown()

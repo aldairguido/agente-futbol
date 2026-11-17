@@ -19,6 +19,7 @@ con:
 from __future__ import annotations
 
 import argparse
+import base64
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
@@ -365,14 +366,19 @@ def _censurar_secreto(
 ) -> str:
     s = str(texto or "")
     tok = (token or "").strip()
-    if tok and tok in s:
-        s = s.replace(tok, "***")
+    if tok:
+        if tok in s:
+            s = s.replace(tok, "***")
+        tok_b64 = base64.b64encode(f"x-access-token:{tok}".encode("utf-8")).decode("ascii")
+        if tok_b64 in s:
+            s = s.replace(tok_b64, "***")
     s = re.sub(r"(https?://)[^/@\s]+@", r"\1***@", s)
     rurl = (remote_url or "").strip()
     if rurl and rurl.lower().startswith(("http://", "https://")):
-        s = s.replace(rurl, "[remoto-datos]")
-        if rurl.endswith(".git"):
-            s = s.replace(rurl[:-4], "[remoto-datos]")
+        base_sin_slash = rurl.rstrip("/")
+        for cand in (rurl, base_sin_slash, base_sin_slash[:-4] if base_sin_slash.endswith(".git") else f"{base_sin_slash}.git"):
+            if cand and cand in s:
+                s = s.replace(cand, "[remoto-datos]")
     return s
 
 
@@ -455,28 +461,45 @@ def _run_git_con_auth(
     target_url: str = "",
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
-    """Ejecuta Git con `GIT_ASKPASS` efímero cuando `cfg.remote_token` está presente, sin imprimir credenciales."""
+    """
+    Ejecuta Git autenticando por `GIT_CONFIG_COUNT` en entorno (sin secretos en argv y
+    anulando cualquier `http.*.extraheader` heredado de `actions/checkout`).
+    """
     tok = (cfg.remote_token or "").strip()
     es_http = target_url.lower().startswith(("http://", "https://"))
     if not tok or not es_http:
         return _run_git(cwd, *args, check=check)
 
-    extra_args: list[str] = []
     partes = urlsplit(target_url)
-    if partes.scheme and partes.netloc:
-        base_host = f"{partes.scheme}://{partes.netloc}/"
-        extra_args.extend(["-c", f"http.{base_host}.extraheader="])
+    host_port = f"{partes.hostname}{f':{partes.port}' if partes.port else ''}" if partes.hostname else partes.netloc
+    base_host_clean = f"{partes.scheme}://{host_port}/" if partes.scheme and host_port else ""
+    base_host_netloc = f"{partes.scheme}://{partes.netloc}/" if partes.scheme and partes.netloc else ""
+    tok_b64 = base64.b64encode(f"x-access-token:{tok}".encode("utf-8")).decode("ascii")
 
-    ask_dir = Path(tempfile.mkdtemp(prefix=".git_askpass_"))
+    neutral_dir = Path(tempfile.mkdtemp(prefix=".git_auth_"))
     try:
-        sc_path = _crear_script_askpass(ask_dir)
         env = dict(os.environ)
         env["GIT_TERMINAL_PROMPT"] = "0"
-        env["GIT_ASKPASS"] = str(sc_path)
-        env["_PERSISTENCIA_GIT_TOKEN"] = tok
+        env["GIT_CONFIG_NOSYSTEM"] = "1"
+        env["GIT_CONFIG_GLOBAL"] = os.devnull
+        cfg_entries: list[tuple[str, str]] = [
+            ("credential.helper", ""),
+            ("core.askPass", ""),
+        ]
+        if base_host_netloc and base_host_netloc != base_host_clean:
+            cfg_entries.append((f"http.{base_host_netloc}.extraheader", ""))
+        if base_host_clean:
+            cfg_entries.append((f"http.{base_host_clean}.extraheader", ""))
+            cfg_entries.append((f"http.{base_host_clean}.extraheader", f"Authorization: Basic {tok_b64}"))
+        env["GIT_CONFIG_COUNT"] = str(len(cfg_entries))
+        for idx_c, (k_c, v_c) in enumerate(cfg_entries):
+            env[f"GIT_CONFIG_KEY_{idx_c}"] = k_c
+            env[f"GIT_CONFIG_VALUE_{idx_c}"] = v_c
+
+        exec_cwd = neutral_dir if (args and args[0] == "ls-remote") else cwd
         cp = subprocess.run(
-            ["git", *extra_args, *args],
-            cwd=str(cwd),
+            ["git", *args],
+            cwd=str(exec_cwd),
             env=env,
             text=True,
             encoding="utf-8",
@@ -494,7 +517,7 @@ def _run_git_con_auth(
             raise subprocess.CalledProcessError(cp.returncode, ["git", *args], output=cp.stdout, stderr=cp.stderr)
         return cp
     finally:
-        _rmtree_seguro(ask_dir)
+        _rmtree_seguro(neutral_dir)
 
 
 def _merge_registro_evaluaciones(remoto_txt: str | None, local_path: Path, dst_path: Path) -> bool:
@@ -1272,6 +1295,36 @@ def ejecutar_smoke_prueba(
     }
 
 
+def _emitir_anotacion_ci_segura(paso: str, out: dict[str, Any]) -> None:
+    """Emite una anotación de GitHub Actions libre de secretos, tokens o URLs privadas."""
+    r_url = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
+    r_tok = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
+    limpiar = lambda x: _censurar_secreto(str(x or ""), r_tok, r_url).replace("\n", " ").replace("\r", " ")
+    if not out.get("ok"):
+        cod = out.get("codigo_error") or (out.get("hidratacion") or {}).get("codigo_error") or "fallo"
+        errs = out.get("errores") or (out.get("push") or {}).get("errores") or []
+        err = out.get("error") or ("; ".join(str(x) for x in errs) if errs else "error desconocido")
+        print(
+            f"::error::{paso} codigo_error={limpiar(cod)} has_url={int(bool(r_url))} "
+            f"has_tok={int(bool(r_tok))} detalle={limpiar(err)[:220]}"
+        )
+        return
+    if paso == "init_prod":
+        print(
+            f"::notice::{paso} rama={limpiar(out.get('rama'))} creada={out.get('creada')} "
+            f"ya_existia={out.get('ya_existia')} n_entradas={out.get('n_entradas')} "
+            f"archivos={out.get('archivos_escritos')} ultimo_sha256={limpiar(out.get('ultimo_sha256'))} "
+            f"remoto_sha={limpiar(out.get('remoto_sha'))}"
+        )
+    else:
+        push_led = (out.get("push") or {}).get("ledger") or {}
+        print(
+            f"::notice::{paso} rama={limpiar(out.get('rama_pruebas'))} id_trabajo={limpiar(out.get('id_trabajo'))} "
+            f"archivos={out.get('archivos_escritos')} n_final={push_led.get('n_final')} "
+            f"ultimo_sha256={limpiar(push_led.get('ultimo_sha256'))}"
+        )
+
+
 def _main_cli() -> int:
     parser = argparse.ArgumentParser(description="Utilidad CLI de persistencia Git")
     parser.add_argument("--smoke-prueba", action="store_true", help="Ejecuta prueba de escritura ficticia en rama de pruebas.")
@@ -1285,6 +1338,7 @@ def _main_cli() -> int:
     parser.add_argument("--remote", default=os.getenv("PERSISTENCIA_REMOTE", "").strip() or "datos", help="Alias del remoto Git.")
     parser.add_argument("--remote-url", default=None, help="URL opcional del remoto de datos (preferir PERSISTENCIA_REMOTO_URL).")
     parser.add_argument("--solo-local", action="store_true", help="No hace push; solo genera registro local de prueba.")
+    parser.add_argument("--ci-anotacion", action="store_true", help="Emite ::notice/::error censurado para GitHub Actions.")
     args = parser.parse_args()
 
     if args.inicializar_produccion_limpia:
@@ -1294,6 +1348,8 @@ def _main_cli() -> int:
             rama_datos=args.rama_produccion,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
+        if args.ci_anotacion:
+            _emitir_anotacion_ci_segura("init_prod", out)
         return 0 if out.get("ok") else 1
     if args.smoke_prueba:
         out = ejecutar_smoke_prueba(
@@ -1303,6 +1359,8 @@ def _main_cli() -> int:
             solo_local_sin_push=args.solo_local,
         )
         print(json.dumps(out, ensure_ascii=False, indent=2))
+        if args.ci_anotacion:
+            _emitir_anotacion_ci_segura("smoke_r15", out)
         return 0 if out.get("ok") else 1
     parser.print_help()
     return 0
