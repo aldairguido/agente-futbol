@@ -1,0 +1,57 @@
+name: Test Persistencia Datos (Simulacro Sin Telegram)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rama_pruebas:
+        description: Rama dedicada de pruebas (nunca main ni produccion-datos)
+        required: false
+        default: pruebas-persistencia-datos
+        type: string
+
+concurrency:
+  group: test-persistencia-datos-ronda13
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  smoke_persistencia_datos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout completo del repositorio
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Instalar dependencias Python (sin Playwright)
+        run: |
+          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Escribir registro ficticio append-only bajo timeout -k 60 285m (sin Telegram)
+        env:
+          MPLBACKEND: "Agg"
+          PYTHONIOENCODING: "utf-8"
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}
+        run: |
+          mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
+          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}"
+
+      - name: Subir respaldo forense en Artefactos
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-persistencia-datos-${{ github.run_id }}
+          path: |
+            informes/evaluacion/ledger_oos.jsonl
+            informes/evaluacion/eventos/
+          retention-days: 14
