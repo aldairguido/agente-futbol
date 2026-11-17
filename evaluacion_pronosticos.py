@@ -4102,6 +4102,45 @@ def registrar_en_ledger_oos(
 # 9b. MODO SOMBRA DUAL EN EL LIBRO Y REGLA FUTURA DE PROMOCIÓN (RONDA 7 PUNTO 7)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _resumen_lambdas_analisis(an: Any) -> dict[str, Any]:
+    mot = getattr(an, "motor", None)
+    tas = getattr(mot, "tasas", None)
+    if tas is None:
+        return {}
+    return {
+        "local_ft": getattr(tas, "lambda_local_ft", None),
+        "visitante_ft": getattr(tas, "lambda_visitante_ft", None),
+        "local_1t": getattr(tas, "lambda_local_1t", None),
+        "visitante_1t": getattr(tas, "lambda_visitante_1t", None),
+        "local_2t": getattr(tas, "lambda_local_2t", None),
+        "visitante_2t": getattr(tas, "lambda_visitante_2t", None),
+    }
+
+
+def _mapa_probs_analisis(an: Any) -> dict[tuple[str, str, str, Any], dict[str, Any]]:
+    out: dict[tuple[str, str, str, Any], dict[str, Any]] = {}
+    for rm in (getattr(an, "mercados", None) or []):
+        for s in (getattr(rm, "selecciones", None) or []):
+            if not getattr(s, "estimable", False) or getattr(s, "probabilidad", None) is None:
+                continue
+            lin = getattr(s, "linea", None)
+            k = (
+                str(getattr(s, "evento", "") or ""),
+                str(getattr(s, "periodo", "FT") or "FT").strip().upper(),
+                str(getattr(s, "equipo", None) or ""),
+                None if lin is None else round(float(lin), 4),
+            )
+            out[k] = {
+                "mercado": getattr(s, "mercado", None),
+                "evento": k[0],
+                "periodo": k[1],
+                "equipo": getattr(s, "equipo", None),
+                "linea": lin,
+                "prob": round(float(s.probabilidad), 6),
+            }
+    return out
+
+
 def construir_modo_sombra_desde_analisis(
     analisis_base: Any,
     analisis_sombra: Any,
@@ -4113,45 +4152,8 @@ def construir_modo_sombra_desde_analisis(
     Construye el registro dual inmutable (`base` publicada vs `sombra` candidata) para
     guardar ambas versiones en el libro sin alterar el pronóstico publicado.
     """
-    def _resumen_lam(an: Any) -> dict[str, Any]:
-        mot = getattr(an, "motor", None)
-        tas = getattr(mot, "tasas", None)
-        if tas is None:
-            return {}
-        return {
-            "local_ft": getattr(tas, "lambda_local_ft", None),
-            "visitante_ft": getattr(tas, "lambda_visitante_ft", None),
-            "local_1t": getattr(tas, "lambda_local_1t", None),
-            "visitante_1t": getattr(tas, "lambda_visitante_1t", None),
-            "local_2t": getattr(tas, "lambda_local_2t", None),
-            "visitante_2t": getattr(tas, "lambda_visitante_2t", None),
-        }
-
-    def _mapa_probs(an: Any) -> dict[tuple[str, str, str, Any], dict[str, Any]]:
-        out: dict[tuple[str, str, str, Any], dict[str, Any]] = {}
-        for rm in (getattr(an, "mercados", None) or []):
-            for s in (getattr(rm, "selecciones", None) or []):
-                if not getattr(s, "estimable", False) or getattr(s, "probabilidad", None) is None:
-                    continue
-                lin = getattr(s, "linea", None)
-                k = (
-                    str(getattr(s, "evento", "") or ""),
-                    str(getattr(s, "periodo", "FT") or "FT").strip().upper(),
-                    str(getattr(s, "equipo", None) or ""),
-                    None if lin is None else round(float(lin), 4),
-                )
-                out[k] = {
-                    "mercado": getattr(s, "mercado", None),
-                    "evento": k[0],
-                    "periodo": k[1],
-                    "equipo": getattr(s, "equipo", None),
-                    "linea": lin,
-                    "prob": round(float(s.probabilidad), 6),
-                }
-        return out
-
-    m_base = _mapa_probs(analisis_base)
-    m_somb = _mapa_probs(analisis_sombra)
+    m_base = _mapa_probs_analisis(analisis_base)
+    m_somb = _mapa_probs_analisis(analisis_sombra)
     comparaciones: list[dict[str, Any]] = []
     for k, b in m_base.items():
         s = m_somb.get(k)
@@ -4183,8 +4185,8 @@ def construir_modo_sombra_desde_analisis(
         "version_sombra": version_sombra,
         "banderas_candidatas": {str(k): bool(v) for k, v in (banderas_candidatas or {}).items()},
         "retroalimenta_modelo": False,
-        "lambdas_base": _resumen_lam(analisis_base),
-        "lambdas_sombra": _resumen_lam(analisis_sombra),
+        "lambdas_base": _resumen_lambdas_analisis(analisis_base),
+        "lambdas_sombra": _resumen_lambdas_analisis(analisis_sombra),
         "n_selecciones_comparables": sum(
             1 for c in comparaciones if c["prob_base"] is not None and c["prob_sombra"] is not None
         ),
@@ -9818,6 +9820,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "lambdas_sombra": payload_sombra["lambdas_sombra"],
         "comparaciones": payload_sombra["comparaciones"],
     })
+    sha_comp = _hash_sombra_comparaciones_tribrazo(payload_sombra, sombra, comp_sha)
     registro = {
         "estado_registro": "pre_partido",
         "corte_temporal": "pre_partido",
@@ -9829,7 +9832,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "tipo_partido": str(meta.get("tipo_partido") or ctx.get("tipo_partido") or ""),
         "generado_en": str(meta.get("generado_en") or ""),
         "snapshot_sha256": snapshot_sha,
-        "sombra_comparaciones_sha256": _hash_sombra_comparaciones_tribrazo(payload_sombra, sombra, comp_sha),
+        "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
     tg_m = preparado.get("telegram_meta")
@@ -9841,7 +9844,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
     res["estado_registro"] = "pre_partido"
     res["snapshot_sha256"] = snapshot_sha
-    res["sombra_comparaciones_sha256"] = comp_sha
+    res["sombra_comparaciones_sha256"] = sha_comp
     return res
 
 
@@ -10030,11 +10033,17 @@ def extraer_observaciones_sombra_desde_ledger(
     *,
     excluir_diseno: bool = True,
     excluir_amistosos: bool = True,
+    brazo_regla: str | None = None,
 ) -> dict[str, Any]:
     """
-    Extrae desde `ledger_oos` las observaciones duales (`soloA` vs `A+B`) ya liquidadas
-    listas para `evaluar_promocion_regla_futura`, contando los partidos competitivos válidos.
+    Extrae desde `ledger_oos` las observaciones duales (`base` vs `sombra`, o un brazo de
+    regla específico como `guarda_doble_defensa_rota`) ya liquidadas listas para
+    `evaluar_promocion_regla_futura`, contando los partidos competitivos válidos.
     """
+    clave_regla = None
+    if brazo_regla:
+        norm = str(brazo_regla).strip()
+        clave_regla = "guarda_doble_defensa_rota" if norm == "usar_guarda_doble_defensa_rota" else norm
     registros = cargar_ledger_oos(ruta_ledger)
     obs: list[dict[str, Any]] = []
     partidos_validos: set[str] = set()
@@ -10061,9 +10070,20 @@ def extraer_observaciones_sombra_desde_ledger(
             if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
                 continue
             obs_r = ms.get("observaciones") or []
-            if obs_r:
+            if clave_regla is not None:
+                obs_usar = []
+                for ob in obs_r:
+                    p_reg = (ob.get("probs_reglas") or {}).get(clave_regla)
+                    p_base = (ob.get("probs") or {}).get("base")
+                    if p_reg is not None and p_base is not None:
+                        ob_cp = dict(ob)
+                        ob_cp["probs"] = {"base": float(p_base), "sombra": float(p_reg)}
+                        obs_usar.append(ob_cp)
+            else:
+                obs_usar = obs_r
+            if obs_usar:
                 partidos_validos.add(clave)
-                obs.extend(obs_r)
+                obs.extend(obs_usar)
 
     for r in registros:
         if str(r.get("estado_registro") or "liquidado").strip().lower() != "pre_partido":
@@ -10199,7 +10219,7 @@ def auditar_estado_modo_sombra_ronda11(
             ),
             "alimentacion_promocion": "evaluacion.extraer_observaciones_sombra_desde_ledger() -> evaluacion.evaluar_promocion_regla_futura()",
             "banderas_comportamiento_activas_por_defecto": obtener_banderas_comportamiento(),
-            "todas_las_14_banderas_apagadas": all(not v for v in BANDERAS_COMPORTAMIENTO_DEFECTO.values()),
+            "todas_las_14_banderas_apagadas": all(not v for v in obtener_banderas_comportamiento().values()),
         },
     }
     if guardar_ruta:
@@ -10911,6 +10931,86 @@ def _enriquecer_sombra_con_brazo_plano(
     return sombra
 
 
+def _aplicar_brazo_sombra_guarda_ddr(
+    sombra: dict[str, Any],
+    preparado: dict[str, Any],
+    analisis: Any,
+    dl: Any,
+    dv: Any,
+    eq_l: str,
+    eq_v: str,
+    kw: dict[str, Any],
+) -> dict[str, Any]:
+    """
+    Adjunta `usar_guarda_doble_defensa_rota` como brazo sombra dedicado sobre la
+    configuración base vigente, sin activar la bandera en los pronósticos publicados.
+    """
+    from decision_cobertura import (
+        banderas_comportamiento,
+        obtener_banderas_comportamiento,
+        obtener_metadatos_defectos_banderas_b,
+    )
+    import motor_mercados as mm
+
+    banderas_base = dict(obtener_banderas_comportamiento())
+    sombra["banderas_base"] = banderas_base
+    sombra["defectos_operativos_sin_validacion"] = dict(obtener_metadatos_defectos_banderas_b())
+    if dl is None or dv is None:
+        return sombra
+    if isinstance(sombra.get("brazos_reglas"), dict) and "guarda_doble_defensa_rota" in sombra["brazos_reglas"]:
+        return sombra
+
+    banderas_guarda = dict(banderas_base)
+    banderas_guarda["usar_guarda_doble_defensa_rota"] = True
+    with banderas_comportamiento(activar_todas=False, **banderas_guarda):
+        an_guarda = mm.analizar(dl, dv, eq_l, eq_v, **(kw or {}))
+    preparado["analisis_guarda_doble_defensa_rota"] = an_guarda
+
+    lam_g = _resumen_lambdas_analisis(an_guarda)
+    m_g = _mapa_probs_analisis(an_guarda)
+    comparaciones = list(sombra.get("comparaciones") or [])
+    n_comp_g = 0
+    for item in comparaciones:
+        if not isinstance(item, dict):
+            continue
+        lin = item.get("linea")
+        k = (
+            str(item.get("evento") or ""),
+            str(item.get("periodo") or "FT").strip().upper(),
+            str(item.get("equipo") or ""),
+            None if lin is None else round(float(lin), 4),
+        )
+        g_entry = m_g.get(k)
+        p_g = g_entry["prob"] if g_entry is not None else None
+        item["prob_guarda_doble_defensa_rota"] = p_g
+        if item.get("prob_base") is not None and p_g is not None:
+            n_comp_g += 1
+
+    lam_b = sombra.get("lambdas_base") or {}
+    d_l = (
+        round(float(lam_g["local_ft"]) - float(lam_b["local_ft"]), 6)
+        if lam_g.get("local_ft") is not None and lam_b.get("local_ft") is not None
+        else None
+    )
+    d_v = (
+        round(float(lam_g["visitante_ft"]) - float(lam_b["visitante_ft"]), 6)
+        if lam_g.get("visitante_ft") is not None and lam_b.get("visitante_ft") is not None
+        else None
+    )
+    brazos_reglas = dict(sombra.get("brazos_reglas") or {})
+    brazos_reglas["guarda_doble_defensa_rota"] = {
+        "bandera": "usar_guarda_doble_defensa_rota",
+        "solo_brazo_sombra": True,
+        "banderas_activas": banderas_guarda,
+        "lambdas": lam_g,
+        "n_selecciones_comparables": n_comp_g,
+        "delta_lambda_local_ft": d_l,
+        "delta_lambda_visitante_ft": d_v,
+    }
+    sombra["brazos_reglas"] = brazos_reglas
+    return sombra
+
+
 def _aplicar_tercer_brazo_plano_si_activo(
     sombra: dict[str, Any],
     preparado: dict[str, Any],
@@ -10921,9 +11021,10 @@ def _aplicar_tercer_brazo_plano_si_activo(
     eq_v: str,
     kw: dict[str, Any],
 ) -> dict[str, Any]:
-    """Adjunta el tercer brazo `plano` solo cuando `usar_tercer_brazo_plano_sombra` está activa."""
+    """Adjunta el brazo sombra `guarda_doble_defensa_rota` y el brazo `plano` si su bandera está activa."""
     from decision_cobertura import bandera_activa as _ba_pl
 
+    sombra = _aplicar_brazo_sombra_guarda_ddr(sombra, preparado, analisis, dl, dv, eq_l, eq_v, kw)
     if not _ba_pl("usar_tercer_brazo_plano_sombra"):
         return sombra
     params_base = kw.get("parametros") or getattr(analisis, "parametros", None)
@@ -10944,22 +11045,90 @@ def _hash_sombra_comparaciones_tribrazo(
     sombra: dict[str, Any],
     comp_sha_base: str,
 ) -> str:
-    """Enriquece `payload_sombra` pre-partido cuando trae `lambdas_plano` sin alterar el modo dual previo."""
-    if not isinstance(sombra, dict) or "lambdas_plano" not in sombra:
+    """Enriquece `payload_sombra` y su SHA-256 con brazos sombra (`brazos_reglas` y/o `lambdas_plano`)."""
+    if not isinstance(sombra, dict):
         return comp_sha_base
-    payload_sombra["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
-    payload_sombra["version_plano"] = str(sombra.get("version_plano") or "plano")
-    payload_sombra["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
-    if isinstance(sombra.get("reglas_brazo_plano"), dict):
-        payload_sombra["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
-    if isinstance(sombra.get("brazos"), dict):
-        payload_sombra["brazos"] = dict(sombra["brazos"])
-    return _hash_canonico_oos({
+    for k_meta in ("banderas_base", "defectos_operativos_sin_validacion", "brazos_reglas"):
+        if k_meta in sombra and sombra.get(k_meta) is not None:
+            payload_sombra[k_meta] = dict(sombra[k_meta])
+
+    tiene_plano = "lambdas_plano" in sombra
+    tiene_reglas = isinstance(sombra.get("brazos_reglas"), dict)
+    if not tiene_plano and not tiene_reglas:
+        return comp_sha_base
+
+    hash_obj: dict[str, Any] = {
         "lambdas_base": payload_sombra["lambdas_base"],
         "lambdas_sombra": payload_sombra["lambdas_sombra"],
-        "lambdas_plano": payload_sombra["lambdas_plano"],
         "comparaciones": payload_sombra["comparaciones"],
-    })
+    }
+    if tiene_plano:
+        payload_sombra["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
+        payload_sombra["version_plano"] = str(sombra.get("version_plano") or "plano")
+        payload_sombra["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
+        if isinstance(sombra.get("reglas_brazo_plano"), dict):
+            payload_sombra["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
+        if isinstance(sombra.get("brazos"), dict):
+            payload_sombra["brazos"] = dict(sombra["brazos"])
+        hash_obj["lambdas_plano"] = payload_sombra["lambdas_plano"]
+    if tiene_reglas:
+        hash_obj["brazos_reglas"] = payload_sombra["brazos_reglas"]
+    return _hash_canonico_oos(hash_obj)
+
+
+def _liquidar_prob_brazo_extra(
+    sombra: dict[str, Any],
+    obs_list: list[dict[str, Any]],
+    lineas_liq: list[dict[str, Any]],
+    *,
+    campo_comp: str,
+    clave_linea: str,
+    clave_probs: str | None = None,
+    clave_probs_regla: str | None = None,
+) -> tuple[int, float | None, float | None]:
+    mapa_arm: dict[tuple[str, str, str, Any], float] = {}
+    for item in (sombra.get("comparaciones") or []):
+        pp = item.get(campo_comp) if isinstance(item, dict) else None
+        if pp is None:
+            continue
+        lin = item.get("linea")
+        k = (
+            str(item.get("evento") or ""),
+            str(item.get("periodo") or "FT").strip().upper(),
+            str(item.get("equipo") or ""),
+            None if lin is None else round(float(lin), 4),
+        )
+        mapa_arm[k] = float(pp)
+
+    b_sum = 0.0
+    ll_sum = 0.0
+    n_arm = 0
+    for idx, ob in enumerate(obs_list):
+        lin = ob.get("linea")
+        k = (
+            str(ob.get("evento") or ""),
+            str(ob.get("periodo") or "FT").strip().upper(),
+            str(ob.get("equipo") or ""),
+            None if lin is None else round(float(lin), 4),
+        )
+        pp_val = mapa_arm.get(k)
+        if pp_val is None:
+            continue
+        pp_r = round(pp_val, 6)
+        if clave_probs is not None:
+            ob.setdefault("probs", {})[clave_probs] = pp_r
+        if clave_probs_regla is not None:
+            ob.setdefault("probs_reglas", {})[clave_probs_regla] = pp_r
+        if idx < len(lineas_liq) and isinstance(lineas_liq[idx], dict):
+            lineas_liq[idx][clave_linea] = pp_r
+        y = int(ob["evento_ocurrio"])
+        ppc = min(max(pp_val, 1e-15), 1.0 - 1e-15)
+        b_sum += (pp_val - y) ** 2
+        ll_sum += -(y * math.log(ppc) + (1 - y) * math.log(1.0 - ppc))
+        n_arm += 1
+    if n_arm <= 0:
+        return 0, None, None
+    return n_arm, round(b_sum / n_arm, 6), round(ll_sum / n_arm, 6)
 
 
 def _registrar_liquidacion_tribrazo(
@@ -10967,63 +11136,56 @@ def _registrar_liquidacion_tribrazo(
     sombra: dict[str, Any],
     ruta_ledger: str | None,
 ) -> dict[str, Any]:
-    """Completa métricas del brazo `plano` en liquidación sin alterar registros duales previos."""
-    if isinstance(sombra, dict) and "lambdas_plano" in sombra:
+    """Completa métricas de brazos sombra (`plano` y `brazos_reglas`) en liquidación sin alterar `probs` base/dual."""
+    if isinstance(sombra, dict):
         ms = registro.get("modo_sombra") or {}
-        ms["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
-        ms["version_plano"] = str(sombra.get("version_plano") or "plano")
-        ms["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
-        if isinstance(sombra.get("reglas_brazo_plano"), dict):
-            ms["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
-        if isinstance(sombra.get("brazos"), dict):
-            ms["brazos"] = dict(sombra["brazos"])
-
-        mapa_plano: dict[tuple[str, str, str, Any], float] = {}
-        for item in (sombra.get("comparaciones") or []):
-            pp = item.get("prob_plano") if isinstance(item, dict) else None
-            if pp is None:
-                continue
-            lin = item.get("linea")
-            k = (
-                str(item.get("evento") or ""),
-                str(item.get("periodo") or "FT").strip().upper(),
-                str(item.get("equipo") or ""),
-                None if lin is None else round(float(lin), 4),
-            )
-            mapa_plano[k] = float(pp)
-
         obs_list = ms.get("observaciones") or []
         lineas_liq = registro.get("lineas") or []
-        b_pl = 0.0
-        ll_pl = 0.0
-        n_pl = 0
-        for idx, ob in enumerate(obs_list):
-            lin = ob.get("linea")
-            k = (
-                str(ob.get("evento") or ""),
-                str(ob.get("periodo") or "FT").strip().upper(),
-                str(ob.get("equipo") or ""),
-                None if lin is None else round(float(lin), 4),
+        for k_meta in ("banderas_base", "defectos_operativos_sin_validacion"):
+            if k_meta in sombra and sombra.get(k_meta) is not None:
+                ms[k_meta] = dict(sombra[k_meta])
+
+        if "lambdas_plano" in sombra:
+            ms["esquema"] = str(sombra.get("esquema") or "sombra-v2-tribrazo")
+            ms["version_plano"] = str(sombra.get("version_plano") or "plano")
+            ms["lambdas_plano"] = dict(sombra.get("lambdas_plano") or {})
+            if isinstance(sombra.get("reglas_brazo_plano"), dict):
+                ms["reglas_brazo_plano"] = dict(sombra["reglas_brazo_plano"])
+            if isinstance(sombra.get("brazos"), dict):
+                ms["brazos"] = dict(sombra["brazos"])
+            n_pl, br_pl, ll_pl = _liquidar_prob_brazo_extra(
+                sombra,
+                obs_list,
+                lineas_liq,
+                campo_comp="prob_plano",
+                clave_linea="probabilidad_plano",
+                clave_probs="plano",
             )
-            pp_val = mapa_plano.get(k)
-            if pp_val is not None:
-                pp_r = round(pp_val, 6)
-                ob.setdefault("probs", {})["plano"] = pp_r
-                if idx < len(lineas_liq) and isinstance(lineas_liq[idx], dict):
-                    lineas_liq[idx]["probabilidad_plano"] = pp_r
-                y = int(ob["evento_ocurrio"])
-                ppc = min(max(pp_val, 1e-15), 1.0 - 1e-15)
-                b_pl += (pp_val - y) ** 2
-                ll_pl += -(y * math.log(ppc) + (1 - y) * math.log(1.0 - ppc))
-                n_pl += 1
-        if n_pl > 0:
-            ms["brier_plano"] = round(b_pl / n_pl, 6)
-            ms["log_loss_plano"] = round(ll_pl / n_pl, 6)
+            ms["brier_plano"] = br_pl
+            ms["log_loss_plano"] = ll_pl
             ms["n_comparables_plano"] = n_pl
-        else:
-            ms["brier_plano"] = None
-            ms["log_loss_plano"] = None
-            ms["n_comparables_plano"] = 0
+
+        brazos_reg = sombra.get("brazos_reglas")
+        if isinstance(brazos_reg, dict) and "guarda_doble_defensa_rota" in brazos_reg:
+            ms_br = dict(brazos_reg)
+            arm_g = dict(ms_br.get("guarda_doble_defensa_rota") or {})
+            n_g, br_g, ll_g = _liquidar_prob_brazo_extra(
+                sombra,
+                obs_list,
+                lineas_liq,
+                campo_comp="prob_guarda_doble_defensa_rota",
+                clave_linea="probabilidad_guarda_doble_defensa_rota",
+                clave_probs_regla="guarda_doble_defensa_rota",
+            )
+            arm_g["n_comparables_evaluables"] = n_g
+            arm_g["brier"] = br_g
+            arm_g["log_loss"] = ll_g
+            ms_br["guarda_doble_defensa_rota"] = arm_g
+            ms["brazos_reglas"] = ms_br
+            ms["brier_guarda_doble_defensa_rota"] = br_g
+            ms["log_loss_guarda_doble_defensa_rota"] = ll_g
+            ms["n_comparables_guarda_doble_defensa_rota"] = n_g
+
         registro["modo_sombra"] = ms
     return registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
 
@@ -13625,6 +13787,993 @@ def auditar_leave_one_out_banderas_b_ronda13(
     }
     if guardar_ruta:
         out_p = _Path_r13(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
+def _clasificar_familia_ronda14(mercado: Any) -> str:
+    m = str(mercado or "").lower()
+    if "esquina" in m or "córner" in m or "corner" in m:
+        return "Córneres"
+    if "tarjeta" in m:
+        return "Tarjetas"
+    if any(t in m for t in ("doble oportunidad", "hándicap", "handicap", "ganador", "sin empate")):
+        return "Resultado"
+    return "Goles"
+
+
+def auditar_defectos_y_sombra_ronda14(
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+    guardar_ruta: str | None = "datos/ronda14_punto1_defectos_y_sombra.json",
+    regenerar: bool = False,
+) -> dict[str, Any]:
+    """
+    RONDA 14 - Punto 1 (`Defectos, Brazo Sombra y Tabla de Impacto`):
+      - Documenta defectos vigentes: `usar_sobredispersion_nb_corners=True`
+        ("regla operativa sin validación"), resto de 13 banderas de Conjunto B en `False`,
+        cuota justa mínima `1.25`.
+      - Verifica `usar_guarda_doble_defensa_rota` solo como brazo sombra dedicado
+        (pre_partido -> sha256 -> liquidado -> evaluación promoción) sin alterar salida oficial.
+      - Mide impacto comparativo de `soloA_previo`, `defecto_ronda14_nb`,
+        `sombra_guarda_ddr` y `A_mas_B_14` sobre:
+          (a) los 73 registros únicos en caché (`_recolectar_pares_partidos_cacheados_ronda9`), y
+          (b) los 24 OOS únicos (`1376` filas catálogo global y por familia, Top 5 y Sección 1)
+              con bootstrap agrupado por partido (`n=2000`) e IC95%.
+    """
+    import copy as _copy_r14
+    import hashlib as _hl_r14
+    import random as _rnd_r14
+    import re as _re_r14
+    import tempfile as _tf_r14
+    from pathlib import Path as _Path_r14
+    from decision_cobertura import (
+        BANDERAS_COMPORTAMIENTO_DEFECTO,
+        bandera_activa as _ba_r14,
+        banderas_comportamiento,
+        obtener_banderas_comportamiento,
+        obtener_metadatos_defectos_banderas_b,
+        obtener_umbral_cuota_justa_top5,
+    )
+    import motor_mercados as mm
+    import servicio_mercados as sm
+
+    raiz = _Path_r14(__file__).resolve().parent
+    if guardar_ruta and not regenerar:
+        rp = _Path_r14(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        if rp.exists():
+            return json.loads(rp.read_text(encoding="utf-8"))
+
+    flags_14 = list(BANDERAS_COMPORTAMIENTO_DEFECTO.keys())
+    cfgs_dict: dict[str, dict[str, bool]] = {
+        "soloA_previo": {k: False for k in flags_14},
+        "defecto_ronda14_nb": {k: (k == "usar_sobredispersion_nb_corners") for k in flags_14},
+        "sombra_guarda_ddr": {
+            k: (k in ("usar_sobredispersion_nb_corners", "usar_guarda_doble_defensa_rota"))
+            for k in flags_14
+        },
+        "A_mas_B_14": {k: True for k in flags_14},
+    }
+
+    # ── 1. Configuración vigente y verificación de ciclo sombra guarda_doble_defensa_rota ──
+    banderas_vigentes = obtener_banderas_comportamiento()
+    metadatos_defectos = obtener_metadatos_defectos_banderas_b()
+    cuota_justa = obtener_umbral_cuota_justa_top5()
+
+    aud_dir = raiz / "informes" / "auditorias" / "2026-10-13"
+    dl_gal = json.loads((aud_dir / "auditoria_galatasaray_2026-10-13_102501.json").read_text(encoding="utf-8"))
+    dv_bar = json.loads((aud_dir / "auditoria_barcelona_2026-10-13_102522.json").read_text(encoding="utf-8"))
+    dl_gal_c = {
+        "equipo": dl_gal.get("equipo"),
+        "partidos": [x for x in dl_gal.get("partidos", []) if str(x.get("fecha") or "")[:10] < "2026-10-13"],
+    }
+    dv_bar_c = {
+        "equipo": dv_bar.get("equipo"),
+        "partidos": [x for x in dv_bar.get("partidos", []) if str(x.get("fecha") or "")[:10] < "2026-10-13"],
+    }
+    par_s = mm.Parametros()
+    par_s.competicion = "UEFA Champions League"
+    an_pub = mm.analizar(dl_gal_c, dv_bar_c, "Galatasaray", "Barcelona", parametros=par_s)
+    prep_sombra = {
+        "id_trabajo": "r14_verif_guarda_ddr",
+        "id_partido": "6106338",
+        "analisis": an_pub,
+        "contexto": {
+            "doc_local": dl_gal_c,
+            "doc_visitante": dv_bar_c,
+            "equipo_local": "Galatasaray",
+            "equipo_visitante": "Barcelona",
+            "fecha_partido": "2026-10-13",
+            "competicion": "UEFA Champions League",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "tipo_partido": "oficial",
+        },
+    }
+    somb_v = adjuntar_modo_sombra_preparado(prep_sombra)
+    with _tf_r14.TemporaryDirectory() as td:
+        tp = _Path_r14(td)
+        ruta_snap_t = guardar_snapshot(
+            snapshot_desde_analisis(prep_sombra),
+            directorio=str(tp / "pronosticos"),
+        )
+        ruta_led_t = str(tp / "ledger.jsonl")
+        r_pre_t = registrar_sombra_prepartido_en_ledger_oos(
+            prep_sombra,
+            ruta_snapshot=ruta_snap_t,
+            ruta_ledger=ruta_led_t,
+        )
+        snap_doc_t = json.loads(_Path_r14(ruta_snap_t).read_text(encoding="utf-8"))
+        snap_doc_t.setdefault("partido", {})["fecha"] = "2026-10-13"
+        snap_doc_t["generado_en"] = "2026-10-13T10:00:00"
+        res_demo = ResultadoPartido(
+            id_partido="6106338",
+            estado="finalizado",
+            local="Galatasaray",
+            visitante="Barcelona",
+            goles_local=1,
+            goles_visitante=2,
+            goles_local_1t=0,
+            goles_visitante_1t=1,
+            inicio_utc="2026-10-13T19:00:00Z",
+            competicion="UEFA Champions League",
+            fuente="fotmob",
+            consultado_en="2026-10-14T00:00:00Z",
+            corners_local={"FT": 5, "1T": 2, "2T": 3},
+            corners_visitante={"FT": 6, "1T": 3, "2T": 3},
+            amarillas_local={"FT": 2, "1T": 1, "2T": 1},
+            amarillas_visitante={"FT": 2, "1T": 1, "2T": 1},
+            rojas_local=0,
+            rojas_visitante=0,
+        )
+        r_liq_t = liquidar_sombras_en_ledger_oos(
+            [snap_doc_t],
+            {"Galatasaray vs Barcelona": res_demo},
+            ruta_ledger=ruta_led_t,
+        )
+        cad_ok_t = bool(verificar_cadena_ledger_oos(ruta_led_t).get("ok"))
+        obs_g_t = extraer_observaciones_sombra_desde_ledger(
+            ruta_led_t,
+            brazo_regla="usar_guarda_doble_defensa_rota",
+        )
+        prom_g_t = evaluar_promocion_regla_futura(
+            obs_g_t["observaciones"],
+            nombre_bandera="usar_guarda_doble_defensa_rota",
+            n_boot=50,
+        )
+        regs_liq_t = cargar_ledger_oos(ruta_led_t)
+
+    brazos_reg_s = ((somb_v or {}).get("brazos_reglas") or {}).get("guarda_doble_defensa_rota") or {}
+    ms_liq_t = (regs_liq_t[1].get("modo_sombra") or {}) if len(regs_liq_t) > 1 else {}
+    verif_ciclo = {
+        "esquema_sombra": (somb_v or {}).get("esquema"),
+        "version_base": (somb_v or {}).get("version_base"),
+        "usar_guarda_doble_defensa_rota_en_defecto": bool(banderas_vigentes.get("usar_guarda_doble_defensa_rota")),
+        "arm_presente_en_brazos_reglas": "guarda_doble_defensa_rota" in ((somb_v or {}).get("brazos_reglas") or {}),
+        "banderas_arm_guarda": dict(brazos_reg_s.get("banderas_activas") or {}),
+        "pre_partido_registrado": bool(r_pre_t.get("registrado")),
+        "n_liquidados_nuevos": int(r_liq_t.get("n_liquidados_nuevos") or 0),
+        "cadena_sha256_ok": cad_ok_t,
+        "brier_guarda_doble_defensa_rota": ms_liq_t.get("brier_guarda_doble_defensa_rota"),
+        "log_loss_guarda_doble_defensa_rota": ms_liq_t.get("log_loss_guarda_doble_defensa_rota"),
+        "n_observaciones_extraidas_guarda": int(obs_g_t.get("n_observaciones") or 0),
+        "promocion_bloqueada_por_n_lt_30": (
+            not prom_g_t.get("aprobada_para_activar", True)
+            and any("muestra_sombra_insuficiente" in r for r in (prom_g_t.get("razones_bloqueo") or []))
+        ),
+    }
+
+    # Helpers compartidos de evaluación motor -> sensibilidad cacheada -> Top 5 y Sección 1
+    requeridos_goles = [n for n, _ in mm.escenarios_goles()]
+    requeridos_conteos = [n for n, _ in mm.escenarios_conteos()]
+    mercados_conteo = set(mm._mercados_de_conteos())
+    sens_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def _evaluar_partido_ligero(
+        scope: str,
+        jid: str,
+        dlc: dict[str, Any],
+        dvc: dict[str, Any],
+        cl: str,
+        cv: str,
+        el: str,
+        ev_n: str,
+        par: Any,
+        meta_an: dict[str, Any],
+        *,
+        an_mit: bool,
+        an_crn: bool,
+        an_cal: bool,
+    ) -> dict[str, Any]:
+        mot = mm.MotorMercados(dlc, dvc, cl, cv, el, ev_n, par)
+        mot.preparar()
+        mercados = mot.evaluar_catalogo()
+
+        _cron_an = mm.cronologia_mitades_verificada(mot) if an_mit else {"ok_analizar": True}
+        _rep_5050 = mm._reparto_mitades_sin_validar(mot) if an_mit else False
+        abstenido_mitad = bool(an_mit and not _cron_an.get("ok_analizar", True))
+
+        mp: dict[tuple[str, str, str | None, float | None], float] = {}
+        mp_fam: dict[tuple[str, str, str | None, float | None], tuple[float, str]] = {}
+        for rm in mercados:
+            for s in rm.selecciones:
+                if s.estimable and s.probabilidad is not None:
+                    k = _normalizar_clave_seleccion_ronda10(s.evento, s.periodo, s.equipo, s.linea)
+                    p_v = float(s.probabilidad)
+                    fam = _clasificar_familia_ronda14(getattr(s, "mercado", None) or getattr(rm, "id_mercado", ""))
+                    mp[k] = p_v
+                    mp_fam[k] = (p_v, fam)
+
+        sig_payload = {
+            "lam": [
+                mot.tasas.lambda_local_ft,
+                mot.tasas.lambda_visitante_ft,
+                mot.tasas.lambda_local_1t,
+                mot.tasas.lambda_visitante_1t,
+            ],
+            "probs": [[str(k), round(v, 6)] for k, v in sorted(mp.items(), key=lambda kv: str(kv[0]))],
+        }
+        sig_hash = _hl_r14.sha256(json.dumps(sig_payload, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+        sc_key = (f"{scope}:{jid}", sig_hash)
+        if sc_key not in sens_cache:
+            sens_cache[sc_key] = mm.evaluar_sensibilidad(dlc, dvc, cl, cv, el, ev_n, par)
+        sensibilidad = sens_cache[sc_key]
+
+        _cob_corn_g = mm.cobertura_corners_por_equipo(mot, bando=None) if an_crn else {"ok_catalogo": True}
+        _cob_corn_l = mm.cobertura_corners_por_equipo(mot, bando="local") if an_crn else {"ok_catalogo": True}
+        _cob_corn_v = mm.cobertura_corners_por_equipo(mot, bando="visitante") if an_crn else {"ok_catalogo": True}
+
+        est_analizar = 0
+        vistos: dict[tuple[Any, ...], Any] = {}
+        for rm in mercados:
+            for s in rm.selecciones:
+                if not s.estimable or s.probabilidad is None:
+                    continue
+                if mm.es_mercado_cronologia_mitades(s) and not _cron_an.get("ok_analizar", True):
+                    continue
+                if rm.id_mercado == "total_corners" and not _cob_corn_g.get("ok_catalogo", True):
+                    continue
+                if rm.id_mercado == "corners_local" and not _cob_corn_l.get("ok_catalogo", True):
+                    continue
+                if rm.id_mercado == "corners_visitante" and not _cob_corn_v.get("ok_catalogo", True):
+                    continue
+                est_analizar += 1
+                sc = _copy_r14.copy(s)
+                if an_cal:
+                    try:
+                        from agente_consciente import evaluar_familia_conciencia_cached
+                        _cal_s = evaluar_familia_conciencia_cached(sc.mercado, equipo=sc.equipo, prob_bruta=float(sc.probabilidad))
+                        setattr(sc, "prob_calibrada", _cal_s.get("prob_calibrada"))
+                        setattr(sc, "bajo_vigilancia", bool(_cal_s.get("bajo_vigilancia", False)))
+                        setattr(sc, "veto_top5", bool(_cal_s.get("veto_top5", False)))
+                        setattr(sc, "familia_conciencia", _cal_s.get("familia"))
+                    except Exception:
+                        pass
+                if float(sc.probabilidad) <= par.umbral:
+                    continue
+                esc = sensibilidad.get(mm._clave_a_texto(sc.clave_unica), {})
+                sc.escenarios = esc
+                req = requeridos_conteos if rm.id_mercado in mercados_conteo else requeridos_goles
+                est_sc, mot_sc = mm.clasificar(sc.probabilidad, esc, req, par.umbral)
+                if not est_sc:
+                    continue
+                excede_desv, desv_pts, f_obs = mm.tiene_desvio_excesivo_calibracion(
+                    sc, mot.doc_local, mot.doc_visitante, mot.nombre_local, mot.nombre_visitante
+                )
+                if excede_desv:
+                    est_sc = mm.ESTADO_SENSIBLE
+                    _brecha_emp = round(round(float(f_obs) * 100.0, 1) - round(float(sc.probabilidad) * 100.0, 1), 1)
+                    mot_sc = f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs mod: {sc.probabilidad*100:.1f}%, brecha {_brecha_emp:+.1f} pp, desvío {desv_pts:.1f} pts > 10.0)"
+                sc.estado = est_sc
+                if mot_sc:
+                    sc.motivo = mot_sc
+                if _rep_5050 and mm.es_mercado_cronologia_mitades(sc):
+                    mot_cur = str(getattr(sc, "motivo", "") or "")
+                    if "reparto 50/50 sin validar" not in mot_cur.lower():
+                        setattr(sc, "motivo", f"{mot_cur}; reparto 50/50 sin validar".strip("; "))
+                vistos.setdefault(sc.clave_unica, sc)
+
+        sels_flt = list(vistos.values())
+        grupos = {mm.ESTADO_MANTIENE: [], mm.ESTADO_SENSIBLE: [], mm.ESTADO_INCOMPLETA: []}
+        for sc in sels_flt:
+            grupos.setdefault(sc.estado, []).append(sc)
+        an_ligero = mm.Analisis(meta_an, par, mot, mercados, sels_flt, grupos, sensibilidad, "", "")
+        t5, s1, _ = sm.obtener_top5_y_seccion1_filtrados(
+            an_ligero,
+            metadatos={"equipo_local": el, "equipo_visitante": ev_n},
+            umbral=par.umbral,
+        )
+        return {
+            "mot": mot,
+            "mp": mp,
+            "mp_fam": mp_fam,
+            "sels_flt": sels_flt,
+            "top5": t5 or [],
+            "sec1": s1 or [],
+            "est_catalogo": len(mp),
+            "est_analizar": est_analizar,
+            "abstenido_mitad": abstenido_mitad,
+        }
+
+    # ── 2. Impacto sobre los 73 registros únicos ───────────────────────────────────────────
+    pares_73 = _recolectar_pares_partidos_cacheados_ronda9()
+    pares_73_data: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any, dict[str, Any]]] = []
+    for reg in pares_73:
+        f_p = reg.get("fecha_partido")
+        dl_f = mm.filtrar_por_fecha(reg["doc_local"], f_p) if f_p else reg["doc_local"]
+        dv_f = mm.filtrar_por_fecha(reg["doc_visitante"], f_p) if f_p else reg["doc_visitante"]
+        par = mm.Parametros()
+        if reg.get("competicion"):
+            par.competicion = str(reg["competicion"])
+        meta_73 = {
+            "equipo_local": reg["equipo_local"],
+            "equipo_visitante": reg["equipo_visitante"],
+            "fecha_partido": f_p,
+            "competicion": reg.get("competicion"),
+            "condicion_local": reg.get("cond_l", "casa"),
+            "condicion_visitante": reg.get("cond_v", "fuera"),
+        }
+        pares_73_data.append((reg, dl_f, dv_f, par, meta_73))
+
+    def _sel_clave_simple(it: Any) -> str:
+        def _g(o: Any, k: str, d: Any = None) -> Any:
+            return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+        per = str(_g(it, "periodo", "FT") or "FT")
+        ev = str(_g(it, "evento", "") or "")
+        if not ev:
+            return str(_g(it, "etiqueta") or "")
+        eq = str(_g(it, "equipo", "") or "")
+        lin = _g(it, "linea")
+        return f"{ev}|{per}|{eq}|{'' if lin is None else round(float(lin), 4)}"
+
+    def _sel_etiqueta(it: Any) -> str:
+        if isinstance(it, dict):
+            return str(it.get("etiqueta") or it.get("evento") or "")
+        return str(getattr(it, "etiqueta", "") or getattr(it, "evento", ""))
+
+    res_73: dict[str, dict[str, Any]] = {}
+    for nom_cfg, bdict in cfgs_dict.items():
+        lam_por_jid: dict[str, tuple[float | None, float | None]] = {}
+        probs_por_jid: dict[str, dict[tuple[str, str, str | None, float | None], tuple[float, str]]] = {}
+        top5_por_jid: dict[str, list[dict[str, Any]]] = {}
+        sec1_por_jid: dict[str, list[dict[str, Any]]] = {}
+        n_abst = 0
+        n_est_cat = 0
+
+        with banderas_comportamiento(activar_todas=False, **bdict):
+            f_mit = _ba_r14("usar_gate_cronologia_mitades_10_15")
+            f_crn = _ba_r14("usar_gate_corners_8_15")
+            f_cal = _ba_r14("usar_calibracion_y_veto_conciencia")
+
+            for reg, dl_f, dv_f, par, meta_73 in pares_73_data:
+                jid = str(reg["job_id"])
+                ev_l = _evaluar_partido_ligero(
+                    "73",
+                    jid,
+                    dl_f,
+                    dv_f,
+                    meta_73["condicion_local"],
+                    meta_73["condicion_visitante"],
+                    reg["equipo_local"],
+                    reg["equipo_visitante"],
+                    par,
+                    meta_73,
+                    an_mit=f_mit,
+                    an_crn=f_crn,
+                    an_cal=f_cal,
+                )
+                mot = ev_l["mot"]
+                ll_ft = round(float(mot.tasas.lambda_local_ft), 6) if mot.tasas.lambda_local_ft is not None else None
+                lv_ft = round(float(mot.tasas.lambda_visitante_ft), 6) if mot.tasas.lambda_visitante_ft is not None else None
+                lam_por_jid[jid] = (ll_ft, lv_ft)
+                probs_por_jid[jid] = ev_l["mp_fam"]
+                n_est_cat += ev_l["est_catalogo"]
+                if ev_l["abstenido_mitad"]:
+                    n_abst += 1
+                top5_por_jid[jid] = [
+                    {"clave": _sel_clave_simple(x), "etiqueta": _sel_etiqueta(x), "prob": round(float(x.get("probabilidad") or 0.0), 6)}
+                    for x in ev_l["top5"]
+                ]
+                sec1_por_jid[jid] = [
+                    {"clave": _sel_clave_simple(x), "etiqueta": _sel_etiqueta(x), "prob": round(float(getattr(x, "probabilidad", 0.0) or 0.0), 6)}
+                    for x in ev_l["sec1"]
+                ]
+
+        lams_l_v = [v[0] for v in lam_por_jid.values() if v[0] is not None]
+        lams_v_v = [v[1] for v in lam_por_jid.values() if v[1] is not None]
+        res_73[nom_cfg] = {
+            "n_registros": len(pares_73),
+            "n_abstenidos_goles_mitad": n_abst,
+            "n_estimables_catalogo": n_est_cat,
+            "n_top5_total": sum(len(v) for v in top5_por_jid.values()),
+            "n_partidos_con_top5": sum(1 for v in top5_por_jid.values() if v),
+            "n_sec1_total": sum(len(v) for v in sec1_por_jid.values()),
+            "n_partidos_con_sec1": sum(1 for v in sec1_por_jid.values() if v),
+            "media_lambda_local_ft": round(sum(lams_l_v) / max(1, len(lams_l_v)), 4),
+            "media_lambda_visitante_ft": round(sum(lams_v_v) / max(1, len(lams_v_v)), 4),
+            "_lam": lam_por_jid,
+            "_probs": probs_por_jid,
+            "_top5": top5_por_jid,
+            "_sec1": sec1_por_jid,
+        }
+
+    def _comparar_73(nom_new: str, nom_ref: str) -> dict[str, Any]:
+        cn = res_73[nom_new]
+        cr = res_73[nom_ref]
+        partidos_lam = []
+        dl_cond, dv_cond = [], []
+        n_sel_ch = 0
+        fam_stats: dict[str, dict[str, Any]] = {}
+        n_p_prob_ch = 0
+        n_p_t5_ch = 0
+        n_t5_in = 0
+        n_t5_out = 0
+        ejemplos_t5 = []
+        n_p_s1_ch = 0
+        n_s1_ch = 0
+
+        for reg in pares_73:
+            jid = str(reg["job_id"])
+            la_n, va_n = cn["_lam"][jid]
+            la_r, va_r = cr["_lam"][jid]
+            if la_n != la_r or va_n != va_r:
+                if abs((la_n or 0.0) - (la_r or 0.0)) > 1e-6 or abs((va_n or 0.0) - (va_r or 0.0)) > 1e-6:
+                    dl_i = round(float(la_n) - float(la_r), 4) if (la_n is not None and la_r is not None) else None
+                    dv_i = round(float(va_n) - float(va_r), 4) if (va_n is not None and va_r is not None) else None
+                    if dl_i is not None:
+                        dl_cond.append(dl_i)
+                    if dv_i is not None:
+                        dv_cond.append(dv_i)
+                    partidos_lam.append({
+                        "job_id": jid,
+                        "partido": reg["partido"],
+                        "lam_antes": [round(float(la_r), 4) if la_r is not None else None, round(float(va_r), 4) if va_r is not None else None],
+                        "lam_despues": [round(float(la_n), 4) if la_n is not None else None, round(float(va_n), 4) if va_n is not None else None],
+                        "delta": [dl_i, dv_i],
+                    })
+
+            pm_n = cn["_probs"][jid]
+            pm_r = cr["_probs"][jid]
+            ch_match_p = False
+            for k in sorted(set(pm_n.keys()) | set(pm_r.keys()), key=str):
+                vn = pm_n.get(k)
+                vr = pm_r.get(k)
+                fam = vn[1] if vn else vr[1]
+                fs = fam_stats.setdefault(fam, {"n_cambiadas": 0, "pids": set(), "sum_d": 0.0, "sum_abs_d": 0.0})
+                if vn is None or vr is None:
+                    n_sel_ch += 1
+                    ch_match_p = True
+                    fs["n_cambiadas"] += 1
+                    fs["pids"].add(jid)
+                else:
+                    d_p = float(vn[0]) - float(vr[0])
+                    if abs(d_p) > 1e-6:
+                        n_sel_ch += 1
+                        ch_match_p = True
+                        fs["n_cambiadas"] += 1
+                        fs["pids"].add(jid)
+                        fs["sum_d"] += d_p
+                        fs["sum_abs_d"] += abs(d_p)
+            if ch_match_p:
+                n_p_prob_ch += 1
+
+            t5_n = cn["_top5"][jid]
+            t5_r = cr["_top5"][jid]
+            ck_n = {x["clave"]: x for x in t5_n}
+            ck_r = {x["clave"]: x for x in t5_r}
+            if set(ck_n.keys()) != set(ck_r.keys()):
+                entr = [ck_n[k]["etiqueta"] for k in ck_n if k not in ck_r]
+                sal = [ck_r[k]["etiqueta"] for k in ck_r if k not in ck_n]
+                n_p_t5_ch += 1
+                n_t5_in += len(entr)
+                n_t5_out += len(sal)
+                if len(ejemplos_t5) < 12:
+                    ejemplos_t5.append({"partido": reg["partido"], "entran": entr, "salen": sal})
+
+            s1_n = {x["clave"] for x in cn["_sec1"][jid]}
+            s1_r = {x["clave"] for x in cr["_sec1"][jid]}
+            if s1_n != s1_r:
+                n_p_s1_ch += 1
+                n_s1_ch += len(s1_n ^ s1_r)
+
+        fam_out = {}
+        for fam, st in sorted(fam_stats.items()):
+            nc = st["n_cambiadas"]
+            fam_out[fam] = {
+                "n_selecciones_cambiadas": nc,
+                "n_partidos": len(st["pids"]),
+                "delta_prob_medio": round(st["sum_d"] / nc, 6) if nc and st["sum_d"] != 0.0 else (0.0 if nc else None),
+                "abs_delta_prob_medio": round(st["sum_abs_d"] / nc, 6) if nc and st["sum_abs_d"] != 0.0 else (0.0 if nc else None),
+            }
+
+        return {
+            "n_partidos_lambda_cambiada": len(partidos_lam),
+            "delta_lambda_local_medio_cond": round(sum(dl_cond) / len(dl_cond), 4) if dl_cond else 0.0,
+            "delta_lambda_visitante_medio_cond": round(sum(dv_cond) / len(dv_cond), 4) if dv_cond else 0.0,
+            "partidos_lambda_cambiada": partidos_lam,
+            "n_selecciones_catalogo_cambiadas": n_sel_ch,
+            "n_partidos_prob_cambiada": n_p_prob_ch,
+            "cambios_prob_por_familia": fam_out,
+            "n_partidos_cambio_composicion_top5": n_p_t5_ch,
+            "n_lineas_top5_entraron": n_t5_in,
+            "n_lineas_top5_salieron": n_t5_out,
+            "delta_n_top5": cn["n_top5_total"] - cr["n_top5_total"],
+            "ejemplos_cambios_top5": ejemplos_t5,
+            "n_partidos_cambio_composicion_sec1": n_p_s1_ch,
+            "n_lineas_sec1_diferencia_simetrica": n_s1_ch,
+            "delta_n_sec1": cn["n_sec1_total"] - cr["n_sec1_total"],
+        }
+
+    impacto_73 = {
+        "n_registros": len(pares_73),
+        "resumen_configuraciones": {
+            k: {fk: fv for fk, fv in v.items() if not fk.startswith("_")}
+            for k, v in res_73.items()
+        },
+        "comparaciones": {
+            "defecto_ronda14_nb_vs_soloA_previo": _comparar_73("defecto_ronda14_nb", "soloA_previo"),
+            "sombra_guarda_ddr_vs_defecto_ronda14_nb": _comparar_73("sombra_guarda_ddr", "defecto_ronda14_nb"),
+            "A_mas_B_14_vs_soloA_previo": _comparar_73("A_mas_B_14", "soloA_previo"),
+        },
+    }
+
+    # ── 3. Impacto sobre los 24 OOS (1376 catálogo + 4 familias + Top 5 + Sección 1, IC95%) ──
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1506 = list(oos.get("filas_1506") or [])
+    filas_1376 = [
+        r for r in filas_1506
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    mapa_r10 = json.loads((raiz / "datos" / "ronda10_oos_26_jobs_map.json").read_text(encoding="utf-8"))
+    jobs_map = dict(mapa_r10.get("jobs") or {})
+    no_comp_jids = set(mapa_r10.get("no_comp_jids") or [])
+
+    merc_by_job: dict[str, dict[str, Any]] = {}
+    for fp in sorted((raiz / "informes" / "mercados").rglob("mercados_*.json")):
+        md = json.loads(fp.read_text(encoding="utf-8"))
+        if md.get("id_trabajo"):
+            merc_by_job[str(md["id_trabajo"])] = md
+
+    idx_pid: dict[tuple[str, tuple[str, str, str | None, float | None]], int] = {}
+    pid_by_jid: dict[str, str] = {}
+    stats_pid: dict[str, dict[str, int]] = {}
+    for r in filas_1506:
+        jid = str(r["id_trabajo"])
+        pid = str(r.get("id_partido") or "")
+        pid_by_jid[jid] = pid
+        k = _normalizar_clave_seleccion_ronda10(r.get("evento"), r.get("periodo"), r.get("equipo"), r.get("linea"))
+        idx_pid[(pid, k)] = int(r["evento_ocurrio"])
+
+    for fp_ev in sorted((raiz / "informes" / "evaluacion").glob("evaluacion_*.json")):
+        d_ev = json.loads(fp_ev.read_text(encoding="utf-8"))
+        for s in (d_ev.get("evaluaciones") or []):
+            jid_s = str(s.get("id_trabajo") or "")
+            pid_s = str(s.get("id_partido") or pid_by_jid.get(jid_s) or "")
+            if pid_s in set(pid_by_jid.values()) and s.get("evento_ocurrio") is not None:
+                k = _normalizar_clave_seleccion_ronda10(s.get("evento"), s.get("periodo"), s.get("equipo"), s.get("linea"))
+                idx_pid.setdefault((pid_s, k), int(s["evento_ocurrio"]))
+                ev_s = str(s.get("evento") or "")
+                per_s = str(s.get("periodo") or "FT")
+                det_s = str(s.get("detalle") or "")
+                m_det = _re_r14.match(r"^\s*(\d+)\s+(goles|córneres|corneres|tarjetas)", det_s)
+                st_p = stats_pid.setdefault(pid_s, {})
+                if m_det:
+                    val_d = int(m_det.group(1))
+                    if ev_s.startswith(("over_", "under_", "al_menos_", "fiesta_")) and not s.get("equipo"):
+                        st_p[f"goles_{per_s}"] = val_d
+                    elif ev_s.startswith("local_") and "goles" in str(s.get("mercado") or "").lower():
+                        st_p[f"goles_local_{per_s}"] = val_d
+                    elif ev_s.startswith("visitante_") and "goles" in str(s.get("mercado") or "").lower():
+                        st_p[f"goles_visita_{per_s}"] = val_d
+
+    extra_pid_eventos: dict[tuple[str, str, str], int] = {
+        ("5795478", "primer_gol_local", "FT"): 0,
+        ("6106338", "primer_gol_visitante", "FT"): 0,
+        ("5795481", "primer_gol_local", "FT"): 1,
+        ("5795481", "gol_ambos_tiempos", "FT"): 1,
+    }
+    stats_pid.setdefault("1000020615", {})["goles_1T"] = 1
+    stats_pid.setdefault("1000020615", {})["goles_2T"] = 2
+
+    def _g(o: Any, k: str, d: Any = None) -> Any:
+        return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+
+    def _match_top5_cand(item_t5: dict[str, Any], cands: list[Any], eq_l: str, eq_v: str) -> Any:
+        etq_t5 = str(item_t5.get("etiqueta") or "")
+        p_t5 = float(item_t5.get("probabilidad") or 0.0)
+        if "(1T)" in etq_t5 or "1ra Mitad" in etq_t5:
+            per_t5 = "1T"
+        elif "(2T)" in etq_t5 or "2da Mitad" in etq_t5:
+            per_t5 = "2T"
+        else:
+            per_t5 = "FT"
+        mejores = [
+            s for s in cands
+            if str(getattr(s, "periodo", "FT") or "FT") == per_t5
+            and abs(float(getattr(s, "probabilidad", 0.0) or 0.0) - p_t5) < 5e-4
+        ]
+        if len(mejores) == 1:
+            return mejores[0]
+        for s in mejores:
+            ev_s = str(getattr(s, "evento", "") or "")
+            eq_s = str(getattr(s, "equipo", "") or "")
+            lin_s = getattr(s, "linea", None)
+            if lin_s is not None and f"{lin_s:g}" in etq_t5:
+                if eq_s and eq_s.lower() in etq_t5.lower():
+                    return s
+                if not eq_s and eq_l.lower() not in etq_t5.lower() and eq_v.lower() not in etq_t5.lower():
+                    return s
+            if "Anota primero" in etq_t5 and "primer" in ev_s and eq_s and eq_s.lower() in etq_t5.lower():
+                return s
+            if "ambos tiempos" in etq_t5.lower() and "ambos_tiempos" in ev_s:
+                return s
+        return mejores[0] if mejores else None
+
+    def _grade_sel(jid: str, sel_obj: Any, item_t5: dict[str, Any] | None, meta: dict[str, Any]) -> int | None:
+        pid = pid_by_jid[jid]
+        if sel_obj is not None:
+            ev = str(_g(sel_obj, "evento") or "")
+            per = str(_g(sel_obj, "periodo", "FT") or "FT").strip().upper()
+            eq = _g(sel_obj, "equipo")
+            lin = _g(sel_obj, "linea")
+            if (pid, ev, per) in extra_pid_eventos:
+                return extra_pid_eventos[(pid, ev, per)]
+            k = _normalizar_clave_seleccion_ronda10(ev, per, eq, lin)
+            if (pid, k) in idx_pid:
+                return idx_pid[(pid, k)]
+            if ev.startswith("al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("local_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"local_over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("visitante_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"visitante_over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("fiesta_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"over_{float(lin) - 0.5:g}", per, None, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            st = stats_pid.get(pid, {})
+            if f"goles_{per}" in st and not eq and lin is not None:
+                g = st[f"goles_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if eq == meta.get("equipo_local") and f"goles_local_{per}" in st and lin is not None:
+                g = st[f"goles_local_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if eq == meta.get("equipo_visitante") and f"goles_visita_{per}" in st and lin is not None:
+                g = st[f"goles_visita_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if ev == "gol_2t" and "goles_2T" in st:
+                return int(st["goles_2T"] >= 1)
+            if ev == "gol_1t" and "goles_1T" in st:
+                return int(st["goles_1T"] >= 1)
+        if item_t5 is not None:
+            etq = str(item_t5.get("etiqueta") or "")
+            if "1ra Mitad" in etq and "Menos de 1.5 Goles" in etq:
+                k_1t = _normalizar_clave_seleccion_ronda10("under_1.5", "1T", None, 1.5)
+                if (pid, k_1t) in idx_pid:
+                    return idx_pid[(pid, k_1t)]
+                st = stats_pid.get(pid, {})
+                if "goles_1T" in st:
+                    return int(st["goles_1T"] < 1.5)
+        return None
+
+    ultimo_jid_por_pid: dict[str, str] = {}
+    for jid in sorted(jobs_map):
+        pid = pid_by_jid.get(jid) or jid
+        prev_j = ultimo_jid_por_pid.get(pid)
+        if prev_j is None:
+            ultimo_jid_por_pid[pid] = jid
+        else:
+            g_cur = str((merc_by_job.get(jid, {}).get("metadatos") or {}).get("generado_en") or "")
+            g_prev = str((merc_by_job.get(prev_j, {}).get("metadatos") or {}).get("generado_en") or "")
+            if g_cur >= g_prev:
+                ultimo_jid_por_pid[pid] = jid
+    jids_24 = set(ultimo_jid_por_pid.values())
+
+    jobs_data: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any]] = {}
+    for jid in sorted(jobs_map):
+        fpl_rel, fpv_rel, cut = jobs_map[jid]
+        dl = json.loads((raiz / fpl_rel).read_text(encoding="utf-8"))
+        dv = json.loads((raiz / fpv_rel).read_text(encoding="utf-8"))
+        dlc = mm.filtrar_por_fecha(dl, cut) if cut else dl
+        dvc = mm.filtrar_por_fecha(dv, cut) if cut else dv
+        meta = dict(merc_by_job[jid]["metadatos"])
+        par = mm.Parametros()
+        if meta.get("competicion") and jid not in no_comp_jids:
+            par.competicion = str(meta["competicion"])
+        jobs_data[jid] = (dlc, dvc, meta, par)
+
+    oos_res: dict[str, dict[str, Any]] = {}
+    for nom_cfg, bdict in cfgs_dict.items():
+        probs_cat: dict[str, dict[tuple[str, str, str | None, float | None], float]] = {}
+        lam_24: dict[str, tuple[str, float | None, float | None]] = {}
+        est_analizar_total = 0
+        est_catalogo_total = 0
+        abst_goles_mitad = 0
+        top5_24_rows: list[dict[str, Any]] = []
+        sec1_24_rows: list[dict[str, Any]] = []
+
+        with banderas_comportamiento(activar_todas=False, **bdict):
+            _an_mit = _ba_r14("usar_gate_cronologia_mitades_10_15")
+            _an_crn = _ba_r14("usar_gate_corners_8_15")
+            _an_cal = _ba_r14("usar_calibracion_y_veto_conciencia")
+
+            for jid in sorted(jobs_data):
+                dlc, dvc, meta, par = jobs_data[jid]
+                el, ev_n = str(meta["equipo_local"]), str(meta["equipo_visitante"])
+                cl = meta.get("condicion_local") or "casa"
+                cv = meta.get("condicion_visitante") or "fuera"
+
+                ev_l = _evaluar_partido_ligero(
+                    "oos",
+                    jid,
+                    dlc,
+                    dvc,
+                    cl,
+                    cv,
+                    el,
+                    ev_n,
+                    par,
+                    meta,
+                    an_mit=_an_mit,
+                    an_crn=_an_crn,
+                    an_cal=_an_cal,
+                )
+                mot = ev_l["mot"]
+                probs_cat[jid] = ev_l["mp"]
+                est_catalogo_total += ev_l["est_catalogo"]
+                est_analizar_total += ev_l["est_analizar"]
+                if ev_l["abstenido_mitad"]:
+                    abst_goles_mitad += 1
+
+                if jid not in jids_24:
+                    continue
+
+                lam_24[jid] = (
+                    f"{el} vs {ev_n}",
+                    round(float(mot.tasas.lambda_local_ft), 4) if mot.tasas.lambda_local_ft is not None else None,
+                    round(float(mot.tasas.lambda_visitante_ft), 4) if mot.tasas.lambda_visitante_ft is not None else None,
+                )
+                pid = pid_by_jid[jid]
+                sels_flt = ev_l["sels_flt"]
+                for it5 in ev_l["top5"]:
+                    cand = _match_top5_cand(it5, sels_flt, el, ev_n)
+                    res_y = _grade_sel(jid, cand, it5, meta)
+                    p_item = float(it5.get("probabilidad") or 0.0)
+                    ev_k = str(getattr(cand, "evento", None) or it5.get("evento") or it5.get("etiqueta") or "")
+                    per_k = str(getattr(cand, "periodo", None) or "FT")
+                    eq_k = str(getattr(cand, "equipo", None) or "")
+                    lin_k = getattr(cand, "linea", None)
+                    top5_24_rows.append({
+                        "id_partido": pid,
+                        "id_trabajo": jid,
+                        "partido": f"{el} vs {ev_n}",
+                        "etiqueta": str(it5.get("etiqueta") or ""),
+                        "clave_linea": (pid, ev_k, per_k, eq_k, lin_k),
+                        "prob": p_item,
+                        "evento_ocurrio": res_y,
+                    })
+                for sc1 in ev_l["sec1"]:
+                    res_y = _grade_sel(jid, sc1, None, meta)
+                    ev_k = str(_g(sc1, "evento") or "")
+                    per_k = str(_g(sc1, "periodo", "FT") or "FT")
+                    eq_k = str(_g(sc1, "equipo") or "")
+                    lin_k = _g(sc1, "linea")
+                    sec1_24_rows.append({
+                        "id_partido": pid,
+                        "id_trabajo": jid,
+                        "partido": f"{el} vs {ev_n}",
+                        "etiqueta": str(_g(sc1, "etiqueta") or ev_k),
+                        "clave_linea": (pid, ev_k, per_k, eq_k, lin_k),
+                        "prob": float(_g(sc1, "probabilidad") or 0.0),
+                        "evento_ocurrio": res_y,
+                    })
+
+        oos_res[nom_cfg] = {
+            "probs_cat": probs_cat,
+            "lam_24": lam_24,
+            "est_catalogo_total": est_catalogo_total,
+            "est_analizar_total": est_analizar_total,
+            "abst_goles_mitad": abst_goles_mitad,
+            "top5_rows": top5_24_rows,
+            "sec1_rows": sec1_24_rows,
+        }
+
+    orden_cfgs = ["soloA_previo", "defecto_ronda14_nb", "sombra_guarda_ddr", "A_mas_B_14"]
+    obs_1376_all: list[tuple[str, int, dict[str, float]]] = []
+    obs_1376_fam: dict[str, list[tuple[str, int, dict[str, float]]]] = {}
+    for r in filas_1376:
+        jid = str(r["id_trabajo"])
+        pid = str(r["id_partido"])
+        y = int(r["evento_ocurrio"])
+        fam = _clasificar_familia_ronda14(r.get("mercado"))
+        k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+        d_raw: dict[str, float] = {}
+        ok_row = True
+        for nom in orden_cfgs:
+            p_raw = oos_res[nom]["probs_cat"].get(jid, {}).get(k)
+            if p_raw is None:
+                ok_row = False
+                break
+            d_raw[nom] = float(p_raw)
+        if ok_row:
+            obs_1376_all.append((pid, y, d_raw))
+            obs_1376_fam.setdefault(fam, []).append((pid, y, d_raw))
+
+    boot_1376_global = bootstrap_brier_logloss_por_partido(obs_1376_all, n_boot=n_boot, seed=seed)
+    boot_1376_fams = {
+        fam: bootstrap_brier_logloss_por_partido(rows_f, n_boot=n_boot, seed=seed + idx + 1)
+        for idx, (fam, rows_f) in enumerate(sorted(obs_1376_fam.items()))
+    }
+
+    def _boot_sel_pairs(rows_c: list[dict[str, Any]], rows_ref_a: list[dict[str, Any]], rows_ref_nb: list[dict[str, Any]], seed_v: int) -> dict[str, Any]:
+        ev_c = [r for r in rows_c if r["evento_ocurrio"] is not None]
+        ev_ra = [r for r in rows_ref_a if r["evento_ocurrio"] is not None]
+        ev_rnb = [r for r in rows_ref_nb if r["evento_ocurrio"] is not None]
+        if not ev_c:
+            return {"n_lineas": len(rows_c), "n_resueltas": 0}
+
+        def _pmap(rows_l: list[dict[str, Any]]) -> dict[str, list[tuple[int, float, float]]]:
+            mp: dict[str, list[tuple[int, float, float]]] = {}
+            for r in rows_l:
+                y = int(r["evento_ocurrio"])
+                p = float(r["prob"])
+                pc = min(max(p, 1e-12), 1.0 - 1e-12)
+                mp.setdefault(str(r["id_partido"]), []).append((y, (p - y) ** 2, -(y * math.log(pc) + (1.0 - y) * math.log(1.0 - pc))))
+            return mp
+
+        mc, mra, mrnb = _pmap(ev_c), _pmap(ev_ra), _pmap(ev_rnb)
+        pids_u = sorted(set(mc) | set(mra) | set(mrnb))
+
+        def _agg(m_map: dict[str, list[tuple[int, float, float]]], sp: list[str]) -> tuple[float, float, float] | None:
+            sa = sb = sl = cnt = 0.0
+            for pid_b in sp:
+                for y_b, br_b, ll_b in m_map.get(pid_b, ()):
+                    sa += y_b
+                    sb += br_b
+                    sl += ll_b
+                    cnt += 1.0
+            return (sa / cnt, sb / cnt, sl / cnt) if cnt > 0 else None
+
+        oc = _agg(mc, sorted(mc))
+        ora = _agg(mra, sorted(mra))
+        ornb = _agg(mrnb, sorted(mrnb))
+        rng = _rnd_r14.Random(seed_v)
+        tc, bc, lc = [], [], []
+        dta, dba, dla = [], [], []
+        dtnb, dbnb, dlnb = [], [], []
+        m_u = len(pids_u)
+        for _ in range(n_boot):
+            mu = [pids_u[rng.randrange(m_u)] for _ in range(m_u)]
+            ac = _agg(mc, mu)
+            ara = _agg(mra, mu)
+            arnb = _agg(mrnb, mu)
+            if ac is not None:
+                tc.append(ac[0]); bc.append(ac[1]); lc.append(ac[2])
+                if ara is not None:
+                    dta.append(ac[0] - ara[0]); dba.append(ac[1] - ara[1]); dla.append(ac[2] - ara[2])
+                if arnb is not None:
+                    dtnb.append(ac[0] - arnb[0]); dbnb.append(ac[1] - arnb[1]); dlnb.append(ac[2] - arnb[2])
+        for arr in (tc, bc, lc, dta, dba, dla, dtnb, dbnb, dlnb):
+            arr.sort()
+
+        def _ic(arr: list[float], dec: int) -> list[float] | None:
+            if not arr:
+                return None
+            return [round(arr[int(0.025 * len(arr))], dec), round(arr[min(len(arr) - 1, int(0.975 * len(arr)))], dec)]
+
+        ck_c = {r["clave_linea"] for r in rows_c}
+        ck_rnb = {r["clave_linea"] for r in rows_ref_nb}
+        return {
+            "n_lineas": len(rows_c),
+            "n_partidos": len(mc),
+            "n_resueltas": len(ev_c),
+            "n_no_resolubles": len(rows_c) - len(ev_c),
+            "aciertos": sum(int(r["evento_ocurrio"]) for r in ev_c),
+            "tasa_acierto": round(oc[0], 4) if oc else None,
+            "tasa_ic95": _ic(tc, 4),
+            "brier": round(oc[1], 6) if oc else None,
+            "brier_ic95": _ic(bc, 6),
+            "log_loss": round(oc[2], 6) if oc else None,
+            "log_loss_ic95": _ic(lc, 6),
+            "d_tasa_vs_soloA_previo": round(oc[0] - ora[0], 4) if (oc and ora) else None,
+            "d_brier_vs_soloA_previo": round(oc[1] - ora[1], 6) if (oc and ora) else None,
+            "d_brier_vs_soloA_previo_ic95": _ic(dba, 6),
+            "d_log_loss_vs_soloA_previo": round(oc[2] - ora[2], 6) if (oc and ora) else None,
+            "d_log_loss_vs_soloA_previo_ic95": _ic(dla, 6),
+            "d_tasa_vs_defecto_r14_nb": round(oc[0] - ornb[0], 4) if (oc and ornb) else None,
+            "d_brier_vs_defecto_r14_nb": round(oc[1] - ornb[1], 6) if (oc and ornb) else None,
+            "d_brier_vs_defecto_r14_nb_ic95": _ic(dbnb, 6),
+            "d_log_loss_vs_defecto_r14_nb": round(oc[2] - ornb[2], 6) if (oc and ornb) else None,
+            "d_log_loss_vs_defecto_r14_nb_ic95": _ic(dlnb, 6),
+            "n_lineas_cambiadas_vs_defecto_r14_nb": len(ck_c ^ ck_rnb),
+        }
+
+    top5_24_summary = {}
+    sec1_24_summary = {}
+    cobertura_26_summary = {}
+    for idx_c, nom in enumerate(orden_cfgs):
+        top5_24_summary[nom] = _boot_sel_pairs(
+            oos_res[nom]["top5_rows"],
+            oos_res["soloA_previo"]["top5_rows"],
+            oos_res["defecto_ronda14_nb"]["top5_rows"],
+            seed + 100 + idx_c,
+        )
+        sec1_24_summary[nom] = _boot_sel_pairs(
+            oos_res[nom]["sec1_rows"],
+            oos_res["soloA_previo"]["sec1_rows"],
+            oos_res["defecto_ronda14_nb"]["sec1_rows"],
+            seed + 200 + idx_c,
+        )
+        cobertura_26_summary[nom] = {
+            "n_estimables_catalogo_26_jobs": oos_res[nom]["est_catalogo_total"],
+            "n_estimables_analizar_26_jobs": oos_res[nom]["est_analizar_total"],
+            "n_sides_abstenidos_goles_mitad": oos_res[nom]["abst_goles_mitad"],
+        }
+
+    lam_ch_oos_guarda = []
+    for jid in sorted(jids_24):
+        p_nb, ll_nb, lv_nb = oos_res["defecto_ronda14_nb"]["lam_24"][jid]
+        _, ll_g, lv_g = oos_res["sombra_guarda_ddr"]["lam_24"][jid]
+        if ll_nb != ll_g or lv_nb != lv_g:
+            lam_ch_oos_guarda.append({
+                "id_trabajo": jid,
+                "partido": p_nb,
+                "lam_defecto_nb": [ll_nb, lv_nb],
+                "lam_sombra_guarda_ddr": [ll_g, lv_g],
+            })
+
+    out = {
+        "configuracion_ronda14": {
+            "banderas_comportamiento": banderas_vigentes,
+            "metadatos_defectos": metadatos_defectos,
+            "min_cuota_justa_top5": cuota_justa,
+            "brazo_sombra_dedicado": "usar_guarda_doble_defensa_rota",
+        },
+        "verificacion_ciclo_sombra_guarda_ddr": verif_ciclo,
+        "impacto_73_registros": impacto_73,
+        "impacto_24_oos": {
+            "cohorte": {
+                "n_partidos_unicos": len(jids_24),
+                "n_jobs": len(jobs_data),
+                "n_filas_comunes": boot_1376_global.get("n_filas"),
+                "n_boot": n_boot,
+                "seed": seed,
+                "nota_in_sample_nb": (
+                    "usar_sobredispersion_nb_corners=True (factor 1.05, regla operativa sin validación) "
+                    "fue calibrada sobre estas mismas 613 filas de córneres OOS; fuera de Córneres su efecto en OOS es exactamente 0."
+                ),
+            },
+            "cobertura_26_jobs": cobertura_26_summary,
+            "catalogo_1376_global": boot_1376_global,
+            "catalogo_1376_por_familia": boot_1376_fams,
+            "top5_24_unicos": top5_24_summary,
+            "seccion1_24_unicos": sec1_24_summary,
+            "partidos_lambda_cambiada_por_guarda_ddr_24_oos": lam_ch_oos_guarda,
+        },
+    }
+    if guardar_ruta:
+        out_p = _Path_r14(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out

@@ -29,8 +29,9 @@ def test_todas_las_banderas_conjunto_b_apagadas_por_defecto():
     u = dc.cargar_umbrales_cobertura()
     assert len(dc.BANDERAS_COMPORTAMIENTO_DEFECTO) == 14
     for clave in dc.BANDERAS_COMPORTAMIENTO_DEFECTO:
-        assert u.get(clave) is False, f"{clave} debe estar en False por defecto"
-        assert dc.bandera_activa(clave) is False
+        esperado_def = clave == "usar_sobredispersion_nb_corners"
+        assert u.get(clave) is esperado_def, f"{clave} debe respetar defecto R14={esperado_def}"
+        assert dc.bandera_activa(clave) is esperado_def
     assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.25, abs=1e-6)
 
     excluidas = set(dc._BANDERAS_EXCLUIDAS_ACTIVAR_TODAS)
@@ -44,9 +45,10 @@ def test_todas_las_banderas_conjunto_b_apagadas_por_defecto():
         assert estado_114["usar_cuota_justa_114_top5"] is True
         assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.14, abs=1e-6)
 
-    # Al salir del contexto vuelven a False
+    # Al salir del contexto vuelven al defecto (solo usar_sobredispersion_nb_corners=True)
     for clave in dc.BANDERAS_COMPORTAMIENTO_DEFECTO:
-        assert dc.bandera_activa(clave) is False
+        esperado_def = clave == "usar_sobredispersion_nb_corners"
+        assert dc.bandera_activa(clave) is esperado_def
     assert dc.obtener_umbral_cuota_justa_top5() == pytest.approx(1.25, abs=1e-6)
 
 
@@ -83,16 +85,17 @@ def test_solo_a_preserva_lambdas_y_probabilidades_5e8425f():
     ]
     assert all("-0.5 Goles" not in e for e in etqs_if)
 
-    # Londrina vs Nautico (solo A == 5e8425f)
-    an_ln = mm.analizar(ln["londrina"], ln["nautico"], "Londrina", "Náutico", competicion="Brasileirão Série B")
-    t_ln = an_ln.motor.tasas
-    assert round(t_ln.lambda_local_ft, 2) == 1.14
-    assert round(t_ln.lambda_visitante_ft, 2) == 0.85
-    top5_ln = mm.seleccionar_top_5_jugadas_recomendadas(an_ln.selecciones_filtradas, motor=an_ln.motor, eq_l="Londrina", eq_v="Náutico")
-    assert [x["etiqueta"] for x in top5_ln] == [
-        "Goles Náutico (FT): -1.5 Goles",
-        "Córneres Totales (FT): -11.5 Córn.",
-    ]
+    # Londrina vs Nautico (solo A == 5e8425f con banderas B apagadas; con NB=True por defecto solo cambia Córneres)
+    with dc.banderas_comportamiento(activar_todas=False):
+        an_ln = mm.analizar(ln["londrina"], ln["nautico"], "Londrina", "Náutico", competicion="Brasileirão Série B")
+        t_ln = an_ln.motor.tasas
+        assert round(t_ln.lambda_local_ft, 2) == 1.14
+        assert round(t_ln.lambda_visitante_ft, 2) == 0.85
+        top5_ln = mm.seleccionar_top_5_jugadas_recomendadas(an_ln.selecciones_filtradas, motor=an_ln.motor, eq_l="Londrina", eq_v="Náutico")
+        assert [x["etiqueta"] for x in top5_ln] == [
+            "Goles Náutico (FT): -1.5 Goles",
+            "Córneres Totales (FT): -11.5 Córn.",
+        ]
 
 
 def test_bugfix_al_menos_vs_menos_en_conjunto_a():

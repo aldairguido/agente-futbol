@@ -32,13 +32,24 @@ RUTA_UMBRALES_COBERTURA = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "umbrales_cobertura.yaml"
 )
 
+# Metadatos de promoción/estado de banderas de Conjunto B activadas sin validación cronológica OOS completa
+METADATOS_DEFECTOS_BANDERAS_B: Dict[str, str] = {
+    "usar_sobredispersion_nb_corners": "regla operativa sin validación",
+}
+
+
+def obtener_metadatos_defectos_banderas_b() -> Dict[str, str]:
+    """Devuelve la documentación oficial de reglas operativas activas por defecto en Conjunto B."""
+    return dict(METADATOS_DEFECTOS_BANDERAS_B)
+
+
 BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
     "usar_anclaje_coef_torneo": False,
     "usar_tope_dcn_18_pct": False,
     "usar_tensor_65_35_y_diesel": False,
     "usar_micropatrones_combinatorios": False,
     "usar_gatekeeper_multisenal_top5": False,
-    "usar_sobredispersion_nb_corners": False,
+    "usar_sobredispersion_nb_corners": True,  # regla operativa sin validación
     "usar_gate_corners_8_15": False,
     "usar_gate_cronologia_mitades_10_15": False,
     "usar_calibracion_y_veto_conciencia": False,
@@ -187,7 +198,7 @@ def cargar_umbrales_cobertura(ruta: Optional[str] = None) -> Dict[str, Any]:
 def obtener_banderas_comportamiento(
     umbrales: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, bool]:
-    """Devuelve el mapa efectivo de banderas de comportamiento (todas False por defecto)."""
+    """Devuelve el mapa efectivo de banderas de comportamiento (Ronda 14: solo `usar_sobredispersion_nb_corners=True` como regla operativa sin validación)."""
     u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
     res = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
     flags_sub = u.get("flags_comportamiento") if isinstance(u.get("flags_comportamiento"), dict) else {}

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+import decision_cobertura as dc
 from evaluacion_pronosticos import auditar_evidencia_corners_nb_ronda10
 
 
@@ -16,8 +17,9 @@ def test_auditar_evidencia_corners_nb_ronda10_separa_ajuste_y_cero_posteriores()
     r = auditar_evidencia_corners_nb_ronda10(n_boot=200, seed=42)
 
     assert r["bandera"] == "usar_sobredispersion_nb_corners"
-    assert r["valor_por_defecto"] is False
-    assert r["activo_en_runtime"] is False
+    assert r["valor_por_defecto"] is True
+    assert dc.obtener_metadatos_defectos_banderas_b().get("usar_sobredispersion_nb_corners") == "regla operativa sin validación"
+    assert r["activo_en_runtime"] is True
     assert r["estado_regla"] == "regla operativa en muestra sin validación OOS"
 
     aj = r["partidos_de_ajuste_en_muestra"]

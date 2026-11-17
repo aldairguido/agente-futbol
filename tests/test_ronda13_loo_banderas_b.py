@@ -29,11 +29,12 @@ def test_ronda13_punto4_tabla_loo_14_banderas_y_defectos_intactos():
     assert res["cohorte"]["n_filas_comunes_catalogo"] == 1376
     assert res["cohorte"]["n_boot"] == 2000
 
-    # Todas las 14 banderas del Conjunto B presentes y apagadas por defecto
+    # Snapshot histórico R13 tenía todas en False; tras R14 solo usar_sobredispersion_nb_corners=True
     banderas_def = dc.obtener_banderas_comportamiento()
     assert len(banderas_def) == 14
-    assert all(v is False for v in banderas_def.values())
-    assert res["banderas_defecto_actuales"] == banderas_def
+    assert all(v is False for v in res["banderas_defecto_actuales"].values())
+    assert banderas_def["usar_sobredispersion_nb_corners"] is True
+    assert all(v is False for k, v in banderas_def.items() if k != "usar_sobredispersion_nb_corners")
     assert abs(dc.obtener_umbral_cuota_justa_top5() - 1.25) < 1e-9
 
     tabla = res["tabla_leave_one_out_14_banderas"]

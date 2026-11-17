@@ -72,7 +72,7 @@ flags_comportamiento:
   usar_tensor_65_35_y_diesel: false  # regla operativa, sin validación cronológica
   usar_micropatrones_combinatorios: false  # hipótesis, no validada
   usar_gatekeeper_multisenal_top5: false  # regla operativa, sin validación cronológica
-  usar_sobredispersion_nb_corners: false  # regla operativa, sin validación cronológica
+  usar_sobredispersion_nb_corners: true  # regla operativa sin validación
   usar_gate_corners_8_15: false  # regla operativa, sin validación cronológica
   usar_gate_cronologia_mitades_10_15: false  # regla operativa, sin validación cronológica
   usar_calibracion_y_veto_conciencia: false  # regla operativa, sin validación cronológica

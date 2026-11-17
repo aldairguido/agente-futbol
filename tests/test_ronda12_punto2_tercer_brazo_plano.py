@@ -31,7 +31,9 @@ def _cargar_gal_bar():
 
 def test_ronda12_punto2_bandera_defecto_false_y_no_cambia_modo_dual(tmp_path):
     assert dc.bandera_activa("usar_tercer_brazo_plano_sombra") is False
-    assert all(not v for v in dc.obtener_banderas_comportamiento().values())
+    banderas_def = dc.obtener_banderas_comportamiento()
+    assert banderas_def["usar_sobredispersion_nb_corners"] is True
+    assert all(not v for k, v in banderas_def.items() if k != "usar_sobredispersion_nb_corners")
     assert "usar_tercer_brazo_plano_sombra" in dc._BANDERAS_AUXILIARES_DEFECTO
     assert "usar_tercer_brazo_plano_sombra" not in dc.BANDERAS_COMPORTAMIENTO_DEFECTO
     with dc.banderas_comportamiento(activar_todas=True):

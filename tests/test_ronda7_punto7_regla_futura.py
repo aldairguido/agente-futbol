@@ -74,7 +74,10 @@ def test_punto7_politica_y_banderas_regla_futura():
 
     # Ninguna bandera de comportamiento esta encendida por defecto
     for k, v in dc.BANDERAS_COMPORTAMIENTO_DEFECTO.items():
-        assert v is False, f"{k} debe iniciar apagada"
+        if k == "usar_sobredispersion_nb_corners":
+            assert v is True
+        else:
+            assert v is False, f"{k} debe iniciar apagada"
 
 
 def test_punto7_modo_sombra_dual_en_snapshot_y_ledger(tmp_path):
