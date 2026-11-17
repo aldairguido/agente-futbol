@@ -28,6 +28,7 @@ from pathlib import Path
 import queue
 import random
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -407,10 +408,22 @@ def _copiar_si_nuevo_o_actualizado(src: Path, dst: Path) -> bool:
     return True
 
 
+def _rmtree_onerror(func: Any, path: str, _exc: Any) -> None:
+    try:
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+    except OSError:
+        pass
+
+
+def _rmtree_seguro(ruta: Path) -> None:
+    if ruta.exists():
+        shutil.rmtree(ruta, onerror=_rmtree_onerror)
+
+
 def _preparar_staging_git(cfg: ConfigPersistencia, stage_dir: Path) -> bool:
     """Clona/inicializa un árbol aislado en `stage_dir` en la punta de `<remote>/<rama_datos>`."""
-    if stage_dir.exists():
-        shutil.rmtree(stage_dir, ignore_errors=True)
+    _rmtree_seguro(stage_dir)
     stage_dir.mkdir(parents=True, exist_ok=True)
 
     ws = cfg.workspace_dir
@@ -446,7 +459,8 @@ def sincronizar_y_push_datos(
     """
     ws = cfg.workspace_dir
     base_tmp = cfg.worktree_dir if cfg.worktree_dir is not None else Path(tempfile.gettempdir()) / "agente_futbol_persistencia"
-    stage_dir = base_tmp / f"stage_{os.getpid()}_{threading.get_ident()}"
+    base_tmp.mkdir(parents=True, exist_ok=True)
+    stage_dir = Path(tempfile.mkdtemp(prefix=f"stage_{os.getpid()}_", dir=str(base_tmp)))
 
     errores: list[str] = []
     try:
@@ -532,7 +546,7 @@ def sincronizar_y_push_datos(
             "errores": errores,
         }
     finally:
-        shutil.rmtree(stage_dir, ignore_errors=True)
+        _rmtree_seguro(stage_dir)
 
 
 class ColaPersistenciaGit:
