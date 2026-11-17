@@ -1,0 +1,4987 @@
+{
+  "cohorte": {
+    "n_jobs_oos": 26,
+    "n_partidos_unicos": 24,
+    "partido_duplicado_3_snapshots": {
+      "6106274": "Roma vs Real Madrid"
+    },
+    "n_boot": 2000,
+    "seed": 42
+  },
+  "soloA": {
+    "pre_vs_ambos_arreglos": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 12,
+            "n_partidos_unicos": 11,
+            "aciertos": 8,
+            "tasa_acierto": 0.6667,
+            "ic95_tasa": [
+              0.3636,
+              0.9231
+            ],
+            "brier": 0.206432,
+            "ic95_brier": [
+              0.08489,
+              0.351143
+            ],
+            "logloss": 0.590849,
+            "ic95_logloss": [
+              0.322725,
+              0.910771
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 5,
+            "n_partidos_unicos": 4,
+            "aciertos": 3,
+            "tasa_acierto": 0.6,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.288412,
+            "ic95_brier": [
+              0.062804,
+              0.626825
+            ],
+            "logloss": 0.807698,
+            "ic95_logloss": [
+              0.281189,
+              1.597463
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0667,
+            "ic95_diff_tasa": [
+              -0.4167,
+              0.7273
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 12,
+            "n_partidos_unicos": 11,
+            "aciertos": 8,
+            "tasa_acierto": 0.6667,
+            "ic95_tasa": [
+              0.3636,
+              0.9167
+            ],
+            "brier": 0.206432,
+            "ic95_brier": [
+              0.084909,
+              0.34885
+            ],
+            "logloss": 0.590849,
+            "ic95_logloss": [
+              0.324029,
+              0.903781
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 5,
+            "n_partidos_unicos": 4,
+            "aciertos": 3,
+            "tasa_acierto": 0.6,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.288412,
+            "ic95_brier": [
+              0.062804,
+              0.626825
+            ],
+            "logloss": 0.807698,
+            "ic95_logloss": [
+              0.281189,
+              1.597463
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0667,
+            "ic95_diff_tasa": [
+              -0.4167,
+              0.7273
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Brentford (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7175,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Goles Barcelona (2T): +0.5 Goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Goles Newcastle United (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7041,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Goles Everton (FT): Anota primero Everton",
+            "evento": "primer_gol_local",
+            "periodo": "FT",
+            "prob": 0.718,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Goles Inter (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7892,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Goles Barcelona (2T): +0.5 Goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Manchester City (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7963,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7555,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7547,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Brentford (FT): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Goles Barcelona (FT): Anota primero Barcelona",
+            "evento": "primer_gol_visitante",
+            "periodo": "FT",
+            "prob": 0.7324,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Goles Everton (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8469,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles (FT): Gol en ambos tiempos (partido)",
+            "evento": "gol_ambos_tiempos",
+            "periodo": "FT",
+            "prob": 0.7099,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Manchester City (FT): Anota primero Manchester City",
+            "evento": "primer_gol_local",
+            "periodo": "FT",
+            "prob": 0.7161,
+            "evento_ocurrio": 1
+          }
+        ]
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 116,
+            "n_partidos_unicos": 21,
+            "aciertos": 84,
+            "tasa_acierto": 0.7241,
+            "ic95_tasa": [
+              0.5566,
+              0.875
+            ],
+            "brier": 0.200289,
+            "ic95_brier": [
+              0.111064,
+              0.302415
+            ],
+            "logloss": 0.594613,
+            "ic95_logloss": [
+              0.37912,
+              0.835245
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 17,
+            "n_partidos_unicos": 7,
+            "aciertos": 11,
+            "tasa_acierto": 0.6471,
+            "ic95_tasa": [
+              0.3333,
+              0.9412
+            ],
+            "brier": 0.275126,
+            "ic95_brier": [
+              0.086485,
+              0.503926
+            ],
+            "logloss": 0.83571,
+            "ic95_logloss": [
+              0.346699,
+              1.54673
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0771,
+            "ic95_diff_tasa": [
+              -0.2202,
+              0.4349
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 112,
+            "n_partidos_unicos": 21,
+            "aciertos": 80,
+            "tasa_acierto": 0.7143,
+            "ic95_tasa": [
+              0.5339,
+              0.8687
+            ],
+            "brier": 0.204909,
+            "ic95_brier": [
+              0.112359,
+              0.315038
+            ],
+            "logloss": 0.60479,
+            "ic95_logloss": [
+              0.382107,
+              0.876239
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 17,
+            "n_partidos_unicos": 7,
+            "aciertos": 11,
+            "tasa_acierto": 0.6471,
+            "ic95_tasa": [
+              0.3125,
+              0.9545
+            ],
+            "brier": 0.275126,
+            "ic95_brier": [
+              0.079487,
+              0.50794
+            ],
+            "logloss": 0.83571,
+            "ic95_logloss": [
+              0.327112,
+              1.541782
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0672,
+            "ic95_diff_tasa": [
+              -0.2301,
+              0.4098
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0511af5559314a12",
+            "id_partido": "6106260",
+            "partido": "Arsenal vs Lille",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7351,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0511af5559314a12",
+            "id_partido": "6106260",
+            "partido": "Arsenal vs Lille",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7351,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8699,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8515,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8515,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8463,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8463,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 2 goles",
+            "evento": "local_al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7403,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7433,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8729,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Liverpool FC: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8192,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.738,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.738,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7175,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7175,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: más de 0.5 goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "más de 1.5 goles",
+            "evento": "over_1.5",
+            "periodo": "2T",
+            "prob": 0.7678,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "2T",
+            "prob": 0.7678,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7575,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7575,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9041,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9419,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8961,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9013,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7041,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7041,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7729,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7729,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.909,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8959,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7455,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8067,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8067,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8994,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8994,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Inter: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Inter: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7455,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7327,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7892,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8289,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "Palmeiras: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.794,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8867,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7295,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7836,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7836,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8956,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8956,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: más de 0.5 goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7295,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8871,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Manchester City: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Manchester City: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7966,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7966,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7963,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7034,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7034,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "6ada5cd1eba43a3e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "6ada5cd1eba43a3e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8037,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "Sabah FK: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8374,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "9f46b31620767c49",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "9f46b31620767c49",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8095,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7525,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7525,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8198,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8198,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "Bayern München: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.866,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7555,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7443,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7443,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.833,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7844,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7844,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7524,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "c056e997d152456e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "c056e997d152456e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "Borussia Dortmund: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8669,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8479,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8479,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8108,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7293,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7293,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7397,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.781,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.781,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9085,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.916,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7756,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7397,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8216,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8216,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7761,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7761,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8474,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Manchester United: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7382,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7303,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7408,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7408,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "Levante: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7654,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7547,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8476,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8476,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "más de 2.5 goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7098,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7583,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Elche: menos de 2.5 goles",
+            "evento": "visitante_under_2.5",
+            "periodo": "FT",
+            "prob": 0.9197,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Elche: menos de 6.5 córneres",
+            "evento": "visitante_corners_under_6.5",
+            "periodo": "FT",
+            "prob": 0.895,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Al menos un gol en el 2T",
+            "evento": "gol_2t",
+            "periodo": "2T",
+            "prob": 0.9008,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Al menos un gol en el 2T",
+            "evento": "gol_2t",
+            "periodo": "2T",
+            "prob": 0.9388,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8469,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.897,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "menos de 6.5 tarjetas amarillas",
+            "evento": "amarillas_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9306,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Anota primero Manchester City",
+            "evento": "primer_gol_local",
+            "periodo": "FT",
+            "prob": 0.7161,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Ipswich Town: menos de 4.5 córneres",
+            "evento": "visitante_corners_under_4.5",
+            "periodo": "FT",
+            "prob": 0.7129,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Gol en ambos tiempos (partido)",
+            "evento": "gol_ambos_tiempos",
+            "periodo": "FT",
+            "prob": 0.7099,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Al menos un gol en el 2T",
+            "evento": "gol_2t",
+            "periodo": "2T",
+            "prob": 0.8911,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8911,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Ipswich Town: menos de 6.5 córneres",
+            "evento": "visitante_corners_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9295,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "menos de 6.5 tarjetas amarillas",
+            "evento": "amarillas_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9508,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "menos de 6.5 tarjetas amarillas",
+            "evento": "amarillas_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9409,
+            "evento_ocurrio": 1
+          }
+        ]
+      }
+    },
+    "pre_vs_solo_al_menos": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 1,
+            "tasa_acierto": 1.0,
+            "ic95_tasa": [
+              1.0,
+              1.0
+            ],
+            "brier": 0.071503,
+            "ic95_brier": [
+              0.071503,
+              0.071503
+            ],
+            "logloss": 0.311155,
+            "ic95_logloss": [
+              0.311155,
+              0.311155
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 1,
+            "tasa_acierto": 1.0,
+            "ic95_tasa": [
+              1.0,
+              1.0
+            ],
+            "brier": 0.084158,
+            "ic95_brier": [
+              0.084158,
+              0.084158
+            ],
+            "logloss": 0.342631,
+            "ic95_logloss": [
+              0.342631,
+              0.342631
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0,
+            "ic95_diff_tasa": [
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 1,
+            "tasa_acierto": 1.0,
+            "ic95_tasa": [
+              1.0,
+              1.0
+            ],
+            "brier": 0.071503,
+            "ic95_brier": [
+              0.071503,
+              0.071503
+            ],
+            "logloss": 0.311155,
+            "ic95_logloss": [
+              0.311155,
+              0.311155
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 1,
+            "tasa_acierto": 1.0,
+            "ic95_tasa": [
+              1.0,
+              1.0
+            ],
+            "brier": 0.084158,
+            "ic95_brier": [
+              0.084158,
+              0.084158
+            ],
+            "logloss": 0.342631,
+            "ic95_logloss": [
+              0.342631,
+              0.342631
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.0,
+            "ic95_diff_tasa": [
+              0.0,
+              0.0
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles (FT): Gol en ambos tiempos (partido)",
+            "evento": "gol_ambos_tiempos",
+            "periodo": "FT",
+            "prob": 0.7099,
+            "evento_ocurrio": 1
+          }
+        ]
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 51,
+            "n_partidos_unicos": 16,
+            "aciertos": 34,
+            "tasa_acierto": 0.6667,
+            "ic95_tasa": [
+              0.4444,
+              0.8776
+            ],
+            "brier": 0.232828,
+            "ic95_brier": [
+              0.111697,
+              0.36019
+            ],
+            "logloss": 0.669954,
+            "ic95_logloss": [
+              0.379382,
+              0.976116
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 8,
+            "n_partidos_unicos": 3,
+            "aciertos": 6,
+            "tasa_acierto": 0.75,
+            "ic95_tasa": [
+              0.5,
+              1.0
+            ],
+            "brier": 0.215425,
+            "ic95_brier": [
+              0.009563,
+              0.403737
+            ],
+            "logloss": 0.690809,
+            "ic95_logloss": [
+              0.101235,
+              1.168751
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": -0.0833,
+            "ic95_diff_tasa": [
+              -0.3,
+              0.2143
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 51,
+            "n_partidos_unicos": 16,
+            "aciertos": 34,
+            "tasa_acierto": 0.6667,
+            "ic95_tasa": [
+              0.4468,
+              0.8723
+            ],
+            "brier": 0.232828,
+            "ic95_brier": [
+              0.114099,
+              0.359158
+            ],
+            "logloss": 0.669954,
+            "ic95_logloss": [
+              0.38234,
+              0.98403
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 8,
+            "n_partidos_unicos": 3,
+            "aciertos": 6,
+            "tasa_acierto": 0.75,
+            "ic95_tasa": [
+              0.5,
+              1.0
+            ],
+            "brier": 0.215425,
+            "ic95_brier": [
+              0.009563,
+              0.403737
+            ],
+            "logloss": 0.690809,
+            "ic95_logloss": [
+              0.101235,
+              1.168751
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": -0.0833,
+            "ic95_diff_tasa": [
+              -0.2821,
+              0.2213
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8699,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 2 goles",
+            "evento": "local_al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7403,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7583,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7433,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7098,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8729,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9008,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Liverpool FC: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8192,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9041,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9388,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9419,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8961,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9013,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8469,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7729,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7729,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8959,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7455,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7455,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7327,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8289,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "Palmeiras: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.794,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8867,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7295,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7295,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8871,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7326,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8037,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "Sabah FK: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8374,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8095,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "Bayern München: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.866,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7524,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.833,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8108,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "Borussia Dortmund: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8669,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "Borussia Dortmund: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7073,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7397,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9085,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.916,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7756,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7397,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8474,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Manchester United: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7382,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7303,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "Levante: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7654,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Elche: menos de 2.5 goles",
+            "evento": "visitante_under_2.5",
+            "periodo": "FT",
+            "prob": 0.9197,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Elche: menos de 6.5 córneres",
+            "evento": "visitante_corners_under_6.5",
+            "periodo": "FT",
+            "prob": 0.895,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Al menos un gol en el 2T",
+            "evento": "gol_2t",
+            "periodo": "2T",
+            "prob": 0.897,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.897,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "menos de 6.5 tarjetas amarillas",
+            "evento": "amarillas_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9306,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Al menos un gol en el 2T",
+            "evento": "gol_2t",
+            "periodo": "2T",
+            "prob": 0.8911,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8911,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Ipswich Town: menos de 6.5 córneres",
+            "evento": "visitante_corners_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9295,
+            "evento_ocurrio": 1
+          }
+        ]
+      }
+    },
+    "pre_vs_solo_periodo_1t": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 11,
+            "n_partidos_unicos": 11,
+            "aciertos": 7,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.3636,
+              0.9091
+            ],
+            "brier": 0.218698,
+            "ic95_brier": [
+              0.08691,
+              0.352413
+            ],
+            "logloss": 0.616276,
+            "ic95_logloss": [
+              0.325169,
+              0.912464
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 4,
+            "n_partidos_unicos": 4,
+            "aciertos": 2,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.339476,
+            "ic95_brier": [
+              0.052127,
+              0.626825
+            ],
+            "logloss": 0.923965,
+            "ic95_logloss": [
+              0.250467,
+              1.597463
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.1364,
+            "ic95_diff_tasa": [
+              -0.4545,
+              0.7273
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 11,
+            "n_partidos_unicos": 11,
+            "aciertos": 7,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.3636,
+              0.9091
+            ],
+            "brier": 0.218698,
+            "ic95_brier": [
+              0.086052,
+              0.359516
+            ],
+            "logloss": 0.616276,
+            "ic95_logloss": [
+              0.323553,
+              0.931127
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 4,
+            "n_partidos_unicos": 4,
+            "aciertos": 2,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.339476,
+            "ic95_brier": [
+              0.052127,
+              0.626825
+            ],
+            "logloss": 0.923965,
+            "ic95_logloss": [
+              0.250467,
+              1.597463
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.1364,
+            "ic95_diff_tasa": [
+              -0.4545,
+              0.8182
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Brentford (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7175,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Goles Barcelona (2T): +0.5 Goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Goles Newcastle United (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7041,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Goles Everton (FT): Anota primero Everton",
+            "evento": "primer_gol_local",
+            "periodo": "FT",
+            "prob": 0.718,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Goles Inter (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (78.9%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7892,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Goles Barcelona (2T): +0.5 Goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Manchester City (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (79.6%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7963,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (75.6%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7555,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T)",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7547,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Brentford (FT): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Goles Barcelona (FT): Anota primero Barcelona",
+            "evento": "primer_gol_visitante",
+            "periodo": "FT",
+            "prob": 0.7324,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Goles Everton (2T): +0.5 Goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8469,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Goles Manchester City (FT): Anota primero Manchester City",
+            "evento": "primer_gol_local",
+            "periodo": "FT",
+            "prob": 0.7161,
+            "evento_ocurrio": 1
+          }
+        ]
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 61,
+            "n_partidos_unicos": 20,
+            "aciertos": 48,
+            "tasa_acierto": 0.7869,
+            "ic95_tasa": [
+              0.6271,
+              0.9077
+            ],
+            "brier": 0.166471,
+            "ic95_brier": [
+              0.096587,
+              0.261402
+            ],
+            "logloss": 0.523941,
+            "ic95_logloss": [
+              0.351649,
+              0.763403
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 4,
+            "n_partidos_unicos": 3,
+            "aciertos": 2,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.327272,
+            "ic95_brier": [
+              0.008415,
+              0.71724
+            ],
+            "logloss": 0.871282,
+            "ic95_logloss": [
+              0.094204,
+              1.876664
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.2869,
+            "ic95_diff_tasa": [
+              -0.1935,
+              0.8644
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 57,
+            "n_partidos_unicos": 20,
+            "aciertos": 44,
+            "tasa_acierto": 0.7719,
+            "ic95_tasa": [
+              0.6154,
+              0.8923
+            ],
+            "brier": 0.173177,
+            "ic95_brier": [
+              0.101739,
+              0.27103
+            ],
+            "logloss": 0.538978,
+            "ic95_logloss": [
+              0.36337,
+              0.781952
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 4,
+            "n_partidos_unicos": 3,
+            "aciertos": 2,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.327272,
+            "ic95_brier": [
+              0.008415,
+              0.71724
+            ],
+            "logloss": 0.871282,
+            "ic95_logloss": [
+              0.094204,
+              1.876664
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.2719,
+            "ic95_diff_tasa": [
+              -0.2029,
+              0.8548
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0511af5559314a12",
+            "id_partido": "6106260",
+            "partido": "Arsenal vs Lille",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7351,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0511af5559314a12",
+            "id_partido": "6106260",
+            "partido": "Arsenal vs Lille",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7351,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8463,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8515,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.738,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7175,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7575,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7575,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "más de 1.5 goles",
+            "evento": "over_1.5",
+            "periodo": "2T",
+            "prob": 0.7678,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9388,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "2T",
+            "prob": 0.7678,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: más de 0.5 goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8842,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7041,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "FT",
+            "prob": 0.9492,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8067,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8067,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8994,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8994,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Inter: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "Inter: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7509,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7892,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8289,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7836,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8956,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: más de 0.5 goles",
+            "evento": "visitante_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Manchester City: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7966,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7963,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62f014959843c34d",
+            "id_partido": "5868099",
+            "partido": "Valencia vs Athletic Club",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7034,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "6ada5cd1eba43a3e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "6ada5cd1eba43a3e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "9f46b31620767c49",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "9f46b31620767c49",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7525,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7525,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8198,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8198,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7555,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7443,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7443,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7844,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "c056e997d152456e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "c056e997d152456e",
+            "id_partido": "6106274",
+            "partido": "Roma vs Real Madrid",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7337,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7293,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8479,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.781,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.781,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.9085,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7756,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.8216,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.8216,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7761,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7761,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "1T",
+            "prob": 0.7163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "1T",
+            "prob": 0.7163,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.7408,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "ee5cab1ef4c05c3e",
+            "id_partido": "5868093",
+            "partido": "Deportivo A Coruña vs Levante",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.7408,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "menos de 1.5 goles",
+            "evento": "under_1.5",
+            "periodo": "1T",
+            "prob": 0.7547,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8476,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "al menos 1 goles",
+            "evento": "al_menos_1",
+            "periodo": "2T",
+            "prob": 0.8476,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.7583,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: más de 0.5 goles",
+            "evento": "local_over_0.5",
+            "periodo": "2T",
+            "prob": 0.8469,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "más de 0.5 goles",
+            "evento": "over_0.5",
+            "periodo": "2T",
+            "prob": 0.8911,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Ipswich Town: menos de 6.5 córneres",
+            "evento": "visitante_corners_under_6.5",
+            "periodo": "FT",
+            "prob": 0.9295,
+            "evento_ocurrio": 1
+          }
+        ]
+      }
+    }
+  },
+  "AB_con_banderas": {
+    "pre_vs_ambos_arreglos": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 2,
+            "n_partidos_unicos": 2,
+            "aciertos": 1,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.294563,
+            "ic95_brier": [
+              0.0897,
+              0.499425
+            ],
+            "logloss": 0.79126,
+            "ic95_logloss": [
+              0.355961,
+              1.226559
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 0,
+            "tasa_acierto": 0.0,
+            "ic95_tasa": [
+              0.0,
+              0.0
+            ],
+            "brier": 0.543022,
+            "ic95_brier": [
+              0.543022,
+              0.543022
+            ],
+            "logloss": 1.335221,
+            "ic95_logloss": [
+              1.335221,
+              1.335221
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.5,
+            "ic95_diff_tasa": [
+              0.0,
+              0.5
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 2,
+            "n_partidos_unicos": 2,
+            "aciertos": 1,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.294563,
+            "ic95_brier": [
+              0.0897,
+              0.499425
+            ],
+            "logloss": 0.79126,
+            "ic95_logloss": [
+              0.355961,
+              1.226559
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 0,
+            "tasa_acierto": 0.0,
+            "ic95_tasa": [
+              0.0,
+              0.0
+            ],
+            "brier": 0.543022,
+            "ic95_brier": [
+              0.543022,
+              0.543022
+            ],
+            "logloss": 1.335221,
+            "ic95_logloss": [
+              1.335221,
+              1.335221
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.5,
+            "ic95_diff_tasa": [
+              0.0,
+              0.5
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Goles Villarreal (FT): +1.5 Goles",
+            "evento": "local_over_1.5",
+            "periodo": "FT",
+            "prob": 0.7369,
+            "evento_ocurrio": 0
+          }
+        ]
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 44,
+            "n_partidos_unicos": 17,
+            "aciertos": 28,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.4103,
+              0.875
+            ],
+            "brier": 0.264398,
+            "ic95_brier": [
+              0.120949,
+              0.401066
+            ],
+            "logloss": 0.769284,
+            "ic95_logloss": [
+              0.408643,
+              1.114338
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 44,
+            "n_partidos_unicos": 17,
+            "aciertos": 28,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.4222,
+              0.8696
+            ],
+            "brier": 0.264398,
+            "ic95_brier": [
+              0.119785,
+              0.398449
+            ],
+            "logloss": 0.769284,
+            "ic95_logloss": [
+              0.403461,
+              1.107376
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8682,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 2 goles",
+            "evento": "local_al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7369,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8729,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Liverpool FC: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8192,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8935,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9215,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.8229,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9187,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.8229,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9105,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7757,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9521,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7757,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8913,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.731,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.731,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7169,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "Palmeiras: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7631,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8803,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7179,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8997,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7179,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8281,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Manchester City: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8946,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "Sabah FK: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7896,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "Bayern München: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8647,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "Villarreal: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7135,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7746,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8108,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "Borussia Dortmund: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8669,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9023,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7566,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9037,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7566,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8474,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Manchester United: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7382,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7951,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": []
+      }
+    },
+    "pre_vs_solo_al_menos": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 2,
+            "n_partidos_unicos": 2,
+            "aciertos": 1,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.294563,
+            "ic95_brier": [
+              0.0897,
+              0.499425
+            ],
+            "logloss": 0.79126,
+            "ic95_logloss": [
+              0.355961,
+              1.226559
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 0,
+            "tasa_acierto": 0.0,
+            "ic95_tasa": [
+              0.0,
+              0.0
+            ],
+            "brier": 0.543022,
+            "ic95_brier": [
+              0.543022,
+              0.543022
+            ],
+            "logloss": 1.335221,
+            "ic95_logloss": [
+              1.335221,
+              1.335221
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.5,
+            "ic95_diff_tasa": [
+              0.0,
+              0.5
+            ]
+          }
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 2,
+            "n_partidos_unicos": 2,
+            "aciertos": 1,
+            "tasa_acierto": 0.5,
+            "ic95_tasa": [
+              0.0,
+              1.0
+            ],
+            "brier": 0.294563,
+            "ic95_brier": [
+              0.0897,
+              0.499425
+            ],
+            "logloss": 0.79126,
+            "ic95_logloss": [
+              0.355961,
+              1.226559
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 1,
+            "n_partidos_unicos": 1,
+            "aciertos": 0,
+            "tasa_acierto": 0.0,
+            "ic95_tasa": [
+              0.0,
+              0.0
+            ],
+            "brier": 0.543022,
+            "ic95_brier": [
+              0.543022,
+              0.543022
+            ],
+            "logloss": 1.335221,
+            "ic95_logloss": [
+              1.335221,
+              1.335221
+            ]
+          },
+          "diferencia": {
+            "diff_tasa_anadidas_menos_quitadas": 0.5,
+            "ic95_diff_tasa": [
+              0.0,
+              0.5
+            ]
+          }
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Goles Totales (FT): +2.5 Goles",
+            "evento": "over_2.5",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Goles Villarreal (FT): +1.5 Goles",
+            "evento": "local_over_1.5",
+            "periodo": "FT",
+            "prob": 0.7369,
+            "evento_ocurrio": 0
+          }
+        ]
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 44,
+            "n_partidos_unicos": 17,
+            "aciertos": 28,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.4118,
+              0.8718
+            ],
+            "brier": 0.264398,
+            "ic95_brier": [
+              0.124129,
+              0.400768
+            ],
+            "logloss": 0.769284,
+            "ic95_logloss": [
+              0.419805,
+              1.110066
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 44,
+            "n_partidos_unicos": 17,
+            "aciertos": 28,
+            "tasa_acierto": 0.6364,
+            "ic95_tasa": [
+              0.4091,
+              0.8571
+            ],
+            "brier": 0.264398,
+            "ic95_brier": [
+              0.126449,
+              0.404351
+            ],
+            "logloss": 0.769284,
+            "ic95_logloss": [
+              0.417743,
+              1.125617
+            ]
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "detalle_anadidas": [
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8682,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "Villarreal: al menos 2 goles",
+            "evento": "local_al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7369,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "0f42c568a51abbbe",
+            "id_partido": "5868100",
+            "partido": "Villarreal vs Elche",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7067,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8729,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Brentford: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8462,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "Liverpool FC: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8192,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "177d446a97606f01",
+            "id_partido": "5795476",
+            "partido": "Brentford vs Liverpool",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7005,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8935,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "193a259f96e34e49",
+            "id_partido": "6106338",
+            "partido": "Galatasaray vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9215,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.8229,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "Newcastle United: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9187,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1edc8c043cfdd28a",
+            "id_partido": "5795482",
+            "partido": "Newcastle United vs Aston Villa",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.8229,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9105,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7757,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "Everton: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9521,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "1fba9ef796150d73",
+            "id_partido": "5795478",
+            "partido": "Everton vs Chelsea",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7757,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8913,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.731,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "29190c5332f64eb1",
+            "id_partido": "6106251",
+            "partido": "Inter vs Club Brugge",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.731,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7169,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "490ae216626e701a",
+            "id_partido": "1000020615",
+            "partido": "Fluminense vs Palmeiras",
+            "etiqueta": "Palmeiras: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7631,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8803,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7179,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "Barcelona: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8997,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "61eff7f75ce40b39",
+            "id_partido": "5868091",
+            "partido": "Real Betis vs Barcelona",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7179,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8281,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "62a4e4b9ef6adf62",
+            "id_partido": "5795481",
+            "partido": "Manchester City vs Ipswich Town",
+            "etiqueta": "Manchester City: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8946,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8084,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "895402c59f17d314",
+            "id_partido": "6106424",
+            "partido": "Sabah FK vs Slavia Prague",
+            "etiqueta": "Sabah FK: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7896,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8752,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "a29bd308cdbe8ccc",
+            "id_partido": "6106417",
+            "partido": "Viking vs Bayern München",
+            "etiqueta": "Bayern München: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8647,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "b9491017b83abfab",
+            "id_partido": "6106328",
+            "partido": "Villarreal vs Napoli",
+            "etiqueta": "Villarreal: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7135,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "bec6a556bb2c46e8",
+            "id_partido": "5868094",
+            "partido": "Espanyol vs Atlético Madrid",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7746,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.8108,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d140040001d88996",
+            "id_partido": "5881195",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "etiqueta": "Borussia Dortmund: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8669,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.9023,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles",
+            "evento": "al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7566,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "RB Leipzig: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.9037,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d3d45be6c72ec657",
+            "id_partido": "6106323",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "etiqueta": "al menos 3 goles en el partido",
+            "evento": "fiesta_al_menos_3",
+            "periodo": "FT",
+            "prob": 0.7566,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Atlético Madrid: al menos 1 goles",
+            "evento": "local_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.8474,
+            "evento_ocurrio": 1
+          },
+          {
+            "id_trabajo": "d8ffecfb201fb608",
+            "id_partido": "6106267",
+            "partido": "Atlético Madrid vs Manchester United",
+            "etiqueta": "Manchester United: al menos 1 goles",
+            "evento": "visitante_al_menos_1",
+            "periodo": "FT",
+            "prob": 0.7382,
+            "evento_ocurrio": 0
+          },
+          {
+            "id_trabajo": "f2c5227f05725c64",
+            "id_partido": "6106414",
+            "partido": "Lens vs Sporting CP",
+            "etiqueta": "al menos 2 goles",
+            "evento": "al_menos_2",
+            "periodo": "FT",
+            "prob": 0.7951,
+            "evento_ocurrio": 1
+          }
+        ],
+        "detalle_quitadas": []
+      }
+    },
+    "pre_vs_solo_periodo_1t": {
+      "top5": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "detalle_anadidas": [],
+        "detalle_quitadas": []
+      },
+      "sec1": {
+        "n_no_resolubles_anadidas": 0,
+        "n_no_resolubles_quitadas": 0,
+        "sobre_26_jobs_ic_por_partido_24": {
+          "anadidas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "sobre_24_partidos_unicos": {
+          "anadidas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "quitadas": {
+            "n_lineas": 0,
+            "n_partidos_unicos": 0,
+            "aciertos": null,
+            "tasa_acierto": null,
+            "ic95_tasa": null,
+            "brier": null,
+            "ic95_brier": null,
+            "logloss": null,
+            "ic95_logloss": null
+          },
+          "diferencia": null
+        },
+        "detalle_anadidas": [],
+        "detalle_quitadas": []
+      }
+    }
+  }
+}
