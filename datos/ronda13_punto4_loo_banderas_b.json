@@ -1,0 +1,2567 @@
+{
+  "cohorte": {
+    "n_partidos_unicos_oos": 24,
+    "n_jobs_oos": 26,
+    "n_filas_comunes_catalogo": 1376,
+    "n_boot": 2000,
+    "seed": 42,
+    "nota_interpretacion_signo": "En d_brier_vs_B14 y d_log_loss_vs_B14 (= metricas(B_sin_bandera) - metricas(B_14)): un valor NEGATIVO significa que quitar esa bandera MEJORA el error (la bandera empeoraba), y un valor POSITIVO significa que quitarla EMPEORA el error (la bandera aportaba mejora)."
+  },
+  "banderas_defecto_actuales": {
+    "usar_anclaje_coef_torneo": false,
+    "usar_tope_dcn_18_pct": false,
+    "usar_tensor_65_35_y_diesel": false,
+    "usar_micropatrones_combinatorios": false,
+    "usar_gatekeeper_multisenal_top5": false,
+    "usar_sobredispersion_nb_corners": false,
+    "usar_gate_corners_8_15": false,
+    "usar_gate_cronologia_mitades_10_15": false,
+    "usar_calibracion_y_veto_conciencia": false,
+    "usar_cuota_justa_114_top5": false,
+    "usar_guarda_doble_defensa_rota": false,
+    "usar_gate_goles_mitad_15_15": false,
+    "usar_kelly_conservador_min_3pct": false,
+    "usar_excluir_primer_gol_top5": false
+  },
+  "baselines": {
+    "B_14": {
+      "config": "B_14",
+      "bandera_quitada": null,
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": null,
+        "d_brier_vs_B14_ic95": null,
+        "d_log_loss_vs_B14": null,
+        "d_log_loss_vs_B14_ic95": null,
+        "d_brier_vs_soloA": null,
+        "d_brier_vs_soloA_ic95": null,
+        "d_log_loss_vs_soloA": null,
+        "d_log_loss_vs_soloA_ic95": null,
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": null,
+        "d_brier_vs_B14_ic95": null,
+        "d_log_loss_vs_B14": null,
+        "d_log_loss_vs_B14_ic95": null
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 56,
+        "n_no_resolubles": 9,
+        "aciertos": 44,
+        "tasa_acierto": 0.7857,
+        "tasa_ic95": [
+          0.65,
+          0.8983
+        ],
+        "brier": 0.18004,
+        "brier_ic95": [
+          0.110719,
+          0.262699
+        ],
+        "log_loss": 0.556351,
+        "log_loss_ic95": [
+          0.391925,
+          0.75199
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5512,
+          0.8187
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.153387,
+          0.31176
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.491278,
+          0.886538
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.354,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_NEUTRO_O_SIN_IMPACTO"
+    },
+    "B_9": {
+      "config": "B_9",
+      "bandera_quitada": null,
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.190409,
+        "brier_ic95": [
+          0.148845,
+          0.230904
+        ],
+        "log_loss": 0.613747,
+        "log_loss_ic95": [
+          0.48221,
+          0.745002
+        ],
+        "d_brier_vs_B14": 0.00293,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.006198
+        ],
+        "d_log_loss_vs_B14": 0.010392,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.021349
+        ],
+        "d_brier_vs_soloA": null,
+        "d_brier_vs_soloA_ic95": null,
+        "d_log_loss_vs_soloA": null,
+        "d_log_loss_vs_soloA_ic95": null,
+        "n_filas_cambiadas_vs_B14": 79,
+        "n_partidos_cambiados_vs_B14": 3
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.173098,
+        "brier_ic95": [
+          0.146397,
+          0.200739
+        ],
+        "log_loss": 0.528602,
+        "log_loss_ic95": [
+          0.45441,
+          0.604508
+        ],
+        "d_brier_vs_B14": 0.003251,
+        "d_brier_vs_B14_ic95": [
+          0.000482,
+          0.006542
+        ],
+        "d_log_loss_vs_B14": 0.010414,
+        "d_log_loss_vs_B14_ic95": [
+          0.001221,
+          0.020977
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 5541,
+        "delta_estimables_analizar_vs_B14": 595,
+        "n_sides_abstenidos_goles_mitad": 21
+      },
+      "top5_24_unicos": {
+        "n_lineas": 50,
+        "n_partidos": 17,
+        "n_resueltas": 40,
+        "n_no_resolubles": 10,
+        "aciertos": 33,
+        "tasa_acierto": 0.825,
+        "tasa_ic95": [
+          0.6667,
+          0.9474
+        ],
+        "brier": 0.153185,
+        "brier_ic95": [
+          0.09289,
+          0.231752
+        ],
+        "log_loss": 0.488047,
+        "log_loss_ic95": [
+          0.354583,
+          0.6611
+        ],
+        "d_tasa_vs_B14": 0.0393,
+        "d_tasa_vs_B14_ic95": [
+          -0.0881,
+          0.1749
+        ],
+        "d_brier_vs_B14": -0.026855,
+        "d_brier_vs_B14_ic95": [
+          -0.103396,
+          0.04081
+        ],
+        "d_log_loss_vs_B14": -0.068304,
+        "d_log_loss_vs_B14_ic95": [
+          -0.246658,
+          0.086403
+        ],
+        "n_lineas_cambiadas_vs_B14": 40
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 196,
+        "n_partidos": 24,
+        "n_resueltas": 182,
+        "n_no_resolubles": 14,
+        "aciertos": 123,
+        "tasa_acierto": 0.6758,
+        "tasa_ic95": [
+          0.5415,
+          0.8161
+        ],
+        "brier": 0.244328,
+        "brier_ic95": [
+          0.156989,
+          0.328361
+        ],
+        "log_loss": 0.725381,
+        "log_loss_ic95": [
+          0.499972,
+          0.935112
+        ],
+        "d_tasa_vs_B14": -0.0113,
+        "d_tasa_vs_B14_ic95": [
+          -0.0434,
+          0.0146
+        ],
+        "d_brier_vs_B14": 0.01156,
+        "d_brier_vs_B14_ic95": [
+          -0.003773,
+          0.028762
+        ],
+        "d_log_loss_vs_B14": 0.03548,
+        "d_log_loss_vs_B14_ic95": [
+          -0.004585,
+          0.082871
+        ],
+        "n_lineas_cambiadas_vs_B14": 16
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 3.61,
+        "stake_max_observado_pct": 8.0,
+        "n_stakes": 50
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_NEUTRO_O_SIN_IMPACTO"
+    },
+    "soloA": {
+      "config": "soloA",
+      "bandera_quitada": null,
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.193777,
+        "brier_ic95": [
+          0.149342,
+          0.23661
+        ],
+        "log_loss": 0.670603,
+        "log_loss_ic95": [
+          0.505149,
+          0.837709
+        ],
+        "d_brier_vs_B14": 0.006298,
+        "d_brier_vs_B14_ic95": [
+          0.000806,
+          0.011341
+        ],
+        "d_log_loss_vs_B14": 0.067248,
+        "d_log_loss_vs_B14_ic95": [
+          0.025058,
+          0.109468
+        ],
+        "d_brier_vs_soloA": null,
+        "d_brier_vs_soloA_ic95": null,
+        "d_log_loss_vs_soloA": null,
+        "d_log_loss_vs_soloA_ic95": null,
+        "n_filas_cambiadas_vs_B14": 1064,
+        "n_partidos_cambiados_vs_B14": 22
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.193777,
+        "brier_ic95": [
+          0.150043,
+          0.236246
+        ],
+        "log_loss": 0.670603,
+        "log_loss_ic95": [
+          0.501365,
+          0.834928
+        ],
+        "d_brier_vs_B14": 0.02393,
+        "d_brier_vs_B14_ic95": [
+          0.003817,
+          0.041895
+        ],
+        "d_log_loss_vs_B14": 0.152415,
+        "d_log_loss_vs_B14_ic95": [
+          0.040778,
+          0.254692
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 8110,
+        "delta_estimables_catalogo_vs_B14": 189,
+        "n_estimables_analizar": 8110,
+        "delta_estimables_analizar_vs_B14": 3164,
+        "n_sides_abstenidos_goles_mitad": 0
+      },
+      "top5_24_unicos": {
+        "n_lineas": 91,
+        "n_partidos": 22,
+        "n_resueltas": 66,
+        "n_no_resolubles": 25,
+        "aciertos": 49,
+        "tasa_acierto": 0.7424,
+        "tasa_ic95": [
+          0.629,
+          0.84
+        ],
+        "brier": 0.188048,
+        "brier_ic95": [
+          0.136087,
+          0.25019
+        ],
+        "log_loss": 0.564149,
+        "log_loss_ic95": [
+          0.445495,
+          0.708546
+        ],
+        "d_tasa_vs_B14": -0.0433,
+        "d_tasa_vs_B14_ic95": [
+          -0.1719,
+          0.0794
+        ],
+        "d_brier_vs_B14": 0.008009,
+        "d_brier_vs_B14_ic95": [
+          -0.058598,
+          0.078544
+        ],
+        "d_log_loss_vs_B14": 0.007799,
+        "d_log_loss_vs_B14_ic95": [
+          -0.145997,
+          0.170726
+        ],
+        "n_lineas_cambiadas_vs_B14": 90
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 319,
+        "n_partidos": 24,
+        "n_resueltas": 297,
+        "n_no_resolubles": 22,
+        "aciertos": 213,
+        "tasa_acierto": 0.7172,
+        "tasa_ic95": [
+          0.6091,
+          0.8253
+        ],
+        "brier": 0.211599,
+        "brier_ic95": [
+          0.146089,
+          0.281912
+        ],
+        "log_loss": 0.634595,
+        "log_loss_ic95": [
+          0.471658,
+          0.811063
+        ],
+        "d_tasa_vs_B14": 0.03,
+        "d_tasa_vs_B14_ic95": [
+          -0.0305,
+          0.0891
+        ],
+        "d_brier_vs_B14": -0.021168,
+        "d_brier_vs_B14_ic95": [
+          -0.056486,
+          0.01847
+        ],
+        "d_log_loss_vs_B14": -0.055306,
+        "d_log_loss_vs_B14_ic95": [
+          -0.148446,
+          0.04576
+        ],
+        "n_lineas_cambiadas_vs_B14": 231
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 6.308,
+        "stake_max_observado_pct": 8.0,
+        "n_stakes": 91
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_NEUTRO_O_SIN_IMPACTO"
+    }
+  },
+  "tabla_leave_one_out_14_banderas": [
+    {
+      "config": "sin_usar_anclaje_coef_torneo",
+      "bandera_quitada": "usar_anclaje_coef_torneo",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187732,
+        "brier_ic95": [
+          0.147017,
+          0.227676
+        ],
+        "log_loss": 0.604191,
+        "log_loss_ic95": [
+          0.473989,
+          0.7383
+        ],
+        "d_brier_vs_B14": 0.000253,
+        "d_brier_vs_B14_ic95": [
+          -0.001755,
+          0.002312
+        ],
+        "d_log_loss_vs_B14": 0.000836,
+        "d_log_loss_vs_B14_ic95": [
+          -0.004716,
+          0.006768
+        ],
+        "d_brier_vs_soloA": -0.006045,
+        "d_brier_vs_soloA_ic95": [
+          -0.010725,
+          -0.001328
+        ],
+        "d_log_loss_vs_soloA": -0.066412,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.10773,
+          -0.025716
+        ],
+        "n_filas_cambiadas_vs_B14": 180,
+        "n_partidos_cambiados_vs_B14": 6
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.170176,
+        "brier_ic95": [
+          0.143898,
+          0.197738
+        ],
+        "log_loss": 0.519219,
+        "log_loss_ic95": [
+          0.447793,
+          0.595196
+        ],
+        "d_brier_vs_B14": 0.000329,
+        "d_brier_vs_B14_ic95": [
+          -0.0014,
+          0.00235
+        ],
+        "d_log_loss_vs_B14": 0.001031,
+        "d_log_loss_vs_B14_ic95": [
+          -0.00373,
+          0.006676
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 69,
+        "n_partidos": 22,
+        "n_resueltas": 57,
+        "n_no_resolubles": 12,
+        "aciertos": 45,
+        "tasa_acierto": 0.7895,
+        "tasa_ic95": [
+          0.6531,
+          0.902
+        ],
+        "brier": 0.177153,
+        "brier_ic95": [
+          0.108881,
+          0.258861
+        ],
+        "log_loss": 0.548992,
+        "log_loss_ic95": [
+          0.385395,
+          0.742173
+        ],
+        "d_tasa_vs_B14": 0.0038,
+        "d_tasa_vs_B14_ic95": [
+          -0.0081,
+          0.0209
+        ],
+        "d_brier_vs_B14": -0.002887,
+        "d_brier_vs_B14_ic95": [
+          -0.012893,
+          0.004455
+        ],
+        "d_log_loss_vs_B14": -0.007358,
+        "d_log_loss_vs_B14_ic95": [
+          -0.031338,
+          0.009541
+        ],
+        "n_lineas_cambiadas_vs_B14": 7
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 192,
+        "n_partidos": 24,
+        "n_resueltas": 177,
+        "n_no_resolubles": 15,
+        "aciertos": 122,
+        "tasa_acierto": 0.6893,
+        "tasa_ic95": [
+          0.5604,
+          0.814
+        ],
+        "brier": 0.228094,
+        "brier_ic95": [
+          0.152936,
+          0.30145
+        ],
+        "log_loss": 0.675078,
+        "log_loss_ic95": [
+          0.48548,
+          0.860652
+        ],
+        "d_tasa_vs_B14": 0.0021,
+        "d_tasa_vs_B14_ic95": [
+          -0.013,
+          0.0205
+        ],
+        "d_brier_vs_B14": -0.004674,
+        "d_brier_vs_B14_ic95": [
+          -0.021142,
+          0.0054
+        ],
+        "d_log_loss_vs_B14": -0.014822,
+        "d_log_loss_vs_B14_ic95": [
+          -0.061376,
+          0.011284
+        ],
+        "n_lineas_cambiadas_vs_B14": 12
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.261,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 69
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_tope_dcn_18_pct",
+      "bandera_quitada": "usar_tope_dcn_18_pct",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187963,
+        "brier_ic95": [
+          0.146792,
+          0.228735
+        ],
+        "log_loss": 0.605889,
+        "log_loss_ic95": [
+          0.475127,
+          0.739079
+        ],
+        "d_brier_vs_B14": 0.000484,
+        "d_brier_vs_B14_ic95": [
+          -0.001031,
+          0.002112
+        ],
+        "d_log_loss_vs_B14": 0.002534,
+        "d_log_loss_vs_B14_ic95": [
+          -0.002665,
+          0.008399
+        ],
+        "d_brier_vs_soloA": -0.005814,
+        "d_brier_vs_soloA_ic95": [
+          -0.010164,
+          -0.00084
+        ],
+        "d_log_loss_vs_soloA": -0.064714,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.104585,
+          -0.025061
+        ],
+        "n_filas_cambiadas_vs_B14": 423,
+        "n_partidos_cambiados_vs_B14": 15
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.17027,
+        "brier_ic95": [
+          0.142936,
+          0.198061
+        ],
+        "log_loss": 0.520025,
+        "log_loss_ic95": [
+          0.446108,
+          0.598544
+        ],
+        "d_brier_vs_B14": 0.000423,
+        "d_brier_vs_B14_ic95": [
+          -0.001248,
+          0.002197
+        ],
+        "d_log_loss_vs_B14": 0.001837,
+        "d_log_loss_vs_B14_ic95": [
+          -0.003354,
+          0.007363
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 66,
+        "n_partidos": 20,
+        "n_resueltas": 55,
+        "n_no_resolubles": 11,
+        "aciertos": 43,
+        "tasa_acierto": 0.7818,
+        "tasa_ic95": [
+          0.64,
+          0.9091
+        ],
+        "brier": 0.182089,
+        "brier_ic95": [
+          0.107172,
+          0.267936
+        ],
+        "log_loss": 0.562409,
+        "log_loss_ic95": [
+          0.382532,
+          0.766106
+        ],
+        "d_tasa_vs_B14": -0.0039,
+        "d_tasa_vs_B14_ic95": [
+          -0.0469,
+          0.0455
+        ],
+        "d_brier_vs_B14": 0.002049,
+        "d_brier_vs_B14_ic95": [
+          -0.022066,
+          0.024071
+        ],
+        "d_log_loss_vs_B14": 0.006058,
+        "d_log_loss_vs_B14_ic95": [
+          -0.047895,
+          0.054347
+        ],
+        "n_lineas_cambiadas_vs_B14": 13
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 201,
+        "n_partidos": 24,
+        "n_resueltas": 184,
+        "n_no_resolubles": 17,
+        "aciertos": 127,
+        "tasa_acierto": 0.6902,
+        "tasa_ic95": [
+          0.5497,
+          0.8314
+        ],
+        "brier": 0.234209,
+        "brier_ic95": [
+          0.144557,
+          0.321807
+        ],
+        "log_loss": 0.700097,
+        "log_loss_ic95": [
+          0.471907,
+          0.919314
+        ],
+        "d_tasa_vs_B14": 0.0031,
+        "d_tasa_vs_B14_ic95": [
+          -0.0357,
+          0.0368
+        ],
+        "d_brier_vs_B14": 0.001442,
+        "d_brier_vs_B14_ic95": [
+          -0.018394,
+          0.025195
+        ],
+        "d_log_loss_vs_B14": 0.010196,
+        "d_log_loss_vs_B14_ic95": [
+          -0.041477,
+          0.072793
+        ],
+        "n_lineas_cambiadas_vs_B14": 33
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.136,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 66
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_tensor_65_35_y_diesel",
+      "bandera_quitada": "usar_tensor_65_35_y_diesel",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187311,
+        "brier_ic95": [
+          0.146653,
+          0.227625
+        ],
+        "log_loss": 0.602907,
+        "log_loss_ic95": [
+          0.473158,
+          0.735473
+        ],
+        "d_brier_vs_B14": -0.000168,
+        "d_brier_vs_B14_ic95": [
+          -0.000732,
+          0.000318
+        ],
+        "d_log_loss_vs_B14": -0.000448,
+        "d_log_loss_vs_B14_ic95": [
+          -0.002653,
+          0.001492
+        ],
+        "d_brier_vs_soloA": -0.006466,
+        "d_brier_vs_soloA_ic95": [
+          -0.011325,
+          -0.001292
+        ],
+        "d_log_loss_vs_soloA": -0.067696,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109149,
+          -0.026678
+        ],
+        "n_filas_cambiadas_vs_B14": 311,
+        "n_partidos_cambiados_vs_B14": 19
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169679,
+        "brier_ic95": [
+          0.142969,
+          0.197478
+        ],
+        "log_loss": 0.517739,
+        "log_loss_ic95": [
+          0.445391,
+          0.59513
+        ],
+        "d_brier_vs_B14": -0.000168,
+        "d_brier_vs_B14_ic95": [
+          -0.000744,
+          0.000298
+        ],
+        "d_log_loss_vs_B14": -0.000449,
+        "d_log_loss_vs_B14_ic95": [
+          -0.002598,
+          0.001448
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7802,
+        "delta_estimables_catalogo_vs_B14": -119,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 56,
+        "n_no_resolubles": 9,
+        "aciertos": 44,
+        "tasa_acierto": 0.7857,
+        "tasa_ic95": [
+          0.6508,
+          0.8983
+        ],
+        "brier": 0.18004,
+        "brier_ic95": [
+          0.113071,
+          0.263849
+        ],
+        "log_loss": 0.556351,
+        "log_loss_ic95": [
+          0.394708,
+          0.753124
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5556,
+          0.8229
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.148842,
+          0.31319
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.477354,
+          0.886226
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.354,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_micropatrones_combinatorios",
+      "bandera_quitada": "usar_micropatrones_combinatorios",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 63,
+        "n_partidos": 21,
+        "n_resueltas": 54,
+        "n_no_resolubles": 9,
+        "aciertos": 42,
+        "tasa_acierto": 0.7778,
+        "tasa_ic95": [
+          0.6316,
+          0.9016
+        ],
+        "brier": 0.184651,
+        "brier_ic95": [
+          0.109854,
+          0.273205
+        ],
+        "log_loss": 0.56727,
+        "log_loss_ic95": [
+          0.389675,
+          0.78293
+        ],
+        "d_tasa_vs_B14": -0.0079,
+        "d_tasa_vs_B14_ic95": [
+          -0.0589,
+          0.0336
+        ],
+        "d_brier_vs_B14": 0.004612,
+        "d_brier_vs_B14_ic95": [
+          -0.016217,
+          0.031259
+        ],
+        "d_log_loss_vs_B14": 0.010919,
+        "d_log_loss_vs_B14_ic95": [
+          -0.035209,
+          0.070574
+        ],
+        "n_lineas_cambiadas_vs_B14": 10
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 192,
+        "n_partidos": 24,
+        "n_resueltas": 181,
+        "n_no_resolubles": 11,
+        "aciertos": 125,
+        "tasa_acierto": 0.6906,
+        "tasa_ic95": [
+          0.5503,
+          0.8136
+        ],
+        "brier": 0.231131,
+        "brier_ic95": [
+          0.156212,
+          0.313653
+        ],
+        "log_loss": 0.686076,
+        "log_loss_ic95": [
+          0.493869,
+          0.898085
+        ],
+        "d_tasa_vs_B14": 0.0035,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0102
+        ],
+        "d_brier_vs_B14": -0.001636,
+        "d_brier_vs_B14_ic95": [
+          -0.004819,
+          0.0
+        ],
+        "d_log_loss_vs_B14": -0.003825,
+        "d_log_loss_vs_B14_ic95": [
+          -0.011447,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 2
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.429,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 63
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_gatekeeper_multisenal_top5",
+      "bandera_quitada": "usar_gatekeeper_multisenal_top5",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 66,
+        "n_partidos": 21,
+        "n_resueltas": 57,
+        "n_no_resolubles": 9,
+        "aciertos": 45,
+        "tasa_acierto": 0.7895,
+        "tasa_ic95": [
+          0.6531,
+          0.9
+        ],
+        "brier": 0.175388,
+        "brier_ic95": [
+          0.109927,
+          0.256933
+        ],
+        "log_loss": 0.542243,
+        "log_loss_ic95": [
+          0.387929,
+          0.734353
+        ],
+        "d_tasa_vs_B14": 0.0038,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0156
+        ],
+        "d_brier_vs_B14": -0.004652,
+        "d_brier_vs_B14_ic95": [
+          -0.01444,
+          0.00045
+        ],
+        "d_log_loss_vs_B14": -0.014107,
+        "d_log_loss_vs_B14_ic95": [
+          -0.041626,
+          0.001495
+        ],
+        "n_lineas_cambiadas_vs_B14": 7
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5561,
+          0.8158
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.152181,
+          0.309496
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.485362,
+          0.881856
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.364,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 66
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_sobredispersion_nb_corners",
+      "bandera_quitada": "usar_sobredispersion_nb_corners",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.190747,
+        "brier_ic95": [
+          0.148328,
+          0.233375
+        ],
+        "log_loss": 0.658956,
+        "log_loss_ic95": [
+          0.498259,
+          0.825925
+        ],
+        "d_brier_vs_B14": 0.003268,
+        "d_brier_vs_B14_ic95": [
+          0.000678,
+          0.005821
+        ],
+        "d_log_loss_vs_B14": 0.055601,
+        "d_log_loss_vs_B14_ic95": [
+          0.019406,
+          0.094144
+        ],
+        "d_brier_vs_soloA": -0.00303,
+        "d_brier_vs_soloA_ic95": [
+          -0.007084,
+          0.000943
+        ],
+        "d_log_loss_vs_soloA": -0.011647,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.024829,
+          0.001547
+        ],
+        "n_filas_cambiadas_vs_B14": 472,
+        "n_partidos_cambiados_vs_B14": 17
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.167658,
+        "brier_ic95": [
+          0.139578,
+          0.196246
+        ],
+        "log_loss": 0.513344,
+        "log_loss_ic95": [
+          0.437238,
+          0.593338
+        ],
+        "d_brier_vs_B14": -0.002189,
+        "d_brier_vs_B14_ic95": [
+          -0.004585,
+          -0.000113
+        ],
+        "d_log_loss_vs_B14": -0.004844,
+        "d_log_loss_vs_B14_ic95": [
+          -0.011797,
+          0.001129
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 62,
+        "n_partidos": 20,
+        "n_resueltas": 53,
+        "n_no_resolubles": 9,
+        "aciertos": 43,
+        "tasa_acierto": 0.8113,
+        "tasa_ic95": [
+          0.7021,
+          0.9149
+        ],
+        "brier": 0.163248,
+        "brier_ic95": [
+          0.100862,
+          0.231106
+        ],
+        "log_loss": 0.516221,
+        "log_loss_ic95": [
+          0.366015,
+          0.680422
+        ],
+        "d_tasa_vs_B14": 0.0256,
+        "d_tasa_vs_B14_ic95": [
+          -0.0086,
+          0.082
+        ],
+        "d_brier_vs_B14": -0.016792,
+        "d_brier_vs_B14_ic95": [
+          -0.048295,
+          0.00405
+        ],
+        "d_log_loss_vs_B14": -0.04013,
+        "d_log_loss_vs_B14_ic95": [
+          -0.112525,
+          0.009229
+        ],
+        "n_lineas_cambiadas_vs_B14": 9
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 187,
+        "n_partidos": 24,
+        "n_resueltas": 176,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6989,
+        "tasa_ic95": [
+          0.594,
+          0.8063
+        ],
+        "brier": 0.230086,
+        "brier_ic95": [
+          0.161149,
+          0.298684
+        ],
+        "log_loss": 0.692818,
+        "log_loss_ic95": [
+          0.518123,
+          0.871961
+        ],
+        "d_tasa_vs_B14": 0.0117,
+        "d_tasa_vs_B14_ic95": [
+          -0.0278,
+          0.0507
+        ],
+        "d_brier_vs_B14": -0.002681,
+        "d_brier_vs_B14_ic95": [
+          -0.024248,
+          0.01854
+        ],
+        "d_log_loss_vs_B14": 0.002918,
+        "d_log_loss_vs_B14_ic95": [
+          -0.048487,
+          0.053427
+        ],
+        "n_lineas_cambiadas_vs_B14": 25
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.323,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 62
+      },
+      "recomendacion_defecto": "CANDIDATA_TRUE_MEJORA_LL_1376"
+    },
+    {
+      "config": "sin_usar_gate_corners_8_15",
+      "bandera_quitada": "usar_gate_corners_8_15",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 8229,
+        "delta_estimables_catalogo_vs_B14": 308,
+        "n_estimables_analizar": 5254,
+        "delta_estimables_analizar_vs_B14": 308,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 69,
+        "n_partidos": 23,
+        "n_resueltas": 60,
+        "n_no_resolubles": 9,
+        "aciertos": 47,
+        "tasa_acierto": 0.7833,
+        "tasa_ic95": [
+          0.6491,
+          0.8955
+        ],
+        "brier": 0.179513,
+        "brier_ic95": [
+          0.110807,
+          0.256783
+        ],
+        "log_loss": 0.553766,
+        "log_loss_ic95": [
+          0.388036,
+          0.738748
+        ],
+        "d_tasa_vs_B14": -0.0024,
+        "d_tasa_vs_B14_ic95": [
+          -0.0367,
+          0.0231
+        ],
+        "d_brier_vs_B14": -0.000527,
+        "d_brier_vs_B14_ic95": [
+          -0.014511,
+          0.016051
+        ],
+        "d_log_loss_vs_B14": -0.002585,
+        "d_log_loss_vs_B14_ic95": [
+          -0.03446,
+          0.033817
+        ],
+        "n_lineas_cambiadas_vs_B14": 4
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 203,
+        "n_partidos": 24,
+        "n_resueltas": 192,
+        "n_no_resolubles": 11,
+        "aciertos": 133,
+        "tasa_acierto": 0.6927,
+        "tasa_ic95": [
+          0.5668,
+          0.8156
+        ],
+        "brier": 0.230268,
+        "brier_ic95": [
+          0.1556,
+          0.306265
+        ],
+        "log_loss": 0.684634,
+        "log_loss_ic95": [
+          0.500813,
+          0.871086
+        ],
+        "d_tasa_vs_B14": 0.0056,
+        "d_tasa_vs_B14_ic95": [
+          -0.0088,
+          0.0195
+        ],
+        "d_brier_vs_B14": -0.002499,
+        "d_brier_vs_B14_ic95": [
+          -0.01005,
+          0.006038
+        ],
+        "d_log_loss_vs_B14": -0.005267,
+        "d_log_loss_vs_B14_ic95": [
+          -0.022295,
+          0.015873
+        ],
+        "n_lineas_cambiadas_vs_B14": 13
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.391,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 69
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_gate_cronologia_mitades_10_15",
+      "bandera_quitada": "usar_gate_cronologia_mitades_10_15",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169334,
+        "brier_ic95": [
+          0.143518,
+          0.195924
+        ],
+        "log_loss": 0.512877,
+        "log_loss_ic95": [
+          0.447911,
+          0.581906
+        ],
+        "d_brier_vs_B14": -0.000513,
+        "d_brier_vs_B14_ic95": [
+          -0.00228,
+          0.000938
+        ],
+        "d_log_loss_vs_B14": -0.005311,
+        "d_log_loss_vs_B14_ic95": [
+          -0.016644,
+          0.002348
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 7921,
+        "delta_estimables_analizar_vs_B14": 2975,
+        "n_sides_abstenidos_goles_mitad": 0
+      },
+      "top5_24_unicos": {
+        "n_lineas": 89,
+        "n_partidos": 23,
+        "n_resueltas": 65,
+        "n_no_resolubles": 24,
+        "aciertos": 50,
+        "tasa_acierto": 0.7692,
+        "tasa_ic95": [
+          0.6271,
+          0.8841
+        ],
+        "brier": 0.186823,
+        "brier_ic95": [
+          0.1175,
+          0.27528
+        ],
+        "log_loss": 0.571548,
+        "log_loss_ic95": [
+          0.404265,
+          0.783374
+        ],
+        "d_tasa_vs_B14": -0.0165,
+        "d_tasa_vs_B14_ic95": [
+          -0.0952,
+          0.0597
+        ],
+        "d_brier_vs_B14": 0.006783,
+        "d_brier_vs_B14_ic95": [
+          -0.030627,
+          0.043995
+        ],
+        "d_log_loss_vs_B14": 0.015197,
+        "d_log_loss_vs_B14_ic95": [
+          -0.066964,
+          0.096542
+        ],
+        "n_lineas_cambiadas_vs_B14": 34
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 294,
+        "n_partidos": 24,
+        "n_resueltas": 275,
+        "n_no_resolubles": 19,
+        "aciertos": 199,
+        "tasa_acierto": 0.7236,
+        "tasa_ic95": [
+          0.5875,
+          0.8456
+        ],
+        "brier": 0.209412,
+        "brier_ic95": [
+          0.134311,
+          0.295119
+        ],
+        "log_loss": 0.627454,
+        "log_loss_ic95": [
+          0.443175,
+          0.838053
+        ],
+        "d_tasa_vs_B14": 0.0365,
+        "d_tasa_vs_B14_ic95": [
+          -0.001,
+          0.0703
+        ],
+        "d_brier_vs_B14": -0.023356,
+        "d_brier_vs_B14_ic95": [
+          -0.043586,
+          -0.001154
+        ],
+        "d_log_loss_vs_B14": -0.062446,
+        "d_log_loss_vs_B14_ic95": [
+          -0.114498,
+          -0.005283
+        ],
+        "n_lineas_cambiadas_vs_B14": 126
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 1.82,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 89
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_EMPEORA_TOP5_O_SEC1"
+    },
+    {
+      "config": "sin_usar_calibracion_y_veto_conciencia",
+      "bandera_quitada": "usar_calibracion_y_veto_conciencia",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147068,
+          0.228453
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.47367,
+          0.73399
+        ],
+        "d_brier_vs_B14": 0.017632,
+        "d_brier_vs_B14_ic95": [
+          0.00158,
+          0.032497
+        ],
+        "d_log_loss_vs_B14": 0.085167,
+        "d_log_loss_vs_B14_ic95": [
+          0.016169,
+          0.150134
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 67,
+        "n_partidos": 21,
+        "n_resueltas": 58,
+        "n_no_resolubles": 9,
+        "aciertos": 47,
+        "tasa_acierto": 0.8103,
+        "tasa_ic95": [
+          0.6774,
+          0.9273
+        ],
+        "brier": 0.166624,
+        "brier_ic95": [
+          0.099086,
+          0.247244
+        ],
+        "log_loss": 0.525845,
+        "log_loss_ic95": [
+          0.363421,
+          0.713511
+        ],
+        "d_tasa_vs_B14": 0.0246,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0644
+        ],
+        "d_brier_vs_B14": -0.013416,
+        "d_brier_vs_B14_ic95": [
+          -0.034528,
+          0.0
+        ],
+        "d_log_loss_vs_B14": -0.030505,
+        "d_log_loss_vs_B14_ic95": [
+          -0.076939,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 4
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5503,
+          0.8114
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.157574,
+          0.315136
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.499437,
+          0.891334
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 3.0,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 67
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_cuota_justa_114_top5",
+      "bandera_quitada": "usar_cuota_justa_114_top5",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 48,
+        "n_partidos": 17,
+        "n_resueltas": 40,
+        "n_no_resolubles": 8,
+        "aciertos": 32,
+        "tasa_acierto": 0.8,
+        "tasa_ic95": [
+          0.6304,
+          0.9412
+        ],
+        "brier": 0.165927,
+        "brier_ic95": [
+          0.093417,
+          0.25168
+        ],
+        "log_loss": 0.516247,
+        "log_loss_ic95": [
+          0.356051,
+          0.705467
+        ],
+        "d_tasa_vs_B14": 0.0143,
+        "d_tasa_vs_B14_ic95": [
+          -0.0783,
+          0.1268
+        ],
+        "d_brier_vs_B14": -0.014113,
+        "d_brier_vs_B14_ic95": [
+          -0.082528,
+          0.040501
+        ],
+        "d_log_loss_vs_B14": -0.040103,
+        "d_log_loss_vs_B14_ic95": [
+          -0.203829,
+          0.090379
+        ],
+        "n_lineas_cambiadas_vs_B14": 29
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.558,
+          0.8165
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.152825,
+          0.309254
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.487289,
+          0.877195
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.375,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 48
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_guarda_doble_defensa_rota",
+      "bandera_quitada": "usar_guarda_doble_defensa_rota",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.190409,
+        "brier_ic95": [
+          0.148845,
+          0.230904
+        ],
+        "log_loss": 0.613747,
+        "log_loss_ic95": [
+          0.48221,
+          0.745002
+        ],
+        "d_brier_vs_B14": 0.00293,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.006198
+        ],
+        "d_log_loss_vs_B14": 0.010392,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.021349
+        ],
+        "d_brier_vs_soloA": -0.003368,
+        "d_brier_vs_soloA_ic95": [
+          -0.007341,
+          0.000858
+        ],
+        "d_log_loss_vs_soloA": -0.056856,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.100239,
+          -0.01704
+        ],
+        "n_filas_cambiadas_vs_B14": 79,
+        "n_partidos_cambiados_vs_B14": 3
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.172702,
+        "brier_ic95": [
+          0.145727,
+          0.200534
+        ],
+        "log_loss": 0.527625,
+        "log_loss_ic95": [
+          0.452878,
+          0.603675
+        ],
+        "d_brier_vs_B14": 0.002855,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.006256
+        ],
+        "d_log_loss_vs_B14": 0.009437,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.020265
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 55,
+        "n_no_resolubles": 10,
+        "aciertos": 43,
+        "tasa_acierto": 0.7818,
+        "tasa_ic95": [
+          0.6296,
+          0.9038
+        ],
+        "brier": 0.185353,
+        "brier_ic95": [
+          0.109436,
+          0.278881
+        ],
+        "log_loss": 0.571512,
+        "log_loss_ic95": [
+          0.38937,
+          0.795884
+        ],
+        "d_tasa_vs_B14": -0.0039,
+        "d_tasa_vs_B14_ic95": [
+          -0.0479,
+          0.0345
+        ],
+        "d_brier_vs_B14": 0.005314,
+        "d_brier_vs_B14_ic95": [
+          -0.020698,
+          0.031992
+        ],
+        "d_log_loss_vs_B14": 0.015162,
+        "d_log_loss_vs_B14_ic95": [
+          -0.050382,
+          0.079098
+        ],
+        "n_lineas_cambiadas_vs_B14": 9
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 196,
+        "n_partidos": 24,
+        "n_resueltas": 182,
+        "n_no_resolubles": 14,
+        "aciertos": 123,
+        "tasa_acierto": 0.6758,
+        "tasa_ic95": [
+          0.5444,
+          0.8121
+        ],
+        "brier": 0.244328,
+        "brier_ic95": [
+          0.157284,
+          0.325503
+        ],
+        "log_loss": 0.725381,
+        "log_loss_ic95": [
+          0.50325,
+          0.931987
+        ],
+        "d_tasa_vs_B14": -0.0113,
+        "d_tasa_vs_B14_ic95": [
+          -0.044,
+          0.0142
+        ],
+        "d_brier_vs_B14": 0.01156,
+        "d_brier_vs_B14_ic95": [
+          -0.003409,
+          0.029751
+        ],
+        "d_log_loss_vs_B14": 0.03548,
+        "d_log_loss_vs_B14_ic95": [
+          -0.003718,
+          0.084704
+        ],
+        "n_lineas_cambiadas_vs_B14": 16
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.252,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_gate_goles_mitad_15_15",
+      "bandera_quitada": "usar_gate_goles_mitad_15_15",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.170243,
+        "brier_ic95": [
+          0.143881,
+          0.197854
+        ],
+        "log_loss": 0.519164,
+        "log_loss_ic95": [
+          0.448561,
+          0.594763
+        ],
+        "d_brier_vs_B14": 0.000396,
+        "d_brier_vs_B14_ic95": [
+          -0.000264,
+          0.001054
+        ],
+        "d_log_loss_vs_B14": 0.000976,
+        "d_log_loss_vs_B14_ic95": [
+          -0.001369,
+          0.003146
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 5541,
+        "delta_estimables_analizar_vs_B14": 595,
+        "n_sides_abstenidos_goles_mitad": 21
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 56,
+        "n_no_resolubles": 9,
+        "aciertos": 44,
+        "tasa_acierto": 0.7857,
+        "tasa_ic95": [
+          0.6379,
+          0.902
+        ],
+        "brier": 0.18004,
+        "brier_ic95": [
+          0.110386,
+          0.268296
+        ],
+        "log_loss": 0.556351,
+        "log_loss_ic95": [
+          0.388563,
+          0.769219
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5568,
+          0.8235
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.14925,
+          0.311447
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.482687,
+          0.884707
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.354,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_kelly_conservador_min_3pct",
+      "bandera_quitada": "usar_kelly_conservador_min_3pct",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 56,
+        "n_no_resolubles": 9,
+        "aciertos": 44,
+        "tasa_acierto": 0.7857,
+        "tasa_ic95": [
+          0.6481,
+          0.9062
+        ],
+        "brier": 0.18004,
+        "brier_ic95": [
+          0.109716,
+          0.264991
+        ],
+        "log_loss": 0.556351,
+        "log_loss_ic95": [
+          0.386815,
+          0.758738
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5497,
+          0.8161
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.152985,
+          0.3171
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.488413,
+          0.891321
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 4.438,
+        "stake_max_observado_pct": 8.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    },
+    {
+      "config": "sin_usar_excluir_primer_gol_top5",
+      "bandera_quitada": "usar_excluir_primer_gol_top5",
+      "catalogo_1376": {
+        "n_partidos_unicos": 24,
+        "n_filas": 1376,
+        "brier": 0.187479,
+        "brier_ic95": [
+          0.147066,
+          0.227828
+        ],
+        "log_loss": 0.603355,
+        "log_loss_ic95": [
+          0.473741,
+          0.736295
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_soloA": -0.006298,
+        "d_brier_vs_soloA_ic95": [
+          -0.011341,
+          -0.000806
+        ],
+        "d_log_loss_vs_soloA": -0.067248,
+        "d_log_loss_vs_soloA_ic95": [
+          -0.109468,
+          -0.025058
+        ],
+        "n_filas_cambiadas_vs_B14": 0,
+        "n_partidos_cambiados_vs_B14": 0
+      },
+      "catalogo_1376_calibrado_efectivo": {
+        "brier": 0.169847,
+        "brier_ic95": [
+          0.143196,
+          0.197602
+        ],
+        "log_loss": 0.518188,
+        "log_loss_ic95": [
+          0.446193,
+          0.594938
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ]
+      },
+      "cobertura_y_gates_26_jobs": {
+        "n_estimables_catalogo": 7921,
+        "delta_estimables_catalogo_vs_B14": 0,
+        "n_estimables_analizar": 4946,
+        "delta_estimables_analizar_vs_B14": 0,
+        "n_sides_abstenidos_goles_mitad": 26
+      },
+      "top5_24_unicos": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 55,
+        "n_no_resolubles": 10,
+        "aciertos": 44,
+        "tasa_acierto": 0.8,
+        "tasa_ic95": [
+          0.675,
+          0.9016
+        ],
+        "brier": 0.173439,
+        "brier_ic95": [
+          0.111297,
+          0.250628
+        ],
+        "log_loss": 0.542186,
+        "log_loss_ic95": [
+          0.391632,
+          0.728378
+        ],
+        "d_tasa_vs_B14": 0.0143,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0424
+        ],
+        "d_brier_vs_B14": -0.006601,
+        "d_brier_vs_B14_ic95": [
+          -0.018829,
+          0.0
+        ],
+        "d_log_loss_vs_B14": -0.014165,
+        "d_log_loss_vs_B14_ic95": [
+          -0.040258,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 2
+      },
+      "seccion1_24_unicos": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.5486,
+          0.8182
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.151506,
+          0.314079
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.483727,
+          0.894185
+        ],
+        "d_tasa_vs_B14": 0.0,
+        "d_tasa_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_brier_vs_B14": 0.0,
+        "d_brier_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_B14": 0.0,
+        "d_log_loss_vs_B14_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_B14": 0
+      },
+      "kelly_top5_pct": {
+        "stake_medio_pct": 2.308,
+        "stake_max_observado_pct": 3.0,
+        "n_stakes": 65
+      },
+      "recomendacion_defecto": "MANTENER_FALSE_IC_CRUZA_CERO"
+    }
+  ]
+}

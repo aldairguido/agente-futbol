@@ -12971,3 +12971,660 @@ def auditar_corners_65e377e_diag_ronda12(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+def auditar_leave_one_out_banderas_b_ronda13(
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+    guardar_ruta: str | None = "datos/ronda13_punto4_loo_banderas_b.json",
+    regenerar: bool = False,
+) -> dict[str, Any]:
+    """
+    RONDA 13 - Punto 4 (`Leave-One-Out Conjunto B` sobre los 24 OOS con IC por partido):
+      Evalúa quitar una a una cada una de las 14 banderas de Conjunto B desde `B_14`
+      (todas activas) sobre la cohorte de los 24 partidos OOS únicos (`1376` filas
+      comunes de catálogo, cobertura/gates, y selecciones Top 5 / Sección 1) con
+      bootstrap agrupado por partido (`n=24`), para sustentar qué defectos mantener
+      o cambiar antes de fusionar.
+    """
+    import copy as _copy_r13
+    import hashlib as _hl_r13
+    import random as _rnd_r13
+    import re as _re_r13
+    from pathlib import Path as _Path_r13
+    from decision_cobertura import (
+        BANDERAS_COMPORTAMIENTO_DEFECTO,
+        bandera_activa as _ba_r13,
+        banderas_comportamiento,
+    )
+    import motor_mercados as mm
+    import servicio_mercados as sm
+
+    raiz = _Path_r13(__file__).resolve().parent
+    if guardar_ruta and not regenerar:
+        rp = _Path_r13(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        if rp.exists():
+            return json.loads(rp.read_text(encoding="utf-8"))
+
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    filas_1506 = list(oos.get("filas_1506") or [])
+    filas_1376 = [
+        r for r in filas_1506
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    mapa_r10 = json.loads((raiz / "datos" / "ronda10_oos_26_jobs_map.json").read_text(encoding="utf-8"))
+    jobs_map = dict(mapa_r10.get("jobs") or {})
+    no_comp_jids = set(mapa_r10.get("no_comp_jids") or [])
+
+    merc_by_job: dict[str, dict[str, Any]] = {}
+    for fp in sorted((raiz / "informes" / "mercados").rglob("mercados_*.json")):
+        md = json.loads(fp.read_text(encoding="utf-8"))
+        if md.get("id_trabajo"):
+            merc_by_job[str(md["id_trabajo"])] = md
+
+    # 1. Índice de desenlaces observados sobre los 24 OOS (idéntico a R12 P6)
+    idx_pid: dict[tuple[str, tuple[str, str, str | None, float | None]], int] = {}
+    pid_by_jid: dict[str, str] = {}
+    stats_pid: dict[str, dict[str, int]] = {}
+    for r in filas_1506:
+        jid = str(r["id_trabajo"])
+        pid = str(r.get("id_partido") or "")
+        pid_by_jid[jid] = pid
+        k = _normalizar_clave_seleccion_ronda10(r.get("evento"), r.get("periodo"), r.get("equipo"), r.get("linea"))
+        idx_pid[(pid, k)] = int(r["evento_ocurrio"])
+
+    for fp_ev in sorted((raiz / "informes" / "evaluacion").glob("evaluacion_*.json")):
+        d_ev = json.loads(fp_ev.read_text(encoding="utf-8"))
+        for s in (d_ev.get("evaluaciones") or []):
+            jid_s = str(s.get("id_trabajo") or "")
+            pid_s = str(s.get("id_partido") or pid_by_jid.get(jid_s) or "")
+            if pid_s in set(pid_by_jid.values()) and s.get("evento_ocurrio") is not None:
+                k = _normalizar_clave_seleccion_ronda10(s.get("evento"), s.get("periodo"), s.get("equipo"), s.get("linea"))
+                idx_pid.setdefault((pid_s, k), int(s["evento_ocurrio"]))
+                ev_s = str(s.get("evento") or "")
+                per_s = str(s.get("periodo") or "FT")
+                det_s = str(s.get("detalle") or "")
+                m_det = _re_r13.match(r"^\s*(\d+)\s+(goles|córneres|corneres|tarjetas)", det_s)
+                st_p = stats_pid.setdefault(pid_s, {})
+                if m_det:
+                    val_d = int(m_det.group(1))
+                    if ev_s.startswith(("over_", "under_", "al_menos_", "fiesta_")) and not s.get("equipo"):
+                        st_p[f"goles_{per_s}"] = val_d
+                    elif ev_s.startswith("local_") and "goles" in str(s.get("mercado") or "").lower():
+                        st_p[f"goles_local_{per_s}"] = val_d
+                    elif ev_s.startswith("visitante_") and "goles" in str(s.get("mercado") or "").lower():
+                        st_p[f"goles_visita_{per_s}"] = val_d
+
+    extra_pid_eventos: dict[tuple[str, str, str], int] = {
+        ("5795478", "primer_gol_local", "FT"): 0,
+        ("6106338", "primer_gol_visitante", "FT"): 0,
+        ("5795481", "primer_gol_local", "FT"): 1,
+        ("5795481", "gol_ambos_tiempos", "FT"): 1,
+    }
+    stats_pid.setdefault("1000020615", {})["goles_1T"] = 1
+    stats_pid.setdefault("1000020615", {})["goles_2T"] = 2
+
+    def _g(o: Any, k: str, d: Any = None) -> Any:
+        return o.get(k, d) if isinstance(o, dict) else getattr(o, k, d)
+
+    def _match_top5_cand(item_t5: dict[str, Any], cands: list[Any], eq_l: str, eq_v: str) -> Any:
+        etq_t5 = str(item_t5.get("etiqueta") or "")
+        p_t5 = float(item_t5.get("probabilidad") or 0.0)
+        if "(1T)" in etq_t5 or "1ra Mitad" in etq_t5:
+            per_t5 = "1T"
+        elif "(2T)" in etq_t5 or "2da Mitad" in etq_t5:
+            per_t5 = "2T"
+        else:
+            per_t5 = "FT"
+        mejores = [
+            s for s in cands
+            if str(getattr(s, "periodo", "FT") or "FT") == per_t5
+            and abs(float(getattr(s, "probabilidad", 0.0) or 0.0) - p_t5) < 5e-4
+        ]
+        if len(mejores) == 1:
+            return mejores[0]
+        for s in mejores:
+            ev_s = str(getattr(s, "evento", "") or "")
+            eq_s = str(getattr(s, "equipo", "") or "")
+            lin_s = getattr(s, "linea", None)
+            if lin_s is not None and f"{lin_s:g}" in etq_t5:
+                if eq_s and eq_s.lower() in etq_t5.lower():
+                    return s
+                if not eq_s and eq_l.lower() not in etq_t5.lower() and eq_v.lower() not in etq_t5.lower():
+                    return s
+            if "Anota primero" in etq_t5 and "primer" in ev_s and eq_s and eq_s.lower() in etq_t5.lower():
+                return s
+            if "ambos tiempos" in etq_t5.lower() and "ambos_tiempos" in ev_s:
+                return s
+        return mejores[0] if mejores else None
+
+    def _grade_sel(jid: str, sel_obj: Any, item_t5: dict[str, Any] | None, meta: dict[str, Any]) -> int | None:
+        pid = pid_by_jid[jid]
+        if sel_obj is not None:
+            ev = str(_g(sel_obj, "evento") or "")
+            per = str(_g(sel_obj, "periodo", "FT") or "FT").strip().upper()
+            eq = _g(sel_obj, "equipo")
+            lin = _g(sel_obj, "linea")
+            if (pid, ev, per) in extra_pid_eventos:
+                return extra_pid_eventos[(pid, ev, per)]
+            k = _normalizar_clave_seleccion_ronda10(ev, per, eq, lin)
+            if (pid, k) in idx_pid:
+                return idx_pid[(pid, k)]
+            if ev.startswith("al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("local_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"local_over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("visitante_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"visitante_over_{float(lin) - 0.5:g}", per, eq, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            if ev.startswith("fiesta_al_menos_") and lin is not None:
+                k2 = _normalizar_clave_seleccion_ronda10(f"over_{float(lin) - 0.5:g}", per, None, float(lin) - 0.5)
+                if (pid, k2) in idx_pid:
+                    return idx_pid[(pid, k2)]
+            st = stats_pid.get(pid, {})
+            if f"goles_{per}" in st and not eq and lin is not None:
+                g = st[f"goles_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if eq == meta.get("equipo_local") and f"goles_local_{per}" in st and lin is not None:
+                g = st[f"goles_local_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if eq == meta.get("equipo_visitante") and f"goles_visita_{per}" in st and lin is not None:
+                g = st[f"goles_visita_{per}"]
+                if "al_menos" in ev:
+                    return int(g >= float(lin))
+                if "over" in ev:
+                    return int(g > float(lin))
+                if "under" in ev:
+                    return int(g < float(lin))
+            if ev == "gol_2t" and "goles_2T" in st:
+                return int(st["goles_2T"] >= 1)
+            if ev == "gol_1t" and "goles_1T" in st:
+                return int(st["goles_1T"] >= 1)
+        if item_t5 is not None:
+            etq = str(item_t5.get("etiqueta") or "")
+            if "1ra Mitad" in etq and "Menos de 1.5 Goles" in etq:
+                k_1t = _normalizar_clave_seleccion_ronda10("under_1.5", "1T", None, 1.5)
+                if (pid, k_1t) in idx_pid:
+                    return idx_pid[(pid, k_1t)]
+                st = stats_pid.get(pid, {})
+                if "goles_1T" in st:
+                    return int(st["goles_1T"] < 1.5)
+        return None
+
+    # Deduplicar 26 jobs -> 24 partidos únicos manteniendo el último job por id_partido
+    ultimo_jid_por_pid: dict[str, str] = {}
+    for jid in sorted(jobs_map):
+        pid = pid_by_jid.get(jid) or jid
+        prev_j = ultimo_jid_por_pid.get(pid)
+        if prev_j is None:
+            ultimo_jid_por_pid[pid] = jid
+        else:
+            g_cur = str((merc_by_job.get(jid, {}).get("metadatos") or {}).get("generado_en") or "")
+            g_prev = str((merc_by_job.get(prev_j, {}).get("metadatos") or {}).get("generado_en") or "")
+            if g_cur >= g_prev:
+                ultimo_jid_por_pid[pid] = jid
+    jids_24 = set(ultimo_jid_por_pid.values())
+
+    # Precargar documentos filtrados en memoria
+    jobs_data: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any], Any]] = {}
+    for jid in sorted(jobs_map):
+        fpl_rel, fpv_rel, cut = jobs_map[jid]
+        dl = json.loads((raiz / fpl_rel).read_text(encoding="utf-8"))
+        dv = json.loads((raiz / fpv_rel).read_text(encoding="utf-8"))
+        dlc = mm.filtrar_por_fecha(dl, cut) if cut else dl
+        dvc = mm.filtrar_por_fecha(dv, cut) if cut else dv
+        meta = dict(merc_by_job[jid]["metadatos"])
+        par = mm.Parametros()
+        if meta.get("competicion") and jid not in no_comp_jids:
+            par.competicion = str(meta["competicion"])
+        jobs_data[jid] = (dlc, dvc, meta, par)
+
+    flags_14 = list(BANDERAS_COMPORTAMIENTO_DEFECTO.keys())
+    requeridos_goles = [n for n, _ in mm.escenarios_goles()]
+    requeridos_conteos = [n for n, _ in mm.escenarios_conteos()]
+    mercados_conteo = set(mm._mercados_de_conteos())
+    sens_cache: dict[tuple[str, str], dict[str, Any]] = {}
+
+    def _evaluar_configuracion(nombre_cfg: str, bdict: dict[str, bool]) -> dict[str, Any]:
+        probs_cat: dict[str, dict[tuple[str, str, str | None, float | None], float]] = {}
+        probs_cat_cal: dict[str, dict[tuple[str, str, str | None, float | None], float]] = {}
+        est_analizar_total = 0
+        est_catalogo_total = 0
+        abst_goles_mitad = 0
+        top5_24_rows: list[dict[str, Any]] = []
+        sec1_24_rows: list[dict[str, Any]] = []
+        stakes_top5: list[float] = []
+
+        with banderas_comportamiento(activar_todas=False, **bdict):
+            _an_mit = _ba_r13("usar_gate_cronologia_mitades_10_15")
+            _an_crn = _ba_r13("usar_gate_corners_8_15")
+            _an_cal = _ba_r13("usar_calibracion_y_veto_conciencia")
+
+            for jid in sorted(jobs_data):
+                dlc, dvc, meta, par = jobs_data[jid]
+                el, ev_n = str(meta["equipo_local"]), str(meta["equipo_visitante"])
+                cl = meta.get("condicion_local") or "casa"
+                cv = meta.get("condicion_visitante") or "fuera"
+
+                mot = mm.MotorMercados(dlc, dvc, cl, cv, el, ev_n, par)
+                mot.preparar()
+                mercados = mot.evaluar_catalogo()
+
+                _cron_an = mm.cronologia_mitades_verificada(mot) if _an_mit else {"ok_analizar": True}
+                if _an_mit and not _cron_an.get("ok_analizar", True):
+                    abst_goles_mitad += 1
+
+                mp: dict[tuple[str, str, str | None, float | None], float] = {}
+                mp_cal: dict[tuple[str, str, str | None, float | None], float] = {}
+                for rm in mercados:
+                    for s in rm.selecciones:
+                        if s.estimable and s.probabilidad is not None:
+                            k = _normalizar_clave_seleccion_ronda10(s.evento, s.periodo, s.equipo, s.linea)
+                            mp[k] = float(s.probabilidad)
+                            mp_cal[k] = float(s.probabilidad)
+                est_catalogo_total += len(mp)
+                probs_cat[jid] = mp
+
+                # Fingerprint del motor para deduplicar evaluar_sensibilidad exacta sin repetir pasadas idénticas
+                sig_payload = {
+                    "lam": [mot.tasas.lambda_local_ft, mot.tasas.lambda_visitante_ft, mot.tasas.lambda_local_1t, mot.tasas.lambda_visitante_1t],
+                    "probs": [[str(k), round(v, 6)] for k, v in sorted(mp.items(), key=lambda kv: str(kv[0]))],
+                }
+                sig_hash = _hl_r13.sha256(json.dumps(sig_payload, ensure_ascii=False).encode("utf-8")).hexdigest()[:20]
+                if (jid, sig_hash) not in sens_cache:
+                    sens_cache[(jid, sig_hash)] = mm.evaluar_sensibilidad(dlc, dvc, cl, cv, el, ev_n, par)
+                sensibilidad = sens_cache[(jid, sig_hash)]
+                _cob_corn_g = mm.cobertura_corners_por_equipo(mot, bando=None) if _an_crn else {"ok_catalogo": True}
+                _cob_corn_l = mm.cobertura_corners_por_equipo(mot, bando="local") if _an_crn else {"ok_catalogo": True}
+                _cob_corn_v = mm.cobertura_corners_por_equipo(mot, bando="visitante") if _an_crn else {"ok_catalogo": True}
+
+                vistos: dict[tuple[Any, ...], Any] = {}
+                for rm in mercados:
+                    for s in rm.selecciones:
+                        if not s.estimable or s.probabilidad is None:
+                            continue
+                        if mm.es_mercado_cronologia_mitades(s) and not _cron_an.get("ok_analizar", True):
+                            continue
+                        if rm.id_mercado == "total_corners" and not _cob_corn_g.get("ok_catalogo", True):
+                            continue
+                        if rm.id_mercado == "corners_local" and not _cob_corn_l.get("ok_catalogo", True):
+                            continue
+                        if rm.id_mercado == "corners_visitante" and not _cob_corn_v.get("ok_catalogo", True):
+                            continue
+                        est_analizar_total += 1
+                        sc = _copy_r13.copy(s)
+                        if _an_cal:
+                            try:
+                                from agente_consciente import evaluar_familia_conciencia_cached
+                                _cal_s = evaluar_familia_conciencia_cached(sc.mercado, equipo=sc.equipo, prob_bruta=float(sc.probabilidad))
+                                p_cal_v = _cal_s.get("prob_calibrada")
+                                setattr(sc, "prob_calibrada", p_cal_v)
+                                setattr(sc, "bajo_vigilancia", bool(_cal_s.get("bajo_vigilancia", False)))
+                                setattr(sc, "veto_top5", bool(_cal_s.get("veto_top5", False)))
+                                setattr(sc, "familia_conciencia", _cal_s.get("familia"))
+                                if p_cal_v is not None:
+                                    k_c = _normalizar_clave_seleccion_ronda10(sc.evento, sc.periodo, sc.equipo, sc.linea)
+                                    mp_cal[k_c] = float(p_cal_v)
+                            except Exception:
+                                pass
+                        if float(sc.probabilidad) <= par.umbral:
+                            continue
+                        esc = sensibilidad.get(mm._clave_a_texto(sc.clave_unica), {})
+                        sc.escenarios = esc
+                        req = requeridos_conteos if rm.id_mercado in mercados_conteo else requeridos_goles
+                        est_sc, mot_sc = mm.clasificar(sc.probabilidad, esc, req, par.umbral)
+                        if not est_sc:
+                            continue
+                        excede_desv, desv_pts, f_obs = mm.tiene_desvio_excesivo_calibracion(
+                            sc, mot.doc_local, mot.doc_visitante, mot.nombre_local, mot.nombre_visitante
+                        )
+                        if excede_desv:
+                            est_sc = mm.ESTADO_SENSIBLE
+                            _brecha_emp = round(round(float(f_obs) * 100.0, 1) - round(float(sc.probabilidad) * 100.0, 1), 1)
+                            mot_sc = f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs mod: {sc.probabilidad*100:.1f}%, brecha {_brecha_emp:+.1f} pp, desvío {desv_pts:.1f} pts > 10.0)"
+                        sc.estado = est_sc
+                        if mot_sc:
+                            sc.motivo = mot_sc
+                        vistos.setdefault(sc.clave_unica, sc)
+
+                probs_cat_cal[jid] = mp_cal
+                if jid not in jids_24:
+                    continue
+
+                sels_flt = list(vistos.values())
+                grupos = {mm.ESTADO_MANTIENE: [], mm.ESTADO_SENSIBLE: [], mm.ESTADO_INCOMPLETA: []}
+                for sc in sels_flt:
+                    grupos.setdefault(sc.estado, []).append(sc)
+                an_ligero = mm.Analisis(meta, par, mot, mercados, sels_flt, grupos, sensibilidad, "", "")
+                t5, s1, _ = sm.obtener_top5_y_seccion1_filtrados(
+                    an_ligero,
+                    metadatos={"equipo_local": el, "equipo_visitante": ev_n},
+                    umbral=0.70,
+                )
+                pid = pid_by_jid[jid]
+                for it5 in (t5 or []):
+                    cand = _match_top5_cand(it5, sels_flt, el, ev_n)
+                    res_y = _grade_sel(jid, cand, it5, meta)
+                    p_item = float(it5.get("probabilidad") or 0.0)
+                    ev_k = str(getattr(cand, "evento", None) or it5.get("evento") or it5.get("etiqueta") or "")
+                    per_k = str(getattr(cand, "periodo", None) or "FT")
+                    eq_k = str(getattr(cand, "equipo", None) or "")
+                    lin_k = getattr(cand, "linea", None)
+                    # Medir stake Kelly conservador sobre una cuota de referencia con +5% valor si supera 1.05
+                    c_ref = round(1.05 / max(0.05, min(0.95, p_item - 0.04)), 2) if p_item < 0.94 else 1.15
+                    val_k = mm.calcular_ev_y_stake_calibrado(
+                        str(getattr(cand, "mercado", "") or it5.get("categoria_podio") or ""),
+                        p_item,
+                        cuota_real=c_ref,
+                        equipo=getattr(cand, "equipo", None),
+                    )
+                    if val_k.get("stake_pct") is not None:
+                        stakes_top5.append(float(val_k["stake_pct"]))
+                    top5_24_rows.append({
+                        "id_partido": pid,
+                        "id_trabajo": jid,
+                        "clave_linea": (pid, ev_k, per_k, eq_k, lin_k),
+                        "prob": p_item,
+                        "evento_ocurrio": res_y,
+                    })
+                for sc1 in (s1 or []):
+                    res_y = _grade_sel(jid, sc1, None, meta)
+                    ev_k = str(_g(sc1, "evento") or "")
+                    per_k = str(_g(sc1, "periodo", "FT") or "FT")
+                    eq_k = str(_g(sc1, "equipo") or "")
+                    lin_k = _g(sc1, "linea")
+                    sec1_24_rows.append({
+                        "id_partido": pid,
+                        "id_trabajo": jid,
+                        "clave_linea": (pid, ev_k, per_k, eq_k, lin_k),
+                        "prob": float(_g(sc1, "probabilidad") or 0.0),
+                        "evento_ocurrio": res_y,
+                    })
+
+        return {
+            "nombre": nombre_cfg,
+            "probs_cat": probs_cat,
+            "probs_cat_cal": probs_cat_cal,
+            "est_catalogo_total": est_catalogo_total,
+            "est_analizar_total": est_analizar_total,
+            "abst_goles_mitad": abst_goles_mitad,
+            "top5_rows": top5_24_rows,
+            "sec1_rows": sec1_24_rows,
+            "stakes_top5": stakes_top5,
+        }
+
+    # Ejecutar baselines + 14 configuraciones LOO
+    configs: list[tuple[str, dict[str, bool]]] = [
+        ("B_14", {k: True for k in flags_14}),
+        ("B_9", {k: (k not in {
+            "usar_cuota_justa_114_top5",
+            "usar_guarda_doble_defensa_rota",
+            "usar_gate_goles_mitad_15_15",
+            "usar_kelly_conservador_min_3pct",
+            "usar_excluir_primer_gol_top5",
+        }) for k in flags_14}),
+        ("soloA", {k: False for k in flags_14}),
+    ]
+    for f in flags_14:
+        configs.append((f"sin_{f}", {k: (k != f) for k in flags_14}))
+
+    resultados_cfg = {nom: _evaluar_configuracion(nom, bdict) for nom, bdict in configs}
+    ref_b14 = resultados_cfg["B_14"]
+    ref_sa = resultados_cfg["soloA"]
+
+    def _boot_sel_y_diff(rows_cfg: list[dict[str, Any]], rows_ref: list[dict[str, Any]], seed_v: int) -> dict[str, Any]:
+        ev_c = [r for r in rows_cfg if r["evento_ocurrio"] is not None]
+        ev_r = [r for r in rows_ref if r["evento_ocurrio"] is not None]
+        no_res = len(rows_cfg) - len(ev_c)
+        if not ev_c:
+            return {"n_lineas": len(rows_cfg), "n_resueltas": 0, "n_no_resolubles": no_res, "aciertos": None, "tasa_acierto": None, "brier": None, "log_loss": None}
+
+        pids_u = sorted({str(r["id_partido"]) for r in ev_c} | {str(r["id_partido"]) for r in ev_r})
+        def _por_pid(rows_l: list[dict[str, Any]]) -> dict[str, list[tuple[int, float, float]]]:
+            mp_p: dict[str, list[tuple[int, float, float]]] = {}
+            for r in rows_l:
+                y = int(r["evento_ocurrio"])
+                p = float(r["prob"])
+                pc = min(max(p, 1e-12), 1.0 - 1e-12)
+                mp_p.setdefault(str(r["id_partido"]), []).append((
+                    y,
+                    (p - y) ** 2,
+                    -(y * math.log(pc) + (1.0 - y) * math.log(1.0 - pc)),
+                ))
+            return mp_p
+
+        pc_map = _por_pid(ev_c)
+        pr_map = _por_pid(ev_r)
+
+        def _agg(m_map: dict[str, list[tuple[int, float, float]]], sample_pids: list[str]) -> tuple[float, float, float] | None:
+            sa = sb = sl = cnt = 0.0
+            for pid_b in sample_pids:
+                for y_b, br_b, ll_b in m_map.get(pid_b, ()):
+                    sa += y_b
+                    sb += br_b
+                    sl += ll_b
+                    cnt += 1.0
+            if cnt <= 0:
+                return None
+            return (sa / cnt, sb / cnt, sl / cnt)
+
+        obs_c = _agg(pc_map, sorted(pc_map.keys()))
+        obs_r = _agg(pr_map, sorted(pr_map.keys()))
+        rng = _rnd_r13.Random(seed_v)
+        tc_b, bc_b, lc_b = [], [], []
+        dt_b, db_b, dl_b = [], [], []
+        m = len(pids_u)
+        for _ in range(n_boot):
+            mu = [pids_u[rng.randrange(m)] for _ in range(m)]
+            ac_v = _agg(pc_map, mu)
+            ar_v = _agg(pr_map, mu)
+            if ac_v is not None:
+                tc_b.append(ac_v[0])
+                bc_b.append(ac_v[1])
+                lc_b.append(ac_v[2])
+                if ar_v is not None:
+                    dt_b.append(ac_v[0] - ar_v[0])
+                    db_b.append(ac_v[1] - ar_v[1])
+                    dl_b.append(ac_v[2] - ar_v[2])
+        for arr in (tc_b, bc_b, lc_b, dt_b, db_b, dl_b):
+            arr.sort()
+
+        def _ic(arr: list[float], dec: int) -> list[float] | None:
+            if not arr:
+                return None
+            lo = int(0.025 * len(arr))
+            hi = min(len(arr) - 1, int(0.975 * len(arr)))
+            return [round(arr[lo], dec), round(arr[hi], dec)]
+
+        claves_c = {r["clave_linea"] for r in rows_cfg}
+        claves_r = {r["clave_linea"] for r in rows_ref}
+        cambiadas = len(claves_c ^ claves_r)
+        return {
+            "n_lineas": len(rows_cfg),
+            "n_partidos": len(pc_map),
+            "n_resueltas": len(ev_c),
+            "n_no_resolubles": no_res,
+            "aciertos": sum(int(r["evento_ocurrio"]) for r in ev_c),
+            "tasa_acierto": round(obs_c[0], 4) if obs_c else None,
+            "tasa_ic95": _ic(tc_b, 4),
+            "brier": round(obs_c[1], 6) if obs_c else None,
+            "brier_ic95": _ic(bc_b, 6),
+            "log_loss": round(obs_c[2], 6) if obs_c else None,
+            "log_loss_ic95": _ic(lc_b, 6),
+            "d_tasa_vs_B14": round(obs_c[0] - obs_r[0], 4) if (obs_c and obs_r) else None,
+            "d_tasa_vs_B14_ic95": _ic(dt_b, 4),
+            "d_brier_vs_B14": round(obs_c[1] - obs_r[1], 6) if (obs_c and obs_r) else None,
+            "d_brier_vs_B14_ic95": _ic(db_b, 6),
+            "d_log_loss_vs_B14": round(obs_c[2] - obs_r[2], 6) if (obs_c and obs_r) else None,
+            "d_log_loss_vs_B14_ic95": _ic(dl_b, 6),
+            "n_lineas_cambiadas_vs_B14": cambiadas,
+        }
+
+    # Evaluar catálogo 1376 (bruto y calibrado efectivo) + Top 5 + Sección 1 para todas las configs
+    obs_1376_all: list[tuple[str, int, dict[str, float]]] = []
+    obs_1376_cal_all: list[tuple[str, int, dict[str, float]]] = []
+    for r in filas_1376:
+        jid = str(r["id_trabajo"])
+        pid = str(r["id_partido"])
+        y = int(r["evento_ocurrio"])
+        k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+        d_raw: dict[str, float] = {}
+        d_cal: dict[str, float] = {}
+        ok_row = True
+        for nom, res_c in resultados_cfg.items():
+            p_raw = res_c["probs_cat"].get(jid, {}).get(k)
+            p_cal = res_c["probs_cat_cal"].get(jid, {}).get(k)
+            if p_raw is None or p_cal is None:
+                ok_row = False
+                break
+            d_raw[nom] = float(p_raw)
+            d_cal[nom] = float(p_cal)
+        if ok_row:
+            obs_1376_all.append((pid, y, d_raw))
+            obs_1376_cal_all.append((pid, y, d_cal))
+
+    boot_1376 = bootstrap_brier_logloss_por_partido(obs_1376_all, n_boot=n_boot, seed=seed)
+    boot_1376_cal = bootstrap_brier_logloss_por_partido(obs_1376_cal_all, n_boot=n_boot, seed=seed + 10)
+
+    def _resumen_cfg_completo(nom: str, bandera_quitada: str | None, idx_seed: int) -> dict[str, Any]:
+        res_c = resultados_cfg[nom]
+        v_raw = (boot_1376.get("versiones") or {}).get(nom) or {}
+        d_raw_b14 = (boot_1376.get("diferencias") or {}).get(f"{nom} - B_14") or {}
+        d_raw_sa = (boot_1376.get("diferencias") or {}).get(f"{nom} - soloA") or {}
+        v_cal = (boot_1376_cal.get("versiones") or {}).get(nom) or {}
+        d_cal_b14 = (boot_1376_cal.get("diferencias") or {}).get(f"{nom} - B_14") or {}
+
+        n_filas_ch = 0
+        pids_ch: set[str] = set()
+        for r in filas_1376:
+            jid = str(r["id_trabajo"])
+            k = _normalizar_clave_seleccion_ronda10(r["evento"], r["periodo"], r["equipo"], r["linea"])
+            p_b = ref_b14["probs_cat"].get(jid, {}).get(k)
+            p_n = res_c["probs_cat"].get(jid, {}).get(k)
+            if p_b != p_n and (p_b is None or p_n is None or abs(float(p_b) - float(p_n)) > 1e-6):
+                n_filas_ch += 1
+                pids_ch.add(str(r["id_partido"]))
+
+        t5_stats = _boot_sel_y_diff(res_c["top5_rows"], ref_b14["top5_rows"], seed + 100 + idx_seed)
+        s1_stats = _boot_sel_y_diff(res_c["sec1_rows"], ref_b14["sec1_rows"], seed + 200 + idx_seed)
+        stakes = res_c["stakes_top5"]
+        kelly_mean = round(sum(stakes) / len(stakes), 3) if stakes else None
+        kelly_max = round(max(stakes), 2) if stakes else None
+
+        # Regla de recomendación objetiva (sin afirmar mejora si IC cruza 0 o es neutro)
+        rec = "MANTENER_FALSE_NEUTRO_O_SIN_IMPACTO"
+        if bandera_quitada is not None:
+            ic_ll = d_raw_b14.get("d_log_loss_ic95")
+            ic_br = d_raw_b14.get("d_brier_ic95")
+            ic_t5_ll = t5_stats.get("d_log_loss_vs_B14_ic95")
+            ic_s1_ll = s1_stats.get("d_log_loss_vs_B14_ic95")
+            if ic_ll and ic_ll[1] < 0:
+                rec = "MANTENER_FALSE_EMPEORA_LL_1376"
+            elif ic_ll and ic_ll[0] > 0:
+                rec = "CANDIDATA_TRUE_MEJORA_LL_1376"
+            elif ic_br and ic_br[1] < 0:
+                rec = "MANTENER_FALSE_EMPEORA_BRIER_1376"
+            elif ic_br and ic_br[0] > 0:
+                rec = "CANDIDATA_TRUE_MEJORA_BRIER_1376"
+            elif (ic_t5_ll and ic_t5_ll[1] < 0) or (ic_s1_ll and ic_s1_ll[1] < 0):
+                rec = "MANTENER_FALSE_EMPEORA_TOP5_O_SEC1"
+            elif (ic_t5_ll and ic_t5_ll[0] > 0) or (ic_s1_ll and ic_s1_ll[0] > 0):
+                rec = "CANDIDATA_TRUE_MEJORA_TOP5_O_SEC1"
+            elif n_filas_ch == 0 and t5_stats.get("n_lineas_cambiadas_vs_B14") == 0 and s1_stats.get("n_lineas_cambiadas_vs_B14") == 0 and res_c["est_analizar_total"] == ref_b14["est_analizar_total"] and res_c["abst_goles_mitad"] == ref_b14["abst_goles_mitad"] and nom != "sin_usar_kelly_conservador_min_3pct":
+                rec = "MANTENER_FALSE_SIN_EFECTO_OOS24"
+            else:
+                rec = "MANTENER_FALSE_IC_CRUZA_CERO"
+
+        return {
+            "config": nom,
+            "bandera_quitada": bandera_quitada,
+            "catalogo_1376": {
+                "n_partidos_unicos": boot_1376.get("n_partidos_unicos"),
+                "n_filas": boot_1376.get("n_filas"),
+                "brier": v_raw.get("brier"),
+                "brier_ic95": v_raw.get("brier_ic95"),
+                "log_loss": v_raw.get("log_loss"),
+                "log_loss_ic95": v_raw.get("log_loss_ic95"),
+                "d_brier_vs_B14": d_raw_b14.get("d_brier"),
+                "d_brier_vs_B14_ic95": d_raw_b14.get("d_brier_ic95"),
+                "d_log_loss_vs_B14": d_raw_b14.get("d_log_loss"),
+                "d_log_loss_vs_B14_ic95": d_raw_b14.get("d_log_loss_ic95"),
+                "d_brier_vs_soloA": d_raw_sa.get("d_brier"),
+                "d_brier_vs_soloA_ic95": d_raw_sa.get("d_brier_ic95"),
+                "d_log_loss_vs_soloA": d_raw_sa.get("d_log_loss"),
+                "d_log_loss_vs_soloA_ic95": d_raw_sa.get("d_log_loss_ic95"),
+                "n_filas_cambiadas_vs_B14": n_filas_ch,
+                "n_partidos_cambiados_vs_B14": len(pids_ch),
+            },
+            "catalogo_1376_calibrado_efectivo": {
+                "brier": v_cal.get("brier"),
+                "brier_ic95": v_cal.get("brier_ic95"),
+                "log_loss": v_cal.get("log_loss"),
+                "log_loss_ic95": v_cal.get("log_loss_ic95"),
+                "d_brier_vs_B14": d_cal_b14.get("d_brier"),
+                "d_brier_vs_B14_ic95": d_cal_b14.get("d_brier_ic95"),
+                "d_log_loss_vs_B14": d_cal_b14.get("d_log_loss"),
+                "d_log_loss_vs_B14_ic95": d_cal_b14.get("d_log_loss_ic95"),
+            },
+            "cobertura_y_gates_26_jobs": {
+                "n_estimables_catalogo": res_c["est_catalogo_total"],
+                "delta_estimables_catalogo_vs_B14": res_c["est_catalogo_total"] - ref_b14["est_catalogo_total"],
+                "n_estimables_analizar": res_c["est_analizar_total"],
+                "delta_estimables_analizar_vs_B14": res_c["est_analizar_total"] - ref_b14["est_analizar_total"],
+                "n_sides_abstenidos_goles_mitad": res_c["abst_goles_mitad"],
+            },
+            "top5_24_unicos": t5_stats,
+            "seccion1_24_unicos": s1_stats,
+            "kelly_top5_pct": {
+                "stake_medio_pct": kelly_mean,
+                "stake_max_observado_pct": kelly_max,
+                "n_stakes": len(stakes),
+            },
+            "recomendacion_defecto": rec,
+        }
+
+    baselines = {
+        nom: _resumen_cfg_completo(nom, None, i)
+        for i, nom in enumerate(("B_14", "B_9", "soloA"))
+    }
+    tabla_loo = [
+        _resumen_cfg_completo(f"sin_{f}", f, 10 + i)
+        for i, f in enumerate(flags_14)
+    ]
+
+    out = {
+        "cohorte": {
+            "n_partidos_unicos_oos": len(jids_24),
+            "n_jobs_oos": len(jobs_data),
+            "n_filas_comunes_catalogo": boot_1376.get("n_filas"),
+            "n_boot": n_boot,
+            "seed": seed,
+            "nota_interpretacion_signo": (
+                "En d_brier_vs_B14 y d_log_loss_vs_B14 (= metricas(B_sin_bandera) - metricas(B_14)): "
+                "un valor NEGATIVO significa que quitar esa bandera MEJORA el error (la bandera empeoraba), "
+                "y un valor POSITIVO significa que quitarla EMPEORA el error (la bandera aportaba mejora)."
+            ),
+        },
+        "banderas_defecto_actuales": dict(BANDERAS_COMPORTAMIENTO_DEFECTO),
+        "baselines": baselines,
+        "tabla_leave_one_out_14_banderas": tabla_loo,
+    }
+    if guardar_ruta:
+        out_p = _Path_r13(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out
