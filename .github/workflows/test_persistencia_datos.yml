@@ -1,6 +1,9 @@
 name: Test Persistencia Datos (Simulacro Sin Telegram)
 
 on:
+  push:
+    branches:
+      - pruebas-persistencia-datos
   workflow_dispatch:
     inputs:
       rama_pruebas:
@@ -18,6 +21,7 @@ permissions:
 
 jobs:
   smoke_persistencia_datos:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout completo del repositorio
@@ -41,10 +45,12 @@ jobs:
           MPLBACKEND: "Agg"
           PYTHONIOENCODING: "utf-8"
           PERSISTENCIA_PRODUCCION_ACTIVA: "1"
-          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}
+          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || vars.PERSISTENCIA_RAMA_DATOS || 'pruebas-persistencia-datos' }}
+          PERSISTENCIA_REMOTO_URL: ${{ vars.PERSISTENCIA_REMOTO_URL || secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN || github.token }}
         run: |
           mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
-          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}"
+          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}"
 
       - name: Subir respaldo forense en Artefactos
         if: always()

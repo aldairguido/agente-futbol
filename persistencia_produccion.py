@@ -35,6 +35,7 @@ import tempfile
 import threading
 import time
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 
 RUTA_LEDGER_REL = "informes/evaluacion/ledger_oos.jsonl"
@@ -55,6 +56,8 @@ class ConfigPersistencia:
     workspace_dir: Path
     remote: str = "origin"
     rama_datos: str = "produccion-datos"
+    remote_url: str = ""
+    remote_token: str = field(default="", repr=False)
     worktree_dir: Path | None = None
     habilitada: bool = False
     max_reintentos_push: int = 4
@@ -70,6 +73,8 @@ class ConfigPersistencia:
             workspace_dir=raiz,
             remote=os.getenv("PERSISTENCIA_REMOTE", "origin").strip() or "origin",
             rama_datos=os.getenv("PERSISTENCIA_RAMA_DATOS", "produccion-datos").strip() or "produccion-datos",
+            remote_url=os.getenv("PERSISTENCIA_REMOTO_URL", "").strip(),
+            remote_token=os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip(),
             worktree_dir=(
                 Path(os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip())
                 if os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip()
@@ -245,6 +250,14 @@ def reconstruir_ledger_desde_remoto(
             pass
 
 
+def _censurar_secreto(texto: str, token: str | None) -> str:
+    s = str(texto or "")
+    tok = (token or "").strip()
+    if tok and tok in s:
+        s = s.replace(tok, "***")
+    return s
+
+
 def _run_git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *args],
@@ -255,6 +268,92 @@ def _run_git(cwd: Path, *args: str, check: bool = True) -> subprocess.CompletedP
         capture_output=True,
         check=check,
     )
+
+
+def resolver_objetivo_remoto(ws: Path, cfg: ConfigPersistencia) -> tuple[str, str]:
+    """
+    Resuelve `(alias_remoto, url_efectiva)` sin hardcodear repositorios:
+    prioriza `cfg.remote_url` (`PERSISTENCIA_REMOTO_URL`) sobre `git remote get-url <remote>`.
+    """
+    url_cfg = (cfg.remote_url or "").strip()
+    if url_cfg:
+        return (cfg.remote or "origin"), url_cfg
+    cp_url = _run_git(ws, "remote", "get-url", cfg.remote, check=False)
+    url_loc = cp_url.stdout.strip() if (cp_url.returncode == 0 and cp_url.stdout.strip()) else str(ws)
+    return (cfg.remote or "origin"), url_loc
+
+
+def _crear_script_askpass(dir_tmp: Path) -> Path:
+    helper = dir_tmp / "askpass_helper.py"
+    helper.write_text(
+        "import os, sys\n"
+        "p = (sys.argv[1] if len(sys.argv) > 1 else '').lower()\n"
+        "print('x-access-token' if 'username' in p else os.environ.get('_PERSISTENCIA_GIT_TOKEN', ''))\n",
+        encoding="utf-8",
+    )
+    if os.name == "nt":
+        sc = dir_tmp / f"askpass_{os.getpid()}.cmd"
+        sc.write_text(
+            f'@echo off\r\n"{sys.executable}" "{helper}" "%~1"\r\n',
+            encoding="utf-8",
+        )
+    else:
+        sc = dir_tmp / f"askpass_{os.getpid()}.sh"
+        sc.write_text(
+            f'#!/bin/sh\nexec "{sys.executable}" "{helper}" "$1"\n',
+            encoding="utf-8",
+        )
+        os.chmod(sc, 0o700)
+    return sc
+
+
+def _run_git_con_auth(
+    cwd: Path,
+    cfg: ConfigPersistencia,
+    *args: str,
+    target_url: str = "",
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Ejecuta Git con `GIT_ASKPASS` efímero cuando `cfg.remote_token` está presente, sin imprimir credenciales."""
+    tok = (cfg.remote_token or "").strip()
+    es_http = target_url.lower().startswith(("http://", "https://"))
+    if not tok or not es_http:
+        return _run_git(cwd, *args, check=check)
+
+    extra_args: list[str] = []
+    partes = urlsplit(target_url)
+    if partes.scheme and partes.netloc:
+        base_host = f"{partes.scheme}://{partes.netloc}/"
+        extra_args.extend(["-c", f"http.{base_host}.extraheader="])
+
+    ask_dir = Path(tempfile.mkdtemp(prefix=".git_askpass_"))
+    try:
+        sc_path = _crear_script_askpass(ask_dir)
+        env = dict(os.environ)
+        env["GIT_TERMINAL_PROMPT"] = "0"
+        env["GIT_ASKPASS"] = str(sc_path)
+        env["_PERSISTENCIA_GIT_TOKEN"] = tok
+        cp = subprocess.run(
+            ["git", *extra_args, *args],
+            cwd=str(cwd),
+            env=env,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=False,
+        )
+        cp = subprocess.CompletedProcess(
+            args=cp.args,
+            returncode=cp.returncode,
+            stdout=_censurar_secreto(cp.stdout, tok),
+            stderr=_censurar_secreto(cp.stderr, tok),
+        )
+        if check and cp.returncode != 0:
+            raise subprocess.CalledProcessError(cp.returncode, ["git", *args], output=cp.stdout, stderr=cp.stderr)
+        return cp
+    finally:
+        _rmtree_seguro(ask_dir)
 
 
 def _merge_registro_evaluaciones(remoto_txt: str | None, local_path: Path, dst_path: Path) -> bool:
@@ -294,13 +393,27 @@ def _listar_archivos_git_ref(repo_dir: Path, ref: str, prefix: str) -> list[str]
 
 def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
     """
-    Al iniciar un runner limpio, trae de `origin/<rama_datos>` todos los snapshots,
+    Al iniciar un runner limpio, trae de `<remoto>/<rama_datos>` todos los snapshots,
     evaluaciones, eventos y reconstruye `ledger_oos.jsonl` desde la copia remota.
     """
     ws = cfg.workspace_dir
-    cp_fetch = _run_git(ws, "fetch", cfg.remote, cfg.rama_datos, check=False)
-    ref_rem = f"{cfg.remote}/{cfg.rama_datos}"
-    cp_rev = _run_git(ws, "rev-parse", "--verify", f"refs/remotes/{ref_rem}", check=False)
+    _, target_url = resolver_objetivo_remoto(ws, cfg)
+    if (cfg.remote_url or "").strip():
+        ref_full = f"refs/persistencia_remoto/{cfg.rama_datos}"
+        objetivo = target_url
+    else:
+        ref_full = f"refs/remotes/{cfg.remote}/{cfg.rama_datos}"
+        objetivo = cfg.remote
+    cp_fetch = _run_git_con_auth(
+        ws,
+        cfg,
+        "fetch",
+        objetivo,
+        f"refs/heads/{cfg.rama_datos}:{ref_full}",
+        target_url=target_url,
+        check=False,
+    )
+    cp_rev = _run_git(ws, "rev-parse", "--verify", ref_full, check=False)
     if cp_fetch.returncode != 0 or cp_rev.returncode != 0:
         return {
             "ok": True,
@@ -312,13 +425,13 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
         }
 
     n_pron = 0
-    for rel in _listar_archivos_git_ref(ws, f"refs/remotes/{ref_rem}", DIR_PRONOSTICOS_REL):
+    for rel in _listar_archivos_git_ref(ws, ref_full, DIR_PRONOSTICOS_REL):
         if not rel.endswith(".json"):
             continue
         dst = ws / rel
         if not dst.exists():
             cp_cat = subprocess.run(
-                ["git", "show", f"refs/remotes/{ref_rem}:{rel}"],
+                ["git", "show", f"{ref_full}:{rel}"],
                 cwd=str(ws), capture_output=True, check=False,
             )
             if cp_cat.returncode == 0:
@@ -331,13 +444,13 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
 
     n_eval = 0
     n_ev = 0
-    for rel in _listar_archivos_git_ref(ws, f"refs/remotes/{ref_rem}", DIR_EVALUACION_REL):
+    for rel in _listar_archivos_git_ref(ws, ref_full, DIR_EVALUACION_REL):
         if rel in (RUTA_LEDGER_REL, RUTA_REGISTRO_EVAL_REL):
             continue
         dst = ws / rel
         if not dst.exists():
             cp_cat = subprocess.run(
-                ["git", "show", f"refs/remotes/{ref_rem}:{rel}"],
+                ["git", "show", f"{ref_full}:{rel}"],
                 cwd=str(ws), capture_output=True, check=False,
             )
             if cp_cat.returncode == 0:
@@ -351,12 +464,12 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
                 else:
                     n_eval += 1
 
-    reg_rem_txt = _leer_archivo_git_ref(ws, f"refs/remotes/{ref_rem}", RUTA_REGISTRO_EVAL_REL)
+    reg_rem_txt = _leer_archivo_git_ref(ws, ref_full, RUTA_REGISTRO_EVAL_REL)
     if reg_rem_txt is not None:
         reg_dst = ws / RUTA_REGISTRO_EVAL_REL
         _merge_registro_evaluaciones(reg_rem_txt, reg_dst, reg_dst)
 
-    rem_ledger_txt = _leer_archivo_git_ref(ws, f"refs/remotes/{ref_rem}", RUTA_LEDGER_REL)
+    rem_ledger_txt = _leer_archivo_git_ref(ws, ref_full, RUTA_LEDGER_REL)
     loc_ledger = ws / RUTA_LEDGER_REL
     res_led = reconstruir_ledger_desde_remoto(
         rem_ledger_txt,
@@ -427,15 +540,23 @@ def _preparar_staging_git(cfg: ConfigPersistencia, stage_dir: Path) -> bool:
     stage_dir.mkdir(parents=True, exist_ok=True)
 
     ws = cfg.workspace_dir
-    cp_url = _run_git(ws, "remote", "get-url", cfg.remote, check=False)
-    remote_url = cp_url.stdout.strip() if (cp_url.returncode == 0 and cp_url.stdout.strip()) else str(ws)
+    _, remote_url = resolver_objetivo_remoto(ws, cfg)
 
     _run_git(stage_dir, "init")
     _run_git(stage_dir, "config", "user.name", cfg.author_name)
     _run_git(stage_dir, "config", "user.email", cfg.author_email)
     _run_git(stage_dir, "remote", "add", cfg.remote, remote_url)
 
-    cp_fetch = _run_git(stage_dir, "fetch", "--depth=1", cfg.remote, cfg.rama_datos, check=False)
+    cp_fetch = _run_git_con_auth(
+        stage_dir,
+        cfg,
+        "fetch",
+        "--depth=1",
+        cfg.remote,
+        cfg.rama_datos,
+        target_url=remote_url,
+        check=False,
+    )
     cp_rev = _run_git(stage_dir, "rev-parse", "--verify", "FETCH_HEAD", check=False)
     if cp_fetch.returncode == 0 and cp_rev.returncode == 0:
         _run_git(stage_dir, "checkout", "-B", cfg.rama_datos, "FETCH_HEAD")
@@ -519,7 +640,16 @@ def sincronizar_y_push_datos(
             if simular_antes_de_push is not None:
                 simular_antes_de_push(intento)
 
-            cp_push = _run_git(stage_dir, "push", cfg.remote, f"HEAD:refs/heads/{cfg.rama_datos}", check=False)
+            _, remote_url = resolver_objetivo_remoto(ws, cfg)
+            cp_push = _run_git_con_auth(
+                stage_dir,
+                cfg,
+                "push",
+                cfg.remote,
+                f"HEAD:refs/heads/{cfg.rama_datos}",
+                target_url=remote_url,
+                check=False,
+            )
             if cp_push.returncode == 0:
                 escribir_atomico_texto(ws / RUTA_LEDGER_REL, res_led["contenido"])
                 if (stage_dir / RUTA_REGISTRO_EVAL_REL).exists():
@@ -534,7 +664,7 @@ def sincronizar_y_push_datos(
                     "ledger": {k: v for k, v in res_led.items() if k != "contenido"},
                 }
 
-            err_txt = (cp_push.stderr or cp_push.stdout or "push fallido").strip()
+            err_txt = _censurar_secreto((cp_push.stderr or cp_push.stdout or "push fallido").strip(), cfg.remote_token)
             errores.append(f"intento {intento}: {err_txt}")
             if intento < cfg.max_reintentos_push:
                 time.sleep(cfg.backoff_base_s * intento + random.uniform(0.0, cfg.backoff_base_s * 0.5))
@@ -658,6 +788,8 @@ def ejecutar_smoke_prueba(
     workspace_dir: Path | str | None = None,
     *,
     remote: str = "origin",
+    remote_url: str | None = None,
+    remote_token: str | None = None,
     rama_pruebas: str = "pruebas-persistencia-datos",
     solo_local_sin_push: bool = False,
 ) -> dict[str, Any]:
@@ -722,10 +854,14 @@ def ejecutar_smoke_prueba(
             "entrada_ledger": entrada_fake,
         }
 
+    r_url = (remote_url if remote_url is not None else os.getenv("PERSISTENCIA_REMOTO_URL", "")).strip()
+    r_tok = (remote_token if remote_token is not None else os.getenv("PERSISTENCIA_REMOTO_TOKEN", "")).strip()
     cfg = ConfigPersistencia(
         workspace_dir=ws,
         remote=remote,
-        rama_datos=rama_pruebas,
+        rama_datos=rama_norm,
+        remote_url=r_url,
+        remote_token=r_tok,
         habilitada=True,
     )
     hid = hidratar_desde_remoto_datos(cfg)
@@ -735,7 +871,7 @@ def ejecutar_smoke_prueba(
         id_trabajo=id_trabajo,
         archivos_rel=[rel_snap],
         entradas_ledger=[entrada_fake],
-        mensaje_commit=f"test(r13): registro smoke ficticio {id_trabajo}",
+        mensaje_commit=f"test(r14): registro smoke ficticio {id_trabajo} [skip ci]",
         esperar=True,
         timeout=60.0,
     )
@@ -743,23 +879,30 @@ def ejecutar_smoke_prueba(
     return {
         "ok": bool(res_push.get("ok")),
         "id_trabajo": id_trabajo,
-        "rama_pruebas": rama_pruebas,
+        "rama_pruebas": rama_norm,
+        "remoto_configurado": "url_externa_env" if r_url else remote,
         "hidratacion": hid,
         "push": res_push,
     }
 
 
 def _main_cli() -> int:
-    parser = argparse.ArgumentParser(description="Utilidad CLI de persistencia Git Ronda 13")
+    parser = argparse.ArgumentParser(description="Utilidad CLI de persistencia Git")
     parser.add_argument("--smoke-prueba", action="store_true", help="Ejecuta prueba de escritura ficticia en rama de pruebas.")
-    parser.add_argument("--rama-pruebas", default="pruebas-persistencia-datos", help="Rama de pruebas destino.")
-    parser.add_argument("--remote", default="origin", help="Nombre del remoto Git.")
+    parser.add_argument(
+        "--rama-pruebas",
+        default=os.getenv("PERSISTENCIA_RAMA_DATOS", "").strip() or "pruebas-persistencia-datos",
+        help="Rama de pruebas destino.",
+    )
+    parser.add_argument("--remote", default=os.getenv("PERSISTENCIA_REMOTE", "").strip() or "origin", help="Nombre del remoto Git.")
+    parser.add_argument("--remote-url", default=None, help="URL opcional del remoto de datos.")
     parser.add_argument("--solo-local", action="store_true", help="No hace push; solo genera registro local de prueba.")
     args = parser.parse_args()
 
     if args.smoke_prueba:
         out = ejecutar_smoke_prueba(
             remote=args.remote,
+            remote_url=args.remote_url,
             rama_pruebas=args.rama_pruebas,
             solo_local_sin_push=args.solo_local,
         )
