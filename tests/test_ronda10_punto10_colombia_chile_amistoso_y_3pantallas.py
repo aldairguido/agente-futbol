@@ -21,7 +21,7 @@ import evaluacion_pronosticos as ep
 
 def test_ronda10_punto10_ledger_excluye_amistoso_y_prueba_3_pantallas(tmp_path):
     # 1. Ledger real: Colombia vs Chile 2026-11-13 ya registrado e idempotente
-    rep = ep.auditar_colombia_chile_amistoso_3_pantallas_ronda10(ruta_ledger=None)
+    rep = ep.auditar_colombia_chile_amistoso_3_pantallas_ronda10(ruta_ledger=None, guardar_ruta=None)
     assert rep["cadena_sha256"]["ok"] is True
     assert rep["cadena_sha256"]["entradas"] >= 3
 
