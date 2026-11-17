@@ -86,6 +86,7 @@ flags_comportamiento:
   usar_tercer_brazo_plano_sombra: false  # regla operativa, sin validación cronológica
   usar_sin_dato_si_mitades_no_suman_ft: false  # regla operativa, sin validación cronológica
   usar_unificacion_h_gf_lstm_15: false  # unificación directa/viva _partido_fuente(p) tras bandera
+  usar_corners_reglas_65e377e_diag: false  # diagnóstico in-sample reglas córneres 65e377e
 
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica

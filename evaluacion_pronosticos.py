@@ -12682,3 +12682,184 @@ def auditar_impacto_real_frecuencias_24oos_ronda12(
         out_p.parent.mkdir(parents=True, exist_ok=True)
         out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return out
+
+
+def auditar_corners_65e377e_diag_ronda12(
+    *,
+    n_boot: int = 2000,
+    seed: int = 42,
+    guardar_ruta: str | None = "datos/ronda12_punto7_corners_65e377e_diag.json",
+) -> dict[str, Any]:
+    """
+    ORDEN RONDA 12 - Punto 7 (`CÓRNERES` solo diagnóstico, tras bandera):
+      Evalúa revertir bloqueo, asedio y "Embudo Interior" de `_mu_corners` a `65e377e`
+      (+ Poisson y + Binomial Negativa) sobre las 613 filas de córneres de los 24 OOS
+      (`filas_1376`), comparando Brier y LogLoss con IC95 bootstrap por partido frente
+      a `arch`, `5e8425f`, `soloA` y `A+B`. Declara explícitamente evaluación IN-SAMPLE.
+    """
+    from pathlib import Path
+    from decision_cobertura import bandera_activa, banderas_comportamiento
+    import motor_mercados as mm
+
+    raiz = Path(__file__).resolve().parent
+    oos = json.loads((raiz / "datos" / "oos_conciliacion_ronda7_ronda8.json").read_text(encoding="utf-8"))
+    f1376 = [
+        r for r in (oos.get("filas_1506") or [])
+        if all(k in (r.get("probs") or {}) for k in ("arch", "5e8425f", "994209a", "soloA", "A+B"))
+    ]
+    fc = [
+        r for r in f1376
+        if "corner" in str(r.get("mercado") or "").lower()
+        or "córner" in str(r.get("mercado") or "").lower()
+        or "corner" in str(r.get("evento") or "").lower()
+    ]
+
+    jmap_data = json.loads((raiz / "datos" / "ronda10_oos_26_jobs_map.json").read_text(encoding="utf-8"))
+    jobs_map = dict(jmap_data.get("jobs") or {})
+    no_comp_jids = set(jmap_data.get("no_comp_jids") or [])
+
+    merc_by_job: dict[str, dict[str, Any]] = {}
+    for fp in sorted((raiz / "informes" / "mercados").rglob("mercados_*.json")):
+        md = json.loads(fp.read_text(encoding="utf-8"))
+        if md.get("id_trabajo"):
+            merc_by_job[str(md["id_trabajo"])] = md
+
+    jids_c = sorted({str(r["id_trabajo"]) for r in fc})
+    docs_por_jid: dict[str, tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = {}
+    for jid in jids_c:
+        fpl, fpv, cut = jobs_map[jid]
+        dl = json.loads((raiz / fpl).read_text(encoding="utf-8"))
+        dv = json.loads((raiz / fpv).read_text(encoding="utf-8"))
+        dlc = mm.filtrar_por_fecha(dl, cut) if cut else dl
+        dvc = mm.filtrar_por_fecha(dv, cut) if cut else dv
+        docs_por_jid[jid] = (dlc, dvc, merc_by_job[jid]["metadatos"])
+
+    cfgs: dict[str, dict[str, bool]] = {
+        "head_soloA": {"activar_todas": False},
+        "head_AB": {"activar_todas": True},
+        "65e377e_poisson_soloA": {
+            "activar_todas": False,
+            "usar_corners_reglas_65e377e_diag": True,
+            "usar_sobredispersion_nb_corners": False,
+        },
+        "65e377e_nb_soloA": {
+            "activar_todas": False,
+            "usar_corners_reglas_65e377e_diag": True,
+            "usar_sobredispersion_nb_corners": True,
+        },
+        "65e377e_nb_AB": {
+            "activar_todas": True,
+            "usar_corners_reglas_65e377e_diag": True,
+        },
+    }
+
+    probs_cfg: dict[str, dict[str, dict[tuple[str, str, str | None, float | None], float]]] = {c: {} for c in cfgs}
+    mu_cfg: dict[str, dict[str, tuple[float | None, float | None]]] = {c: {} for c in cfgs}
+    for cfg_name, flg in cfgs.items():
+        with banderas_comportamiento(**flg):
+            for jid in jids_c:
+                dlc, dvc, meta = docs_por_jid[jid]
+                par = mm.Parametros()
+                if meta.get("competicion") and jid not in no_comp_jids:
+                    par.competicion = str(meta["competicion"])
+                mot = mm.MotorMercados(
+                    dlc, dvc,
+                    meta.get("condicion_local") or "casa",
+                    meta.get("condicion_visitante") or "fuera",
+                    meta["equipo_local"], meta["equipo_visitante"],
+                    par,
+                )
+                mot.preparar()
+                res = mot.evaluar_catalogo()
+                mu_cfg[cfg_name][jid] = (mot._mu_corners("local"), mot._mu_corners("visitante"))
+                mp: dict[tuple[str, str, str | None, float | None], float] = {}
+                for rm in (res or []):
+                    for sel in getattr(rm, "selecciones", None) or []:
+                        p_s = getattr(sel, "probabilidad", None)
+                        if p_s is None:
+                            continue
+                        k = _normalizar_clave_seleccion_ronda10(
+                            getattr(sel, "evento", None),
+                            getattr(sel, "periodo", "FT"),
+                            getattr(sel, "equipo", None),
+                            getattr(sel, "linea", None),
+                        )
+                        mp[k] = float(p_s)
+                probs_cfg[cfg_name][jid] = mp
+
+    obs_613: list[tuple[str, int, dict[str, float]]] = []
+    obs_total_corners: list[tuple[str, int, dict[str, float]]] = []
+    obs_equipo_corners: list[tuple[str, int, dict[str, float]]] = []
+    mism_sa = 0
+    mism_ab = 0
+
+    for r in fc:
+        jid = str(r["id_trabajo"])
+        pid = str(r.get("id_partido") or r.get("partido") or jid)
+        y = int(r["evento_ocurrio"])
+        k = _normalizar_clave_seleccion_ronda10(r.get("evento"), r.get("periodo"), r.get("equipo"), r.get("linea"))
+        p_sa = probs_cfg["head_soloA"][jid].get(k)
+        p_ab = probs_cfg["head_AB"][jid].get(k)
+        if p_sa is None or abs(float(p_sa) - float(r["probs"]["soloA"])) > 1e-4:
+            mism_sa += 1
+        if p_ab is None or abs(float(p_ab) - float(r["probs"]["A+B"])) > 1e-4:
+            mism_ab += 1
+        probs_d = {
+            "arch": float(r["probs"]["arch"]),
+            "5e8425f": float(r["probs"]["5e8425f"]),
+            "soloA": float(p_sa if p_sa is not None else r["probs"]["soloA"]),
+            "A+B": float(p_ab if p_ab is not None else r["probs"]["A+B"]),
+            "65e377e_poisson_soloA": float(probs_cfg["65e377e_poisson_soloA"][jid][k]),
+            "65e377e_nb_soloA": float(probs_cfg["65e377e_nb_soloA"][jid][k]),
+            "65e377e_nb_AB": float(probs_cfg["65e377e_nb_AB"][jid][k]),
+        }
+        obs_613.append((pid, y, probs_d))
+        if r.get("equipo"):
+            obs_equipo_corners.append((pid, y, probs_d))
+        else:
+            obs_total_corners.append((pid, y, probs_d))
+
+    boot_613 = bootstrap_brier_logloss_por_partido(obs_613, n_boot=n_boot, seed=seed)
+    boot_tot = bootstrap_brier_logloss_por_partido(obs_total_corners, n_boot=n_boot, seed=seed + 1)
+    boot_eq = bootstrap_brier_logloss_por_partido(obs_equipo_corners, n_boot=n_boot, seed=seed + 2)
+
+    cambio_mu_jobs: list[dict[str, Any]] = []
+    for jid in jids_c:
+        ml_h, mv_h = mu_cfg["head_soloA"][jid]
+        ml_65, mv_65 = mu_cfg["65e377e_poisson_soloA"][jid]
+        meta = docs_por_jid[jid][2]
+        cambio_mu_jobs.append({
+            "job_id": jid,
+            "partido": f"{meta.get('equipo_local')} vs {meta.get('equipo_visitante')}",
+            "mu_head": [round(float(ml_h), 4) if ml_h is not None else None, round(float(mv_h), 4) if mv_h is not None else None],
+            "mu_65e377e": [round(float(ml_65), 4) if ml_65 is not None else None, round(float(mv_65), 4) if mv_65 is not None else None],
+            "delta_mu_total": round(float((ml_65 + mv_65) - (ml_h + mv_h)), 4) if (None not in (ml_h, mv_h, ml_65, mv_65)) else None,
+        })
+
+    out = {
+        "bandera_usar_corners_reglas_65e377e_diag_defecto": bandera_activa("usar_corners_reglas_65e377e_diag"),
+        "declaracion_in_sample": True,
+        "advertencia_metodologica": (
+            "IN-SAMPLE: Esta evaluación diagnostica sobre las 613 filas de córneres de los 24 OOS "
+            "(18 partidos únicos con mercado de córneres en filas_1376) revierte las reglas de bloqueo, "
+            "asedio y Embudo Interior a `65e377e` + NB (`usar_sobredispersion_nb_corners=True`) de forma "
+            "retrospectiva sobre los mismos datos donde se detectó el empeoramiento; no constituye prueba "
+            "OOS independiente y permanece detrás de `usar_corners_reglas_65e377e_diag=False`."
+        ),
+        "verificacion_reconstruccion": {
+            "n_filas_corners": len(fc),
+            "n_jobs_corners": len(jids_c),
+            "n_partidos_unicos": boot_613["n_partidos_unicos"],
+            "mismatches_soloA_vs_1376": mism_sa,
+            "mismatches_AB_vs_1376": mism_ab,
+        },
+        "metricas_613_filas": boot_613,
+        "desglose_total_corners": boot_tot,
+        "desglose_corners_por_equipo": boot_eq,
+        "impacto_mu_por_job": cambio_mu_jobs,
+    }
+    if guardar_ruta:
+        out_p = Path(guardar_ruta) if os.path.isabs(guardar_ruta) else (raiz / guardar_ruta)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return out

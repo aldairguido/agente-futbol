@@ -3112,20 +3112,29 @@ class MotorMercados:
 
             # factor_bloqueo_bandas = 0.60 + 0.20 * (centros_propios / 18.0) + 0.20 * (bloqueos_rival + despejes_rival / 8.0) / 5.0
             factor_bloqueo = 0.60 + 0.20 * (centros / 18.0) + 0.20 * ((bloq_riv + (desp_riv / 8.0)) / 5.0)
-            p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
-            factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
-            diff_lam = lam_p - lam_r
-            if diff_lam >= 0.55 and bloq_riv < 2.2:
-                factor_bloqueo *= 0.94
-            elif abs(diff_lam) <= 0.35 and centros >= 20.0:
-                factor_bloqueo *= 1.06
-            rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
-            rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
-            p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
-            if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
-                factor_bloqueo *= 0.90
-            # Punto 1.8: Tope protector de recorte a mu de córneres (máx 10% sin validación cronológica)
-            factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))
+            from decision_cobertura import bandera_activa as _ba_mc_65
+            if _ba_mc_65("usar_corners_reglas_65e377e_diag"):
+                factor_bloqueo = max(0.78, min(1.18, factor_bloqueo))
+                diff_lam = lam_p - lam_r
+                if diff_lam >= 0.55 and bloq_riv < 2.2:
+                    factor_bloqueo *= 0.90
+                elif abs(diff_lam) <= 0.35 and centros >= 20.0:
+                    factor_bloqueo *= 1.08
+            else:
+                p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
+                factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
+                diff_lam = lam_p - lam_r
+                if diff_lam >= 0.55 and bloq_riv < 2.2:
+                    factor_bloqueo *= 0.94
+                elif abs(diff_lam) <= 0.35 and centros >= 20.0:
+                    factor_bloqueo *= 1.06
+                rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
+                rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
+                p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
+                if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
+                    factor_bloqueo *= 0.90
+                # Punto 1.8: Tope protector de recorte a mu de córneres (máx 10% sin validación cronológica)
+                factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))
             base = base * factor_bloqueo
         except Exception:
             pass

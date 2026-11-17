@@ -54,6 +54,7 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_tercer_brazo_plano_sombra": False,
     "usar_sin_dato_si_mitades_no_suman_ft": False,
     "usar_unificacion_h_gf_lstm_15": False,
+    "usar_corners_reglas_65e377e_diag": False,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -68,6 +69,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_tercer_brazo_plano_sombra",
     "usar_sin_dato_si_mitades_no_suman_ft",
     "usar_unificacion_h_gf_lstm_15",
+    "usar_corners_reglas_65e377e_diag",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
