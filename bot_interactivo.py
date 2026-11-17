@@ -75,7 +75,7 @@ CHAT_ID_AUTORIZADO = (
     or getattr(config, "TELEGRAM_CHAT_ID", "")
 ).strip().strip('"').strip("'")
 
-print(f"[BOT TELEGRAM] 🔑 Token leído (primeros 5 caracteres): '{TOKEN[:5]}' (longitud: {len(TOKEN)})")
+print(f"[BOT TELEGRAM] 🔑 Token Telegram configurado: {'sí' if TOKEN else 'no'}")
 
 # Variable global de control de concurrencia
 lock_analisis = threading.Lock()
