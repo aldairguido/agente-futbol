@@ -46,6 +46,7 @@ jobs:
           PERSISTENCIA_PRODUCCION_ACTIVA: "1"
           PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
           PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
         run: |
           python -u -m persistencia_produccion --inicializar-produccion-limpia --rama-produccion produccion-datos --ci-anotacion
 
@@ -57,6 +58,7 @@ jobs:
           PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}
           PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
           PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
         run: |
           mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
           timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}" --ci-anotacion

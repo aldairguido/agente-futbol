@@ -109,12 +109,15 @@ def _censurar_token(texto: str) -> str:
         s = s.replace(TOKEN, "***TOKEN***")
     tok_rem = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
     url_rem = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
+    ssh_rem = os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "").strip()
     try:
         from persistencia_produccion import _censurar_secreto
-        s = _censurar_secreto(s, tok_rem, url_rem)
+        s = _censurar_secreto(s, tok_rem, url_rem, ssh_rem)
     except Exception:
         if tok_rem and len(tok_rem) >= 4:
             s = s.replace(tok_rem, "***")
+        if ssh_rem and ssh_rem in s:
+            s = s.replace(ssh_rem, "***SSH_PRIVATE_KEY***")
         if url_rem and url_rem in s:
             s = s.replace(url_rem, "[remoto-datos]")
     return s

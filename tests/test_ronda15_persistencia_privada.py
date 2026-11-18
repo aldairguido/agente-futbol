@@ -474,3 +474,131 @@ def test_ronda15_auth_git_anula_extraheader_heredado_y_censura_anotacion_ci(
         assert url_priv not in out_ci
     finally:
         srv.shutdown()
+
+
+def test_ronda16_ssh_deploy_key_git_ssh_command_censura_y_rechazo_origin(
+    tmp_path, monkeypatch, capsys
+):
+    import re
+    import stat
+
+    _, _, runner = _init_repos_publico_y_privado(tmp_path)
+
+    # 1. URL SSH equivalente a origin (tanto si origin es HTTPS como si origin es SSH) se rechaza
+    _git(runner, "remote", "set-url", "origin", "https://github.com/aldairguido/agente-futbol.git")
+    for url_ssh_eq in (
+        "git@github.com:aldairguido/agente-futbol.git",
+        "git@github.com:aldairguido/agente-futbol",
+        "ssh://git@github.com/aldairguido/agente-futbol.git",
+    ):
+        monkeypatch.setenv("PERSISTENCIA_PRODUCCION_ACTIVA", "1")
+        monkeypatch.setenv("PERSISTENCIA_REMOTO_URL", url_ssh_eq)
+        cfg_eq = pp.ConfigPersistencia.desde_entorno(runner)
+        assert cfg_eq.habilitada is False, url_ssh_eq
+        assert cfg_eq.codigo_estado == "rechazada_url_igual_origin", url_ssh_eq
+
+    _git(runner, "remote", "set-url", "origin", "git@github.com:aldairguido/agente-futbol.git")
+    for url_eq_2 in (
+        "git@github.com:aldairguido/agente-futbol.git",
+        "https://github.com/aldairguido/agente-futbol.git",
+    ):
+        monkeypatch.setenv("PERSISTENCIA_REMOTO_URL", url_eq_2)
+        cfg_eq2 = pp.ConfigPersistencia.desde_entorno(runner)
+        assert cfg_eq2.habilitada is False, url_eq_2
+        assert cfg_eq2.codigo_estado == "rechazada_url_igual_origin", url_eq_2
+
+    # 2. _censurar_secreto y bot_interactivo._censurar_token cubren claves privadas SSH y URLs SSH
+    fake_ssh_key = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+        "b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW\n"
+        "QyNTUxOQAAACD9fakesecretline1234567890ABCDEFG==\n"
+        "-----END OPENSSH PRIVATE KEY-----"
+    )
+    ssh_url_priv = "git@github.com:aldairguido/agente-futbol-datos.git"
+    monkeypatch.setenv("PERSISTENCIA_REMOTO_SSH_KEY", fake_ssh_key)
+    monkeypatch.setenv("PERSISTENCIA_REMOTO_URL", ssh_url_priv)
+
+    texto_fuga = (
+        f"Error autenticando en {ssh_url_priv} con clave:\n{fake_ssh_key}\n"
+        "Linea suelta: QyNTUxOQAAACD9fakesecretline1234567890ABCDEFG=="
+    )
+    censurado = pp._censurar_secreto(texto_fuga, None, ssh_url_priv, fake_ssh_key)
+    assert "BEGIN OPENSSH PRIVATE KEY" not in censurado
+    assert "QyNTUxOQAAACD9fakesecretline1234567890ABCDEFG==" not in censurado
+    assert "agente-futbol-datos" not in censurado
+    assert "***SSH_PRIVATE_KEY***" in censurado
+    assert "[remoto-datos]" in censurado
+
+    censurado_bot = bi._censurar_token(texto_fuga)
+    assert "BEGIN OPENSSH PRIVATE KEY" not in censurado_bot
+    assert "QyNTUxOQAAACD9fakesecretline1234567890ABCDEFG==" not in censurado_bot
+    assert "agente-futbol-datos" not in censurado_bot
+
+    # 3. _run_git_con_auth en modo SSH usa GIT_SSH_COMMAND con clave temporal 0600 borrada al terminar
+    captura_ssh: dict[str, object] = {}
+    real_run = subprocess.run
+
+    def _spy_run(cmd, *args, **kwargs):
+        env_call = kwargs.get("env") or {}
+        if isinstance(cmd, list) and cmd and cmd[0] == "git" and "GIT_SSH_COMMAND" in env_call:
+            ssh_cmd = str(env_call["GIT_SSH_COMMAND"])
+            captura_ssh["git_ssh_command"] = ssh_cmd
+            m_key = re.search(r'-i\s+"([^"]+)"', ssh_cmd)
+            assert m_key is not None, ssh_cmd
+            kpath = Path(m_key.group(1))
+            captura_ssh["key_path"] = kpath
+            captura_ssh["existia_durante_run"] = kpath.exists()
+            captura_ssh["contenido_durante_run"] = kpath.read_text(encoding="utf-8")
+            captura_ssh["modo_durante_run"] = stat.S_IMODE(kpath.stat().st_mode)
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=128,
+                stdout="",
+                stderr=f"Permission denied (publickey) for {ssh_url_priv} with {fake_ssh_key}",
+            )
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _spy_run)
+    cfg_ssh = pp.ConfigPersistencia(
+        workspace_dir=runner,
+        remote="datos",
+        remote_url=ssh_url_priv,
+        remote_ssh_key=fake_ssh_key,
+        rama_datos="produccion-datos",
+        habilitada=True,
+    )
+    cp_ssh = pp._run_git_con_auth(
+        runner,
+        cfg_ssh,
+        "ls-remote",
+        "--symref",
+        ssh_url_priv,
+        "HEAD",
+        target_url=ssh_url_priv,
+        check=False,
+    )
+    assert cp_ssh.returncode == 128
+    assert "BEGIN OPENSSH PRIVATE KEY" not in cp_ssh.stderr
+    assert "agente-futbol-datos" not in cp_ssh.stderr
+    assert captura_ssh.get("existia_durante_run") is True
+    assert str(captura_ssh.get("contenido_durante_run")).strip() == fake_ssh_key.strip()
+    assert "StrictHostKeyChecking=accept-new" in str(captura_ssh.get("git_ssh_command"))
+    assert "IdentitiesOnly=yes" in str(captura_ssh.get("git_ssh_command"))
+    if os.name != "nt":
+        assert captura_ssh.get("modo_durante_run") == 0o600
+    kpath_final = captura_ssh.get("key_path")
+    assert isinstance(kpath_final, Path) and not kpath_final.exists()
+
+    # 4. Anotación CI y workflow incluyen PERSISTENCIA_REMOTO_SSH_KEY sin filtrar la clave
+    capsys.readouterr()
+    pp._emitir_anotacion_ci_segura(
+        "init_prod",
+        {"ok": False, "codigo_error": "error_remoto_auth_o_red", "error": f"fallo {fake_ssh_key} en {ssh_url_priv}"},
+    )
+    out_anot = capsys.readouterr().out
+    assert "has_ssh=1" in out_anot
+    assert "BEGIN OPENSSH PRIVATE KEY" not in out_anot
+    assert "agente-futbol-datos" not in out_anot
+
+    wf_txt = (Path(ROOT) / ".github" / "workflows" / "test_persistencia_datos.yml").read_text(encoding="utf-8")
+    assert "secrets.PERSISTENCIA_REMOTO_SSH_KEY" in wf_txt

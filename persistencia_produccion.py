@@ -113,6 +113,17 @@ def validar_rama_datos(
     return rama
 
 
+def _es_url_ssh_git(url: str | None) -> bool:
+    """Devuelve True si `url` usa sintaxis SSH (`git@host:org/repo.git` o `ssh://...`)."""
+    raw = str(url or "").strip()
+    if not raw:
+        return False
+    if raw.lower().startswith(("ssh://", "git+ssh://")):
+        return True
+    m_ssh = re.match(r"^(?:[^@/\s]+@)?([A-Za-z0-9._-]+):(.+)$", raw)
+    return bool(m_ssh and not re.match(r"^[A-Za-z]:[\\/]", raw) and "://" not in raw)
+
+
 @dataclass
 class ConfigPersistencia:
     workspace_dir: Path
@@ -120,6 +131,7 @@ class ConfigPersistencia:
     rama_datos: str = "produccion-datos"
     remote_url: str = field(default="", repr=False)
     remote_token: str = field(default="", repr=False)
+    remote_ssh_key: str = field(default="", repr=False)
     worktree_dir: Path | None = None
     habilitada: bool = False
     max_reintentos_push: int = 4
@@ -136,6 +148,7 @@ class ConfigPersistencia:
         activa_env = persistencia_activa()
         r_url = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
         r_tok = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
+        r_ssh = os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "").strip()
         rama = os.getenv("PERSISTENCIA_RAMA_DATOS", "produccion-datos").strip() or "produccion-datos"
         wt_s = os.getenv("PERSISTENCIA_WORKTREE_DIR", "").strip()
 
@@ -145,6 +158,7 @@ class ConfigPersistencia:
             rama_datos=rama,
             remote_url=r_url,
             remote_token=r_tok,
+            remote_ssh_key=r_ssh,
             worktree_dir=Path(wt_s) if wt_s else None,
             habilitada=activa_env,
             max_reintentos_push=max(1, int(os.getenv("PERSISTENCIA_MAX_REINTENTOS", "4") or "4")),
@@ -363,8 +377,27 @@ def _censurar_secreto(
     texto: str,
     token: str | None = None,
     remote_url: str | None = None,
+    ssh_key: str | None = None,
 ) -> str:
     s = str(texto or "")
+    s = re.sub(
+        r"-----BEGIN [A-Z0-9 _-]+PRIVATE KEY-----[\s\S]*?-----END [A-Z0-9 _-]+PRIVATE KEY-----",
+        "***SSH_PRIVATE_KEY***",
+        s,
+    )
+    s = re.sub(r"-----BEGIN [A-Z0-9 _-]+PRIVATE KEY-----[^\n\r]*", "***SSH_PRIVATE_KEY***", s)
+
+    raw_ssh = (ssh_key if ssh_key is not None else os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "")).strip()
+    if raw_ssh:
+        for variante_k in (raw_ssh, raw_ssh.replace("\r\n", "\n"), raw_ssh.replace("\n", "\r\n")):
+            if variante_k and variante_k in s:
+                s = s.replace(variante_k, "***SSH_PRIVATE_KEY***")
+        for ln_k in raw_ssh.splitlines():
+            ln_clean = ln_k.strip()
+            if len(ln_clean) >= 12 and not ln_clean.startswith("-----"):
+                if ln_clean in s:
+                    s = s.replace(ln_clean, "***SSH_PRIVATE_KEY***")
+
     tok = (token or "").strip()
     if tok:
         if tok in s:
@@ -374,7 +407,7 @@ def _censurar_secreto(
             s = s.replace(tok_b64, "***")
     s = re.sub(r"(https?://)[^/@\s]+@", r"\1***@", s)
     rurl = (remote_url or "").strip()
-    if rurl and rurl.lower().startswith(("http://", "https://")):
+    if rurl and (rurl.lower().startswith(("http://", "https://")) or _es_url_ssh_git(rurl)):
         base_sin_slash = rurl.rstrip("/")
         for cand in (rurl, base_sin_slash, base_sin_slash[:-4] if base_sin_slash.endswith(".git") else f"{base_sin_slash}.git"):
             if cand and cand in s:
@@ -421,7 +454,12 @@ def detectar_rama_defecto_remota(
         check=False,
     )
     if cp.returncode != 0:
-        err = _censurar_secreto((cp.stderr or cp.stdout or "fallo ls-remote HEAD").strip(), cfg.remote_token, target_url)
+        err = _censurar_secreto(
+            (cp.stderr or cp.stdout or "fallo ls-remote HEAD").strip(),
+            cfg.remote_token,
+            target_url,
+            cfg.remote_ssh_key,
+        )
         return (False, None, err)
     for ln in (cp.stdout or "").splitlines():
         m = re.match(r"^ref:\s+refs/heads/([^\s]+)\s+HEAD$", ln.strip())
@@ -454,6 +492,48 @@ def _crear_script_askpass(dir_tmp: Path) -> Path:
     return sc
 
 
+def _escribir_clave_ssh_temporal(dir_tmp: Path, ssh_key_raw: str) -> Path:
+    """Escribe la deploy key SSH en `dir_tmp` con permisos 0600 y salto de línea final."""
+    key_path = dir_tmp / f"deploy_key_{os.getpid()}"
+    contenido = ssh_key_raw.replace("\r\n", "\n").strip() + "\n"
+    data_bytes = contenido.encode("utf-8")
+    fd = os.open(str(key_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, data_bytes)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    try:
+        os.chmod(key_path, 0o600)
+    except OSError:
+        pass
+    return key_path
+
+
+def _borrar_clave_ssh_segura(key_path: Path | None) -> None:
+    """Sobrescribe con ceros y elimina del disco el archivo temporal de clave privada."""
+    if key_path is None:
+        return
+    try:
+        if key_path.exists() and key_path.is_file():
+            tam = max(64, key_path.stat().st_size)
+            try:
+                os.chmod(key_path, stat.S_IWRITE | stat.S_IREAD)
+            except OSError:
+                pass
+            with open(key_path, "r+b") as fh:
+                fh.seek(0)
+                fh.write(b"\x00" * tam)
+                fh.flush()
+                os.fsync(fh.fileno())
+            key_path.unlink(missing_ok=True)
+    except OSError:
+        try:
+            key_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _run_git_con_auth(
     cwd: Path,
     cfg: ConfigPersistencia,
@@ -462,21 +542,25 @@ def _run_git_con_auth(
     check: bool = True,
 ) -> subprocess.CompletedProcess[str]:
     """
-    Ejecuta Git autenticando por `GIT_CONFIG_COUNT` en entorno (sin secretos en argv y
-    anulando cualquier `http.*.extraheader` heredado de `actions/checkout`).
+    Ejecuta Git autenticando:
+      - En modo SSH (`PERSISTENCIA_REMOTO_SSH_KEY` + URL SSH): mediante `GIT_SSH_COMMAND`
+        con clave privada en archivo temporal 0600 borrado al terminar y
+        `StrictHostKeyChecking=accept-new`.
+      - En modo HTTPS + token (`PERSISTENCIA_REMOTO_TOKEN`): mediante `GIT_CONFIG_COUNT`
+        en entorno (anulando cualquier `http.*.extraheader` heredado de `actions/checkout`).
     """
     tok = (cfg.remote_token or "").strip()
+    ssh_key = (cfg.remote_ssh_key or "").strip()
     es_http = target_url.lower().startswith(("http://", "https://"))
-    if not tok or not es_http:
+    es_ssh = _es_url_ssh_git(target_url)
+
+    usar_ssh = bool(ssh_key) and (es_ssh or not es_http)
+    usar_http = bool(tok) and es_http
+    if not usar_ssh and not usar_http:
         return _run_git(cwd, *args, check=check)
 
-    partes = urlsplit(target_url)
-    host_port = f"{partes.hostname}{f':{partes.port}' if partes.port else ''}" if partes.hostname else partes.netloc
-    base_host_clean = f"{partes.scheme}://{host_port}/" if partes.scheme and host_port else ""
-    base_host_netloc = f"{partes.scheme}://{partes.netloc}/" if partes.scheme and partes.netloc else ""
-    tok_b64 = base64.b64encode(f"x-access-token:{tok}".encode("utf-8")).decode("ascii")
-
     neutral_dir = Path(tempfile.mkdtemp(prefix=".git_auth_"))
+    key_path: Path | None = None
     try:
         env = dict(os.environ)
         env["GIT_TERMINAL_PROMPT"] = "0"
@@ -486,11 +570,25 @@ def _run_git_con_auth(
             ("credential.helper", ""),
             ("core.askPass", ""),
         ]
-        if base_host_netloc and base_host_netloc != base_host_clean:
-            cfg_entries.append((f"http.{base_host_netloc}.extraheader", ""))
-        if base_host_clean:
-            cfg_entries.append((f"http.{base_host_clean}.extraheader", ""))
-            cfg_entries.append((f"http.{base_host_clean}.extraheader", f"Authorization: Basic {tok_b64}"))
+        if usar_ssh:
+            key_path = _escribir_clave_ssh_temporal(neutral_dir, ssh_key)
+            key_posix = key_path.as_posix()
+            env["GIT_SSH_COMMAND"] = (
+                f'ssh -i "{key_posix}" -o IdentitiesOnly=yes '
+                "-o StrictHostKeyChecking=accept-new -o BatchMode=yes"
+            )
+        elif usar_http:
+            partes = urlsplit(target_url)
+            host_port = f"{partes.hostname}{f':{partes.port}' if partes.port else ''}" if partes.hostname else partes.netloc
+            base_host_clean = f"{partes.scheme}://{host_port}/" if partes.scheme and host_port else ""
+            base_host_netloc = f"{partes.scheme}://{partes.netloc}/" if partes.scheme and partes.netloc else ""
+            tok_b64 = base64.b64encode(f"x-access-token:{tok}".encode("utf-8")).decode("ascii")
+            if base_host_netloc and base_host_netloc != base_host_clean:
+                cfg_entries.append((f"http.{base_host_netloc}.extraheader", ""))
+            if base_host_clean:
+                cfg_entries.append((f"http.{base_host_clean}.extraheader", ""))
+                cfg_entries.append((f"http.{base_host_clean}.extraheader", f"Authorization: Basic {tok_b64}"))
+
         env["GIT_CONFIG_COUNT"] = str(len(cfg_entries))
         for idx_c, (k_c, v_c) in enumerate(cfg_entries):
             env[f"GIT_CONFIG_KEY_{idx_c}"] = k_c
@@ -510,13 +608,14 @@ def _run_git_con_auth(
         cp = subprocess.CompletedProcess(
             args=cp.args,
             returncode=cp.returncode,
-            stdout=_censurar_secreto(cp.stdout, tok, target_url),
-            stderr=_censurar_secreto(cp.stderr, tok, target_url),
+            stdout=_censurar_secreto(cp.stdout, tok, target_url, ssh_key),
+            stderr=_censurar_secreto(cp.stderr, tok, target_url, ssh_key),
         )
         if check and cp.returncode != 0:
             raise subprocess.CalledProcessError(cp.returncode, ["git", *args], output=cp.stdout, stderr=cp.stderr)
         return cp
     finally:
+        _borrar_clave_ssh_segura(key_path)
         _rmtree_seguro(neutral_dir)
 
 
@@ -1048,6 +1147,7 @@ def inicializar_produccion_limpia(
     remote: str = "datos",
     remote_url: str | None = None,
     remote_token: str | None = None,
+    remote_ssh_key: str | None = None,
     rama_datos: str = "produccion-datos",
 ) -> dict[str, Any]:
     """
@@ -1063,12 +1163,14 @@ def inicializar_produccion_limpia(
 
     r_url = (remote_url if remote_url is not None else os.getenv("PERSISTENCIA_REMOTO_URL", "")).strip()
     r_tok = (remote_token if remote_token is not None else os.getenv("PERSISTENCIA_REMOTO_TOKEN", "")).strip()
+    r_ssh = (remote_ssh_key if remote_ssh_key is not None else os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "")).strip()
     cfg = ConfigPersistencia(
         workspace_dir=ws,
         remote=remote,
         rama_datos=rama_norm,
         remote_url=r_url,
         remote_token=r_tok,
+        remote_ssh_key=r_ssh,
         habilitada=True,
     )
     ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
@@ -1185,6 +1287,7 @@ def ejecutar_smoke_prueba(
     remote: str = "datos",
     remote_url: str | None = None,
     remote_token: str | None = None,
+    remote_ssh_key: str | None = None,
     rama_pruebas: str = "pruebas-persistencia-datos",
     solo_local_sin_push: bool = False,
 ) -> dict[str, Any]:
@@ -1252,12 +1355,14 @@ def ejecutar_smoke_prueba(
 
     r_url = (remote_url if remote_url is not None else os.getenv("PERSISTENCIA_REMOTO_URL", "")).strip()
     r_tok = (remote_token if remote_token is not None else os.getenv("PERSISTENCIA_REMOTO_TOKEN", "")).strip()
+    r_ssh = (remote_ssh_key if remote_ssh_key is not None else os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "")).strip()
     cfg = ConfigPersistencia(
         workspace_dir=ws,
         remote=remote,
         rama_datos=rama_norm,
         remote_url=r_url,
         remote_token=r_tok,
+        remote_ssh_key=r_ssh,
         habilitada=True,
     )
     ok_cfg, cod_cfg, msg_cfg = validar_config_persistencia(cfg)
@@ -1296,17 +1401,18 @@ def ejecutar_smoke_prueba(
 
 
 def _emitir_anotacion_ci_segura(paso: str, out: dict[str, Any]) -> None:
-    """Emite una anotación de GitHub Actions libre de secretos, tokens o URLs privadas."""
+    """Emite una anotación de GitHub Actions libre de secretos, tokens, claves SSH o URLs privadas."""
     r_url = os.getenv("PERSISTENCIA_REMOTO_URL", "").strip()
     r_tok = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
-    limpiar = lambda x: _censurar_secreto(str(x or ""), r_tok, r_url).replace("\n", " ").replace("\r", " ")
+    r_ssh = os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "").strip()
+    limpiar = lambda x: _censurar_secreto(str(x or ""), r_tok, r_url, r_ssh).replace("\n", " ").replace("\r", " ")
     if not out.get("ok"):
         cod = out.get("codigo_error") or (out.get("hidratacion") or {}).get("codigo_error") or "fallo"
         errs = out.get("errores") or (out.get("push") or {}).get("errores") or []
         err = out.get("error") or ("; ".join(str(x) for x in errs) if errs else "error desconocido")
         print(
             f"::error::{paso} codigo_error={limpiar(cod)} has_url={int(bool(r_url))} "
-            f"has_tok={int(bool(r_tok))} detalle={limpiar(err)[:220]}"
+            f"has_tok={int(bool(r_tok))} has_ssh={int(bool(r_ssh))} detalle={limpiar(err)[:220]}"
         )
         return
     if paso == "init_prod":
