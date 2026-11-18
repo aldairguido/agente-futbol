@@ -5745,14 +5745,20 @@ def seleccionar_top_5_jugadas_recomendadas(
     def _prop_goles_2t_cc(cc_d: dict[str, Any]) -> float:
         if not isinstance(cc_d, dict):
             return 0.50
+        if bool(cc_d.get("sin_dato")) or bool((cc_d.get("_meta") or {}).get("sin_dato")):
+            return 0.50
         g1 = 0
         g2 = 0
         for fr in ("00_15", "16_30", "31_45", "00'-15'", "16'-30'", "31'-45'"):
             if isinstance(cc_d.get(fr), dict):
-                g1 += int(cc_d[fr].get("anotados", 0))
+                v_an = cc_d[fr].get("anotados")
+                if v_an is not None:
+                    g1 += int(v_an)
         for fr in ("46_60", "61_75", "76_90", "46'-60'", "61'-75'", "76'-90'"):
             if isinstance(cc_d.get(fr), dict):
-                g2 += int(cc_d[fr].get("anotados", 0))
+                v_an = cc_d[fr].get("anotados")
+                if v_an is not None:
+                    g2 += int(v_an)
         tot = g1 + g2
         return (g2 / tot) if tot > 0 else 0.50
 

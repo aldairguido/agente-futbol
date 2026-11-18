@@ -2896,8 +2896,8 @@ def generar_cuadro_auditoria_15_partidos_png(
 
     cuadro_b_L = calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L) if lista_L else ((doc_local.get("cuadro_b_tendencias") if isinstance(doc_local, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_L, eq_L, d_gen_L))
     cuadro_b_V = calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V) if lista_V else ((doc_visita.get("cuadro_b_tendencias") if isinstance(doc_visita, dict) else None) or calcular_cuadro_b_tendencias_15p(lista_V, eq_V, d_gen_V))
-    cuadro_c_L = (doc_local.get("cuadro_c_timeline") if isinstance(doc_local, dict) else None) or calcular_cuadro_c_timeline_15min(lista_L, d_gen_L)
-    cuadro_c_V = (doc_visita.get("cuadro_c_timeline") if isinstance(doc_visita, dict) else None) or calcular_cuadro_c_timeline_15min(lista_V, d_gen_V)
+    cuadro_c_L = (doc_local.get("cuadro_c_timeline") if isinstance(doc_local, dict) else None) or calcular_cuadro_c_timeline_15min(lista_L, eq_L, d_gen_L)
+    cuadro_c_V = (doc_visita.get("cuadro_c_timeline") if isinstance(doc_visita, dict) else None) or calcular_cuadro_c_timeline_15min(lista_V, eq_V, d_gen_V)
 
     mostrar_adv = False
     if meta.get("advertencia_liga"):
@@ -3025,46 +3025,62 @@ def generar_cuadro_auditoria_15_partidos_png(
         ax.text(x_t, 0.326, t_lbl, fontsize=7.2, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
     ax.text(0.96, 0.326, "TOTAL", fontsize=7.2, fontweight="bold", color="#FFFFFF", ha="center", va="center", transform=ax.transAxes)
 
-    # Punto 44, 45 y Auditoría Londrina-Náutico: Denominador real de Cuadro C (umbral k_eval >= 10)
-    n_ev_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0))
-    n_ev_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0))
-    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15))
-    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15))
+    # Punto 44, 45 y Auditoría Londrina-Náutico / Ronda 18 A: Denominador real por bando (sin_dato -> None/'—')
+    _sd_c_l = bool(cuadro_c_L.get("sin_dato") or (cuadro_c_L.get("_meta") or {}).get("sin_dato"))
+    _sd_c_v = bool(cuadro_c_V.get("sin_dato") or (cuadro_c_V.get("_meta") or {}).get("sin_dato"))
+    n_ev_l = 0 if _sd_c_l else int((cuadro_c_L.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+    n_ev_v = 0 if _sd_c_v else int((cuadro_c_V.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+    n_tot_l = int((cuadro_c_L.get("_meta") or {}).get("n_partidos_totales", len(lista_L) if 'lista_L' in locals() and lista_L else 15) or 0)
+    n_tot_v = int((cuadro_c_V.get("_meta") or {}).get("n_partidos_totales", len(lista_V) if 'lista_V' in locals() and lista_V else 15) or 0)
     n_base = max(15, n_tot_l, n_tot_v)
     k_eval = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
     k_min_cron = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    _ok_fila_L = (not _sd_c_l) and (n_ev_l >= k_min_cron)
+    _ok_fila_V = (not _sd_c_v) and (n_ev_v >= k_min_cron)
+
+    def _safe_c_num(d_m: dict | None, k_m: str) -> int:
+        if not isinstance(d_m, dict):
+            return 0
+        v_m = d_m.get(k_m)
+        return int(round(float(v_m))) if v_m is not None else 0
 
     filas_c_data = [
-        (f"{eq_L} — Anotados (GF)", (cuadro_c_L.get("anotados") or {}), "#E8F5EE", "#1B5E20"),
-        (f"{eq_L} — Recibidos (GC)", (cuadro_c_L.get("recibidos") or {}), "#FFFFFF", "#334155"),
-        (f"{eq_V} — Anotados (GF)", (cuadro_c_V.get("anotados") or {}), "#E3F2FD", "#131D31"),
-        (f"{eq_V} — Recibidos (GC)", (cuadro_c_V.get("recibidos") or {}), "#FFFFFF", "#334155"),
+        (f"{eq_L} — Anotados (GF)", (cuadro_c_L.get("anotados") or {}), "#E8F5EE", "#1B5E20", _ok_fila_L),
+        (f"{eq_L} — Recibidos (GC)", (cuadro_c_L.get("recibidos") or {}), "#FFFFFF", "#334155", _ok_fila_L),
+        (f"{eq_V} — Anotados (GF)", (cuadro_c_V.get("anotados") or {}), "#E3F2FD", "#131D31", _ok_fila_V),
+        (f"{eq_V} — Recibidos (GC)", (cuadro_c_V.get("recibidos") or {}), "#FFFFFF", "#334155", _ok_fila_V),
     ]
-    for idx_c, (nom_flujo, d_tramos, bg_c, col_txt_c) in enumerate(filas_c_data):
+    for idx_c, (nom_flujo, d_tramos, bg_c, col_txt_c, ok_fila_c) in enumerate(filas_c_data):
         y_c = 0.295 - idx_c * 0.0205
         ax.add_patch(Rectangle((0.0, y_c), 1.0, 0.0205, facecolor=bg_c, edgecolor="#CBD5E1", lw=0.6, transform=ax.transAxes))
         ax.text(0.02, y_c + 0.0102, nom_flujo, fontsize=7.2, fontweight="bold", color=col_txt_c, va="center", transform=ax.transAxes)
         tot_flujo = 0
+        fila_tiene_none = False
         for t_lbl, x_t in zip(tramos_c, xs_tramos):
-            v_t = int(round(float(d_tramos.get(t_lbl, 0))))
+            raw_vt = d_tramos.get(t_lbl)
+            if raw_vt is None:
+                fila_tiene_none = True
+            v_t = int(round(float(raw_vt))) if raw_vt is not None else 0
             tot_flujo += v_t
             es_76_90 = (t_lbl == "76'-90'")
-            txt_celda = "—" if k_eval < k_min_cron else str(v_t)
-            col_celda = "#64748B" if k_eval < k_min_cron else ("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c)
-            ax.text(x_t, y_c + 0.0102, txt_celda, fontsize=7.4, fontweight=("bold" if es_76_90 and k_eval >= k_min_cron else "normal"),
+            mostrar_guion = (not ok_fila_c) or (raw_vt is None)
+            txt_celda = "—" if mostrar_guion else str(v_t)
+            col_celda = "#64748B" if mostrar_guion else ("#B91C1C" if es_76_90 and v_t >= 6 else col_txt_c)
+            ax.text(x_t, y_c + 0.0102, txt_celda, fontsize=7.4, fontweight=("bold" if es_76_90 and not mostrar_guion else "normal"),
                     color=col_celda, ha="center", va="center", transform=ax.transAxes)
-        txt_tot_c = "—" if k_eval < k_min_cron else str(tot_flujo)
-        ax.text(0.96, y_c + 0.0102, txt_tot_c, fontsize=7.4, fontweight="bold", color=("#64748B" if k_eval < k_min_cron else "#0F172A"), ha="center", va="center", transform=ax.transAxes)
+        mostrar_tot_guion = (not ok_fila_c) or fila_tiene_none
+        txt_tot_c = "—" if mostrar_tot_guion else str(tot_flujo)
+        ax.text(0.96, y_c + 0.0102, txt_tot_c, fontsize=7.4, fontweight="bold", color=("#64748B" if mostrar_tot_guion else "#0F172A"), ha="center", va="center", transform=ax.transAxes)
 
-    g_76_l = int(round(float((cuadro_c_L.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get("76'-90'", 0))))
-    g_76_v = int(round(float((cuadro_c_V.get("anotados") or {}).get("76'-90'", 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get("76'-90'", 0))))
+    g_76_l = _safe_c_num(cuadro_c_L.get("anotados"), "76'-90'") + _safe_c_num(cuadro_c_V.get("recibidos"), "76'-90'")
+    g_76_v = _safe_c_num(cuadro_c_V.get("anotados"), "76'-90'") + _safe_c_num(cuadro_c_L.get("recibidos"), "76'-90'")
 
     tot_goles_c = 0
     tramos_totales = {}
     for t_k in tramos_c:
-        g_l = int(round(float((cuadro_c_L.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_V.get("recibidos") or {}).get(t_k, 0))))
-        g_v = int(round(float((cuadro_c_V.get("anotados") or {}).get(t_k, 0)))) + int(round(float((cuadro_c_L.get("recibidos") or {}).get(t_k, 0))))
+        g_l = _safe_c_num(cuadro_c_L.get("anotados"), t_k) + _safe_c_num(cuadro_c_V.get("recibidos"), t_k)
+        g_v = _safe_c_num(cuadro_c_V.get("anotados"), t_k) + _safe_c_num(cuadro_c_L.get("recibidos"), t_k)
         tramos_totales[t_k] = (g_l, g_v, g_l + g_v)
         tot_goles_c += (g_l + g_v)
 
@@ -3152,7 +3168,7 @@ def generar_cuadro_auditoria_15_partidos_png(
             "VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?",
             "Si tuvieras que apostar hoy con este Ticket, estas son las 4 conclusiones irrefutables:",
             f"1. Ventaja competitiva clara respaldada por el diferencial de Attack Rating y racha sin derrotas en 15P.",
-            f"2. Alerta máxima en el tramo 76'-90' donde el flujo combinado de goles alcanza su pico estadístico.",
+            f"2. Cronología de goles sin alerta específica por tramo ante cobertura de minutos no concluyente.",
             f"3. Control táctico de posesión y presión alta que modula el volumen de faltas y tarjetas.",
             f"4. Aceleración ofensiva proyectada en la segunda mitad (2T) respaldada por el Patrón #26.",
         ]

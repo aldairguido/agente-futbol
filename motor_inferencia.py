@@ -481,6 +481,8 @@ def calcular_cuadro_c_timeline(
 
     lista = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
     n_con_eventos = 0
+    n_con_minutos_con_gol = 0
+    n_con_goles_sin_minuto = 0
 
     def _parsear_minuto_reglamentario(ev: dict[str, Any]) -> tuple[str | None, bool]:
         """
@@ -569,8 +571,12 @@ def calcular_cuadro_c_timeline(
             rec_sum = sum(int((fr_item.get(fr) or {}).get("recibidos", 0) or 0) for fr in franjas if isinstance(fr_item.get(fr), dict))
             # Exigir cronología completa si el marcador FT está presente
             if gf_i is not None and gc_i is not None and (anot_sum != int(gf_i) or rec_sum != int(gc_i)):
+                if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                    n_con_goles_sin_minuto += 1
                 continue
             n_con_eventos += 1
+            if (anot_sum + rec_sum) > 0:
+                n_con_minutos_con_gol += 1
             for fr in franjas:
                 nodo = fr_item.get(fr)
                 if isinstance(nodo, dict):
@@ -607,13 +613,19 @@ def calcular_cuadro_c_timeline(
                     rec_ev += 1
 
             if evento_invalido:
+                if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                    n_con_goles_sin_minuto += 1
                 continue
             # Exigir cronología completa de goles en 90 minutos reglamentarios:
             # Si el partido terminó 2-1 pero solo hay 2 goles con minuto documentado, queda excluido.
             if gf_i is not None and gc_i is not None:
                 if (anot_ev + rec_ev) != (int(gf_i) + int(gc_i)) or anot_ev != int(gf_i) or rec_ev != int(gc_i):
+                    if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                        n_con_goles_sin_minuto += 1
                     continue
             n_con_eventos += 1
+            if (anot_ev + rec_ev) > 0:
+                n_con_minutos_con_gol += 1
             for fr in franjas:
                 conteo[fr]["anotados"] += temp_fr[fr]["anotados"]
                 conteo[fr]["recibidos"] += temp_fr[fr]["recibidos"]
@@ -622,8 +634,12 @@ def calcular_cuadro_c_timeline(
         # 3) Si el partido terminó 0-0 confirmado, sabemos con certeza que hubo 0 goles en todas las franjas
         if gf_i == 0 and gc_i == 0:
             n_con_eventos += 1
+        elif gf_i is not None and gc_i is not None and (int(gf_i) + int(gc_i)) > 0:
+            n_con_goles_sin_minuto += 1
 
     n_con_eventos_raw = n_con_eventos
+    if n_con_minutos_con_gol == 0 and n_con_goles_sin_minuto > 0:
+        n_con_eventos = 0
     n_con_mitades = n_con_eventos
     n_con_eventos_y_mitades = n_con_eventos
     gf_1t_mit = sum(conteo[fr]["anotados"] for fr in ("00_15", "16_30", "31_45"))
@@ -642,6 +658,7 @@ def calcular_cuadro_c_timeline(
             conteo_mit: Dict[str, Dict[str, int]] = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
             n_mit_ok = 0
             n_ev_mit_ok = 0
+            n_ev_mit_con_gol = 0
             gf1_m, gf2_m, gc1_m, gc2_m = 0, 0, 0, 0
             hubo_descarte_mit = False
             for it in lista:
@@ -681,6 +698,8 @@ def calcular_cuadro_c_timeline(
                             r_it += 1
                     if not inv_it and a_it == int((ge_1t or 0) + (ge_2t or 0)) and r_it == int((gr_1t or 0) + (gr_2t or 0)):
                         n_ev_mit_ok += 1
+                        if (a_it + r_it) > 0:
+                            n_ev_mit_con_gol += 1
                         for fr in franjas:
                             conteo_mit[fr]["anotados"] += tmp_it[fr]["anotados"]
                             conteo_mit[fr]["recibidos"] += tmp_it[fr]["recibidos"]
@@ -696,7 +715,7 @@ def calcular_cuadro_c_timeline(
             n_con_mitades = n_mit_ok
             n_con_eventos_y_mitades = n_ev_mit_ok
             gf_1t_mit, gf_2t_mit, gc_1t_mit, gc_2t_mit = gf1_m, gf2_m, gc1_m, gc2_m
-            if hubo_descarte_mit and n_mit_ok > 0:
+            if hubo_descarte_mit and n_mit_ok > 0 and n_con_minutos_con_gol > 0 and n_ev_mit_con_gol > 0:
                 for fr in franjas:
                     conteo[fr]["anotados"] = conteo_mit[fr]["anotados"]
                     conteo[fr]["recibidos"] = conteo_mit[fr]["recibidos"]
@@ -704,10 +723,17 @@ def calcular_cuadro_c_timeline(
         except Exception:
             pass
 
+    sin_datos_minuto = bool(
+        len(lista) > 0
+        and n_con_minutos_con_gol == 0
+        and n_con_goles_sin_minuto > 0
+    )
     conteo["_meta"] = {
         "n_partidos_con_mitades": n_con_mitades,
         "n_partidos_con_eventos_y_mitades": n_con_eventos_y_mitades,
         "n_partidos_con_eventos_raw": n_con_eventos_raw,
+        "n_partidos_con_minutos_reales": n_con_minutos_con_gol,
+        "sin_dato": sin_datos_minuto,
         "goles_1t_favor_mitades": gf_1t_mit,
         "goles_2t_favor_mitades": gf_2t_mit,
         "goles_favor_mitades": gf_1t_mit + gf_2t_mit,
@@ -716,7 +742,7 @@ def calcular_cuadro_c_timeline(
         "goles_contra_mitades": gc_1t_mit + gc_2t_mit,
         "n_partidos_totales": len(lista),
         "n_partidos_con_eventos": n_con_eventos,
-        "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista)),
+        "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista) and not sin_datos_minuto),
     }
     return conteo
 
@@ -1038,11 +1064,15 @@ def generar_reporte_xai_telegram(
         return "0/0" 
 
     def _cnt_c(d: Dict[str, Any], fr1: str, fr2: str, campo: str) -> int:
+        if not isinstance(d, dict):
+            return 0
         for fr in (fr1, fr2):
             if fr in d and isinstance(d[fr], dict):
-                return int(d[fr].get(campo, 0))
+                v = d[fr].get(campo)
+                return int(v) if v is not None else 0
             if campo in d and isinstance(d[campo], dict) and fr in d[campo]:
-                return int(d[campo][fr])
+                v = d[campo].get(fr)
+                return int(v) if v is not None else 0
         return 0
 
     rem_por_gol_loc = float(patrones_loc.get("remates_totales") or 0.0) / max(0.3, float(patrones_loc.get("goles_favor") or 0.0))
@@ -1052,20 +1082,23 @@ def generar_reporte_xai_telegram(
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
 
+    _sd_l_tel = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
+    _sd_v_tel = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l_tel = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_l_tel = 0 if _sd_l_tel else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_l_tel = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+        n_ev_l_tel = 0 if _sd_l_tel else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v_tel = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_v_tel = 0 if _sd_v_tel else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_v_tel = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+        n_ev_v_tel = 0 if _sd_v_tel else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
     k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel)
     from decision_cobertura import cargar_umbrales_cobertura
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    suprimir_p35_tel = bool(_sd_l_tel or _sd_v_tel or k_eval_cron_tel == 0)
 
     if k_eval_cron_tel < k_min_cron_tel:
         txt_p35_tel = f"sin dato (cobertura de minutos insuficiente en Cuadro C: {k_eval_cron_tel}/15 partidos)"
@@ -1110,7 +1143,7 @@ def generar_reporte_xai_telegram(
         "",
         "*3. El Factor Tiempo: Fatiga y Punch (1T vs 2T y Timeline 15 min)*",
         f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {_fmt_p(patrones_loc, 'P26_Poder_Cierre_2T', 100.0, 1, '%')} de su xG en la 2da mitad, mientras {nombre_visita} genera el {_fmt_p(patrones_vis, 'P26_Poder_Cierre_2T', 100.0, 1, '%')}.",
-        f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}",
+        *([f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}"] if not suprimir_p35_tel else []),
         f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {_fmt_p(patrones_loc, 'P31_Precision_Bajo_Fatiga')} ({nombre_local}) vs {_fmt_p(patrones_vis, 'P31_Precision_Bajo_Fatiga')} ({nombre_visita}).",
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
@@ -1121,7 +1154,8 @@ def generar_reporte_xai_telegram(
         "",
         "*5. Alertas Activadas del Motor de 55 Patrones*",
     ]
-    for al in alertas[:5]:
+    alertas_filtradas = [al for al in (alertas or []) if not (k_eval_cron_tel < k_min_cron_tel and ("patrón #35" in str(al).lower() or "76'-90'" in str(al)))]
+    for al in alertas_filtradas[:5]:
         lineas.append(f"• {al}")
 
     veredicto_4 = generar_veredicto_tactico_partido(
@@ -1238,12 +1272,15 @@ def generar_veredicto_tactico_partido(
         if not isinstance(cc, dict):
             return 0
         if campo in cc and isinstance(cc[campo], dict) and k_lbl in cc[campo]:
-            return int(cc[campo][k_lbl])
+            v = cc[campo].get(k_lbl)
+            return int(v) if v is not None else 0
         for k in (k_u, k_lbl):
             if k in cc and isinstance(cc[k], dict):
-                return int(cc[k].get(campo, 0))
+                v = cc[k].get(campo)
+                return int(v) if v is not None else 0
             if "franjas" in cc and isinstance(cc["franjas"], dict) and k in cc["franjas"]:
-                return int(cc["franjas"][k].get(campo, 0))
+                v = cc["franjas"][k].get(campo)
+                return int(v) if v is not None else 0
         return 0
 
     mejor_tramo_lbl = "76'-90'"
@@ -1410,15 +1447,17 @@ def generar_veredicto_tactico_partido(
             f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
         )
 
+    _sd_l_ver = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
+    _sd_v_ver = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_l = 0 if _sd_l_ver else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_l = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+        n_ev_l = 0 if _sd_l_ver else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_v = 0 if _sd_v_ver else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_v = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+        n_ev_v = 0 if _sd_v_ver else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
     k_eval_ver = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
@@ -1602,16 +1641,51 @@ def calcular_cuadro_c_timeline_15min(
         ("61_75", "61'-75'"),
         ("76_90", "76'-90'"),
     ]
-    anotados_map: Dict[str, int] = {}
-    recibidos_map: Dict[str, int] = {}
+    meta_raw = dict(raw.get("_meta") or {})
+    n_ev_raw = int(meta_raw.get("n_partidos_con_eventos", 0) or 0)
+    n_tot_raw = int(meta_raw.get("n_partidos_totales", 0) or 0)
+    es_sin_dato = bool(meta_raw.get("sin_dato")) or (n_ev_raw == 0 and (n_tot_raw >= 0))
+
+    anotados_map: Dict[str, Optional[int]] = {}
+    recibidos_map: Dict[str, Optional[int]] = {}
     out_f: Dict[str, Any] = {}
-    tot_a = max(1, sum(int((raw.get(k_u) or {}).get("anotados", 0)) for k_u, _ in pares_franjas))
-    tot_r = max(1, sum(int((raw.get(k_u) or {}).get("recibidos", 0)) for k_u, _ in pares_franjas))
+    if es_sin_dato:
+        for k_u, k_lbl in pares_franjas:
+            anotados_map[k_lbl] = None
+            recibidos_map[k_lbl] = None
+            nodo = {
+                "anotados": None,
+                "recibidos": None,
+                "pct_anotados": None,
+                "pct_recibidos": None,
+                "texto_anotados": "sin_dato",
+                "texto_recibidos": "sin_dato",
+                "sin_dato": True,
+            }
+            out_f[k_lbl] = nodo
+            out_f[k_u] = nodo
+        meta_raw["sin_dato"] = True
+        res: Dict[str, Any] = {
+            **raw,
+            "_meta": meta_raw,
+            "sin_dato": True,
+            "franjas": out_f,
+            "anotados": anotados_map,
+            "recibidos": recibidos_map,
+            "total_anotados": None,
+            "total_recibidos": None,
+        }
+        return res
+
+    tot_a_real = sum(int((raw.get(k_u) or {}).get("anotados", 0) or 0) for k_u, _ in pares_franjas)
+    tot_r_real = sum(int((raw.get(k_u) or {}).get("recibidos", 0) or 0) for k_u, _ in pares_franjas)
+    div_a = max(1, tot_a_real)
+    div_r = max(1, tot_r_real)
     for k_u, k_lbl in pares_franjas:
-        a = int((raw.get(k_u) or {}).get("anotados", 0))
-        r = int((raw.get(k_u) or {}).get("recibidos", 0))
-        pa = round((a / tot_a) * 100.0, 1)
-        pr = round((r / tot_r) * 100.0, 1)
+        a = int((raw.get(k_u) or {}).get("anotados", 0) or 0)
+        r = int((raw.get(k_u) or {}).get("recibidos", 0) or 0)
+        pa = round((a / div_a) * 100.0, 1)
+        pr = round((r / div_r) * 100.0, 1)
         anotados_map[k_lbl] = a
         recibidos_map[k_lbl] = r
         nodo = {
@@ -1621,16 +1695,19 @@ def calcular_cuadro_c_timeline_15min(
             "pct_recibidos": pr,
             "texto_anotados": f"{a} ({pa:.0f}%)",
             "texto_recibidos": f"{r} ({pr:.0f}%)",
+            "sin_dato": False,
         }
         out_f[k_lbl] = nodo
         out_f[k_u] = nodo
-    res: Dict[str, Any] = {
+    res = {
         **raw,
+        "_meta": meta_raw,
+        "sin_dato": False,
         "franjas": out_f,
         "anotados": anotados_map,
         "recibidos": recibidos_map,
-        "total_anotados": tot_a,
-        "total_recibidos": tot_r,
+        "total_anotados": tot_a_real,
+        "total_recibidos": tot_r_real,
     }
     return res
 
