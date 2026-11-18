@@ -1037,22 +1037,28 @@ def generar_bloque_narrativo_xai_desde_analisis(
 
         d_gen_L = _dict_bloque("local")
         d_gen_V = _dict_bloque("visitante")
-        d_loc_L = dict(d_gen_L)
-        d_vis_V = dict(d_gen_V)
-
         rec = getattr(motor, "recursivo", None) or {}
-        if isinstance(rec.get("mu_local_casa"), dict):
-            d_loc_L.update(rec["mu_local_casa"])
-        if isinstance(rec.get("mu_visita_fuera"), dict):
-            d_vis_V.update(rec["mu_visita_fuera"])
-
-        if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
-            P_L = dict(rec["patrones_55_local"])
-            P_V = dict(rec["patrones_55_visita"])
-        else:
-            P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
-            if isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict):
-                _etq_m = "Doble ADN pond."
+        try:
+            import cuadro_especialista as _ce_pat
+            P_L, P_V = _ce_pat.obtener_patrones_55_canonicos(
+                analisis,
+                res_red=rec,
+                doc_local=doc_local,
+                doc_visita=doc_visitante,
+            )
+        except Exception:
+            if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
+                P_L = dict(rec["patrones_55_local"])
+                P_V = dict(rec["patrones_55_visita"])
+            else:
+                d_loc_L = dict(d_gen_L)
+                d_vis_V = dict(d_gen_V)
+                if isinstance(rec.get("mu_local_casa"), dict):
+                    d_loc_L.update(rec["mu_local_casa"])
+                if isinstance(rec.get("mu_visita_fuera"), dict):
+                    d_vis_V.update(rec["mu_visita_fuera"])
+                P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+                _etq_m = "Doble ADN pond." if (isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict)) else "15P general"
                 P_L["_muestra_etiqueta"] = _etq_m
                 P_V["_muestra_etiqueta"] = _etq_m
 

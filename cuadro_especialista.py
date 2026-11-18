@@ -1742,6 +1742,70 @@ def _extraer_dict_45_desde_perfil(
     return d_ft, d_1t, d_2t
 
 
+def obtener_patrones_55_canonicos(
+    analisis: Any,
+    res_red: dict[str, Any] | None = None,
+    perfil_local: dict[str, Any] | None = None,
+    perfil_vis: dict[str, Any] | None = None,
+    mitades_local: dict[str, Any] | None = None,
+    mitades_vis: dict[str, Any] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visita: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """
+    Fuente única de verdad (Bloque B Ronda 18) para los 55 patrones en Telegram,
+    Súper-Cuadro Especialista y Veredicto de Auditoría 15P:
+      1) Si `motor.recursivo` ya calculó `patrones_55_local` y `patrones_55_visita`
+         sobre Doble ADN pond. (`mu_local_casa`/`mu_visita_fuera` + `mitades_adn_*`),
+         reutiliza exactamente esos diccionarios sin recalcular una segunda ruta.
+      2) En tests sintéticos sin `patrones_55_*` precalculados, calcula una sola vez
+         actualizando `mu_local_casa`/`mu_visita_fuera` y usando `mitades_adn_*`;
+         si no hay Doble ADN pond., etiqueta explícitamente `'15P general'`.
+    """
+    from motor_patrones import calcular_patrones_completos_partido
+
+    motor = getattr(analisis, "motor", None) if analisis is not None else None
+    rec = res_red if isinstance(res_red, dict) and res_red else (getattr(motor, "recursivo", None) or {})
+    if isinstance(rec.get("patrones_55_local"), dict) and rec["patrones_55_local"] and isinstance(rec.get("patrones_55_visita"), dict) and rec["patrones_55_visita"]:
+        return dict(rec["patrones_55_local"]), dict(rec["patrones_55_visita"])
+
+    mit_l_src = rec.get("mitades_adn_local") if isinstance(rec.get("mitades_adn_local"), dict) else mitades_local
+    mit_v_src = rec.get("mitades_adn_visita") if isinstance(rec.get("mitades_adn_visita"), dict) else mitades_vis
+    d_gen_L, d_1t_L, d_2t_L = _extraer_dict_45_desde_perfil(perfil_local, analisis, "local", mit_l_src)
+    d_gen_V, d_1t_V, d_2t_V = _extraer_dict_45_desde_perfil(perfil_vis, analisis, "visitante", mit_v_src)
+    d_loc_L = dict(d_gen_L)
+    d_vis_V = dict(d_gen_V)
+    tiene_adn = isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict)
+    if isinstance(rec.get("mu_local_casa"), dict):
+        d_loc_L.update(rec["mu_local_casa"])
+    if isinstance(rec.get("mu_visita_fuera"), dict):
+        d_vis_V.update(rec["mu_visita_fuera"])
+
+    P_L, P_V = calcular_patrones_completos_partido(
+        d_loc_L,
+        d_vis_V,
+        datos_1t_local=d_1t_L,
+        datos_2t_local=d_2t_L,
+        datos_1t_visita=d_1t_V,
+        datos_2t_visita=d_2t_V,
+    )
+    if tiene_adn:
+        pts_l = (doc_local.get("partidos") if isinstance(doc_local, dict) else None) or getattr(motor, "partidos_local", None) or []
+        pts_v = (doc_visita.get("partidos") if isinstance(doc_visita, dict) else None) or getattr(motor, "partidos_visitante", None) or []
+        _nl_c_fallback = sum(1 for _p in (pts_l or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+        _nv_c_fallback = sum(1 for _p in (pts_v or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+        _nl_v = int(rec.get("n_cond_local") or (rec.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_fallback or len(pts_l) or 15)
+        _nv_v = int(rec.get("n_cond_visita") or (rec.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_fallback or len(pts_v) or 15)
+        _etq_m = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
+    else:
+        _etq_m = "15P general"
+    if isinstance(P_L, dict):
+        P_L.setdefault("_muestra_etiqueta", _etq_m)
+    if isinstance(P_V, dict):
+        P_V.setdefault("_muestra_etiqueta", _etq_m)
+    return P_L, P_V
+
+
 def _construir_4_alertas_motor_55(
     perfil_local: dict[str, Any],
     perfil_vis: dict[str, Any],
@@ -1760,37 +1824,33 @@ def _construir_4_alertas_motor_55(
     mitades_vis: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """
-    Calcula los 55 patrones y devuelve las 4 Alertas Principales activadas
-    (Patrón #01, Patrón #13, Patrón #26 y Patrón #39) para el Súper-Cuadro Especialista.
+    Devuelve las 4 Alertas Principales activadas (Patrón #01, #13, #26 y #39) para el
+    Súper-Cuadro Especialista usando la fuente canónica única de `patrones_55_*`.
     """
     try:
-        from motor_patrones import calcular_patrones_completos_partido
         from motor_inferencia import aplicar_reglas_matchup_55
 
-        d_gen_L, d_1t_L, d_2t_L = _extraer_dict_45_desde_perfil(perfil_local, analisis, "local", mitades_local)
-        d_gen_V, d_1t_V, d_2t_V = _extraer_dict_45_desde_perfil(perfil_vis, analisis, "visitante", mitades_vis)
-        d_loc_L = dict(d_gen_L)
-        d_vis_V = dict(d_gen_V)
-        if isinstance(res_red, dict):
-            if isinstance(res_red.get("mu_local_casa"), dict):
-                d_loc_L.update(res_red["mu_local_casa"])
-            if isinstance(res_red.get("mu_visita_fuera"), dict):
-                d_vis_V.update(res_red["mu_visita_fuera"])
-
-        P_L, P_V = calcular_patrones_completos_partido(
-            d_loc_L, d_vis_V,
-            datos_1t_local=d_1t_L, datos_2t_local=d_2t_L,
-            datos_1t_visita=d_1t_V, datos_2t_visita=d_2t_V,
+        P_L, P_V = obtener_patrones_55_canonicos(
+            analisis,
+            res_red=res_red,
+            perfil_local=perfil_local,
+            perfil_vis=perfil_vis,
+            mitades_local=mitades_local,
+            mitades_vis=mitades_vis,
         )
         _, _, _, alertas_reglas = aplicar_reglas_matchup_55(
             P_L, P_V, p_1 / 100.0, p_x / 100.0, p_2 / 100.0, eq_L, eq_V
         )
 
-        p01_l, p01_v = float(P_L.get("P01_xG_por_Remate", 0.12)), float(P_V.get("P01_xG_por_Remate", 0.12))
-        p03_l, p03_v = float(P_L.get("P03_Calidad_xGOT_vs_xG", 1.0)), float(P_V.get("P03_Calidad_xGOT_vs_xG", 1.0))
-        p13_l, p13_v = float(P_L.get("P13_Portero_Goles_Evitados", 0.0)), float(P_V.get("P13_Portero_Goles_Evitados", 0.0))
-        p26_l, p26_v = float(P_L.get("P26_Poder_Cierre_2T", 0.50)), float(P_V.get("P26_Poder_Cierre_2T", 0.50))
-        p39_l, p39_v = float(P_L.get("P39_Estilo_Directo", 0.45)), float(P_V.get("P39_Estilo_Directo", 0.45))
+        def _fpat(d: dict[str, Any], k: str, default: float) -> float:
+            v = d.get(k)
+            return float(default) if v is None else float(v)
+
+        p01_l, p01_v = _fpat(P_L, "P01_xG_por_Remate", 0.12), _fpat(P_V, "P01_xG_por_Remate", 0.12)
+        p03_l, p03_v = _fpat(P_L, "P03_Calidad_xGOT_vs_xG", 1.0), _fpat(P_V, "P03_Calidad_xGOT_vs_xG", 1.0)
+        p13_l, p13_v = _fpat(P_L, "P13_Portero_Goles_Evitados", 0.0), _fpat(P_V, "P13_Portero_Goles_Evitados", 0.0)
+        p26_l, p26_v = _fpat(P_L, "P26_Poder_Cierre_2T", 0.50), _fpat(P_V, "P26_Poder_Cierre_2T", 0.50)
+        p39_l, p39_v = _fpat(P_L, "P39_Estilo_Directo", 0.45), _fpat(P_V, "P39_Estilo_Directo", 0.45)
 
         # Punto 28: Empate Técnico en el Texto del Patrón #01 (Calidad de Tiro)
         if abs(p01_l - p01_v) < 0.015:
@@ -3115,8 +3175,10 @@ def generar_cuadro_auditoria_15_partidos_png(
         else:
             p1_v, px_v, p2_v = 0.35, 0.25, 0.40
 
-        pat_l_v, pat_v_v = calcular_patrones_completos_partido(
-            d_gen_L, d_gen_V, datos_1t_local=d_1t_L, datos_2t_local=d_2t_L, datos_1t_visita=d_1t_V, datos_2t_visita=d_2t_V
+        pat_l_v, pat_v_v = obtener_patrones_55_canonicos(
+            analisis,
+            doc_local=doc_local,
+            doc_visita=doc_visita,
         )
         ratings_L_v = None
         ratings_V_v = None
@@ -3131,16 +3193,6 @@ def generar_cuadro_auditoria_15_partidos_png(
             top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
         except Exception:
             sec1_v = None
-
-        _xai_rec_v = getattr(motor_obj, "xai_factores", None) or {}
-        if isinstance(_xai_rec_v.get("mu_local_casa"), dict) and isinstance(pat_l_v, dict):
-            _rec_v_dict = getattr(motor_obj, "recursivo", None) or {}
-            _nl_c_fallback = sum(1 for _p in (lista_L or []) if isinstance(_p, dict) and str(_p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
-            _nl_v = int(_rec_v_dict.get("n_cond_local") or (_rec_v_dict.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_fallback or len(lista_L) or 15)
-            _nv_c_fallback = sum(1 for _p in (lista_V or []) if isinstance(_p, dict) and str(_p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
-            _nv_v = int(_rec_v_dict.get("n_cond_visita") or (_rec_v_dict.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_fallback or len(lista_V) or 15)
-            pat_l_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
-            pat_v_v["_muestra_etiqueta"] = f"Doble ADN pond. ({_nl_v}C/{_nv_v}V)"
         texto_veredicto = generar_veredicto_tactico_partido(
             nombre_local=eq_L,
             nombre_visita=eq_V,

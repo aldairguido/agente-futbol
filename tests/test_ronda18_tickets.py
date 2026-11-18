@@ -129,3 +129,89 @@ def test_bloque_a_sin_minutos_franjas_none_y_suprime_patron35_alerta_veredicto()
     assert "sin cobertura de minutos" in banner_cron[0]
     assert "—" in textos
     assert "15" in textos and "10" in textos and "5" in textos
+
+
+def test_bloque_b_fuente_unica_verdad_doble_adn_en_telegram_supercuadro_y_auditoria_15p() -> None:
+    import informe as inf
+    import motor_mercados as mm
+
+    def _mk_doc(nombre: str, pos_c: float, pos_o: float, fal_c: float, fal_o: float, x1_c: float, x2_c: float, x1_o: float, x2_o: float) -> dict:
+        pts = []
+        for i in range(15):
+            cond = "casa" if i < 8 else "fuera"
+            is_c = (cond == "casa") if nombre == "Cruzeiro" else (cond == "fuera")
+            pos = pos_c if is_c else pos_o
+            fal = fal_c if is_c else fal_o
+            x1 = x1_c if is_c else x1_o
+            x2 = x2_c if is_c else x2_o
+            pts.append({
+                "id_partido": f"{nombre}_{i}",
+                "fecha": f"2026-10-{min(28, i + 1):02d}",
+                "torneo": "Série A",
+                "rival": f"R{i}",
+                "condicion": cond,
+                "marcador": {"equipo": 1, "rival": 1},
+                "goles_equipo": 1,
+                "goles_rival": 1,
+                "resumen_claves": 20,
+                "periodos": {
+                    "FT": {"filas": [
+                        {"clave": "xg", "equipo": x1 + x2, "rival": 1.1},
+                        {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos},
+                        {"clave": "faltas", "equipo": fal, "rival": 12.0},
+                        {"clave": "remates_totales", "equipo": 12.0, "rival": 10.0},
+                        {"clave": "remates_puerta", "equipo": 4.0, "rival": 3.0},
+                        {"clave": "corners", "equipo": 5.0, "rival": 4.0},
+                        {"clave": "tarjetas_amarillas", "equipo": 2.0, "rival": 2.0},
+                        {"clave": "goles_evitados", "equipo": 0.1, "rival": 0.0},
+                        {"clave": "despejes", "equipo": 15.0, "rival": 14.0},
+                        {"clave": "intercepciones", "equipo": 9.0, "rival": 8.0},
+                    ]},
+                    "1T": {"filas": [{"clave": "xg", "equipo": x1, "rival": 0.5}, {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos}]},
+                    "2T": {"filas": [{"clave": "xg", "equipo": x2, "rival": 0.6}, {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos}]},
+                },
+            })
+        return {"equipo": {"nombre": nombre, "id": nombre}, "partidos": pts}
+
+    doc_l = _mk_doc("Cruzeiro", 55.0, 48.0, 12.5, 14.2, 0.45, 0.72, 0.30, 0.65)
+    doc_v = _mk_doc("Palmeiras", 51.0, 46.0, 11.8, 13.5, 0.50, 0.55, 0.40, 0.60)
+    analisis = mm.analizar(doc_l, doc_v, "Cruzeiro", "Palmeiras")
+    rec = analisis.motor.recursivo
+    canon_l = rec["patrones_55_local"]
+    canon_v = rec["patrones_55_visita"]
+
+    with patch("motor_inferencia.generar_informe_narrativo_xai") as mxai:
+        mxai.return_value = "OK"
+        inf.generar_bloque_narrativo_xai_desde_analisis(analisis, doc_l, doc_v)
+        kw_tg = mxai.call_args
+        p_l_tg = kw_tg.kwargs.get("patrones_local") if (kw_tg.kwargs and "patrones_local" in kw_tg.kwargs) else kw_tg[0][2]
+        p_v_tg = kw_tg.kwargs.get("patrones_visita") if (kw_tg.kwargs and "patrones_visita" in kw_tg.kwargs) else kw_tg[0][3]
+
+    al4 = ce._construir_4_alertas_motor_55(
+        None, None, analisis, "Cruzeiro", "Palmeiras", 1.1, 1.0, 35.0, 30.0, 35.0, 45.0, 40.0,
+        res_red=rec, mitades_local=ce.perfil_mitades(doc_l, None), mitades_vis=ce.perfil_mitades(doc_v, None),
+    )
+
+    with patch("motor_inferencia.generar_veredicto_tactico_partido") as mver:
+        mver.return_value = "A\nB\n1. C1\n2. C2\n3. C3\n4. C4"
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=os.path.join(td, "aud_b.png"))
+        p_l_a15 = mver.call_args.kwargs["patrones_loc"]
+        p_v_a15 = mver.call_args.kwargs["patrones_vis"]
+
+    for clave in ("posesion_pct", "faltas", "P26_Poder_Cierre_2T", "_muestra_etiqueta"):
+        assert p_l_tg[clave] == canon_l[clave]
+        assert p_l_a15[clave] == canon_l[clave]
+        assert p_v_tg[clave] == canon_v[clave]
+        assert p_v_a15[clave] == canon_v[clave]
+
+    al_p26 = next(a["detalle"] for a in al4 if a["codigo"] == "Patrón #26")
+    assert f"{canon_l['P26_Poder_Cierre_2T']*100:.0f}%" in al_p26
+    assert f"{canon_v['P26_Poder_Cierre_2T']*100:.0f}%" in al_p26
+
+    # Caso sin Doble ADN pond. (solo 15P general): no debe etiquetar falsamente "Doble ADN pond."
+    analisis_sin_adn = MagicMock()
+    analisis_sin_adn.motor = MagicMock(recursivo={}, muestras={}, bloques={})
+    pl_15, pv_15 = ce.obtener_patrones_55_canonicos(analisis_sin_adn)
+    assert pl_15.get("_muestra_etiqueta") == "15P general"
+    assert pv_15.get("_muestra_etiqueta") == "15P general"

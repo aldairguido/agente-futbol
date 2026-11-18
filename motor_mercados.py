@@ -2118,17 +2118,6 @@ class MotorMercados:
             if isinstance(pat_v, dict):
                 pat_v["_muestra_etiqueta"] = _etq_adn
                 pat_v["_n_muestra_adn"] = _nv_adn
-            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
-            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
-            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
-            if isinstance(pat_l, dict):
-                pat_l["_muestra_etiqueta"] = _etq_adn
-                pat_l["_n_muestra_adn"] = _nl_adn
-            if isinstance(pat_v, dict):
-                pat_v["_muestra_etiqueta"] = _etq_adn
-                pat_v["_n_muestra_adn"] = _nv_adn
             resultado["patrones_55_local"] = pat_l
             resultado["patrones_55_visita"] = pat_v
             resultado["alertas_55"] = alertas_55
