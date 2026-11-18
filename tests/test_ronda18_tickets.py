@@ -768,3 +768,140 @@ def test_bloque_l_snapshot_guarda_traza_etapa6_y_reglas_ataque_bajo_sin_alterar_
     antiguo.pop("traza_etapa_6", None)
     antiguo.pop("resumen_etapa_6", None)
     assert antiguo.get("esquema") == "pronostico-v1"
+
+
+def test_bloque_m_contabilidad_oos_canonica_y_compatibilidad_ledger(tmp_path) -> None:
+    import copy
+    import json
+    import shutil
+    from pathlib import Path
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+
+    assert "regla operativa" in ep.REGLA_CONTABILIDAD_OOS.lower()
+    assert "sin validación" in ep.REGLA_CONTABILIDAD_OOS.lower()
+
+    repo_root = Path(__file__).resolve().parent.parent
+    r5 = json.loads((repo_root / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
+    an = mm.analizar(copy.deepcopy(r5["docs"]["turkey"]), copy.deepcopy(r5["docs"]["belgium"]), "Corinthians", "Botafogo")
+
+    # 1) Copiar ledger histórico real SIN modificar entradas previas (0..2)
+    ruta_led = tmp_path / "ledger_oos.jsonl"
+    shutil.copy2(repo_root / "informes" / "evaluacion" / "ledger_oos.jsonl", ruta_led)
+    hashes_viejos = [r["sha256"] for r in ep.cargar_ledger_oos(str(ruta_led))]
+    lineas_viejas = ruta_led.read_text(encoding="utf-8").splitlines()
+    assert ep.verificar_cadena_ledger_oos(str(ruta_led))["ok"] is True
+
+    # Inicio del partido: 2026-11-19T00:30:00Z (equivale epoch 1795048200)
+    hora_ini = "2026-11-19T00:30:00Z"
+    ts_pre_1 = 1794980369   # 2026-11-18T05:39:29Z (< hora_ini)
+    ts_pre_2 = 1794981000   # 2026-11-18T05:50:00Z (< hora_ini, segunda corrida misma fecha)
+    ts_post = 1795049000    # 2026-11-19T00:43:20Z (>= hora_ini, post-kickoff)
+
+    def _mk_prep(id_t: str, fx_ok: bool, fuente_f: str, h_ini: str | None, tg_ts: int):
+        an_c = copy.deepcopy(an)
+        an_c.metadatos = {
+            "equipo_local": "Corinthians",
+            "equipo_visitante": "Botafogo",
+            "fecha_partido": "2026-11-18",
+            "competicion": "serie A Brasil",
+            "generado_en": "2026-11-18 00:38:58",
+            "hora_inicio_partido": h_ini,
+            "fixture_confirmado": fx_ok,
+            "fuente_fecha": fuente_f,
+        }
+        return {
+            "id_trabajo": id_t,
+            "id_partido": "cor_bot_20261118",
+            "analisis": an_c,
+            "contexto": dict(an_c.metadatos),
+            "rutas": {"informe": "dummy.md"},
+            "telegram_meta": {"message_id": 100, "message_date": tg_ts},
+            "modo_sombra": {
+                "esquema": "sombra-v1",
+                "version_base": "soloA",
+                "version_sombra": "A+B",
+                "banderas_candidatas": {},
+                "lambdas_base": {"local_ft": 1.15, "visitante_ft": 0.90},
+                "lambdas_sombra": {"local_ft": 1.15, "visitante_ft": 0.90},
+                "n_selecciones_comparables": 0,
+                "comparaciones": [],
+            },
+        }
+
+    snap_dir = tmp_path / "pronosticos"
+
+    # A: Primera entrada válida pre-inicio -> es_oos_valido=True, es_canonica=True, estado_canonico='canonica'
+    prep_1 = _mk_prep("trab_1", True, "fixture", hora_ini, ts_pre_1)
+    s1 = ep.snapshot_desde_analisis(prep_1)
+    ruta_s1 = ep.guardar_snapshot(s1, directorio=str(snap_dir))
+    r1 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_1, ruta_snapshot=ruta_s1, ruta_ledger=str(ruta_led))
+    assert r1["registrado"] is True
+
+    # B: Segunda entrada válida pre-inicio para MISMO partido -> es_oos_valido=True, es_canonica=False, estado_canonico='no_canonica'
+    prep_2 = _mk_prep("trab_2", True, "fixture", hora_ini, ts_pre_2)
+    s2 = ep.snapshot_desde_analisis(prep_2)
+    ruta_s2 = ep.guardar_snapshot(s2, directorio=str(snap_dir))
+    r2 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_2, ruta_snapshot=ruta_s2, ruta_ledger=str(ruta_led))
+    assert r2["registrado"] is True
+
+    # C: Entrada sin fixture confirmado (fallback) -> es_oos_valido=False, es_canonica=False, estado_canonico='no_oos'
+    prep_nofx = _mk_prep("trab_nofx", False, "fallback", None, ts_pre_1)
+    s3 = ep.snapshot_desde_analisis(prep_nofx)
+    ruta_s3 = ep.guardar_snapshot(s3, directorio=str(snap_dir))
+    r3 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_nofx, ruta_snapshot=ruta_s3, ruta_ledger=str(ruta_led))
+    assert r3["registrado"] is True
+
+    # D: Entrada con fixture confirmado pero mensaje POSTERIOR al inicio -> no_oos
+    prep_post = _mk_prep("trab_post", True, "fixture", hora_ini, ts_post)
+    s4 = ep.snapshot_desde_analisis(prep_post)
+    ruta_s4 = ep.guardar_snapshot(s4, directorio=str(snap_dir))
+    r4 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_post, ruta_snapshot=ruta_s4, ruta_ledger=str(ruta_led))
+    assert r4["registrado"] is True
+
+    # Verificar snapshots guardados en disco
+    j1 = json.loads(Path(ruta_s1).read_text(encoding="utf-8"))
+    j2 = json.loads(Path(ruta_s2).read_text(encoding="utf-8"))
+    j3 = json.loads(Path(ruta_s3).read_text(encoding="utf-8"))
+    j4 = json.loads(Path(ruta_s4).read_text(encoding="utf-8"))
+    assert j1["fixture_confirmado"] is True and j1["fuente_fecha"] == "fixture" and j1["es_oos_valido"] is True and j1["es_canonica"] is True and j1["estado_canonico"] == "canonica"
+    assert j2["fixture_confirmado"] is True and j2["es_oos_valido"] is True and j2["es_canonica"] is False and j2["estado_canonico"] == "no_canonica"
+    assert j3["fixture_confirmado"] is False and j3["fuente_fecha"] == "fallback" and j3["es_oos_valido"] is False and j3["estado_canonico"] == "no_oos"
+    assert j4["fixture_confirmado"] is True and j4["es_oos_valido"] is False and j4["estado_canonico"] == "no_oos"
+
+    # Verificar que verificar_cadena_ledger_oos acepta entradas antiguas + nuevas sin alterar hashes históricos
+    ver_mix = ep.verificar_cadena_ledger_oos(str(ruta_led))
+    assert ver_mix["ok"] is True
+    assert ver_mix["entradas"] == len(hashes_viejos) + 4
+    nuevas_lineas = ruta_led.read_text(encoding="utf-8").splitlines()
+    assert nuevas_lineas[:len(lineas_viejas)] == lineas_viejas
+    regs = ep.cargar_ledger_oos(str(ruta_led))
+    assert [r["sha256"] for r in regs[:len(hashes_viejos)]] == hashes_viejos
+    n0 = len(hashes_viejos)
+    assert regs[n0]["estado_canonico"] == "canonica" and regs[n0]["es_canonica"] is True
+    assert regs[n0 + 1]["estado_canonico"] == "no_canonica" and regs[n0 + 1]["es_canonica"] is False
+    assert regs[n0 + 2]["estado_canonico"] == "no_oos" and regs[n0 + 2]["es_oos_valido"] is False
+    assert regs[n0 + 3]["estado_canonico"] == "no_oos" and regs[n0 + 3]["es_oos_valido"] is False
+
+    # Contabilidad resumen_ledger_oos sobre liquidaciones: solo la canónica válida cuenta
+    ruta_led_liq = str(tmp_path / "ledger_liq.jsonl")
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P1", "partido": "A vs B", "fecha": "2026-11-18",
+        "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
+        "telegram_message_date": ts_pre_1, "resumen": {"aciertos": 4, "fallos": 0, "n_evaluables": 4, "brier": 0.1},
+    }, ruta_ledger=ruta_led_liq)
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P2", "partido": "A vs B", "fecha": "2026-11-18",
+        "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
+        "telegram_message_date": ts_pre_2, "resumen": {"aciertos": 1, "fallos": 3, "n_evaluables": 4, "brier": 0.5},
+    }, ruta_ledger=ruta_led_liq)
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P3", "partido": "C vs D", "fecha": "2026-11-18",
+        "fixture_confirmado": False, "fuente_fecha": "fallback", "hora_inicio_partido": None,
+        "telegram_message_date": ts_pre_1, "resumen": {"aciertos": 0, "fallos": 4, "n_evaluables": 4, "brier": 0.9},
+    }, ruta_ledger=ruta_led_liq)
+    res_liq = ep.resumen_ledger_oos(ruta_led_liq)
+    assert res_liq["cadena_sha256_ok"] is True
+    assert res_liq["n_incluidos_promedios_calibracion"] == 1
+    assert res_liq["n_excluidos_no_canonica"] == 1
+    assert res_liq["n_excluidos_no_oos"] == 1
