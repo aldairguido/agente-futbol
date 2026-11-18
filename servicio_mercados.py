@@ -586,26 +586,49 @@ def construir_resumen_h2h_ticket(
     return "H2H Reciente (informativo): " + " · ".join(partes)
 
 
+_SINONIMOS_PAIS_LIGA = {
+    "brazil": "brasil",
+    "spain": "espana",
+    "italy": "italia",
+    "england": "inglaterra",
+    "uk": "inglaterra",
+    "germany": "alemania",
+    "france": "francia",
+    "netherlands": "holanda",
+    "belgium": "belgica",
+    "scotland": "escocia",
+    "switzerland": "suiza",
+    "turkey": "turquia",
+    "turkiye": "turquia",
+    "morocco": "marruecos",
+}
+
+
 def son_ligas_equivalentes(liga_decl: str, liga_det: str) -> bool:
     """
     Determina si la competición declarada y la detectada corresponden al mismo torneo
-    o a la misma familia continental de selecciones (Punto 50).
-    Por ejemplo, UEFA Nations League == Europe == Eurocopa == Eliminatorias UEFA.
+    o a la misma familia continental de selecciones (Punto 50), normalizando mayúsculas,
+    acentos, signos como ':' final y sinónimos de país ('Brasil'/'BRAZIL').
     """
     if not liga_decl or not liga_det:
         return True
     from fuentes_xg import _sin_acentos
-    s_decl = _sin_acentos(str(liga_decl)).lower().strip()
-    s_det = _sin_acentos(str(liga_det)).lower().strip()
+    s_decl = _sin_acentos(str(liga_decl)).lower().strip().rstrip(":").strip()
+    s_det = _sin_acentos(str(liga_det)).lower().strip().rstrip(":").strip()
     if s_decl == s_det:
         return True
 
     def _raiz(t: str) -> str:
-        s = _sin_acentos(str(t)).lower().strip()
-        s = re.sub(r'[^a-z0-9]', '', s)
-        s = s.replace("brasileirao", "brasileir").replace("brasileiro", "brasileir")
-        s = s.replace("campeonato", "")
-        return s
+        s = _sin_acentos(str(t)).lower().strip().rstrip(":").strip()
+        toks = [
+            _SINONIMOS_PAIS_LIGA.get(w, w)
+            for w in re.split(r"[^a-z0-9]+", s)
+            if w
+        ]
+        s_norm = "".join(toks)
+        s_norm = s_norm.replace("brasileirao", "brasileir").replace("brasileiro", "brasileir")
+        s_norm = s_norm.replace("campeonato", "")
+        return s_norm
 
     r1 = _raiz(s_decl)
     r2 = _raiz(s_det)
@@ -966,11 +989,12 @@ def resolver_enfrentamiento(
         contexto.get("competicion"),
     ]
     liga_det_raw = next(
-        (str(x).strip() for x in _cands_liga_det if str(x or "").strip() and not _es_region_geografica(str(x))),
+        (str(x).strip().rstrip(":").strip() for x in _cands_liga_det if str(x or "").strip() and not _es_region_geografica(str(x))),
         "",
     )
-    if liga_decl_raw and liga_det_raw and not son_ligas_equivalentes(liga_decl_raw, liga_det_raw):
-        adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
+    liga_decl_limpia = liga_decl_raw.rstrip(":").strip()
+    if liga_decl_limpia and liga_det_raw and not son_ligas_equivalentes(liga_decl_limpia, liga_det_raw):
+        adv_liga = f"Declarada: {liga_decl_limpia} | Detectada: {liga_det_raw}"
         avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
         contexto["advertencia_liga"] = adv_liga
 

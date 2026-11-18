@@ -620,3 +620,64 @@ def test_bloque_j_misma_lista_y_conteo_validadas_entre_ticket_y_supercuadro_sin_
     assert "6 Validadas" in ax_texts
     for lbl_esp in pills_uni:
         assert any(lbl_esp in t for t in ax_texts), f"Faltó píldora {lbl_esp!r} en Súper-Cuadro"
+
+
+def test_bloque_k_aviso_liga_sin_falso_positivo_brazil_y_sin_desbordar_fecha(tmp_path) -> None:
+    import servicio_mercados as sm
+
+    # Normalización: mayúsculas, acentos, 'Brasil'/'BRAZIL' y ':' final son equivalentes
+    assert sm.son_ligas_equivalentes("serie A Brasil", "Serie A BRAZIL:") is True
+    assert sm.son_ligas_equivalentes("Série A Brasil", "Serie A BRAZIL:") is True
+    assert sm.son_ligas_equivalentes("Premier League", "LaLiga") is False
+
+    # 1) Si llega un falso positivo heredado "Declarada: serie A Brasil | Detectada: Serie A BRAZIL:", se suprime AVISO LIGA
+    analisis_fp = MagicMock()
+    analisis_fp.metadatos = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "competicion": "serie A Brasil",
+        "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        "advertencia_liga": "Declarada: serie A Brasil | Detectada: Serie A BRAZIL:",
+    }
+    analisis_fp.motor = None
+    analisis_fp.selecciones = []
+    analisis_fp.mercados = []
+    doc_vacio = {"equipo": {"nombre": "X"}, "partidos": []}
+    cap_fp: list[tuple[float, float, str, dict]] = []
+    from matplotlib.figure import Figure
+    orig_fig_text = Figure.text
+    def _cap_fig_text(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            cap_fp.append((float(x), float(y), s, dict(kw)))
+        return orig_fig_text(self, x, y, s, *a, **kw)
+
+    with patch.object(Figure, "text", new=_cap_fig_text):
+        ce.generar_cuadro_auditoria_15_partidos_png(analisis_fp, doc_vacio, doc_vacio, destino=str(tmp_path / "k_fp.png"))
+    assert all("AVISO LIGA:" not in s for _, _, s, _ in cap_fp)
+
+    # 2) Si hay discrepancia real larga, AVISO LIGA se envuelve debajo de la línea de fecha con va='top' sin solaparla
+    analisis_real = MagicMock()
+    analisis_real.metadatos = {
+        "equipo_local": "Equipo Alpha",
+        "equipo_visitante": "Equipo Beta",
+        "competicion": "Copa Inventada Internacional",
+        "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        "advertencia_liga": "Declarada: Copa Inventada Internacional Muy Larga De Prueba Para Wrapping | Detectada: Liga Totalmente Distinta Nacional",
+    }
+    analisis_real.motor = None
+    analisis_real.selecciones = []
+    analisis_real.mercados = []
+    cap_real: list[tuple[float, float, str, dict]] = []
+    def _cap_fig_text2(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            cap_real.append((float(x), float(y), s, dict(kw)))
+        return orig_fig_text(self, x, y, s, *a, **kw)
+
+    with patch.object(Figure, "text", new=_cap_fig_text2):
+        ce.generar_cuadro_auditoria_15_partidos_png(analisis_real, doc_vacio, doc_vacio, destino=str(tmp_path / "k_real.png"))
+    av_items = [(x, y, s, kw) for x, y, s, kw in cap_real if "AVISO LIGA:" in s]
+    fecha_items = [(x, y, s, kw) for x, y, s, kw in cap_real if "Partido: 2026-11-18 19:30" in s]
+    assert len(av_items) == 1 and len(fecha_items) == 1
+    assert av_items[0][1] < fecha_items[0][1]  # debajo de la fecha
+    assert av_items[0][3].get("va") == "top"
+    assert "\n" in av_items[0][2]  # wrapped limpiamente sin desbordar a la derecha

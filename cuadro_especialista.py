@@ -2745,8 +2745,15 @@ def generar_cuadro_auditoria_15_partidos_png(
         except Exception:
             pass
 
+    adv_lineas = []
+    if mostrar_adv:
+        import textwrap as _tw_adv
+        adv_raw = _sanear_para_canvas(f"AVISO LIGA: {meta['advertencia_liga']}")
+        adv_lineas = _tw_adv.wrap(adv_raw, width=115) or [adv_raw]
+
+    h_ax_aud = (0.865 if len(adv_lineas) > 1 else 0.878) if mostrar_adv else 0.920
     fig = plt.figure(figsize=(13.5, 20.6), dpi=180, facecolor="#F8FAFC")
-    ax = fig.add_axes([0.04, 0.022, 0.92, 0.892 if mostrar_adv else 0.920])
+    ax = fig.add_axes([0.04, 0.022, 0.92, h_ax_aud])
     ax.axis("off")
 
     fig.text(0.04, 0.978, f"{competicion.upper()}   ·   AUDITORÍA OFICIAL 15P + CUADRO B (TENDENCIAS) + CUADRO C (TIMELINE 15 MIN) + VEREDICTO TÁCTICO",
@@ -2756,8 +2763,17 @@ def generar_cuadro_auditoria_15_partidos_png(
     _etq_f_aud = fecha if fecha.startswith(("Partido:", "Sin partido programado")) else f"Fecha: {fecha}"
     fig.text(0.04, 0.936, f"{_etq_f_aud}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
              fontsize=8.5, color="#64748B")
-    if mostrar_adv:
-        fig.text(0.04, 0.916, _sanear_para_canvas(f"AVISO LIGA: {meta['advertencia_liga']}"), fontsize=8.3, fontweight="bold", color="#B45309")
+    if mostrar_adv and adv_lineas:
+        fig.text(
+            0.04,
+            0.924,
+            "\n".join(adv_lineas),
+            fontsize=8.0,
+            fontweight="bold",
+            color="#B45309",
+            va="top",
+            linespacing=1.22,
+        )
 
     # ── BLOQUE 1: LISTA 01..15 DE PARTIDOS ÚNICOS (y: 0.610 .. 0.960) ──
     ax.text(0.005, 0.962, f"AUDITORÍA DE LOS {len(lista_L)} PARTIDOS OFICIALES ÚNICOS — LOCAL: {eq_L.upper()}",
