@@ -266,3 +266,43 @@ def test_bloque_c_conclusion_4_no_cita_1t_y_sin_explosion_2t_en_1t() -> None:
     assert "La segunda mitad tendrá goles" not in linea_4_u
     assert "Contención proyectada en la segunda mitad (2T)" in linea_4_u
     assert "Goles 2T: -1.5 Goles" in linea_4_u
+
+
+def test_bloque_f_mensaje_cobertura_sin_variables_comparables_no_contradictorio() -> None:
+    from decision_cobertura import evaluar_decision_cobertura
+
+    doc_solo_a = {
+        "identidad_verificada": True,
+        "equipo": {"nombre": "Corinthians", "id": "cor1"},
+        "partidos": [
+            {
+                "id_partido": f"a_{i}",
+                "fecha": f"2026-10-{1 + i:02d}",
+                "torneo": "BRAZIL: Serie A",
+                "condicion": "casa",
+                "marcador": {"equipo": 1, "rival": 0},
+                "periodos": {"FT": {"filas": [{"clave": f"solo_a_{k}", "equipo": 1.0, "rival": 0.0} for k in range(6)]}},
+            }
+            for i in range(15)
+        ],
+    }
+    doc_solo_b = {
+        "identidad_verificada": True,
+        "equipo": {"nombre": "Botafogo", "id": "bot1"},
+        "partidos": [
+            {
+                "id_partido": f"b_{i}",
+                "fecha": f"2026-10-{1 + i:02d}",
+                "torneo": "Série A",
+                "condicion": "fuera",
+                "marcador": {"equipo": 1, "rival": 0},
+                "periodos": {"FT": {"filas": [{"clave": f"solo_b_{k}", "equipo": 1.0, "rival": 0.0} for k in range(6)]}},
+            }
+            for i in range(15)
+        ],
+    }
+    dec = evaluar_decision_cobertura(doc_solo_a, doc_solo_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert "sin variables comparables" in dec.alerta_descriptiva.lower()
+    assert "solo 0 de 3 partidos emparejados requeridos comparten al menos 5 claves métricas comunes en FT" in dec.alerta_descriptiva
+    assert "(mínimo requerido: 3)" not in dec.alerta_descriptiva
