@@ -354,3 +354,131 @@ def test_bloque_g_encabezado_partido_con_zona_o_sin_partido_programado() -> None
                     captured_sin.append(c[0][2])
     assert any("Sin partido programado encontrado" in t for t in captured_sin)
     assert all("Análisis del" not in t for t in captured_sin)
+
+
+def test_bloque_i_repo_vacio_crea_main_placeholder_antes_de_produccion_datos_e_hidrata(tmp_path) -> None:
+    import shutil
+    import subprocess
+    from pathlib import Path
+    import persistencia_produccion as pp
+
+    def _git(cwd: Path, *args: str) -> str:
+        cp = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=True,
+        )
+        return cp.stdout.strip()
+
+    def _instalar_hook_github_vacio(rem_bare: Path) -> None:
+        # Simular comportamiento de GitHub en repo vacío: la primera rama recibida pasa a ser HEAD por defecto
+        hook_path = rem_bare / "hooks" / "post-receive"
+        hook_path.write_text(
+            "#!/bin/sh\n"
+            "while read oldrev newrev refname; do\n"
+            "  cur_head=$(git symbolic-ref HEAD 2>/dev/null || true)\n"
+            "  if [ -z \"$cur_head\" ] || ! git show-ref --verify --quiet \"$cur_head\"; then\n"
+            "    git symbolic-ref HEAD \"$refname\"\n"
+            "  fi\n"
+            "done\n",
+            encoding="utf-8",
+        )
+        os.chmod(hook_path, 0o755)
+
+    # Primero verificamos que la guarda SIGUE rechazando si la default remota fuera produccion-datos
+    with pytest.raises(ValueError, match="prohibida"):
+        pp.validar_rama_datos("produccion-datos", rama_defecto_remota="produccion-datos")
+
+    rem_pub = tmp_path / "publico.git"
+    rem_pub.mkdir(parents=True, exist_ok=True)
+    _git(rem_pub, "init", "--bare")
+
+    # Demostración de lo que fallaba antes: si en un repo vacío se sube primero `produccion-datos`,
+    # queda como rama por defecto (HEAD) y `hidratar_desde_remoto_datos` la rechaza.
+    rem_roto = tmp_path / "privado_sin_placeholder.git"
+    rem_roto.mkdir(parents=True, exist_ok=True)
+    _git(rem_roto, "init", "--bare")
+    _instalar_hook_github_vacio(rem_roto)
+    seed_roto = tmp_path / "seed_roto"
+    seed_roto.mkdir(parents=True, exist_ok=True)
+    _git(seed_roto, "init")
+    _git(seed_roto, "config", "user.name", "Bot CI")
+    _git(seed_roto, "config", "user.email", "bot@ci.local")
+    _git(seed_roto, "checkout", "--orphan", "produccion-datos")
+    (seed_roto / "README.md").write_text("directo\n", encoding="utf-8")
+    _git(seed_roto, "add", "README.md")
+    _git(seed_roto, "commit", "-m", "sin placeholder")
+    _git(seed_roto, "push", str(rem_roto), "HEAD:refs/heads/produccion-datos")
+    assert _git(rem_roto, "symbolic-ref", "HEAD") == "refs/heads/produccion-datos"
+
+    runner_roto = tmp_path / "runner_roto"
+    runner_roto.mkdir(parents=True, exist_ok=True)
+    _git(runner_roto, "init")
+    _git(runner_roto, "remote", "add", "origin", str(rem_pub))
+    res_fallo = pp.hidratar_desde_remoto_datos(
+        pp.ConfigPersistencia(
+            workspace_dir=runner_roto,
+            remote="datos",
+            rama_datos="produccion-datos",
+            remote_url=str(rem_roto),
+            habilitada=True,
+        )
+    )
+    assert res_fallo["ok"] is False
+    assert res_fallo["codigo_error"] == "rechazada_rama_prohibida"
+
+    # Ahora caso corregido: repo vacío -> inicializar_produccion_limpia -> hidratar_desde_remoto_datos
+    rem_priv = tmp_path / "privado_vacio.git"
+    rem_priv.mkdir(parents=True, exist_ok=True)
+    _git(rem_priv, "init", "--bare")
+    _instalar_hook_github_vacio(rem_priv)
+
+    runner = tmp_path / "runner_ci"
+    runner.mkdir(parents=True, exist_ok=True)
+    _git(runner, "init")
+    _git(runner, "config", "user.name", "Bot CI")
+    _git(runner, "config", "user.email", "bot@ci.local")
+    (runner / "README.md").write_text("publico\n", encoding="utf-8")
+    _git(runner, "add", "README.md")
+    _git(runner, "commit", "-m", "init public")
+    _git(runner, "remote", "add", "origin", str(rem_pub))
+    (runner / "informes" / "evaluacion").mkdir(parents=True, exist_ok=True)
+    ledger_real = Path(__file__).resolve().parent.parent / "informes" / "evaluacion" / "ledger_oos.jsonl"
+    shutil.copy2(ledger_real, runner / "informes" / "evaluacion" / "ledger_oos.jsonl")
+
+    res_init = pp.inicializar_produccion_limpia(
+        runner,
+        remote="datos",
+        remote_url=str(rem_priv),
+        rama_datos="produccion-datos",
+    )
+    assert res_init["ok"] is True
+    assert res_init["creada"] is True
+    assert res_init["placeholder_creada"] is True
+    assert res_init["rama_placeholder"] == "main"
+
+    # HEAD del remoto privado quedó en main, NO en produccion-datos
+    assert _git(rem_priv, "symbolic-ref", "HEAD") == "refs/heads/main"
+    main_clone = tmp_path / "check_main"
+    _git(tmp_path, "clone", "-b", "main", str(rem_priv), str(main_clone))
+    assert (main_clone / "README.md").exists()
+
+    # Ahora hidratar en un runner recién clonado debe pasar la guarda con ok=True
+    runner2 = tmp_path / "runner_hidrata"
+    runner2.mkdir(parents=True, exist_ok=True)
+    _git(runner2, "init")
+    _git(runner2, "remote", "add", "origin", str(rem_pub))
+    cfg = pp.ConfigPersistencia(
+        workspace_dir=runner2,
+        remote="datos",
+        rama_datos="produccion-datos",
+        remote_url=str(rem_priv),
+        habilitada=True,
+    )
+    ok_hid = pp.hidratar_desde_remoto_datos(cfg)
+    assert ok_hid["ok"] is True
+    assert ok_hid["ledger"]["n_final"] == 3
