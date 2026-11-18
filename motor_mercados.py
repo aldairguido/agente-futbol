@@ -5981,7 +5981,7 @@ def seleccionar_top_5_jugadas_recomendadas(
             return f"Tarjetas Totales ({per}): {signo}{float(lin):g} Tarj." if lin is not None else f"Tarjetas ({per}): {et}"
         if slot == 3:
             if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
-                return f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t_val}%) (Duelo de estudio en 1T / Explosión en 2T)"
+                return f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t_val}%) (Duelo de estudio en 1T)"
             if eq:
                 signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev) else "-"
                 return f"Goles {eq} ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles {eq} ({per}): {et}"

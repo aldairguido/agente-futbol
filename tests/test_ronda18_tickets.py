@@ -215,3 +215,54 @@ def test_bloque_b_fuente_unica_verdad_doble_adn_en_telegram_supercuadro_y_audito
     pl_15, pv_15 = ce.obtener_patrones_55_canonicos(analisis_sin_adn)
     assert pl_15.get("_muestra_etiqueta") == "15P general"
     assert pv_15.get("_muestra_etiqueta") == "15P general"
+
+
+def test_bloque_c_conclusion_4_no_cita_1t_y_sin_explosion_2t_en_1t() -> None:
+    import motor_mercados as mm
+
+    with open("motor_mercados.py", "r", encoding="utf-8") as f:
+        src_mm = f.read()
+    assert "Explosión en 2T" not in src_mm
+
+    #Caso 1: Top 5 trae 1T Menos de 1.5 Goles (sin mercado de 2T) y FT Menos de 3.5 Goles
+    top5_1t = [
+        {"rank": 1, "etiqueta": "1ra Mitad : Menos de 1.5 Goles (80.0%) (Duelo de estudio en 1T)", "periodo": "1T", "evento": "under_1.5", "probabilidad": 0.80},
+        {"rank": 2, "etiqueta": "Goles Totales (FT): -3.5 Goles", "periodo": "FT", "evento": "under_3.5", "probabilidad": 0.83},
+    ]
+    ver = mi.generar_veredicto_tactico_partido(
+        "Coritiba", "Santos",
+        {"xg": 1.0, "xg_2t": 0.55, "posesion_pct": 50.0, "faltas": 12.0, "P26_Poder_Cierre_2T": 0.54},
+        {"xg": 1.1, "xg_2t": 0.60, "posesion_pct": 50.0, "faltas": 11.0, "P26_Poder_Cierre_2T": 0.56},
+        {"local": 0.34, "empate": 0.30, "visita": 0.36},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 3}, "recibidos": {"76'-90'": 2}},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 4}, "recibidos": {"76'-90'": 2}},
+        top5_podio=top5_1t,
+    )
+    linea_4 = [ln for ln in ver.splitlines() if ln.strip().startswith("4.")][0]
+    assert "1ra Mitad" not in linea_4
+    assert "Duelo de estudio en 1T" not in linea_4
+    assert "La segunda mitad tendrá goles" not in linea_4
+    assert "Sin líneas de 2T validadas >= 70%" in linea_4
+    assert "Goles Totales (FT): -3.5 Goles" in linea_4
+
+    # Caso 2: Top 5 trae Under en 2T -> NO debe titular "La segunda mitad tendrá goles"
+    top5_u2t = [
+        {"rank": 1, "etiqueta": "Goles 2T: -1.5 Goles", "periodo": "2T", "evento": "under_1.5", "probabilidad": 0.78},
+    ]
+    ver_u2t = mi.generar_veredicto_tactico_partido(
+        "Coritiba", "Santos",
+        {"xg": 1.0, "xg_2t": 0.45, "posesion_pct": 50.0, "faltas": 12.0, "P26_Poder_Cierre_2T": 0.54},
+        {"xg": 1.1, "xg_2t": 0.50, "posesion_pct": 50.0, "faltas": 11.0, "P26_Poder_Cierre_2T": 0.56},
+        {"local": 0.34, "empate": 0.30, "visita": 0.36},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 3}, "recibidos": {"76'-90'": 2}},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 4}, "recibidos": {"76'-90'": 2}},
+        top5_podio=top5_u2t,
+    )
+    linea_4_u = [ln for ln in ver_u2t.splitlines() if ln.strip().startswith("4.")][0]
+    assert "La segunda mitad tendrá goles" not in linea_4_u
+    assert "Contención proyectada en la segunda mitad (2T)" in linea_4_u
+    assert "Goles 2T: -1.5 Goles" in linea_4_u

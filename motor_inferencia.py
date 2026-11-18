@@ -1390,15 +1390,55 @@ def generar_veredicto_tactico_partido(
     else:
         xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
         etq_vol_2t = "xG 2T histórico"
+    def _clasificar_mkt_2t_o_ft(item: Any) -> tuple[str | None, float]:
+        import re as _re_2t
+        et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
+        per_i = str((item.get("periodo") if isinstance(item, dict) else getattr(item, "periodo", "")) or "").strip().upper()
+        ev_i = str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").lower()
+        mk_i = str((item.get("mercado") if isinstance(item, dict) else getattr(item, "mercado", "")) or "").lower()
+        et_low = et_i.lower()
+        if not et_i or "sin líneas" in et_low:
+            return None, 0.0
+        if any(k in et_low or k in mk_i for k in ("córn", "corn", "esquina", "tarj", "amarill", "roja")):
+            return None, 0.0
+        raw_p = item.get("probabilidad") if isinstance(item, dict) else getattr(item, "probabilidad", 0.72)
+        p_val = float(raw_p or 0.0)
+        prob_pct = p_val * 100.0 if p_val <= 1.0 else p_val
+        es_1t_expl = (per_i == "1T") or any(k in et_low for k in ("1ra mitad", "1er tiempo", "primer tiempo", "1t", "1º", "estudio en 1t"))
+        es_2t_expl = (not es_1t_expl) and ((per_i == "2T") or ("2t" in et_low) or ("2º" in et_low) or ("segunda mitad" in et_low) or ("2da mitad" in et_low))
+        if es_2t_expl:
+            es_under_2t = ("menos" in et_low) or ("under" in ev_i) or bool(_re_2t.search(r"(?:^|[\s:])-\d+(?:\.\d+)?", et_low))
+            return ("2t_under" if es_under_2t else "2t_over"), prob_pct
+        if (not es_1t_expl) and (per_i in ("", "FT")) and ("goles" in et_low or "total de goles" in mk_i):
+            return "ft_goles", prob_pct
+        return None, 0.0
+
     mkt_2t = None
+    mkt_2t_tipo = None
     prob_2t = 0.0
+    mkt_ft_coh = None
+    prob_ft_coh = 0.0
     if top5_podio:
+        cand_under_2t = None
+        prob_under_2t = 0.0
         for item in top5_podio:
-            et_i = str(item.get("etiqueta") or "")
-            if "2t" in et_i.lower() or "2º" in et_i.lower():
+            et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
+            tipo_c, prob_c = _clasificar_mkt_2t_o_ft(item)
+            if tipo_c == "2t_over":
                 mkt_2t = et_i
-                prob_2t = float(item.get("probabilidad", 0.72)) * 100.0
+                mkt_2t_tipo = "2t_over"
+                prob_2t = prob_c
                 break
+            if tipo_c == "2t_under" and cand_under_2t is None:
+                cand_under_2t = et_i
+                prob_under_2t = prob_c
+            elif tipo_c == "ft_goles" and mkt_ft_coh is None:
+                mkt_ft_coh = et_i
+                prob_ft_coh = prob_c
+        if mkt_2t is None and cand_under_2t is not None:
+            mkt_2t = cand_under_2t
+            mkt_2t_tipo = "2t_under"
+            prob_2t = prob_under_2t
 
     encabezado = (
         "VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?"
@@ -1512,10 +1552,16 @@ def generar_veredicto_tactico_partido(
     txt_cron_obs = " (cronología por minuto no concluyente)" if k_eval_ver < k_min_cron else ""
     n_top_filas = len(top5_podio) if top5_podio else 5
     if mkt_2t is None:
+        _txt_ft_coh = f", como '{mkt_ft_coh}' al {prob_ft_coh:.0f}%" if mkt_ft_coh else ""
         c4 = (
             f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
             f"Estimación de volumen de 2T: {xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}"
-            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT)."
+            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT{_txt_ft_coh})."
+        )
+    elif mkt_2t_tipo == "2t_under":
+        c4 = (
+            f"4. Contención proyectada en la segunda mitad (2T): El modelo valida '{mkt_2t}' al {prob_2t:.0f}% "
+            f"({xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}){txt_cron_obs}."
         )
     else:
         if k_eval_ver < k_min_cron:
