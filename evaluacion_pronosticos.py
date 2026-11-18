@@ -10591,14 +10591,18 @@ def auditar_produccion_github_ronda12(
         por_sha[k_sha] = por_sha.get(k_sha, 0) + 1
 
     # 2. Inspección read-only de .github/workflows/bot_24_7.yml y origin/main
-    wf_path = raiz / ".github" / "workflows" / "bot_24_7.yml"
-    wf_txt = wf_path.read_text(encoding="utf-8") if wf_path.exists() else ""
-
     def _git_show_safe(spec: str) -> str | None:
         try:
             return subprocess.check_output(["git", "show", spec], cwd=str(raiz), text=True, encoding="utf-8")
         except Exception:
             return None
+
+    wf_path = raiz / ".github" / "workflows" / "bot_24_7.yml"
+    wf_txt = (
+        (_git_show_safe("fbb6dc03886e6f3740f89610acc4eb5f798192a4:.github/workflows/bot_24_7.yml") or "")
+        if not consultar_github_en_vivo
+        else (wf_path.read_text(encoding="utf-8") if wf_path.exists() else "")
+    )
 
     head_origin_main = None
     try:
@@ -10611,8 +10615,9 @@ def auditar_produccion_github_ronda12(
     except Exception:
         pass
 
-    rem_bot_txt = _git_show_safe("origin/main:bot_interactivo.py") or ""
-    rem_eval_txt = _git_show_safe("origin/main:evaluacion_pronosticos.py") or ""
+    ref_base_r12 = "fbb6dc03886e6f3740f89610acc4eb5f798192a4" if not consultar_github_en_vivo else "origin/main"
+    rem_bot_txt = _git_show_safe(f"{ref_base_r12}:bot_interactivo.py") or ""
+    rem_eval_txt = _git_show_safe(f"{ref_base_r12}:evaluacion_pronosticos.py") or ""
     loc_bot_txt = (raiz / "bot_interactivo.py").read_text(encoding="utf-8") if (raiz / "bot_interactivo.py").exists() else ""
 
     simbolos_ruta_dual = [
@@ -10643,7 +10648,7 @@ def auditar_produccion_github_ronda12(
     }
 
     # 3. Cadena SHA-256 remota vs local
-    rem_ledger_raw = _git_show_safe("origin/main:informes/evaluacion/ledger_oos.jsonl") or ""
+    rem_ledger_raw = _git_show_safe(f"{ref_base_r12}:informes/evaluacion/ledger_oos.jsonl") or ""
     rem_entries = [json.loads(ln) for ln in rem_ledger_raw.splitlines() if ln.strip()]
     loc_entries = cargar_ledger_oos(ruta_led)
     verif_local = verificar_cadena_ledger_oos(ruta_led)

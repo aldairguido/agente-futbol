@@ -1406,6 +1406,17 @@ def _emitir_anotacion_ci_segura(paso: str, out: dict[str, Any]) -> None:
     r_tok = os.getenv("PERSISTENCIA_REMOTO_TOKEN", "").strip()
     r_ssh = os.getenv("PERSISTENCIA_REMOTO_SSH_KEY", "").strip()
     limpiar = lambda x: _censurar_secreto(str(x or ""), r_tok, r_url, r_ssh).replace("\n", " ").replace("\r", " ")
+    if paso == "hidratacion_prod":
+        ok_h = bool(out.get("ok"))
+        n_led = int(((out.get("ledger") or {}).get("n_final")) or 0)
+        n_arch = (
+            int(out.get("n_pronosticos_hidratados") or 0)
+            + int(out.get("n_evaluaciones_hidratadas") or 0)
+            + int(out.get("n_eventos_hidratados") or 0)
+            + (1 if n_led > 0 else 0)
+        )
+        print(f"::notice title=hidratacion_prod::ledger={n_led} archivos={n_arch} ok={ok_h}")
+        return
     if not out.get("ok"):
         cod = out.get("codigo_error") or (out.get("hidratacion") or {}).get("codigo_error") or "fallo"
         errs = out.get("errores") or (out.get("push") or {}).get("errores") or []
@@ -1433,6 +1444,7 @@ def _emitir_anotacion_ci_segura(paso: str, out: dict[str, Any]) -> None:
 
 def _main_cli() -> int:
     parser = argparse.ArgumentParser(description="Utilidad CLI de persistencia Git")
+    parser.add_argument("--hidratar", action="store_true", help="Hidrata snapshots y ledger desde el remoto privado al arranque.")
     parser.add_argument("--smoke-prueba", action="store_true", help="Ejecuta prueba de escritura ficticia en rama de pruebas.")
     parser.add_argument("--inicializar-produccion-limpia", action="store_true", help="Crea produccion-datos en el remoto privado con el ledger limpio (sin registros de prueba).")
     parser.add_argument(
@@ -1447,6 +1459,26 @@ def _main_cli() -> int:
     parser.add_argument("--ci-anotacion", action="store_true", help="Emite ::notice/::error censurado para GitHub Actions.")
     args = parser.parse_args()
 
+    if args.hidratar:
+        cfg = ConfigPersistencia.desde_entorno()
+        if cfg.habilitada:
+            out = hidratar_desde_remoto_datos(cfg)
+        else:
+            out = {
+                "ok": False,
+                "codigo_estado": cfg.codigo_estado,
+                "codigo_error": cfg.codigo_estado,
+                "motivo": cfg.motivo_estado,
+                "error": cfg.motivo_estado,
+                "n_pronosticos_hidratados": 0,
+                "n_evaluaciones_hidratadas": 0,
+                "n_eventos_hidratados": 0,
+                "ledger": {"ok": False, "n_remoto": 0, "n_final": 0, "n_reencadenados": 0},
+            }
+        print(json.dumps(out, ensure_ascii=False))
+        if args.ci_anotacion:
+            _emitir_anotacion_ci_segura("hidratacion_prod", out)
+        return 0
     if args.inicializar_produccion_limpia:
         out = inicializar_produccion_limpia(
             remote=args.remote,

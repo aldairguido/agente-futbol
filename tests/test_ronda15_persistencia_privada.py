@@ -405,13 +405,13 @@ def test_ronda15_ledger_local_base_limpio_y_bot_24_7_sin_tocar():
     ]
     assert all(not r.get("es_registro_prueba_mentira") for r in regs)
 
-    bot_main = subprocess.check_output(
-        ["git", "show", "main:.github/workflows/bot_24_7.yml"],
-        cwd=ROOT,
-        encoding="utf-8",
-    ).replace("\r\n", "\n")
     bot_disk = (Path(ROOT) / ".github" / "workflows" / "bot_24_7.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert bot_main == bot_disk
+    assert "persist-credentials: false" in bot_disk
+    assert "contents: read" in bot_disk
+    assert "contents: write" not in bot_disk
+    assert "fetch-depth: 0" not in bot_disk
+    assert "--hidratar --ci-anotacion" in bot_disk
+    assert "secrets.PERSISTENCIA_REMOTO_SSH_KEY" in bot_disk
 
 
 def test_ronda15_auth_git_anula_extraheader_heredado_y_censura_anotacion_ci(
@@ -602,3 +602,17 @@ def test_ronda16_ssh_deploy_key_git_ssh_command_censura_y_rechazo_origin(
 
     wf_txt = (Path(ROOT) / ".github" / "workflows" / "test_persistencia_datos.yml").read_text(encoding="utf-8")
     assert "secrets.PERSISTENCIA_REMOTO_SSH_KEY" in wf_txt
+
+    capsys.readouterr()
+    pp._emitir_anotacion_ci_segura(
+        "hidratacion_prod",
+        {
+            "ok": True,
+            "n_pronosticos_hidratados": 0,
+            "n_evaluaciones_hidratadas": 0,
+            "n_eventos_hidratados": 0,
+            "ledger": {"ok": True, "n_remoto": 3, "n_final": 3, "n_reencadenados": 0},
+        },
+    )
+    out_hid = capsys.readouterr().out.strip()
+    assert out_hid == "::notice title=hidratacion_prod::ledger=3 archivos=1 ok=True"

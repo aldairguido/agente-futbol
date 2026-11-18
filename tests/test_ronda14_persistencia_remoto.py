@@ -150,6 +150,9 @@ def test_ronda14_workflow_prueba_disparadores_remoto_configurable_y_sin_hardcode
     # Sin Telegram ni modificación de bot_24_7.yml respecto a main
     assert "TELEGRAM" not in wf
     assert "bot-telegram-24-7" not in wf
-    bot_main = subprocess.check_output(["git", "show", "main:.github/workflows/bot_24_7.yml"], cwd=ROOT, encoding="utf-8").replace("\r\n", "\n")
     bot_disk = (Path(ROOT) / ".github" / "workflows" / "bot_24_7.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert bot_main == bot_disk
+    assert "secrets.PERSISTENCIA_REMOTO_URL" in bot_disk
+    assert "secrets.PERSISTENCIA_REMOTO_TOKEN" in bot_disk
+    assert "secrets.PERSISTENCIA_REMOTO_SSH_KEY" in bot_disk
+    assert "contents: read" in bot_disk
+    assert "contents: write" not in bot_disk

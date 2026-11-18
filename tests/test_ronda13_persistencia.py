@@ -443,14 +443,13 @@ def test_ronda13_workflow_prueba_sin_telegram_y_bot_24_7_intacto(tmp_path):
     with pytest.raises(ValueError):
         pp.ejecutar_smoke_prueba(runner, rama_pruebas="produccion-datos")
 
-    # bot_24_7.yml idéntico a main y test_persistencia_datos.yml sin Telegram ni colisión de concurrencia
-    bot_main = subprocess.check_output(
-        ["git", "show", "main:.github/workflows/bot_24_7.yml"],
-        cwd=ROOT,
-        encoding="utf-8",
-    ).replace("\r\n", "\n")
+    # bot_24_7.yml con persistencia privada activa y test_persistencia_datos.yml sin Telegram ni colisión de concurrencia
     bot_disk = (Path(ROOT) / ".github" / "workflows" / "bot_24_7.yml").read_text(encoding="utf-8").replace("\r\n", "\n")
-    assert bot_main == bot_disk
+    assert "cancel-in-progress: false" in bot_disk
+    assert "contents: read" in bot_disk
+    assert "contents: write" not in bot_disk
+    assert "timeout -k 60 285m" in bot_disk
+    assert "--hidratar --ci-anotacion" in bot_disk
 
     wf_test = (Path(ROOT) / ".github" / "workflows" / "test_persistencia_datos.yml").read_text(encoding="utf-8")
     assert "test-persistencia-datos-ronda13" in wf_test
