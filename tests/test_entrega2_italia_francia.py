@@ -8,6 +8,8 @@ fixtures sinteticos declarados.
 
 from __future__ import annotations
 
+import pytest
+
 import json
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,12 @@ import servicio_mercados as sm
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures" / "ronda5_real_fixtures.json"
 
+
+@pytest.fixture(autouse=True)
+def _activar_conjunto_b_en_modulo():
+    from decision_cobertura import banderas_comportamiento
+    with banderas_comportamiento(activar_todas=True):
+        yield
 
 def _cargar_docs_reales() -> dict[str, dict[str, Any]]:
     payload = json.loads(FIXTURE_PATH.read_text(encoding="utf-8"))
@@ -487,7 +495,8 @@ def test_fase6_micropatrones_sinteticos_mp03_mp04_y_manejo_none() -> None:
 def test_fase7_umbrales_cobertura_yaml_regla_operativa() -> None:
     umb = dc.cargar_umbrales_cobertura()
     assert umb["max_desvio_frecuencia_observada_pts"] == 10.0
-    assert umb["min_cuota_justa_no_trivial_top5"] == 1.14
+    assert umb["min_cuota_justa_no_trivial_top5"] == 1.25
+    assert dc.obtener_umbral_cuota_justa_top5(umb) == 1.25
     assert umb["peso_prob_modelo_gatekeeper"] == 0.60
     assert umb["peso_tasa_empirica_gatekeeper"] == 0.40
     assert umb["umbral_promocion_empirica_top5"] == 0.85
@@ -515,10 +524,13 @@ def test_fase7_gatekeeper_integracion_italia_francia_y_turquia_belgica() -> None
     assert not any("x2" in et for et in etiquetas_if)
     assert not any("france" in et and "3.5" in et and "córner" in et for et in etiquetas_if)
     etq_top5_if = [t["etiqueta"].lower() for t in top5_if]
-    assert any("+1.5 goles" in et and "ft" in et for et in etq_top5_if), f"Falta +1.5 Goles FT en Top 5: {etq_top5_if}"
+    # Con min_cuota_justa restablecida en 1.25 (p <= 0.80 sin cuota real), +1.5 Goles (80.9%)
+    # queda fuera y el Top 5 muestra 3 lineas reales sin rellenar artificialmente.
+    assert not any("+1.5 goles" in et and "ft" in et for et in etq_top5_if), f"Violo 1.25 en Top 5: {etq_top5_if}"
     assert any("-4.5 goles" in et and "ft" in et for et in etq_top5_if), f"Falta -4.5 Goles FT en Top 5: {etq_top5_if}"
-    assert any(("-12.5 córn." in t["etiqueta"].lower() or "-11.5 córn." in t["etiqueta"].lower()) and t.get("respaldo_micropatron") for t in top5_if)
+    assert any("-11.5 córn." in t["etiqueta"].lower() and t.get("respaldo_micropatron") for t in top5_if)
     for item in top5_if:
+        assert float(item["cuota_justa"]) >= 1.25 - 1e-4
         assert item["score_gatekeeper"] is not None
         assert float(item["probabilidad"]) >= 0.70
 
@@ -645,11 +657,22 @@ def test_fase7_gatekeeper_vetos_y_score_compuesto_sintetico() -> None:
 
 
 def test_fase7_top5_permite_goles_complementarios_sin_duplicar_redundantes() -> None:
-    s_o15_ft = mm.Seleccion("total_goles", "Total de goles", "over_1.5", "más de 1.5 goles", "FT", None, 1.5, 0.809, estado="mantiene")
+    # Con min_cuota_justa=1.25 restablecida, p > 0.80 sin cuota real queda fuera (0.809 rechazado)
+    # y las selecciones <= 0.80 conservan la logica de no-redundancia en goles complementarios.
+    s_o15_alto = mm.Seleccion("total_goles", "Total de goles", "over_1.5", "más de 1.5 goles", "FT", None, 1.5, 0.809, estado="mantiene")
+    top5_bloqueado = mm.seleccionar_top_5_jugadas_recomendadas(
+        [s_o15_alto],
+        motor=None,
+        eq_l="Italy",
+        eq_v="France",
+    )
+    assert top5_bloqueado == []
+
+    s_o15_ft = mm.Seleccion("total_goles", "Total de goles", "over_1.5", "más de 1.5 goles", "FT", None, 1.5, 0.795, estado="mantiene")
     s_o25_ft = mm.Seleccion("total_goles", "Total de goles", "over_2.5", "más de 2.5 goles", "FT", None, 2.5, 0.720, estado="mantiene")
-    s_u45_ft = mm.Seleccion("total_goles", "Total de goles", "under_4.5", "menos de 4.5 goles", "FT", None, 4.5, 0.798, estado="mantiene")
-    s_o05_2t = mm.Seleccion("total_goles", "Total de goles", "gol_2t", "Al menos un gol en el 2T", "2T", None, 0.5, 0.840, estado="mantiene")
-    s_u125_c = mm.Seleccion("total_corners", "Total de tiros de esquina", "corners_under_12.5", "menos de 12.5 córneres", "FT", None, 12.5, 0.844, estado="mantiene")
+    s_u45_ft = mm.Seleccion("total_goles", "Total de goles", "under_4.5", "menos de 4.5 goles", "FT", None, 4.5, 0.785, estado="mantiene")
+    s_o05_2t = mm.Seleccion("total_goles", "Total de goles", "gol_2t", "Al menos un gol en el 2T", "2T", None, 0.5, 0.770, estado="mantiene")
+    s_u125_c = mm.Seleccion("total_corners", "Total de tiros de esquina", "corners_under_12.5", "menos de 12.5 córneres", "FT", None, 12.5, 0.760, estado="mantiene")
 
     top5 = mm.seleccionar_top_5_jugadas_recomendadas(
         [s_o15_ft, s_o25_ft, s_u45_ft, s_o05_2t, s_u125_c],

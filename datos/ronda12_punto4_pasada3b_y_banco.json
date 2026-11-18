@@ -1,0 +1,1885 @@
+{
+  "bandera_usar_sin_dato_si_mitades_no_suman_ft_defecto": false,
+  "inventario_en_disco": {
+    "colombia_15": {
+      "n_matrices": 15,
+      "inconsistencias_guardadas_en_disco": 0,
+      "discrepancias_1t_2t_ft_residuales_en_disco": 7,
+      "detalle_residuales": [
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "al_palo",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones_falladas",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones_perdidas",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "grandes_ocasiones",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "grandes_ocasiones_aprovechadas",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "remates_fuera_area",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        }
+      ],
+      "celdas_estimacion_modelo_en_disco": 88
+    },
+    "chile_15": {
+      "n_matrices": 15,
+      "inconsistencias_guardadas_en_disco": 0,
+      "discrepancias_1t_2t_ft_residuales_en_disco": 0,
+      "detalle_residuales": [],
+      "celdas_estimacion_modelo_en_disco": 204
+    },
+    "matrices_30": {
+      "n_matrices": 30,
+      "inconsistencias_guardadas_en_disco": 0,
+      "discrepancias_1t_2t_ft_residuales_en_disco": 7,
+      "detalle_residuales": [
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "al_palo",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones_falladas",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4653849",
+          "lado": "equipo",
+          "clave": "grandes_ocasiones_perdidas",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "grandes_ocasiones",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "grandes_ocasiones_aprovechadas",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "colombia",
+          "id_partido": "4407875",
+          "lado": "rival",
+          "clave": "remates_fuera_area",
+          "FT": 1.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        }
+      ],
+      "celdas_estimacion_modelo_en_disco": 292
+    },
+    "banco_83": {
+      "n_matrices": 90,
+      "inconsistencias_guardadas_en_disco": 0,
+      "discrepancias_1t_2t_ft_residuales_en_disco": 3,
+      "detalle_residuales": [
+        {
+          "equipo": "belgium",
+          "id_partido": "4653710",
+          "lado": "rival",
+          "clave": "xg_balon_parado",
+          "FT": 0.17,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "italy",
+          "id_partido": "5067299",
+          "lado": "rival",
+          "clave": "bloqueos",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        },
+        {
+          "equipo": "italy",
+          "id_partido": "5067299",
+          "lado": "equipo",
+          "clave": "remates_rechazados",
+          "FT": 2.0,
+          "1T": 0.0,
+          "2T": 0.0,
+          "suma_1t_2t": 0.0
+        }
+      ],
+      "celdas_estimacion_modelo_en_disco": 1210
+    }
+  },
+  "inventario_pasada_3b_fuente_viva": {
+    "fuente": "FuenteFotMob (live /matchDetails + Flashscore pairing)",
+    "bandera_defecto": false,
+    "colombia_15": {
+      "n_partidos_grupo": 15,
+      "n_fotmob_numericos_evaluados": 15,
+      "pids_flashscore_no_numericos": [],
+      "flag_off_total_inconsistencias": 148,
+      "flag_off_prorrateadas": 138,
+      "flag_off_ft_cero_ceros": 0,
+      "flag_off_suma_mitades_cero_ft_pos": 7,
+      "flag_on_mitades_sin_dato": 131,
+      "flag_on_prorrateadas": 0,
+      "flag_on_ft_intacto_y_mitades_none": true,
+      "por_metrica_prorrateada": {
+        "centros": 8,
+        "centros_completados": 3,
+        "corneres": 2,
+        "corners": 2,
+        "despejes": 4,
+        "duelos_ganados": 4,
+        "entradas": 4,
+        "entradas_ganadas": 4,
+        "faltas": 4,
+        "intercepciones": 4,
+        "pases_completados": 19,
+        "pases_largos": 7,
+        "pases_largos_completados": 4,
+        "pases_total": 4,
+        "pases_totales": 4,
+        "remates_a_puerta": 2,
+        "remates_dentro_area": 3,
+        "remates_fuera": 4,
+        "remates_fuera_area": 3,
+        "remates_puerta": 2,
+        "remates_rechazados": 2,
+        "remates_totales": 4,
+        "saques_banda": 4,
+        "saques_de_banda": 4,
+        "tarjetas_amarillas": 4,
+        "toques_area_rival": 4,
+        "xg": 3,
+        "xg_balon_parado": 1,
+        "xg_juego_abierto": 3,
+        "xg_sin_penalti": 3,
+        "xgot": 3,
+        "bloqueos": 2,
+        "fueras_de_juego": 1,
+        "fueras_juego": 1,
+        "paradas": 2,
+        "xgot_enfrentado": 3,
+        "xgot_enfrentados": 3
+      },
+      "ejemplos_prorrateadas": [
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "centros",
+          "crudo_FT": 19.0,
+          "crudo_1T": 9.0,
+          "crudo_2T": 0.0,
+          "off_1T": 19.0,
+          "off_2T": 0.0,
+          "on_FT": 19.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "centros_completados",
+          "crudo_FT": 3.0,
+          "crudo_1T": 1.0,
+          "crudo_2T": 0.0,
+          "off_1T": 3.0,
+          "off_2T": 0.0,
+          "on_FT": 3.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "corneres",
+          "crudo_FT": 7.0,
+          "crudo_1T": 4.0,
+          "crudo_2T": 0.0,
+          "off_1T": 7.0,
+          "off_2T": 0.0,
+          "on_FT": 7.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "corners",
+          "crudo_FT": 7.0,
+          "crudo_1T": 4.0,
+          "crudo_2T": 0.0,
+          "off_1T": 7.0,
+          "off_2T": 0.0,
+          "on_FT": 7.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "despejes",
+          "crudo_FT": 22.0,
+          "crudo_1T": 5.0,
+          "crudo_2T": 13.0,
+          "off_1T": 6.0,
+          "off_2T": 16.0,
+          "on_FT": 22.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "duelos_ganados",
+          "crudo_FT": 61.0,
+          "crudo_1T": 26.0,
+          "crudo_2T": 19.0,
+          "off_1T": 35.0,
+          "off_2T": 26.0,
+          "on_FT": 61.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "entradas",
+          "crudo_FT": 17.0,
+          "crudo_1T": 11.0,
+          "crudo_2T": 5.0,
+          "off_1T": 12.0,
+          "off_2T": 5.0,
+          "on_FT": 17.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "entradas_ganadas",
+          "crudo_FT": 17.0,
+          "crudo_1T": 11.0,
+          "crudo_2T": 5.0,
+          "off_1T": 12.0,
+          "off_2T": 5.0,
+          "on_FT": 17.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "faltas",
+          "crudo_FT": 21.0,
+          "crudo_1T": 6.0,
+          "crudo_2T": 9.0,
+          "off_1T": 8.0,
+          "off_2T": 13.0,
+          "on_FT": 21.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "intercepciones",
+          "crudo_FT": 13.0,
+          "crudo_1T": 6.0,
+          "crudo_2T": 5.0,
+          "off_1T": 7.0,
+          "off_2T": 6.0,
+          "on_FT": 13.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "pases_completados",
+          "crudo_FT": 377.0,
+          "crudo_1T": 184.0,
+          "crudo_2T": 123.0,
+          "off_1T": 226.0,
+          "off_2T": 151.0,
+          "on_FT": 377.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "pases_largos",
+          "crudo_FT": 79.0,
+          "crudo_1T": 33.0,
+          "crudo_2T": 25.0,
+          "off_1T": 45.0,
+          "off_2T": 34.0,
+          "on_FT": 79.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "pases_largos_completados",
+          "crudo_FT": 33.0,
+          "crudo_1T": 11.0,
+          "crudo_2T": 9.0,
+          "off_1T": 18.0,
+          "off_2T": 15.0,
+          "on_FT": 33.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "pases_total",
+          "crudo_FT": 454.0,
+          "crudo_1T": 219.0,
+          "crudo_2T": 152.0,
+          "off_1T": 268.0,
+          "off_2T": 186.0,
+          "on_FT": 454.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4653849",
+          "equipo": "colombia",
+          "lado": "equipo",
+          "clave": "pases_totales",
+          "crudo_FT": 454.0,
+          "crudo_1T": 219.0,
+          "crudo_2T": 152.0,
+          "off_1T": 268.0,
+          "off_2T": 186.0,
+          "on_FT": 454.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        }
+      ]
+    },
+    "chile_15": {
+      "n_partidos_grupo": 15,
+      "n_fotmob_numericos_evaluados": 13,
+      "pids_flashscore_no_numericos": [
+        {
+          "equipo": "chile",
+          "id_partido": "xjJMMS8F"
+        },
+        {
+          "equipo": "chile",
+          "id_partido": "SGTxNy3b"
+        }
+      ],
+      "flag_off_total_inconsistencias": 10,
+      "flag_off_prorrateadas": 9,
+      "flag_off_ft_cero_ceros": 0,
+      "flag_off_suma_mitades_cero_ft_pos": 0,
+      "flag_on_mitades_sin_dato": 9,
+      "flag_on_prorrateadas": 0,
+      "flag_on_ft_intacto_y_mitades_none": true,
+      "por_metrica_prorrateada": {
+        "pases_completados": 5,
+        "centros": 1,
+        "xgot_enfrentado": 1,
+        "xgot_enfrentados": 1,
+        "xgot": 1
+      },
+      "ejemplos_prorrateadas": [
+        {
+          "id_partido": "4407862",
+          "equipo": "chile",
+          "lado": "equipo",
+          "clave": "pases_completados",
+          "crudo_FT": 161.0,
+          "crudo_1T": 125.0,
+          "crudo_2T": 40.0,
+          "off_1T": 122.0,
+          "off_2T": 39.0,
+          "on_FT": 161.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4407862",
+          "equipo": "chile",
+          "lado": "rival",
+          "clave": "centros",
+          "crudo_FT": 20.0,
+          "crudo_1T": 17.0,
+          "crudo_2T": 5.0,
+          "off_1T": 15.0,
+          "off_2T": 5.0,
+          "on_FT": 20.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4407862",
+          "equipo": "chile",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 284.0,
+          "crudo_1T": 110.0,
+          "crudo_2T": 173.0,
+          "off_1T": 110.0,
+          "off_2T": 174.0,
+          "on_FT": 284.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4377171",
+          "equipo": "chile",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 419.0,
+          "crudo_1T": 266.0,
+          "crudo_2T": 157.0,
+          "off_1T": 263.0,
+          "off_2T": 156.0,
+          "on_FT": 419.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4377170",
+          "equipo": "chile",
+          "lado": "equipo",
+          "clave": "pases_completados",
+          "crudo_FT": 339.0,
+          "crudo_1T": 185.0,
+          "crudo_2T": 155.0,
+          "off_1T": 184.0,
+          "off_2T": 155.0,
+          "on_FT": 339.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "4377170",
+          "equipo": "chile",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 123.0,
+          "crudo_1T": 62.0,
+          "crudo_2T": 60.0,
+          "off_1T": 63.0,
+          "off_2T": 60.0,
+          "on_FT": 123.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "3231637",
+          "equipo": "chile",
+          "lado": "equipo",
+          "clave": "xgot_enfrentado",
+          "crudo_FT": 1.11,
+          "crudo_1T": 0.41,
+          "crudo_2T": 0.41,
+          "off_1T": 0.56,
+          "off_2T": 0.55,
+          "on_FT": 1.11,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "3231637",
+          "equipo": "chile",
+          "lado": "equipo",
+          "clave": "xgot_enfrentados",
+          "crudo_FT": 1.11,
+          "crudo_1T": 0.41,
+          "crudo_2T": 0.41,
+          "off_1T": 0.56,
+          "off_2T": 0.55,
+          "on_FT": 1.11,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "3231637",
+          "equipo": "chile",
+          "lado": "rival",
+          "clave": "xgot",
+          "crudo_FT": 1.11,
+          "crudo_1T": 0.41,
+          "crudo_2T": 0.41,
+          "off_1T": 0.56,
+          "off_2T": 0.55,
+          "on_FT": 1.11,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        }
+      ]
+    },
+    "matrices_30": {
+      "n_partidos_grupo": 30,
+      "n_fotmob_numericos_evaluados": 28,
+      "flag_off_total_inconsistencias": 158,
+      "flag_off_prorrateadas": 147,
+      "flag_off_ft_cero_ceros": 0,
+      "flag_off_suma_mitades_cero_ft_pos": 7,
+      "flag_on_mitades_sin_dato": 140,
+      "flag_on_prorrateadas": 0,
+      "flag_on_ft_intacto_y_mitades_none": true
+    },
+    "banco_83": {
+      "n_partidos_grupo": 81,
+      "n_fotmob_numericos_evaluados": 81,
+      "pids_flashscore_no_numericos": [],
+      "flag_off_total_inconsistencias": 342,
+      "flag_off_prorrateadas": 337,
+      "flag_off_ft_cero_ceros": 0,
+      "flag_off_suma_mitades_cero_ft_pos": 3,
+      "flag_on_mitades_sin_dato": 317,
+      "flag_on_prorrateadas": 0,
+      "flag_on_ft_intacto_y_mitades_none": true,
+      "por_metrica_prorrateada": {
+        "centros": 68,
+        "pases_completados": 112,
+        "saques_banda": 10,
+        "saques_de_banda": 10,
+        "pases_largos": 24,
+        "bloqueos": 3,
+        "centros_completados": 4,
+        "despejes": 4,
+        "duelos_ganados": 4,
+        "entradas": 4,
+        "entradas_ganadas": 5,
+        "faltas": 4,
+        "grandes_ocasiones": 3,
+        "grandes_ocasiones_aprovechadas": 1,
+        "intercepciones": 4,
+        "paradas": 3,
+        "pases_largos_completados": 4,
+        "pases_total": 4,
+        "pases_totales": 4,
+        "remates_a_puerta": 4,
+        "remates_dentro_area": 4,
+        "remates_fuera": 3,
+        "remates_fuera_area": 4,
+        "remates_puerta": 4,
+        "remates_rechazados": 3,
+        "remates_totales": 4,
+        "toques_area_rival": 4,
+        "xg": 4,
+        "xg_juego_abierto": 4,
+        "xg_sin_penalti": 4,
+        "xgot": 2,
+        "corneres": 3,
+        "corners": 3,
+        "grandes_ocasiones_falladas": 2,
+        "grandes_ocasiones_perdidas": 2,
+        "xgot_enfrentado": 2,
+        "xgot_enfrentados": 2,
+        "tarjetas_amarillas": 2,
+        "xg_balon_parado": 2
+      },
+      "ejemplos_prorrateadas": [
+        {
+          "id_partido": "5181795",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "centros",
+          "crudo_FT": 17.0,
+          "crudo_1T": 0.0,
+          "crudo_2T": 10.0,
+          "off_1T": 0.0,
+          "off_2T": 17.0,
+          "on_FT": 17.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181795",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "pases_completados",
+          "crudo_FT": 446.0,
+          "crudo_1T": 205.0,
+          "crudo_2T": 239.0,
+          "off_1T": 206.0,
+          "off_2T": 240.0,
+          "on_FT": 446.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181795",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "saques_banda",
+          "crudo_FT": 11.0,
+          "crudo_1T": 7.0,
+          "crudo_2T": 5.0,
+          "off_1T": 6.0,
+          "off_2T": 5.0,
+          "on_FT": 11.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181795",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "saques_de_banda",
+          "crudo_FT": 11.0,
+          "crudo_1T": 7.0,
+          "crudo_2T": 5.0,
+          "off_1T": 6.0,
+          "off_2T": 5.0,
+          "on_FT": 11.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181795",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 343.0,
+          "crudo_1T": 194.0,
+          "crudo_2T": 150.0,
+          "off_1T": 193.0,
+          "off_2T": 150.0,
+          "on_FT": 343.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181792",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "centros",
+          "crudo_FT": 18.0,
+          "crudo_1T": 8.0,
+          "crudo_2T": 0.0,
+          "off_1T": 18.0,
+          "off_2T": 0.0,
+          "on_FT": 18.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181792",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "pases_completados",
+          "crudo_FT": 320.0,
+          "crudo_1T": 153.0,
+          "crudo_2T": 169.0,
+          "off_1T": 152.0,
+          "off_2T": 168.0,
+          "on_FT": 320.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181792",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "centros",
+          "crudo_FT": 8.0,
+          "crudo_1T": 0.0,
+          "crudo_2T": 3.0,
+          "off_1T": 0.0,
+          "off_2T": 8.0,
+          "on_FT": 8.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181792",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 411.0,
+          "crudo_1T": 238.0,
+          "crudo_2T": 171.0,
+          "off_1T": 239.0,
+          "off_2T": 172.0,
+          "on_FT": 411.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181791",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "centros",
+          "crudo_FT": 25.0,
+          "crudo_1T": 0.0,
+          "crudo_2T": 20.0,
+          "off_1T": 0.0,
+          "off_2T": 25.0,
+          "on_FT": 25.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181791",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "centros",
+          "crudo_FT": 10.0,
+          "crudo_1T": 6.0,
+          "crudo_2T": 0.0,
+          "off_1T": 10.0,
+          "off_2T": 0.0,
+          "on_FT": 10.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181791",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 360.0,
+          "crudo_1T": 268.0,
+          "crudo_2T": 94.0,
+          "off_1T": 267.0,
+          "off_2T": 93.0,
+          "on_FT": 360.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181789",
+          "equipo": "turkey",
+          "lado": "equipo",
+          "clave": "centros",
+          "crudo_FT": 14.0,
+          "crudo_1T": 0.0,
+          "crudo_2T": 12.0,
+          "off_1T": 0.0,
+          "off_2T": 14.0,
+          "on_FT": 14.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181789",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "centros",
+          "crudo_FT": 11.0,
+          "crudo_1T": 9.0,
+          "crudo_2T": 0.0,
+          "off_1T": 11.0,
+          "off_2T": 0.0,
+          "on_FT": 11.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        },
+        {
+          "id_partido": "5181789",
+          "equipo": "turkey",
+          "lado": "rival",
+          "clave": "pases_completados",
+          "crudo_FT": 482.0,
+          "crudo_1T": 313.0,
+          "crudo_2T": 168.0,
+          "off_1T": 314.0,
+          "off_2T": 168.0,
+          "on_FT": 482.0,
+          "on_1T": null,
+          "on_2T": null,
+          "on_proc_1T": "sin_dato",
+          "on_proc_2T": "sin_dato"
+        }
+      ]
+    }
+  },
+  "validador_extendido": {
+    "live_completo_con_colombia_chile_y_entradas": {
+      "n_partidos_unicos_banco_csv": 83,
+      "n_pares_equipo_partido_banco_csv": 94,
+      "incluye_colombia_chile": true,
+      "incluye_entradas": true,
+      "n_partidos_unicos_colombia_chile": 30,
+      "n_matrices_evaluadas": 120,
+      "n_partidos_unicos_con_matriz_fuente": 111,
+      "ids_sin_matriz_cruda_en_fixtures": [
+        "5181796",
+        "5181797"
+      ],
+      "banco_csv_normalizado": {
+        "total_defectos": 1,
+        "partidos_unicos_con_defecto": 1,
+        "por_tipo": {
+          "suma_mitades_distinta_ft": 1
+        },
+        "por_fuente": {
+          "fotmob": 1
+        },
+        "ejemplos": [
+          {
+            "tipo": "suma_mitades_distinta_ft",
+            "fuente": "fotmob",
+            "equipo": "italy",
+            "id_partido": "5067299",
+            "periodo": "FT",
+            "detalle": "remates_rechazados: FT=2.0 vs 1T(0.0)+2T(0.0)"
+          }
+        ]
+      },
+      "matrices_crudas_pre_saneamiento": {
+        "total_defectos": 157,
+        "partidos_unicos_con_defecto": 68,
+        "por_tipo": {
+          "empate_con_bandos_invertidos": 4,
+          "entradas_falso_100_pct_sin_denominador": 30,
+          "falso_denominador_100": 122,
+          "suma_mitades_distinta_ft": 1
+        },
+        "por_fuente": {
+          "fotmob": 151,
+          "fotmob+flashscore": 6
+        },
+        "ejemplos": [
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181795",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=51.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181795",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=40.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181792",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=51.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181792",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=41.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181791",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=62.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181791",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=35.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181789",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=55.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "5181789",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=56.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "4667775",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=43.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "4667775",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=57.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "4667773",
+            "periodo": "FT",
+            "detalle": "equipo: pases_tercio_final=100.0 con porcentaje=76.0"
+          },
+          {
+            "tipo": "falso_denominador_100",
+            "fuente": "fotmob",
+            "equipo": "turkey",
+            "id_partido": "4667773",
+            "periodo": "FT",
+            "detalle": "rival: pases_tercio_final=100.0 con porcentaje=46.0"
+          }
+        ]
+      },
+      "matrices_post_sanear_partido_auditoria_45": {
+        "total_defectos": 5,
+        "partidos_unicos_con_defecto": 5,
+        "por_tipo": {
+          "empate_con_bandos_invertidos": 4,
+          "suma_mitades_distinta_ft": 1
+        },
+        "por_fuente": {
+          "fotmob": 1,
+          "fotmob+flashscore": 4
+        },
+        "ejemplos": [
+          {
+            "tipo": "suma_mitades_distinta_ft",
+            "fuente": "fotmob",
+            "equipo": "italy",
+            "id_partido": "5067299",
+            "periodo": "FT",
+            "detalle": "rival bloqueos: FT=2.0 != 1T(0.0)+2T(0.0)"
+          },
+          {
+            "tipo": "empate_con_bandos_invertidos",
+            "fuente": "fotmob+flashscore",
+            "equipo": "colombia",
+            "id_partido": "4667823",
+            "periodo": "FT",
+            "detalle": "Marcador empatado con bandos_invertidos=True en fuente secundaria"
+          },
+          {
+            "tipo": "empate_con_bandos_invertidos",
+            "fuente": "fotmob+flashscore",
+            "equipo": "colombia",
+            "id_partido": "4377212",
+            "periodo": "FT",
+            "detalle": "Marcador empatado con bandos_invertidos=True en fuente secundaria"
+          },
+          {
+            "tipo": "empate_con_bandos_invertidos",
+            "fuente": "fotmob+flashscore",
+            "equipo": "chile",
+            "id_partido": "4407862",
+            "periodo": "FT",
+            "detalle": "Marcador empatado con bandos_invertidos=True en fuente secundaria"
+          },
+          {
+            "tipo": "empate_con_bandos_invertidos",
+            "fuente": "fotmob+flashscore",
+            "equipo": "chile",
+            "id_partido": "4377170",
+            "periodo": "FT",
+            "detalle": "Marcador empatado con bandos_invertidos=True en fuente secundaria"
+          }
+        ]
+      },
+      "resumen_por_ambito": {
+        "banco_83": {
+          "pre_total_defectos": 123,
+          "pre_partidos_unicos_con_defecto": 53,
+          "pre_por_tipo": {
+            "falso_denominador_100": 122,
+            "suma_mitades_distinta_ft": 1
+          },
+          "post_total_defectos": 1,
+          "post_partidos_unicos_con_defecto": 1,
+          "post_por_tipo": {
+            "suma_mitades_distinta_ft": 1
+          }
+        },
+        "colombia_chile_30": {
+          "pre_total_defectos": 34,
+          "pre_partidos_unicos_con_defecto": 15,
+          "pre_por_tipo": {
+            "empate_con_bandos_invertidos": 4,
+            "entradas_falso_100_pct_sin_denominador": 30
+          },
+          "post_total_defectos": 4,
+          "post_partidos_unicos_con_defecto": 4,
+          "post_por_tipo": {
+            "empate_con_bandos_invertidos": 4
+          }
+        }
+      }
+    },
+    "live_banco_83": {
+      "pre_total": 123,
+      "pre_por_tipo": {
+        "falso_denominador_100": 122,
+        "suma_mitades_distinta_ft": 1
+      },
+      "post_total": 1,
+      "post_por_tipo": {
+        "suma_mitades_distinta_ft": 1
+      }
+    },
+    "respaldo_pre_r12_banco_83": {
+      "pre_total": 152,
+      "pre_por_tipo": {
+        "empate_con_bandos_invertidos": 6,
+        "entradas_ganadas_mayor_intentadas": 6,
+        "falso_denominador_100": 122,
+        "suma_mitades_distinta_ft": 1,
+        "tiros_libres_sin_invertir_igual_faltas": 17
+      },
+      "post_total": 7,
+      "post_por_tipo": {
+        "empate_con_bandos_invertidos": 6,
+        "suma_mitades_distinta_ft": 1
+      }
+    },
+    "prueba_sintetica_validar_coherencia_entradas": {
+      "es_coherente": false,
+      "estado": "CON_DISCREPANCIAS",
+      "verificadas": 5,
+      "discrepancias": [
+        {
+          "variable": "entradas",
+          "ft": 15.0,
+          "1t": 8.0,
+          "2t": 5.0,
+          "suma_1t_2t": 13.0,
+          "diferencia": 2.0,
+          "motivo": "suma_mitades_distinta_ft"
+        },
+        {
+          "variable": "entradas_ganadas",
+          "ft": 10.0,
+          "1t": 9.0,
+          "2t": 4.0,
+          "suma_1t_2t": 13.0,
+          "diferencia": -3.0,
+          "motivo": "suma_mitades_distinta_ft"
+        },
+        {
+          "variable": "entradas_ganadas",
+          "ft": null,
+          "1t": 9.0,
+          "2t": null,
+          "suma_1t_2t": null,
+          "diferencia": 1.0,
+          "motivo": "entradas_ganadas_mayor_intentadas_1T"
+        }
+      ],
+      "variables_con_error": [
+        "entradas",
+        "entradas_ganadas"
+      ]
+    }
+  },
+  "correccion_6_empates_banco": {
+    "respaldo_dir": "datos/respaldos/ronda12_p4_pre_correccion",
+    "n_archivos_respaldados": 11,
+    "manifest_respaldo": {
+      "data/banco_partidos.csv": {
+        "bytes": 446618,
+        "sha256": "b9c7d2b745737ad3cac2e58c9524145e4958348f130b91082ecb11703bac8065",
+        "git_tracked": true
+      },
+      "tests/fixtures/londrina_nautico_fixtures.json": {
+        "bytes": 1555598,
+        "sha256": "920534aa10d5684e1eef704c53a5bc676bea080191581ef351a5a9ee56b3588c",
+        "git_tracked": true
+      },
+      "data/banco_partidos.db": {
+        "bytes": 638976,
+        "sha256": "67a1b9156da6e9f2e57f34046c834dcc212d14b16555718bb63376194fe76d7b",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_2369_BRA_False_False.json": {
+        "bytes": 776478,
+        "sha256": "5dd276a2dd8beaea9bfbb45629e7d8e407399afb335a054ff6df20aa0dfe314b",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_2369_ITA_False_False.json": {
+        "bytes": 776486,
+        "sha256": "8a30a292b6b228894874b4db7806783d75411ab7cf91b54138af9e00fa221ab8",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_298660_BRA_False_False.json": {
+        "bytes": 766778,
+        "sha256": "a849963e8023143bbd6ab53aaf81fe0cde02d3abb8324591567767c30158ae6a",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_298660_ITA_False_False.json": {
+        "bytes": 779085,
+        "sha256": "2d80d33257c21b393da8d68094ae1079c7757911deef07d339d7ce2e902218dd",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_londrina_BRA_False_False.json": {
+        "bytes": 779127,
+        "sha256": "d83068ae3aa30b9362f717ed74afab625ef87afd4980604a0158f5b3640c2671",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_londrina_INT_False_False.json": {
+        "bytes": 779212,
+        "sha256": "4c68f19929dc2158c71201970c7c53f24a4137320e2251eba58906ba1d9c01a2",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_nautico_BRA_False_False.json": {
+        "bytes": 776478,
+        "sha256": "5dd276a2dd8beaea9bfbb45629e7d8e407399afb335a054ff6df20aa0dfe314b",
+        "git_tracked": false
+      },
+      "cache/cache_fotmob_nautico_ITA_False_False.json": {
+        "bytes": 776617,
+        "sha256": "95418396bc88d882965a4890f3ba9d66e593b46a17ddfd13493ac41b901a7edc",
+        "git_tracked": false
+      }
+    },
+    "comparacion_6_partidos": [
+      {
+        "id_partido": "5190761",
+        "equipo_clave": "londrina",
+        "fecha": "2026-10-13",
+        "condicion": "fuera",
+        "rival": "Athletic Club MG",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "2qdzm8Mi",
+          "tiros_libres": [
+            15.0,
+            15.0
+          ],
+          "entradas": [
+            19.0,
+            15.0
+          ],
+          "entradas_ganadas": [
+            9.0,
+            8.0
+          ],
+          "entradas_ganadas_pct": [
+            60.0,
+            42.0
+          ],
+          "pases_tercio_final": [
+            120.0,
+            76.0
+          ],
+          "pases_tercio_final_pct": [
+            44.0,
+            68.0
+          ],
+          "xa_equipo": [
+            0.27,
+            0.79
+          ],
+          "errores_remate": [
+            2.0,
+            0.0
+          ],
+          "saques_puerta": [
+            9.0,
+            11.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "2qdzm8Mi",
+          "tiros_libres": [
+            15.0,
+            15.0
+          ],
+          "entradas": [
+            19.0,
+            15.0
+          ],
+          "entradas_ganadas": [
+            8.0,
+            9.0
+          ],
+          "entradas_ganadas_pct": [
+            42.0,
+            60.0
+          ],
+          "pases_tercio_final": [
+            76.0,
+            120.0
+          ],
+          "pases_tercio_final_pct": [
+            72.0,
+            73.0
+          ],
+          "xa_equipo": [
+            0.29,
+            0.78
+          ],
+          "errores_remate": [
+            0.0,
+            2.0
+          ],
+          "saques_puerta": [
+            11.0,
+            9.0
+          ]
+        }
+      },
+      {
+        "id_partido": "5190682",
+        "equipo_clave": "londrina",
+        "fecha": "2026-09-01",
+        "condicion": "casa",
+        "rival": "Juventude",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "WMjv9bAL",
+          "tiros_libres": [
+            16.0,
+            17.0
+          ],
+          "entradas": [
+            27.0,
+            17.0
+          ],
+          "entradas_ganadas": [
+            12.0,
+            12.0
+          ],
+          "entradas_ganadas_pct": [
+            71.0,
+            44.0
+          ],
+          "pases_tercio_final": [
+            115.0,
+            80.0
+          ],
+          "pases_tercio_final_pct": [
+            54.0,
+            66.0
+          ],
+          "xa_equipo": [
+            0.27,
+            0.61
+          ],
+          "errores_remate": [
+            1.0,
+            0.0
+          ],
+          "saques_puerta": [
+            6.0,
+            10.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "WMjv9bAL",
+          "tiros_libres": [
+            17.0,
+            16.0
+          ],
+          "entradas": [
+            27.0,
+            17.0
+          ],
+          "entradas_ganadas": [
+            12.0,
+            12.0
+          ],
+          "entradas_ganadas_pct": [
+            44.0,
+            71.0
+          ],
+          "pases_tercio_final": [
+            80.0,
+            115.0
+          ],
+          "pases_tercio_final_pct": [
+            49.0,
+            70.0
+          ],
+          "xa_equipo": [
+            0.27,
+            0.62
+          ],
+          "errores_remate": [
+            0.0,
+            1.0
+          ],
+          "saques_puerta": [
+            10.0,
+            6.0
+          ]
+        }
+      },
+      {
+        "id_partido": "5190774",
+        "equipo_clave": "nautico",
+        "fecha": "2026-10-19",
+        "condicion": "fuera",
+        "rival": "Goiás",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "YqUt3KCk",
+          "tiros_libres": [
+            12.0,
+            14.0
+          ],
+          "entradas": [
+            14.0,
+            13.0
+          ],
+          "entradas_ganadas": [
+            10.0,
+            10.0
+          ],
+          "entradas_ganadas_pct": [
+            77.0,
+            71.0
+          ],
+          "pases_tercio_final": [
+            195.0,
+            63.0
+          ],
+          "pases_tercio_final_pct": [
+            36.0,
+            57.0
+          ],
+          "xa_equipo": [
+            0.71,
+            1.5
+          ],
+          "errores_remate": [
+            2.0,
+            0.0
+          ],
+          "saques_puerta": [
+            8.0,
+            19.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "YqUt3KCk",
+          "tiros_libres": [
+            14.0,
+            12.0
+          ],
+          "entradas": [
+            14.0,
+            13.0
+          ],
+          "entradas_ganadas": [
+            10.0,
+            10.0
+          ],
+          "entradas_ganadas_pct": [
+            71.0,
+            77.0
+          ],
+          "pases_tercio_final": [
+            63.0,
+            195.0
+          ],
+          "pases_tercio_final_pct": [
+            75.0,
+            85.0
+          ],
+          "xa_equipo": [
+            0.71,
+            1.51
+          ],
+          "errores_remate": [
+            0.0,
+            2.0
+          ],
+          "saques_puerta": [
+            19.0,
+            8.0
+          ]
+        }
+      },
+      {
+        "id_partido": "5190743",
+        "equipo_clave": "nautico",
+        "fecha": "2026-10-03",
+        "condicion": "fuera",
+        "rival": "Fortaleza",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "pnYANWyq",
+          "tiros_libres": [
+            22.0,
+            15.0
+          ],
+          "entradas": [
+            11.0,
+            7.0
+          ],
+          "entradas_ganadas": [
+            4.0,
+            4.0
+          ],
+          "entradas_ganadas_pct": [
+            57.0,
+            36.0
+          ],
+          "pases_tercio_final": [
+            191.0,
+            96.0
+          ],
+          "pases_tercio_final_pct": [
+            43.0,
+            66.0
+          ],
+          "xa_equipo": [
+            0.66,
+            0.66
+          ],
+          "errores_remate": [
+            1.0,
+            0.0
+          ],
+          "saques_puerta": [
+            5.0,
+            13.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "pnYANWyq",
+          "tiros_libres": [
+            15.0,
+            22.0
+          ],
+          "entradas": [
+            11.0,
+            7.0
+          ],
+          "entradas_ganadas": [
+            4.0,
+            4.0
+          ],
+          "entradas_ganadas_pct": [
+            36.0,
+            57.0
+          ],
+          "pases_tercio_final": [
+            96.0,
+            191.0
+          ],
+          "pases_tercio_final_pct": [
+            73.0,
+            80.0
+          ],
+          "xa_equipo": [
+            0.68,
+            0.67
+          ],
+          "errores_remate": [
+            0.0,
+            1.0
+          ],
+          "saques_puerta": [
+            13.0,
+            5.0
+          ]
+        }
+      },
+      {
+        "id_partido": "5190716",
+        "equipo_clave": "nautico",
+        "fecha": "2026-09-15",
+        "condicion": "casa",
+        "rival": "Operário-PR",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "xrpocwS8",
+          "tiros_libres": [
+            23.0,
+            10.0
+          ],
+          "entradas": [
+            30.0,
+            12.0
+          ],
+          "entradas_ganadas": [
+            8.0,
+            19.0
+          ],
+          "entradas_ganadas_pct": [
+            67.0,
+            63.0
+          ],
+          "pases_tercio_final": [
+            105.0,
+            126.0
+          ],
+          "pases_tercio_final_pct": [
+            55.0,
+            57.0
+          ],
+          "xa_equipo": [
+            1.29,
+            1.2
+          ],
+          "errores_remate": [
+            1.0,
+            0.0
+          ],
+          "saques_puerta": [
+            11.0,
+            8.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "xrpocwS8",
+          "tiros_libres": [
+            10.0,
+            23.0
+          ],
+          "entradas": [
+            30.0,
+            12.0
+          ],
+          "entradas_ganadas": [
+            19.0,
+            8.0
+          ],
+          "entradas_ganadas_pct": [
+            63.0,
+            67.0
+          ],
+          "pases_tercio_final": [
+            126.0,
+            105.0
+          ],
+          "pases_tercio_final_pct": [
+            67.0,
+            72.0
+          ],
+          "xa_equipo": [
+            1.31,
+            1.21
+          ],
+          "errores_remate": [
+            0.0,
+            1.0
+          ],
+          "saques_puerta": [
+            8.0,
+            11.0
+          ]
+        }
+      },
+      {
+        "id_partido": "5190670",
+        "equipo_clave": "nautico",
+        "fecha": "2026-08-23",
+        "condicion": "fuera",
+        "rival": "São Bernardo",
+        "antes_respaldo": {
+          "bandos_invertidos": true,
+          "id_flashscore": "Ekd0vm5U",
+          "tiros_libres": [
+            16.0,
+            13.0
+          ],
+          "entradas": [
+            17.0,
+            10.0
+          ],
+          "entradas_ganadas": [
+            8.0,
+            11.0
+          ],
+          "entradas_ganadas_pct": [
+            80.0,
+            65.0
+          ],
+          "pases_tercio_final": [
+            86.0,
+            135.0
+          ],
+          "pases_tercio_final_pct": [
+            76.0,
+            41.0
+          ],
+          "xa_equipo": [
+            0.66,
+            1.37
+          ],
+          "errores_remate": [
+            0.0,
+            0.0
+          ],
+          "saques_puerta": [
+            10.0,
+            9.0
+          ]
+        },
+        "despues_flashscore": {
+          "bandos_invertidos": false,
+          "id_flashscore": "Ekd0vm5U",
+          "tiros_libres": [
+            13.0,
+            16.0
+          ],
+          "entradas": [
+            17.0,
+            10.0
+          ],
+          "entradas_ganadas": [
+            11.0,
+            8.0
+          ],
+          "entradas_ganadas_pct": [
+            65.0,
+            80.0
+          ],
+          "pases_tercio_final": [
+            135.0,
+            86.0
+          ],
+          "pases_tercio_final_pct": [
+            70.0,
+            64.0
+          ],
+          "xa_equipo": [
+            0.68,
+            1.37
+          ],
+          "errores_remate": [
+            0.0,
+            0.0
+          ],
+          "saques_puerta": [
+            9.0,
+            10.0
+          ]
+        }
+      }
+    ],
+    "invarianza_lambda_londrina_nautico": {
+      "soloA": {
+        "antes": [
+          1.14,
+          0.85
+        ],
+        "despues": [
+          1.14,
+          0.85
+        ],
+        "invariante": true
+      },
+      "AB": {
+        "antes": [
+          1.14,
+          0.86
+        ],
+        "despues": [
+          1.14,
+          0.86
+        ],
+        "invariante": true
+      }
+    }
+  }
+}

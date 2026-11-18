@@ -1,0 +1,2449 @@
+{
+  "configuracion_ronda14": {
+    "banderas_comportamiento": {
+      "usar_anclaje_coef_torneo": false,
+      "usar_tope_dcn_18_pct": false,
+      "usar_tensor_65_35_y_diesel": false,
+      "usar_micropatrones_combinatorios": false,
+      "usar_gatekeeper_multisenal_top5": false,
+      "usar_sobredispersion_nb_corners": true,
+      "usar_gate_corners_8_15": false,
+      "usar_gate_cronologia_mitades_10_15": false,
+      "usar_calibracion_y_veto_conciencia": false,
+      "usar_cuota_justa_114_top5": false,
+      "usar_guarda_doble_defensa_rota": false,
+      "usar_gate_goles_mitad_15_15": false,
+      "usar_kelly_conservador_min_3pct": false,
+      "usar_excluir_primer_gol_top5": false
+    },
+    "metadatos_defectos": {
+      "usar_sobredispersion_nb_corners": "regla operativa sin validación"
+    },
+    "min_cuota_justa_top5": 1.25,
+    "brazo_sombra_dedicado": "usar_guarda_doble_defensa_rota"
+  },
+  "verificacion_ciclo_sombra_guarda_ddr": {
+    "esquema_sombra": "sombra-v1",
+    "version_base": "soloA",
+    "usar_guarda_doble_defensa_rota_en_defecto": false,
+    "arm_presente_en_brazos_reglas": true,
+    "banderas_arm_guarda": {
+      "usar_anclaje_coef_torneo": false,
+      "usar_tope_dcn_18_pct": false,
+      "usar_tensor_65_35_y_diesel": false,
+      "usar_micropatrones_combinatorios": false,
+      "usar_gatekeeper_multisenal_top5": false,
+      "usar_sobredispersion_nb_corners": true,
+      "usar_gate_corners_8_15": false,
+      "usar_gate_cronologia_mitades_10_15": false,
+      "usar_calibracion_y_veto_conciencia": false,
+      "usar_cuota_justa_114_top5": false,
+      "usar_guarda_doble_defensa_rota": true,
+      "usar_gate_goles_mitad_15_15": false,
+      "usar_kelly_conservador_min_3pct": false,
+      "usar_excluir_primer_gol_top5": false
+    },
+    "pre_partido_registrado": true,
+    "n_liquidados_nuevos": 1,
+    "cadena_sha256_ok": true,
+    "brier_guarda_doble_defensa_rota": 0.096968,
+    "log_loss_guarda_doble_defensa_rota": 0.316043,
+    "n_observaciones_extraidas_guarda": 308,
+    "promocion_bloqueada_por_n_lt_30": true
+  },
+  "impacto_73_registros": {
+    "n_registros": 73,
+    "resumen_configuraciones": {
+      "soloA_previo": {
+        "n_registros": 73,
+        "n_abstenidos_goles_mitad": 0,
+        "n_estimables_catalogo": 22814,
+        "n_top5_total": 271,
+        "n_partidos_con_top5": 73,
+        "n_sec1_total": 879,
+        "n_partidos_con_sec1": 73,
+        "media_lambda_local_ft": 1.5805,
+        "media_lambda_visitante_ft": 1.3927
+      },
+      "defecto_ronda14_nb": {
+        "n_registros": 73,
+        "n_abstenidos_goles_mitad": 0,
+        "n_estimables_catalogo": 22814,
+        "n_top5_total": 273,
+        "n_partidos_con_top5": 73,
+        "n_sec1_total": 878,
+        "n_partidos_con_sec1": 73,
+        "media_lambda_local_ft": 1.5805,
+        "media_lambda_visitante_ft": 1.3927
+      },
+      "sombra_guarda_ddr": {
+        "n_registros": 73,
+        "n_abstenidos_goles_mitad": 0,
+        "n_estimables_catalogo": 22814,
+        "n_top5_total": 274,
+        "n_partidos_con_top5": 73,
+        "n_sec1_total": 875,
+        "n_partidos_con_sec1": 73,
+        "media_lambda_local_ft": 1.5616,
+        "media_lambda_visitante_ft": 1.3652
+      },
+      "A_mas_B_14": {
+        "n_registros": 73,
+        "n_abstenidos_goles_mitad": 73,
+        "n_estimables_catalogo": 22513,
+        "n_top5_total": 178,
+        "n_partidos_con_top5": 70,
+        "n_sec1_total": 540,
+        "n_partidos_con_sec1": 73,
+        "media_lambda_local_ft": 1.5132,
+        "media_lambda_visitante_ft": 1.3253
+      }
+    },
+    "comparaciones": {
+      "defecto_ronda14_nb_vs_soloA_previo": {
+        "n_partidos_lambda_cambiada": 0,
+        "delta_lambda_local_medio_cond": 0.0,
+        "delta_lambda_visitante_medio_cond": 0.0,
+        "partidos_lambda_cambiada": [],
+        "n_selecciones_catalogo_cambiadas": 4273,
+        "n_partidos_prob_cambiada": 70,
+        "cambios_prob_por_familia": {
+          "Córneres": {
+            "n_selecciones_cambiadas": 4273,
+            "n_partidos": 70,
+            "delta_prob_medio": -0.000833,
+            "abs_delta_prob_medio": 0.041474
+          },
+          "Goles": {
+            "n_selecciones_cambiadas": 0,
+            "n_partidos": 0,
+            "delta_prob_medio": null,
+            "abs_delta_prob_medio": null
+          },
+          "Resultado": {
+            "n_selecciones_cambiadas": 0,
+            "n_partidos": 0,
+            "delta_prob_medio": null,
+            "abs_delta_prob_medio": null
+          },
+          "Tarjetas": {
+            "n_selecciones_cambiadas": 0,
+            "n_partidos": 0,
+            "delta_prob_medio": null,
+            "abs_delta_prob_medio": null
+          }
+        },
+        "n_partidos_cambio_composicion_top5": 35,
+        "n_lineas_top5_entraron": 32,
+        "n_lineas_top5_salieron": 30,
+        "delta_n_top5": 2,
+        "ejemplos_cambios_top5": [
+          {
+            "partido": "Londrina vs Náutico",
+            "entran": [
+              "Córneres Totales (FT): +7.5 Córn."
+            ],
+            "salen": [
+              "Córneres Totales (FT): -11.5 Córn."
+            ]
+          },
+          {
+            "partido": "Arsenal vs Lille",
+            "entran": [
+              "Córneres Totales (FT): -10.5 Córn."
+            ],
+            "salen": [
+              "Córneres Arsenal (FT): -6.5 Córn."
+            ]
+          },
+          {
+            "partido": "Galatasaray vs Barcelona",
+            "entran": [
+              "Córneres Totales (FT): -10.5 Córn."
+            ],
+            "salen": [
+              "Córneres Totales (FT): -9.5 Córn."
+            ]
+          },
+          {
+            "partido": "Lens vs Sporting CP",
+            "entran": [
+              "Córneres Sporting CP (FT): -6.5 Córn."
+            ],
+            "salen": [
+              "Córneres Sporting CP (FT): -5.5 Córn."
+            ]
+          },
+          {
+            "partido": "Sabah FK vs Slavia Prague",
+            "entran": [
+              "Córneres Totales (FT): +7.5 Córn."
+            ],
+            "salen": [
+              "Córneres Totales (FT): -12.5 Córn."
+            ]
+          },
+          {
+            "partido": "Alianza Lima vs Universitario de Deportes",
+            "entran": [
+              "Córneres Totales (FT): -9.5 Córn."
+            ],
+            "salen": []
+          },
+          {
+            "partido": "Roma vs Real Madrid",
+            "entran": [
+              "Córneres Roma (FT): -6.5 Córn."
+            ],
+            "salen": []
+          },
+          {
+            "partido": "Deportivo A Coruña vs Levante",
+            "entran": [
+              "Córneres Totales (FT): -12.5 Córn."
+            ],
+            "salen": [
+              "Córneres Deportivo A Coruña (FT): +3.5 Córn."
+            ]
+          },
+          {
+            "partido": "Espanyol vs Atlético Madrid",
+            "entran": [
+              "Córneres Atlético Madrid (FT): +3.5 Córn."
+            ],
+            "salen": [
+              "Córneres Espanyol (FT): -4.5 Córn."
+            ]
+          },
+          {
+            "partido": "FC Gifu vs Vanraure Hachinohe",
+            "entran": [
+              "Córneres Vanraure Hachinohe (FT): -6.5 Córn."
+            ],
+            "salen": [
+              "Córneres Vanraure Hachinohe (FT): -5.5 Córn."
+            ]
+          },
+          {
+            "partido": "Hokkaido Consadole Sapporo vs Blaublitz Akita",
+            "entran": [
+              "Córneres Blaublitz Akita (FT): -6.5 Córn."
+            ],
+            "salen": [
+              "Córneres Hokkaido Consadole Sapporo (FT): +3.5 Córn."
+            ]
+          },
+          {
+            "partido": "Villarreal vs Elche",
+            "entran": [
+              "Córneres Elche (FT): -6.5 Córn."
+            ],
+            "salen": [
+              "Córneres Totales (FT): -10.5 Córn."
+            ]
+          }
+        ],
+        "n_partidos_cambio_composicion_sec1": 52,
+        "n_lineas_sec1_diferencia_simetrica": 93,
+        "delta_n_sec1": -1
+      },
+      "sombra_guarda_ddr_vs_defecto_ronda14_nb": {
+        "n_partidos_lambda_cambiada": 6,
+        "delta_lambda_local_medio_cond": -0.23,
+        "delta_lambda_visitante_medio_cond": -0.335,
+        "partidos_lambda_cambiada": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "lam_antes": [
+              1.04,
+              3.55
+            ],
+            "lam_despues": [
+              1.04,
+              2.63
+            ],
+            "delta": [
+              0.0,
+              -0.92
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "lam_antes": [
+              2.98,
+              1.1
+            ],
+            "lam_despues": [
+              2.42,
+              1.1
+            ],
+            "delta": [
+              -0.56,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "lam_antes": [
+              2.48,
+              2.1
+            ],
+            "lam_despues": [
+              2.05,
+              2.28
+            ],
+            "delta": [
+              -0.43,
+              0.18
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "lam_antes": [
+              1.03,
+              2.16
+            ],
+            "lam_despues": [
+              1.03,
+              1.6
+            ],
+            "delta": [
+              0.0,
+              -0.56
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "lam_antes": [
+              1.05,
+              4.2
+            ],
+            "lam_despues": [
+              1.05,
+              3.49
+            ],
+            "delta": [
+              0.0,
+              -0.71
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "lam_antes": [
+              4.2,
+              1.03
+            ],
+            "lam_despues": [
+              3.81,
+              1.03
+            ],
+            "delta": [
+              -0.39,
+              0.0
+            ]
+          }
+        ],
+        "n_selecciones_catalogo_cambiadas": 1234,
+        "n_partidos_prob_cambiada": 6,
+        "cambios_prob_por_familia": {
+          "Córneres": {
+            "n_selecciones_cambiadas": 0,
+            "n_partidos": 0,
+            "delta_prob_medio": null,
+            "abs_delta_prob_medio": null
+          },
+          "Goles": {
+            "n_selecciones_cambiadas": 875,
+            "n_partidos": 6,
+            "delta_prob_medio": -0.018025,
+            "abs_delta_prob_medio": 0.047199
+          },
+          "Resultado": {
+            "n_selecciones_cambiadas": 342,
+            "n_partidos": 6,
+            "delta_prob_medio": 0.0,
+            "abs_delta_prob_medio": 0.044655
+          },
+          "Tarjetas": {
+            "n_selecciones_cambiadas": 17,
+            "n_partidos": 1,
+            "delta_prob_medio": 0.000874,
+            "abs_delta_prob_medio": 0.069052
+          }
+        },
+        "n_partidos_cambio_composicion_top5": 6,
+        "n_lineas_top5_entraron": 14,
+        "n_lineas_top5_salieron": 13,
+        "delta_n_top5": 1,
+        "ejemplos_cambios_top5": [
+          {
+            "partido": "Turkey vs Belgium",
+            "entran": [
+              "Doble Oportunidad X2: Empate o Belgium (FT)",
+              "Goles 2T: +0.5 Goles"
+            ],
+            "salen": [
+              "Goles Belgium (FT): Anota primero Belgium",
+              "Belgium Apuesta Sin Empate / DNB (FT)"
+            ]
+          },
+          {
+            "partido": "Everton vs Chelsea",
+            "entran": [
+              "Goles Totales (FT): +1.5 Goles",
+              "Goles Everton (2T): +0.5 Goles",
+              "Goles 2T: +0.5 Goles"
+            ],
+            "salen": [
+              "1X2: Everton Gana (FT)",
+              "Goles Totales (FT): +2.5 Goles",
+              "Goles Everton (FT): Anota primero Everton",
+              "Everton Apuesta Sin Empate / DNB (FT)"
+            ]
+          },
+          {
+            "partido": "Newcastle United vs Aston Villa",
+            "entran": [
+              "Goles Newcastle United (FT): +0.5 Goles",
+              "Ambos Equipos Anotan (FT): Sí",
+              "Goles 2T: +0.5 Goles"
+            ],
+            "salen": [
+              "Goles Newcastle United (2T): +0.5 Goles"
+            ]
+          },
+          {
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "entran": [
+              "Doble Oportunidad X2: Empate o Borussia Dortmund (FT)",
+              "Goles Union Berlin (FT): -1.5 Goles",
+              "Goles Borussia Dortmund (FT): +0.5 Goles"
+            ],
+            "salen": [
+              "Goles Totales (FT): -4.5 Goles",
+              "Tarjetas Totales (FT): -4.5 Tarj.",
+              "Goles Borussia Dortmund (2T): +0.5 Goles"
+            ]
+          },
+          {
+            "partido": "New Zealand vs Inter Miami CF",
+            "entran": [
+              "Goles Totales (FT): +2.5 Goles"
+            ],
+            "salen": [
+              "Goles (FT): Gol en ambos tiempos (partido)"
+            ]
+          },
+          {
+            "partido": "Barcelona vs Aston Villa",
+            "entran": [
+              "Goles Barcelona (2T): +0.5 Goles",
+              "1X2: Barcelona Gana (FT)"
+            ],
+            "salen": [
+              "Goles Barcelona (FT): Anota primero Barcelona",
+              "1T: Barcelona gana (1T)"
+            ]
+          }
+        ],
+        "n_partidos_cambio_composicion_sec1": 6,
+        "n_lineas_sec1_diferencia_simetrica": 65,
+        "delta_n_sec1": -3
+      },
+      "A_mas_B_14_vs_soloA_previo": {
+        "n_partidos_lambda_cambiada": 46,
+        "delta_lambda_local_medio_cond": -0.107,
+        "delta_lambda_visitante_medio_cond": -0.107,
+        "partidos_lambda_cambiada": [
+          {
+            "job_id": "DESIGN::TB",
+            "partido": "Turkey vs Belgium",
+            "lam_antes": [
+              1.04,
+              3.55
+            ],
+            "lam_despues": [
+              1.1,
+              2.21
+            ],
+            "delta": [
+              0.06,
+              -1.34
+            ]
+          },
+          {
+            "job_id": "DESIGN::IF",
+            "partido": "Italy vs France",
+            "lam_antes": [
+              1.03,
+              2.33
+            ],
+            "lam_despues": [
+              1.31,
+              1.79
+            ],
+            "delta": [
+              0.28,
+              -0.54
+            ]
+          },
+          {
+            "job_id": "CTRL::LN",
+            "partido": "Londrina vs Náutico",
+            "lam_antes": [
+              1.14,
+              0.85
+            ],
+            "lam_despues": [
+              1.14,
+              0.86
+            ],
+            "delta": [
+              0.0,
+              0.01
+            ]
+          },
+          {
+            "job_id": "ARCH::193a259f96e34e49",
+            "partido": "Galatasaray vs Barcelona",
+            "lam_antes": [
+              1.02,
+              3.16
+            ],
+            "lam_despues": [
+              1.22,
+              2.83
+            ],
+            "delta": [
+              0.2,
+              -0.33
+            ]
+          },
+          {
+            "job_id": "ARCH::29190c5332f64eb1",
+            "partido": "Inter vs Club Brugge",
+            "lam_antes": [
+              2.14,
+              1.8
+            ],
+            "lam_despues": [
+              1.77,
+              2.09
+            ],
+            "delta": [
+              -0.37,
+              0.29
+            ]
+          },
+          {
+            "job_id": "ARCH::f2c5227f05725c64",
+            "partido": "Lens vs Sporting CP",
+            "lam_antes": [
+              1.33,
+              1.5
+            ],
+            "lam_despues": [
+              1.19,
+              1.8
+            ],
+            "delta": [
+              -0.14,
+              0.3
+            ]
+          },
+          {
+            "job_id": "ARCH::d3d45be6c72ec657",
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "lam_antes": [
+              2.59,
+              1.32
+            ],
+            "lam_despues": [
+              2.44,
+              1.57
+            ],
+            "delta": [
+              -0.15,
+              0.25
+            ]
+          },
+          {
+            "job_id": "ARCH::895402c59f17d314",
+            "partido": "Sabah FK vs Slavia Prague",
+            "lam_antes": [
+              1.97,
+              1.19
+            ],
+            "lam_despues": [
+              1.67,
+              1.47
+            ],
+            "delta": [
+              -0.3,
+              0.28
+            ]
+          },
+          {
+            "job_id": "ARCH::a29bd308cdbe8ccc",
+            "partido": "Viking vs Bayern München",
+            "lam_antes": [
+              1.1,
+              2.01
+            ],
+            "lam_despues": [
+              1.64,
+              2.0
+            ],
+            "delta": [
+              0.54,
+              -0.01
+            ]
+          },
+          {
+            "job_id": "ARCH::b9491017b83abfab",
+            "partido": "Villarreal vs Napoli",
+            "lam_antes": [
+              1.1,
+              1.21
+            ],
+            "lam_despues": [
+              1.25,
+              1.18
+            ],
+            "delta": [
+              0.15,
+              -0.03
+            ]
+          },
+          {
+            "job_id": "ARCH::feb7d3f2b7b7cb04",
+            "partido": "Alianza Lima vs Universitario de Deportes",
+            "lam_antes": [
+              0.95,
+              0.8
+            ],
+            "lam_despues": [
+              1.06,
+              0.8
+            ],
+            "delta": [
+              0.11,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::6ada5cd1eba43a3e",
+            "partido": "Roma vs Real Madrid",
+            "lam_antes": [
+              1.57,
+              0.94
+            ],
+            "lam_despues": [
+              1.57,
+              0.97
+            ],
+            "delta": [
+              0.0,
+              0.03
+            ]
+          },
+          {
+            "job_id": "ARCH::ee5cab1ef4c05c3e",
+            "partido": "Deportivo A Coruña vs Levante",
+            "lam_antes": [
+              1.16,
+              1.45
+            ],
+            "lam_despues": [
+              1.12,
+              1.18
+            ],
+            "delta": [
+              -0.04,
+              -0.27
+            ]
+          },
+          {
+            "job_id": "ARCH::3d8f1069c9f32b4d",
+            "partido": "Espanyol vs Atlético Madrid",
+            "lam_antes": [
+              0.95,
+              1.79
+            ],
+            "lam_despues": [
+              0.95,
+              1.49
+            ],
+            "delta": [
+              0.0,
+              -0.3
+            ]
+          },
+          {
+            "job_id": "ARCH::61eff7f75ce40b39",
+            "partido": "Real Betis vs Barcelona",
+            "lam_antes": [
+              1.22,
+              2.39
+            ],
+            "lam_despues": [
+              1.24,
+              2.3
+            ],
+            "delta": [
+              0.02,
+              -0.09
+            ]
+          },
+          {
+            "job_id": "ARCH::73a29f8aafcf03e3",
+            "partido": "Villarreal vs Elche",
+            "lam_antes": [
+              2.41,
+              1.0
+            ],
+            "lam_despues": [
+              2.4,
+              1.0
+            ],
+            "delta": [
+              -0.01,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::1fba9ef796150d73",
+            "partido": "Everton vs Chelsea",
+            "lam_antes": [
+              2.98,
+              1.1
+            ],
+            "lam_despues": [
+              2.43,
+              1.06
+            ],
+            "delta": [
+              -0.55,
+              -0.04
+            ]
+          },
+          {
+            "job_id": "ARCH::477b13731c13f085",
+            "partido": "FC Porto vs Hull City",
+            "lam_antes": [
+              1.53,
+              0.91
+            ],
+            "lam_despues": [
+              1.69,
+              0.94
+            ],
+            "delta": [
+              0.16,
+              0.03
+            ]
+          },
+          {
+            "job_id": "ARCH::62a4e4b9ef6adf62",
+            "partido": "Manchester City vs Ipswich Town",
+            "lam_antes": [
+              2.43,
+              1.02
+            ],
+            "lam_despues": [
+              1.96,
+              1.02
+            ],
+            "delta": [
+              -0.47,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::1edc8c043cfdd28a",
+            "partido": "Newcastle United vs Aston Villa",
+            "lam_antes": [
+              2.48,
+              2.1
+            ],
+            "lam_despues": [
+              1.86,
+              1.96
+            ],
+            "delta": [
+              -0.62,
+              -0.14
+            ]
+          },
+          {
+            "job_id": "ARCH::d140040001d88996",
+            "partido": "Union Berlin vs Borussia Dortmund",
+            "lam_antes": [
+              1.03,
+              2.16
+            ],
+            "lam_despues": [
+              1.03,
+              1.6
+            ],
+            "delta": [
+              0.0,
+              -0.56
+            ]
+          },
+          {
+            "job_id": "ARCH::62f014959843c34d",
+            "partido": "Valencia vs Athletic Club",
+            "lam_antes": [
+              1.03,
+              1.02
+            ],
+            "lam_despues": [
+              1.02,
+              1.02
+            ],
+            "delta": [
+              -0.01,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::19782b0411325c11",
+            "partido": "Real Madrid vs Sevilla",
+            "lam_antes": [
+              2.38,
+              0.81
+            ],
+            "lam_despues": [
+              2.0,
+              0.81
+            ],
+            "delta": [
+              -0.38,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::3eca7f2cb903a922",
+            "partido": "Juventus Next Gen vs Renate",
+            "lam_antes": [
+              1.76,
+              0.59
+            ],
+            "lam_despues": [
+              0.9,
+              0.86
+            ],
+            "delta": [
+              -0.86,
+              0.27
+            ]
+          },
+          {
+            "job_id": "ARCH::7950e64d091122d0",
+            "partido": "FC Porto vs PSV Eindhoven",
+            "lam_antes": [
+              1.89,
+              1.29
+            ],
+            "lam_despues": [
+              1.73,
+              1.29
+            ],
+            "delta": [
+              -0.16,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::264113ea1900872f",
+            "partido": "Fenerbahçe vs Slavia Prague",
+            "lam_antes": [
+              1.88,
+              1.17
+            ],
+            "lam_despues": [
+              1.88,
+              1.18
+            ],
+            "delta": [
+              0.0,
+              0.01
+            ]
+          },
+          {
+            "job_id": "ARCH::881c46e4eb7f5c59",
+            "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+            "lam_antes": [
+              1.88,
+              1.17
+            ],
+            "lam_despues": [
+              1.88,
+              1.18
+            ],
+            "delta": [
+              0.0,
+              0.01
+            ]
+          },
+          {
+            "job_id": "ARCH::51e6914948c72987",
+            "partido": "Liverpool vs Villarreal",
+            "lam_antes": [
+              1.88,
+              1.48
+            ],
+            "lam_despues": [
+              1.89,
+              1.48
+            ],
+            "delta": [
+              0.01,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::0592cec465480956",
+            "partido": "Manchester City vs AEK Athens",
+            "lam_antes": [
+              3.29,
+              0.96
+            ],
+            "lam_despues": [
+              2.86,
+              1.01
+            ],
+            "delta": [
+              -0.43,
+              0.05
+            ]
+          },
+          {
+            "job_id": "ARCH::6ea309941d8da82a",
+            "partido": "Napoli vs Bodø/Glimt",
+            "lam_antes": [
+              1.68,
+              1.15
+            ],
+            "lam_despues": [
+              1.68,
+              1.1
+            ],
+            "delta": [
+              0.0,
+              -0.05
+            ]
+          },
+          {
+            "job_id": "ARCH::fceedb7f1d2ffde0",
+            "partido": "Roma vs Slovan Bratislava",
+            "lam_antes": [
+              3.51,
+              0.91
+            ],
+            "lam_despues": [
+              3.26,
+              1.03
+            ],
+            "delta": [
+              -0.25,
+              0.12
+            ]
+          },
+          {
+            "job_id": "ARCH::031ff13d60700ffb",
+            "partido": "VfB Stuttgart vs Atlético Madrid",
+            "lam_antes": [
+              1.41,
+              1.8
+            ],
+            "lam_despues": [
+              1.43,
+              1.5
+            ],
+            "delta": [
+              0.02,
+              -0.3
+            ]
+          },
+          {
+            "job_id": "ARCH::a5380106704096e6",
+            "partido": "Aston Villa vs Manchester City",
+            "lam_antes": [
+              1.59,
+              1.69
+            ],
+            "lam_despues": [
+              1.6,
+              1.67
+            ],
+            "delta": [
+              0.01,
+              -0.02
+            ]
+          },
+          {
+            "job_id": "ARCH::6b172f5b9a84a21a",
+            "partido": "Atlético Madrid vs Deportivo A Coruña",
+            "lam_antes": [
+              2.04,
+              0.75
+            ],
+            "lam_despues": [
+              1.75,
+              0.85
+            ],
+            "delta": [
+              -0.29,
+              0.1
+            ]
+          },
+          {
+            "job_id": "ARCH::6318e0ead09aab95",
+            "partido": "New Zealand vs Inter Miami CF",
+            "lam_antes": [
+              1.05,
+              4.2
+            ],
+            "lam_despues": [
+              1.12,
+              3.09
+            ],
+            "delta": [
+              0.07,
+              -1.11
+            ]
+          },
+          {
+            "job_id": "ARCH::b43800e3bc57516e",
+            "partido": "Real Sociedad vs Levante",
+            "lam_antes": [
+              1.18,
+              1.7
+            ],
+            "lam_despues": [
+              1.17,
+              1.42
+            ],
+            "delta": [
+              -0.01,
+              -0.28
+            ]
+          },
+          {
+            "job_id": "ARCH::f3e5e1ad7196687c",
+            "partido": "Valencia vs Villarreal",
+            "lam_antes": [
+              1.13,
+              2.12
+            ],
+            "lam_despues": [
+              1.12,
+              1.86
+            ],
+            "delta": [
+              -0.01,
+              -0.26
+            ]
+          },
+          {
+            "job_id": "ARCH::cb569ef3699dc8d3",
+            "partido": "Barcelona vs Deportivo Alavés",
+            "lam_antes": [
+              2.84,
+              0.98
+            ],
+            "lam_despues": [
+              2.34,
+              0.98
+            ],
+            "delta": [
+              -0.5,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::0ed8682238d4b1fc",
+            "partido": "AEK Athens vs Real Madrid",
+            "lam_antes": [
+              1.1,
+              1.91
+            ],
+            "lam_despues": [
+              1.1,
+              1.67
+            ],
+            "delta": [
+              0.0,
+              -0.24
+            ]
+          },
+          {
+            "job_id": "ARCH::2c876ea9da4f14ae",
+            "partido": "Atlético Madrid vs 1860 München",
+            "lam_antes": [
+              2.14,
+              1.11
+            ],
+            "lam_despues": [
+              2.11,
+              1.13
+            ],
+            "delta": [
+              -0.03,
+              0.02
+            ]
+          },
+          {
+            "job_id": "ARCH::71a05b0ada6700a1",
+            "partido": "Atlético Madrid vs Bayern München",
+            "lam_antes": [
+              1.48,
+              2.13
+            ],
+            "lam_despues": [
+              1.48,
+              2.03
+            ],
+            "delta": [
+              0.0,
+              -0.1
+            ]
+          },
+          {
+            "job_id": "ARCH::3839ca85a762a2db",
+            "partido": "Barcelona vs Aston Villa",
+            "lam_antes": [
+              4.2,
+              1.03
+            ],
+            "lam_despues": [
+              3.1,
+              1.03
+            ],
+            "delta": [
+              -1.1,
+              0.0
+            ]
+          },
+          {
+            "job_id": "ARCH::2620e71a20445340",
+            "partido": "Bodø/Glimt vs Lille",
+            "lam_antes": [
+              1.09,
+              2.0
+            ],
+            "lam_despues": [
+              1.13,
+              1.88
+            ],
+            "delta": [
+              0.04,
+              -0.12
+            ]
+          },
+          {
+            "job_id": "ARCH::d6d343a7d9edc66a",
+            "partido": "Feyenoord vs Inter",
+            "lam_antes": [
+              1.72,
+              2.11
+            ],
+            "lam_despues": [
+              1.77,
+              2.06
+            ],
+            "delta": [
+              0.05,
+              -0.05
+            ]
+          },
+          {
+            "job_id": "ARCH::58e00d8632f7036b",
+            "partido": "Nottingham Forest vs Manchester City",
+            "lam_antes": [
+              0.77,
+              1.78
+            ],
+            "lam_despues": [
+              0.78,
+              1.72
+            ],
+            "delta": [
+              0.01,
+              -0.06
+            ]
+          },
+          {
+            "job_id": "ARCH::fbede112a43a0260",
+            "partido": "Nottingham Forest vs Manchester City",
+            "lam_antes": [
+              1.2,
+              2.57
+            ],
+            "lam_despues": [
+              1.23,
+              2.12
+            ],
+            "delta": [
+              0.03,
+              -0.45
+            ]
+          }
+        ],
+        "n_selecciones_catalogo_cambiadas": 17713,
+        "n_partidos_prob_cambiada": 73,
+        "cambios_prob_por_familia": {
+          "Córneres": {
+            "n_selecciones_cambiadas": 4519,
+            "n_partidos": 71,
+            "delta_prob_medio": -0.000768,
+            "abs_delta_prob_medio": 0.037177
+          },
+          "Goles": {
+            "n_selecciones_cambiadas": 10429,
+            "n_partidos": 69,
+            "delta_prob_medio": -0.004701,
+            "abs_delta_prob_medio": 0.021448
+          },
+          "Resultado": {
+            "n_selecciones_cambiadas": 2688,
+            "n_partidos": 69,
+            "delta_prob_medio": 0.0,
+            "abs_delta_prob_medio": 0.031348
+          },
+          "Tarjetas": {
+            "n_selecciones_cambiadas": 77,
+            "n_partidos": 5,
+            "delta_prob_medio": 0.007288,
+            "abs_delta_prob_medio": 0.065512
+          }
+        },
+        "n_partidos_cambio_composicion_top5": 72,
+        "n_lineas_top5_entraron": 84,
+        "n_lineas_top5_salieron": 177,
+        "delta_n_top5": -93,
+        "ejemplos_cambios_top5": [
+          {
+            "partido": "Turkey vs Belgium",
+            "entran": [
+              "Doble Oportunidad X2: Empate o Belgium (FT)",
+              "Córneres Totales (FT): -12.5 Córn.",
+              "Goles Belgium (FT): +0.5 Goles"
+            ],
+            "salen": [
+              "1X2: Belgium Gana (FT)",
+              "Goles (FT): Gol en ambos tiempos (partido)",
+              "Goles Belgium (FT): Anota primero Belgium",
+              "Córneres Totales (FT): +7.5 Córn.",
+              "Belgium Apuesta Sin Empate / DNB (FT)"
+            ]
+          },
+          {
+            "partido": "Italy vs France",
+            "entran": [
+              "Córneres Totales (FT): -12.5 Córn."
+            ],
+            "salen": [
+              "Doble Oportunidad X2: Empate o France (FT)",
+              "Goles 2T: +0.5 Goles",
+              "Córneres France (FT): +3.5 Córn."
+            ]
+          },
+          {
+            "partido": "Londrina vs Náutico",
+            "entran": [
+              "Córneres Totales (FT): -12.5 Córn."
+            ],
+            "salen": [
+              "Córneres Totales (FT): -11.5 Córn."
+            ]
+          },
+          {
+            "partido": "Colombia vs Chile",
+            "entran": [],
+            "salen": [
+              "Goles 2T: -1.5 Goles",
+              "Goles 1T: -1.5 Goles"
+            ]
+          },
+          {
+            "partido": "Arsenal vs Lille",
+            "entran": [],
+            "salen": [
+              "Goles 2T: +0.5 Goles",
+              "Córneres Arsenal (FT): -6.5 Córn."
+            ]
+          },
+          {
+            "partido": "Atlético Madrid vs Manchester United",
+            "entran": [
+              "Goles Atlético Madrid (FT): +0.5 Goles"
+            ],
+            "salen": [
+              "Goles 2T: +0.5 Goles"
+            ]
+          },
+          {
+            "partido": "Boca Juniors vs Vasco da Gama",
+            "entran": [],
+            "salen": [
+              "Goles 1T: -1.5 Goles",
+              "Goles 2T: -1.5 Goles"
+            ]
+          },
+          {
+            "partido": "Galatasaray vs Barcelona",
+            "entran": [
+              "Córneres Totales (FT): -11.5 Córn.",
+              "Goles Galatasaray (FT): +0.5 Goles"
+            ],
+            "salen": [
+              "Goles (FT): Gol en ambos tiempos (partido)",
+              "Goles Barcelona (2T): +0.5 Goles",
+              "Córneres Totales (FT): -9.5 Córn.",
+              "1X2: Barcelona Gana (FT)"
+            ]
+          },
+          {
+            "partido": "Inter vs Club Brugge",
+            "entran": [],
+            "salen": [
+              "Goles Totales (FT): +2.5 Goles",
+              "Goles Inter (2T): +0.5 Goles",
+              "Córneres Totales (FT): +7.5 Córn.",
+              "Goles (FT): Gol en ambos tiempos (partido)"
+            ]
+          },
+          {
+            "partido": "Lens vs Sporting CP",
+            "entran": [
+              "Doble Oportunidad X2: Empate o Sporting CP (FT)",
+              "Córneres Totales (FT): -9.5 Córn.",
+              "Goles Totales (FT): -4.5 Goles"
+            ],
+            "salen": [
+              "1ra Mitad : Menos de 1.5 Goles (75.5%) (Duelo de estudio en 1T / Explosión en 2T)",
+              "Córneres Sporting CP (FT): -5.5 Córn.",
+              "Goles 2T: +0.5 Goles"
+            ]
+          },
+          {
+            "partido": "RB Leipzig vs PSV Eindhoven",
+            "entran": [],
+            "salen": [
+              "Goles (FT): Gol en ambos tiempos (partido)",
+              "Goles RB Leipzig (2T): +0.5 Goles",
+              "Córneres Totales (FT): +7.5 Córn."
+            ]
+          },
+          {
+            "partido": "Sabah FK vs Slavia Prague",
+            "entran": [
+              "Goles Sabah FK (FT): -2.5 Goles"
+            ],
+            "salen": [
+              "Doble Oportunidad 1X: Sabah FK o Empate (FT)"
+            ]
+          }
+        ],
+        "n_partidos_cambio_composicion_sec1": 72,
+        "n_lineas_sec1_diferencia_simetrica": 551,
+        "delta_n_sec1": -339
+      }
+    }
+  },
+  "impacto_24_oos": {
+    "cohorte": {
+      "n_partidos_unicos": 24,
+      "n_jobs": 26,
+      "n_filas_comunes": 1376,
+      "n_boot": 2000,
+      "seed": 42,
+      "nota_in_sample_nb": "usar_sobredispersion_nb_corners=True (factor 1.05, regla operativa sin validación) fue calibrada sobre estas mismas 613 filas de córneres OOS; fuera de Córneres su efecto en OOS es exactamente 0."
+    },
+    "cobertura_26_jobs": {
+      "soloA_previo": {
+        "n_estimables_catalogo_26_jobs": 8110,
+        "n_estimables_analizar_26_jobs": 8110,
+        "n_sides_abstenidos_goles_mitad": 0
+      },
+      "defecto_ronda14_nb": {
+        "n_estimables_catalogo_26_jobs": 8110,
+        "n_estimables_analizar_26_jobs": 8110,
+        "n_sides_abstenidos_goles_mitad": 0
+      },
+      "sombra_guarda_ddr": {
+        "n_estimables_catalogo_26_jobs": 8110,
+        "n_estimables_analizar_26_jobs": 8110,
+        "n_sides_abstenidos_goles_mitad": 0
+      },
+      "A_mas_B_14": {
+        "n_estimables_catalogo_26_jobs": 7921,
+        "n_estimables_analizar_26_jobs": 4946,
+        "n_sides_abstenidos_goles_mitad": 26
+      }
+    },
+    "catalogo_1376_global": {
+      "n_partidos_unicos": 24,
+      "n_filas": 1376,
+      "suficiente_n30": false,
+      "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+      "versiones": {
+        "soloA_previo": {
+          "brier": 0.193777,
+          "log_loss": 0.670603,
+          "brier_ic95": [
+            0.149342,
+            0.23661
+          ],
+          "log_loss_ic95": [
+            0.505149,
+            0.837709
+          ]
+        },
+        "defecto_ronda14_nb": {
+          "brier": 0.190509,
+          "log_loss": 0.615002,
+          "brier_ic95": [
+            0.148552,
+            0.231526
+          ],
+          "log_loss_ic95": [
+            0.480966,
+            0.751346
+          ]
+        },
+        "sombra_guarda_ddr": {
+          "brier": 0.188128,
+          "log_loss": 0.606634,
+          "brier_ic95": [
+            0.147009,
+            0.228674
+          ],
+          "log_loss_ic95": [
+            0.475836,
+            0.742861
+          ]
+        },
+        "A_mas_B_14": {
+          "brier": 0.187479,
+          "log_loss": 0.603355,
+          "brier_ic95": [
+            0.147066,
+            0.227828
+          ],
+          "log_loss_ic95": [
+            0.473741,
+            0.736295
+          ]
+        }
+      },
+      "diferencias": {
+        "defecto_ronda14_nb - soloA_previo": {
+          "d_brier": -0.003268,
+          "d_brier_ic95": [
+            -0.005821,
+            -0.000678
+          ],
+          "d_log_loss": -0.055601,
+          "d_log_loss_ic95": [
+            -0.094144,
+            -0.019406
+          ]
+        },
+        "sombra_guarda_ddr - soloA_previo": {
+          "d_brier": -0.005649,
+          "d_brier_ic95": [
+            -0.009489,
+            -0.001961
+          ],
+          "d_log_loss": -0.063969,
+          "d_log_loss_ic95": [
+            -0.102756,
+            -0.02583
+          ]
+        },
+        "A_mas_B_14 - soloA_previo": {
+          "d_brier": -0.006298,
+          "d_brier_ic95": [
+            -0.011341,
+            -0.000806
+          ],
+          "d_log_loss": -0.067248,
+          "d_log_loss_ic95": [
+            -0.109468,
+            -0.025058
+          ]
+        },
+        "sombra_guarda_ddr - defecto_ronda14_nb": {
+          "d_brier": -0.002381,
+          "d_brier_ic95": [
+            -0.005341,
+            0.0
+          ],
+          "d_log_loss": -0.008368,
+          "d_log_loss_ic95": [
+            -0.018298,
+            0.0
+          ]
+        },
+        "A_mas_B_14 - defecto_ronda14_nb": {
+          "d_brier": -0.00303,
+          "d_brier_ic95": [
+            -0.007084,
+            0.000943
+          ],
+          "d_log_loss": -0.011647,
+          "d_log_loss_ic95": [
+            -0.024829,
+            0.001547
+          ]
+        },
+        "A_mas_B_14 - sombra_guarda_ddr": {
+          "d_brier": -0.000649,
+          "d_brier_ic95": [
+            -0.003385,
+            0.002182
+          ],
+          "d_log_loss": -0.003279,
+          "d_log_loss_ic95": [
+            -0.01198,
+            0.005803
+          ]
+        }
+      }
+    },
+    "catalogo_1376_por_familia": {
+      "Córneres": {
+        "n_partidos_unicos": 18,
+        "n_filas": 613,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 18 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "soloA_previo": {
+            "brier": 0.224583,
+            "log_loss": 0.831129,
+            "brier_ic95": [
+              0.149886,
+              0.292847
+            ],
+            "log_loss_ic95": [
+              0.517694,
+              1.133497
+            ]
+          },
+          "defecto_ronda14_nb": {
+            "brier": 0.217247,
+            "log_loss": 0.706322,
+            "brier_ic95": [
+              0.147777,
+              0.281651
+            ],
+            "log_loss_ic95": [
+              0.478376,
+              0.924191
+            ]
+          },
+          "sombra_guarda_ddr": {
+            "brier": 0.217247,
+            "log_loss": 0.706322,
+            "brier_ic95": [
+              0.147777,
+              0.281651
+            ],
+            "log_loss_ic95": [
+              0.478376,
+              0.924191
+            ]
+          },
+          "A_mas_B_14": {
+            "brier": 0.217247,
+            "log_loss": 0.706322,
+            "brier_ic95": [
+              0.147777,
+              0.281651
+            ],
+            "log_loss_ic95": [
+              0.478376,
+              0.924191
+            ]
+          }
+        },
+        "diferencias": {
+          "defecto_ronda14_nb - soloA_previo": {
+            "d_brier": -0.007336,
+            "d_brier_ic95": [
+              -0.012964,
+              -0.00125
+            ],
+            "d_log_loss": -0.124807,
+            "d_log_loss_ic95": [
+              -0.208247,
+              -0.037594
+            ]
+          },
+          "sombra_guarda_ddr - soloA_previo": {
+            "d_brier": -0.007336,
+            "d_brier_ic95": [
+              -0.012964,
+              -0.00125
+            ],
+            "d_log_loss": -0.124807,
+            "d_log_loss_ic95": [
+              -0.208247,
+              -0.037594
+            ]
+          },
+          "A_mas_B_14 - soloA_previo": {
+            "d_brier": -0.007336,
+            "d_brier_ic95": [
+              -0.012964,
+              -0.00125
+            ],
+            "d_log_loss": -0.124807,
+            "d_log_loss_ic95": [
+              -0.208247,
+              -0.037594
+            ]
+          },
+          "sombra_guarda_ddr - defecto_ronda14_nb": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - defecto_ronda14_nb": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - sombra_guarda_ddr": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          }
+        }
+      },
+      "Goles": {
+        "n_partidos_unicos": 24,
+        "n_filas": 563,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "soloA_previo": {
+            "brier": 0.185088,
+            "log_loss": 0.589635,
+            "brier_ic95": [
+              0.133996,
+              0.237298
+            ],
+            "log_loss_ic95": [
+              0.434074,
+              0.765489
+            ]
+          },
+          "defecto_ronda14_nb": {
+            "brier": 0.185088,
+            "log_loss": 0.589635,
+            "brier_ic95": [
+              0.133996,
+              0.237298
+            ],
+            "log_loss_ic95": [
+              0.434074,
+              0.765489
+            ]
+          },
+          "sombra_guarda_ddr": {
+            "brier": 0.180449,
+            "log_loss": 0.573425,
+            "brier_ic95": [
+              0.131524,
+              0.232085
+            ],
+            "log_loss_ic95": [
+              0.421772,
+              0.747681
+            ]
+          },
+          "A_mas_B_14": {
+            "brier": 0.179527,
+            "log_loss": 0.567745,
+            "brier_ic95": [
+              0.129533,
+              0.231891
+            ],
+            "log_loss_ic95": [
+              0.416958,
+              0.741389
+            ]
+          }
+        },
+        "diferencias": {
+          "defecto_ronda14_nb - soloA_previo": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "sombra_guarda_ddr - soloA_previo": {
+            "d_brier": -0.004639,
+            "d_brier_ic95": [
+              -0.010983,
+              0.0
+            ],
+            "d_log_loss": -0.01621,
+            "d_log_loss_ic95": [
+              -0.037124,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - soloA_previo": {
+            "d_brier": -0.005561,
+            "d_brier_ic95": [
+              -0.015144,
+              0.002623
+            ],
+            "d_log_loss": -0.02189,
+            "d_log_loss_ic95": [
+              -0.054066,
+              0.005907
+            ]
+          },
+          "sombra_guarda_ddr - defecto_ronda14_nb": {
+            "d_brier": -0.004639,
+            "d_brier_ic95": [
+              -0.010983,
+              0.0
+            ],
+            "d_log_loss": -0.01621,
+            "d_log_loss_ic95": [
+              -0.037124,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - defecto_ronda14_nb": {
+            "d_brier": -0.005561,
+            "d_brier_ic95": [
+              -0.015144,
+              0.002623
+            ],
+            "d_log_loss": -0.02189,
+            "d_log_loss_ic95": [
+              -0.054066,
+              0.005907
+            ]
+          },
+          "A_mas_B_14 - sombra_guarda_ddr": {
+            "d_brier": -0.000922,
+            "d_brier_ic95": [
+              -0.007553,
+              0.005074
+            ],
+            "d_log_loss": -0.00568,
+            "d_log_loss_ic95": [
+              -0.026606,
+              0.012997
+            ]
+          }
+        }
+      },
+      "Resultado": {
+        "n_partidos_unicos": 24,
+        "n_filas": 135,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 24 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "soloA_previo": {
+            "brier": 0.114825,
+            "log_loss": 0.381719,
+            "brier_ic95": [
+              0.077212,
+              0.160785
+            ],
+            "log_loss_ic95": [
+              0.276727,
+              0.514903
+            ]
+          },
+          "defecto_ronda14_nb": {
+            "brier": 0.114825,
+            "log_loss": 0.381719,
+            "brier_ic95": [
+              0.077212,
+              0.160785
+            ],
+            "log_loss_ic95": [
+              0.276727,
+              0.514903
+            ]
+          },
+          "sombra_guarda_ddr": {
+            "brier": 0.111397,
+            "log_loss": 0.368632,
+            "brier_ic95": [
+              0.075657,
+              0.15394
+            ],
+            "log_loss_ic95": [
+              0.273096,
+              0.486593
+            ]
+          },
+          "A_mas_B_14": {
+            "brier": 0.110838,
+            "log_loss": 0.369186,
+            "brier_ic95": [
+              0.074917,
+              0.153987
+            ],
+            "log_loss_ic95": [
+              0.273658,
+              0.489045
+            ]
+          }
+        },
+        "diferencias": {
+          "defecto_ronda14_nb - soloA_previo": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "sombra_guarda_ddr - soloA_previo": {
+            "d_brier": -0.003428,
+            "d_brier_ic95": [
+              -0.008565,
+              0.0
+            ],
+            "d_log_loss": -0.013087,
+            "d_log_loss_ic95": [
+              -0.034781,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - soloA_previo": {
+            "d_brier": -0.003987,
+            "d_brier_ic95": [
+              -0.010791,
+              0.002372
+            ],
+            "d_log_loss": -0.012533,
+            "d_log_loss_ic95": [
+              -0.036453,
+              0.007437
+            ]
+          },
+          "sombra_guarda_ddr - defecto_ronda14_nb": {
+            "d_brier": -0.003428,
+            "d_brier_ic95": [
+              -0.008565,
+              0.0
+            ],
+            "d_log_loss": -0.013087,
+            "d_log_loss_ic95": [
+              -0.034781,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - defecto_ronda14_nb": {
+            "d_brier": -0.003987,
+            "d_brier_ic95": [
+              -0.010791,
+              0.002372
+            ],
+            "d_log_loss": -0.012533,
+            "d_log_loss_ic95": [
+              -0.036453,
+              0.007437
+            ]
+          },
+          "A_mas_B_14 - sombra_guarda_ddr": {
+            "d_brier": -0.000559,
+            "d_brier_ic95": [
+              -0.005739,
+              0.0044
+            ],
+            "d_log_loss": 0.000554,
+            "d_log_loss_ic95": [
+              -0.013461,
+              0.014379
+            ]
+          }
+        }
+      },
+      "Tarjetas": {
+        "n_partidos_unicos": 16,
+        "n_filas": 65,
+        "suficiente_n30": false,
+        "nota_muestra": "MUESTRA PEQUEÑA (POCOS PARTIDOS): solo 16 partidos distintos (< MIN_PARTIDOS_PARA_CALIBRAR=30); IC95% amplio e insuficiente para afirmar mejora poblacional estable.",
+        "versiones": {
+          "soloA_previo": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.075667,
+              0.199444
+            ],
+            "log_loss_ic95": [
+              0.274331,
+              0.6169
+            ]
+          },
+          "defecto_ronda14_nb": {
+            "brier": 0.142492,
+            "log_loss": 0.458019,
+            "brier_ic95": [
+              0.075667,
+              0.199444
+            ],
+            "log_loss_ic95": [
+              0.274331,
+              0.6169
+            ]
+          },
+          "sombra_guarda_ddr": {
+            "brier": 0.13938,
+            "log_loss": 0.448455,
+            "brier_ic95": [
+              0.072602,
+              0.197184
+            ],
+            "log_loss_ic95": [
+              0.263098,
+              0.61416
+            ]
+          },
+          "A_mas_B_14": {
+            "brier": 0.134789,
+            "log_loss": 0.427087,
+            "brier_ic95": [
+              0.070385,
+              0.191861
+            ],
+            "log_loss_ic95": [
+              0.255252,
+              0.589477
+            ]
+          }
+        },
+        "diferencias": {
+          "defecto_ronda14_nb - soloA_previo": {
+            "d_brier": 0.0,
+            "d_brier_ic95": [
+              0.0,
+              0.0
+            ],
+            "d_log_loss": 0.0,
+            "d_log_loss_ic95": [
+              0.0,
+              0.0
+            ]
+          },
+          "sombra_guarda_ddr - soloA_previo": {
+            "d_brier": -0.003112,
+            "d_brier_ic95": [
+              -0.009336,
+              0.0
+            ],
+            "d_log_loss": -0.009564,
+            "d_log_loss_ic95": [
+              -0.028692,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - soloA_previo": {
+            "d_brier": -0.007703,
+            "d_brier_ic95": [
+              -0.017149,
+              0.0
+            ],
+            "d_log_loss": -0.030932,
+            "d_log_loss_ic95": [
+              -0.071468,
+              0.0
+            ]
+          },
+          "sombra_guarda_ddr - defecto_ronda14_nb": {
+            "d_brier": -0.003112,
+            "d_brier_ic95": [
+              -0.009336,
+              0.0
+            ],
+            "d_log_loss": -0.009564,
+            "d_log_loss_ic95": [
+              -0.028692,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - defecto_ronda14_nb": {
+            "d_brier": -0.007703,
+            "d_brier_ic95": [
+              -0.017149,
+              0.0
+            ],
+            "d_log_loss": -0.030932,
+            "d_log_loss_ic95": [
+              -0.071468,
+              0.0
+            ]
+          },
+          "A_mas_B_14 - sombra_guarda_ddr": {
+            "d_brier": -0.004591,
+            "d_brier_ic95": [
+              -0.013988,
+              0.0
+            ],
+            "d_log_loss": -0.021368,
+            "d_log_loss_ic95": [
+              -0.065105,
+              0.0
+            ]
+          }
+        }
+      }
+    },
+    "top5_24_unicos": {
+      "soloA_previo": {
+        "n_lineas": 91,
+        "n_partidos": 22,
+        "n_resueltas": 66,
+        "n_no_resolubles": 25,
+        "aciertos": 49,
+        "tasa_acierto": 0.7424,
+        "tasa_ic95": [
+          0.6308,
+          0.8387
+        ],
+        "brier": 0.188048,
+        "brier_ic95": [
+          0.136422,
+          0.247357
+        ],
+        "log_loss": 0.564149,
+        "log_loss_ic95": [
+          0.444672,
+          0.700892
+        ],
+        "d_tasa_vs_soloA_previo": 0.0,
+        "d_brier_vs_soloA_previo": 0.0,
+        "d_brier_vs_soloA_previo_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_soloA_previo": 0.0,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_tasa_vs_defecto_r14_nb": -0.0076,
+        "d_brier_vs_defecto_r14_nb": 0.001502,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.027921,
+          0.031031
+        ],
+        "d_log_loss_vs_defecto_r14_nb": 0.002288,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.064441,
+          0.069492
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 18
+      },
+      "defecto_ronda14_nb": {
+        "n_lineas": 92,
+        "n_partidos": 23,
+        "n_resueltas": 68,
+        "n_no_resolubles": 24,
+        "aciertos": 51,
+        "tasa_acierto": 0.75,
+        "tasa_ic95": [
+          0.6154,
+          0.8551
+        ],
+        "brier": 0.186546,
+        "brier_ic95": [
+          0.129203,
+          0.262955
+        ],
+        "log_loss": 0.561862,
+        "log_loss_ic95": [
+          0.429432,
+          0.741214
+        ],
+        "d_tasa_vs_soloA_previo": 0.0076,
+        "d_brier_vs_soloA_previo": -0.001502,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.032904,
+          0.027314
+        ],
+        "d_log_loss_vs_soloA_previo": -0.002288,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.074677,
+          0.062991
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0,
+        "d_brier_vs_defecto_r14_nb": 0.0,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_defecto_r14_nb": 0.0,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 0
+      },
+      "sombra_guarda_ddr": {
+        "n_lineas": 93,
+        "n_partidos": 23,
+        "n_resueltas": 67,
+        "n_no_resolubles": 26,
+        "aciertos": 51,
+        "tasa_acierto": 0.7612,
+        "tasa_ic95": [
+          0.6393,
+          0.8592
+        ],
+        "brier": 0.187125,
+        "brier_ic95": [
+          0.129924,
+          0.260929
+        ],
+        "log_loss": 0.567628,
+        "log_loss_ic95": [
+          0.431566,
+          0.74679
+        ],
+        "d_tasa_vs_soloA_previo": 0.0188,
+        "d_brier_vs_soloA_previo": -0.000923,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.037473,
+          0.034825
+        ],
+        "d_log_loss_vs_soloA_previo": 0.003479,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.081646,
+          0.086166
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0112,
+        "d_brier_vs_defecto_r14_nb": 0.000579,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.018751,
+          0.018379
+        ],
+        "d_log_loss_vs_defecto_r14_nb": 0.005766,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.038079,
+          0.052903
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 16
+      },
+      "A_mas_B_14": {
+        "n_lineas": 65,
+        "n_partidos": 21,
+        "n_resueltas": 56,
+        "n_no_resolubles": 9,
+        "aciertos": 44,
+        "tasa_acierto": 0.7857,
+        "tasa_ic95": [
+          0.6481,
+          0.9032
+        ],
+        "brier": 0.18004,
+        "brier_ic95": [
+          0.10832,
+          0.265542
+        ],
+        "log_loss": 0.556351,
+        "log_loss_ic95": [
+          0.384536,
+          0.761516
+        ],
+        "d_tasa_vs_soloA_previo": 0.0433,
+        "d_brier_vs_soloA_previo": -0.008009,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.074785,
+          0.061715
+        ],
+        "d_log_loss_vs_soloA_previo": -0.007799,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.159937,
+          0.153965
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0357,
+        "d_brier_vs_defecto_r14_nb": -0.006507,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.063029,
+          0.05032
+        ],
+        "d_log_loss_vs_defecto_r14_nb": -0.005511,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.135137,
+          0.128267
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 88
+      }
+    },
+    "seccion1_24_unicos": {
+      "soloA_previo": {
+        "n_lineas": 319,
+        "n_partidos": 24,
+        "n_resueltas": 297,
+        "n_no_resolubles": 22,
+        "aciertos": 213,
+        "tasa_acierto": 0.7172,
+        "tasa_ic95": [
+          0.6088,
+          0.8239
+        ],
+        "brier": 0.211599,
+        "brier_ic95": [
+          0.146688,
+          0.28218
+        ],
+        "log_loss": 0.634595,
+        "log_loss_ic95": [
+          0.469323,
+          0.812982
+        ],
+        "d_tasa_vs_soloA_previo": 0.0,
+        "d_brier_vs_soloA_previo": 0.0,
+        "d_brier_vs_soloA_previo_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_soloA_previo": 0.0,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0107,
+        "d_brier_vs_defecto_r14_nb": -0.005414,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.019399,
+          0.009013
+        ],
+        "d_log_loss_vs_defecto_r14_nb": -0.009746,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.042757,
+          0.024396
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 39
+      },
+      "defecto_ronda14_nb": {
+        "n_lineas": 314,
+        "n_partidos": 24,
+        "n_resueltas": 293,
+        "n_no_resolubles": 21,
+        "aciertos": 207,
+        "tasa_acierto": 0.7065,
+        "tasa_ic95": [
+          0.5833,
+          0.8284
+        ],
+        "brier": 0.217013,
+        "brier_ic95": [
+          0.141922,
+          0.294982
+        ],
+        "log_loss": 0.644341,
+        "log_loss_ic95": [
+          0.462825,
+          0.835862
+        ],
+        "d_tasa_vs_soloA_previo": -0.0107,
+        "d_brier_vs_soloA_previo": 0.005414,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.008314,
+          0.018977
+        ],
+        "d_log_loss_vs_soloA_previo": 0.009746,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.022906,
+          0.043119
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0,
+        "d_brier_vs_defecto_r14_nb": 0.0,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          0.0,
+          0.0
+        ],
+        "d_log_loss_vs_defecto_r14_nb": 0.0,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          0.0,
+          0.0
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 0
+      },
+      "sombra_guarda_ddr": {
+        "n_lineas": 308,
+        "n_partidos": 24,
+        "n_resueltas": 290,
+        "n_no_resolubles": 18,
+        "aciertos": 209,
+        "tasa_acierto": 0.7207,
+        "tasa_ic95": [
+          0.6,
+          0.8375
+        ],
+        "brier": 0.209352,
+        "brier_ic95": [
+          0.135794,
+          0.286982
+        ],
+        "log_loss": 0.625385,
+        "log_loss_ic95": [
+          0.444467,
+          0.813382
+        ],
+        "d_tasa_vs_soloA_previo": 0.0035,
+        "d_brier_vs_soloA_previo": -0.002247,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.030214,
+          0.020636
+        ],
+        "d_log_loss_vs_soloA_previo": -0.00921,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.079368,
+          0.049527
+        ],
+        "d_tasa_vs_defecto_r14_nb": 0.0142,
+        "d_brier_vs_defecto_r14_nb": -0.007661,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.038243,
+          0.011606
+        ],
+        "d_log_loss_vs_defecto_r14_nb": -0.018956,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.094667,
+          0.030807
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 36
+      },
+      "A_mas_B_14": {
+        "n_lineas": 190,
+        "n_partidos": 24,
+        "n_resueltas": 179,
+        "n_no_resolubles": 11,
+        "aciertos": 123,
+        "tasa_acierto": 0.6872,
+        "tasa_ic95": [
+          0.558,
+          0.8239
+        ],
+        "brier": 0.232768,
+        "brier_ic95": [
+          0.147187,
+          0.31244
+        ],
+        "log_loss": 0.689901,
+        "log_loss_ic95": [
+          0.481153,
+          0.88775
+        ],
+        "d_tasa_vs_soloA_previo": -0.03,
+        "d_brier_vs_soloA_previo": 0.021168,
+        "d_brier_vs_soloA_previo_ic95": [
+          -0.019124,
+          0.058306
+        ],
+        "d_log_loss_vs_soloA_previo": 0.055306,
+        "d_log_loss_vs_soloA_previo_ic95": [
+          -0.047454,
+          0.152701
+        ],
+        "d_tasa_vs_defecto_r14_nb": -0.0193,
+        "d_brier_vs_defecto_r14_nb": 0.015755,
+        "d_brier_vs_defecto_r14_nb_ic95": [
+          -0.024196,
+          0.050717
+        ],
+        "d_log_loss_vs_defecto_r14_nb": 0.04556,
+        "d_log_loss_vs_defecto_r14_nb_ic95": [
+          -0.059006,
+          0.136562
+        ],
+        "n_lineas_cambiadas_vs_defecto_r14_nb": 204
+      }
+    },
+    "partidos_lambda_cambiada_por_guarda_ddr_24_oos": [
+      {
+        "id_trabajo": "1edc8c043cfdd28a",
+        "partido": "Newcastle United vs Aston Villa",
+        "lam_defecto_nb": [
+          2.48,
+          2.1
+        ],
+        "lam_sombra_guarda_ddr": [
+          2.05,
+          2.28
+        ]
+      },
+      {
+        "id_trabajo": "1fba9ef796150d73",
+        "partido": "Everton vs Chelsea",
+        "lam_defecto_nb": [
+          2.98,
+          1.1
+        ],
+        "lam_sombra_guarda_ddr": [
+          2.42,
+          1.1
+        ]
+      },
+      {
+        "id_trabajo": "d140040001d88996",
+        "partido": "Union Berlin vs Borussia Dortmund",
+        "lam_defecto_nb": [
+          1.03,
+          2.16
+        ],
+        "lam_sombra_guarda_ddr": [
+          1.03,
+          1.6
+        ]
+      }
+    ]
+  }
+}

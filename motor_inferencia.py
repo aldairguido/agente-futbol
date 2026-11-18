@@ -623,7 +623,97 @@ def calcular_cuadro_c_timeline(
         if gf_i == 0 and gc_i == 0:
             n_con_eventos += 1
 
+    n_con_eventos_raw = n_con_eventos
+    n_con_mitades = n_con_eventos
+    n_con_eventos_y_mitades = n_con_eventos
+    gf_1t_mit = sum(conteo[fr]["anotados"] for fr in ("00_15", "16_30", "31_45"))
+    gf_2t_mit = sum(conteo[fr]["anotados"] for fr in ("46_60", "61_75", "76_90"))
+    gc_1t_mit = sum(conteo[fr]["recibidos"] for fr in ("00_15", "16_30", "31_45"))
+    gc_2t_mit = sum(conteo[fr]["recibidos"] for fr in ("46_60", "61_75", "76_90"))
+    tiene_matrices_45 = any(
+        isinstance(it, dict)
+        and isinstance(it.get("periodos"), dict)
+        and "resumen_claves" in it and len(((it["periodos"].get("FT") or {}).get("filas") or [])) >= 10
+        for it in lista
+    )
+    if tiene_matrices_45:
+        try:
+            from auditoria_historica import reconstruir_marcador_mitades_partido
+            conteo_mit: Dict[str, Dict[str, int]] = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
+            n_mit_ok = 0
+            n_ev_mit_ok = 0
+            gf1_m, gf2_m, gc1_m, gc2_m = 0, 0, 0, 0
+            hubo_descarte_mit = False
+            for it in lista:
+                if not isinstance(it, dict):
+                    continue
+                ge_1t, gr_1t, ge_2t, gr_2t, ok_m, _ = reconstruir_marcador_mitades_partido(it, "equipo", "rival")
+                if not ok_m:
+                    hubo_descarte_mit = True
+                    continue
+                n_mit_ok += 1
+                gf1_m += int(ge_1t or 0)
+                gf2_m += int(ge_2t or 0)
+                gc1_m += int(gr_1t or 0)
+                gc2_m += int(gr_2t or 0)
+                evs_it = it.get("eventos_gol") or it.get("goles_detalle") or it.get("goal_events")
+                if isinstance(evs_it, list) and evs_it:
+                    cond_it = str(it.get("condicion") or "casa").lower()
+                    es_loc_it = cond_it in ("casa", "local", "l", "home")
+                    tmp_it = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
+                    a_it, r_it, inv_it = 0, 0, False
+                    for ev in evs_it:
+                        if not isinstance(ev, dict):
+                            inv_it = True
+                            break
+                        fr_e, es_90 = _parsear_minuto_reglamentario(ev)
+                        if not es_90:
+                            continue
+                        if fr_e is None:
+                            inv_it = True
+                            break
+                        lado_e = str(ev.get("lado") or ev.get("bando") or "").lower()
+                        if lado_e in ("equipo", "favor", "propio") or (lado_e == "local" and es_loc_it) or (lado_e in ("visita", "visitante", "away") and not es_loc_it):
+                            tmp_it[fr_e]["anotados"] += 1
+                            a_it += 1
+                        else:
+                            tmp_it[fr_e]["recibidos"] += 1
+                            r_it += 1
+                    if not inv_it and a_it == int((ge_1t or 0) + (ge_2t or 0)) and r_it == int((gr_1t or 0) + (gr_2t or 0)):
+                        n_ev_mit_ok += 1
+                        for fr in franjas:
+                            conteo_mit[fr]["anotados"] += tmp_it[fr]["anotados"]
+                            conteo_mit[fr]["recibidos"] += tmp_it[fr]["recibidos"]
+                        continue
+                if int((ge_1t or 0) + (ge_2t or 0)) == 0 and int((gr_1t or 0) + (gr_2t or 0)) == 0:
+                    n_ev_mit_ok += 1
+                else:
+                    hubo_descarte_mit = True
+                    conteo_mit["31_45"]["anotados"] += int(ge_1t or 0)
+                    conteo_mit["31_45"]["recibidos"] += int(gr_1t or 0)
+                    conteo_mit["76_90"]["anotados"] += int(ge_2t or 0)
+                    conteo_mit["76_90"]["recibidos"] += int(gr_2t or 0)
+            n_con_mitades = n_mit_ok
+            n_con_eventos_y_mitades = n_ev_mit_ok
+            gf_1t_mit, gf_2t_mit, gc_1t_mit, gc_2t_mit = gf1_m, gf2_m, gc1_m, gc2_m
+            if hubo_descarte_mit and n_mit_ok > 0:
+                for fr in franjas:
+                    conteo[fr]["anotados"] = conteo_mit[fr]["anotados"]
+                    conteo[fr]["recibidos"] = conteo_mit[fr]["recibidos"]
+                n_con_eventos = n_mit_ok
+        except Exception:
+            pass
+
     conteo["_meta"] = {
+        "n_partidos_con_mitades": n_con_mitades,
+        "n_partidos_con_eventos_y_mitades": n_con_eventos_y_mitades,
+        "n_partidos_con_eventos_raw": n_con_eventos_raw,
+        "goles_1t_favor_mitades": gf_1t_mit,
+        "goles_2t_favor_mitades": gf_2t_mit,
+        "goles_favor_mitades": gf_1t_mit + gf_2t_mit,
+        "goles_1t_contra_mitades": gc_1t_mit,
+        "goles_2t_contra_mitades": gc_2t_mit,
+        "goles_contra_mitades": gc_1t_mit + gc_2t_mit,
         "n_partidos_totales": len(lista),
         "n_partidos_con_eventos": n_con_eventos,
         "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista)),
@@ -1127,12 +1217,12 @@ def generar_veredicto_tactico_partido(
     dc_code = "1X" if es_fav_local else "X2"
     p_dc_base = (p_loc + p_emp) * 100.0 if es_fav_local else (p_emp + p_vis) * 100.0
     jugada_1_nombre = f"Doble Oportunidad {dc_code}: Empate o {eq_fav}" if not es_fav_local else f"Doble Oportunidad {dc_code}: {eq_fav} o Empate"
-    jugada_1_prob = min(92.0, max(72.0, p_dc_base - 4.5))
+    jugada_1_prob = p_dc_base
     if top5_podio and len(top5_podio) > 0:
         j1 = top5_podio[0]
         jugada_1_nombre = str(j1.get("etiqueta") or jugada_1_nombre)
         jugada_1_prob = _safe_float(j1.get("probabilidad"), jugada_1_prob / 100.0) * 100.0
-        p_dc_base = _safe_float(j1.get("prob_base_poisson"), p_dc_base)
+        p_dc_base = _safe_float(j1.get("prob_base_poisson"), jugada_1_prob)
 
     # 2. Franja crítica en Cuadro C (Timeline de 15 min)
     pares_franjas = [
@@ -1166,7 +1256,7 @@ def generar_veredicto_tactico_partido(
     for k_u, k_lbl in pares_franjas:
         a_l = _get_c(cuadro_c_loc, k_u, k_lbl, "anotados")
         r_v = _get_c(cuadro_c_vis, k_u, k_lbl, "recibidos")
-        flujo_l = a_l + r_v + (2 if k_u == "76_90" else 0)
+        flujo_l = a_l + r_v + (2 if (k_u == "76_90" and (a_l + r_v) > 0) else 0)
         if flujo_l > mejor_flujo:
             mejor_flujo = flujo_l
             mejor_tramo_lbl = k_lbl
@@ -1177,7 +1267,7 @@ def generar_veredicto_tactico_partido(
 
         a_v = _get_c(cuadro_c_vis, k_u, k_lbl, "anotados")
         r_l = _get_c(cuadro_c_loc, k_u, k_lbl, "recibidos")
-        flujo_v = a_v + r_l + (2 if k_u == "76_90" else 0)
+        flujo_v = a_v + r_l + (2 if (k_u == "76_90" and (a_v + r_l) > 0) else 0)
         if flujo_v > mejor_flujo:
             mejor_flujo = flujo_v
             mejor_tramo_lbl = k_lbl
@@ -1289,11 +1379,13 @@ def generar_veredicto_tactico_partido(
         or (obtener_seleccion_nacional and (obtener_seleccion_nacional(eq_fav) is not None or obtener_seleccion_nacional(eq_riv) is not None))
     )
     art_fav = "" if es_sel_fav else "El "
-    c1_tit = (
-        f"1. {art_fav}{eq_fav} va a ganar (o mínimo empatar):"
-        if p_fav_max >= 0.50
-        else f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
-    )
+    diff_1x2_pp = abs(p_loc - p_vis) * 100.0
+    if p_fav_max >= 0.50:
+        c1_tit = f"1. {art_fav}{eq_fav} va a ganar (o mínimo empatar):"
+    elif diff_1x2_pp >= 10.0:
+        c1_tit = f"1. Ligera ventaja para {eq_fav} (o empate):"
+    else:
+        c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
     if es_under:
@@ -1337,11 +1429,22 @@ def generar_veredicto_tactico_partido(
             f"2. Cronología de goles: Cobertura de minutos insuficiente ({k_eval_ver}/15 partidos con cronología "
             f"verificada). No se proyecta alerta en tramos específicos por prudencia estadística hasta contar con datos completos."
         )
-    else:
+    elif (goles_anot_tramo + goles_rec_tramo) <= 0 or (mejor_tramo_lbl == "76'-90'" and flujo_76_90 <= 0):
+        c2 = (
+            f"2. Cronología de goles: Sin concentración relevante de goles en los tramos recientes "
+            f"(tramo 76'-90': {flujo_76_90} goles combinados anotados/recibidos)."
+        )
+    elif mejor_tramo_lbl == "76'-90'" and goles_anot_tramo > 0 and flujo_76_90 > 0:
         c2 = (
             f"2. Cuidado con los goles de {eq_peligro_tramo} al final: El Cuadro C (Timeline) revela un dato letal: "
             f"{eq_peligro_tramo} ha anotado {goles_anot_tramo} goles en el tramo {mejor_tramo_lbl}, y {riv_tramo} ha "
             f"recibido {goles_rec_tramo} goles en esa misma franja. Si sigues el partido en vivo, máxima alerta en el {mejor_tramo_lbl}."
+        )
+    else:
+        c2 = (
+            f"2. Tramo de mayor volumen goleador ({mejor_tramo_lbl}): El Cuadro C (Timeline) muestra que "
+            f"{eq_peligro_tramo} anotó {goles_anot_tramo} goles y {riv_tramo} recibió {goles_rec_tramo} goles "
+            f"en la franja {mejor_tramo_lbl} (flujo 76'-90': {flujo_76_90} goles combinados)."
         )
 
     etq_muestra = str(patrones_loc.get("_muestra_etiqueta") or patrones_vis.get("_muestra_etiqueta") or "15P general")
@@ -1383,14 +1486,20 @@ def generar_veredicto_tactico_partido(
                 f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
         else:
+            _txt_flujo_final = (
+                f"Sumado al flujo del tramo 76'-90' ({flujo_76_90} goles combinados)"
+                if flujo_76_90 > 0 else "Flujo 76'-90': 0 goles combinados"
+            )
             c4 = (
                 f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
-                f"{etq_vol_2t} y {txt_p26}). Sumado al flujo del tramo 76'-90' "
-                f"({flujo_76_90} goles combinados), es una selección con respaldo estadístico."
+                f"{etq_vol_2t} y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
             )
-    mp_ver = micropatrones_combinatorios
-    if not isinstance(mp_ver, dict) and motor is not None:
-        mp_ver = getattr(motor, "micropatrones_combinatorios", None) or (getattr(motor, "recursivo", None) or {}).get("micropatrones_combinatorios")
+    from decision_cobertura import bandera_activa as _ba_mi_mp
+    mp_ver = None
+    if _ba_mi_mp("usar_micropatrones_combinatorios"):
+        mp_ver = micropatrones_combinatorios
+        if not isinstance(mp_ver, dict) and motor is not None:
+            mp_ver = getattr(motor, "micropatrones_combinatorios", None) or (getattr(motor, "recursivo", None) or {}).get("micropatrones_combinatorios")
     if isinstance(mp_ver, dict):
         act_mp = [a for a in (mp_ver.get("activos") or []) if isinstance(a, dict) and a.get("resumen_corto")]
         if act_mp:
@@ -1567,3 +1676,117 @@ def generar_informe_narrativo_xai(
         selecciones_sec1=selecciones_sec1,
         motor=motor,
     )
+
+
+def verificar_coherencia_texto_cifras_ticket(
+    texto: str,
+    *,
+    p_local: Optional[float] = None,
+    p_visita: Optional[float] = None,
+    cuadro_c_loc: Optional[Dict[str, Any]] = None,
+    cuadro_c_vis: Optional[Dict[str, Any]] = None,
+    flujo_76_90: Optional[int] = None,
+    jugada_optima_pct: Optional[float] = None,
+    total_validadas: Optional[int] = None,
+    probs_validadas: Optional[List[float]] = None,
+    requerir_n_en_adn: bool = False,
+    bloquear: bool = False,
+) -> Dict[str, Any]:
+    """
+    Ronda 9 Punto 6(E): Verificación automática texto vs cifras del ticket/veredicto/cuadro.
+    Detecta y bloquea contradicciones:
+      1. «duelo parejo» con diferencia |P(1)-P(2)| >= 10 pp
+      2. goles «al final» cuando el tramo 76'-90' suma 0 goles
+      3. «todos los mercados validados superan 70%» cuando jugada óptima < 70%,
+         cuando no hay validadas o alguna línea validada es < 70%
+      4. sección «ADN del Enfrentamiento» sin tamaños de muestra n por métrica
+    """
+    import re as _re_coh
+
+    txt = str(texto or "")
+    txt_low = txt.lower()
+    contradicciones: List[Dict[str, Any]] = []
+
+    # 1) Duelo parejo vs brecha 1X2 >= 10 pp
+    diff_pp: Optional[float] = None
+    if p_local is not None and p_visita is not None:
+        pl_p = float(p_local) * 100.0 if max(float(p_local), float(p_visita)) <= 1.0 else float(p_local)
+        pv_p = float(p_visita) * 100.0 if max(float(p_local), float(p_visita)) <= 1.0 else float(p_visita)
+        diff_pp = round(abs(pl_p - pv_p), 2)
+        if "duelo parejo" in txt_low and diff_pp >= 10.0:
+            contradicciones.append({
+                "codigo": "duelo_parejo_con_brecha_mayor_10pp",
+                "detalle": f"El texto afirma 'duelo parejo' pero |P(1)-P(2)| = {diff_pp:.1f} pp (>= 10 pp).",
+            })
+
+    # 2) Goles "al final" cuando 76'-90' == 0
+    def _g76(cc: Optional[Dict[str, Any]], campo: str) -> int:
+        if not isinstance(cc, dict):
+            return 0
+        if campo in cc and isinstance(cc[campo], dict):
+            for k in ("76'-90'", "76_90"):
+                if k in cc[campo]:
+                    return int(cc[campo][k] or 0)
+        for k in ("76_90", "76'-90'"):
+            if isinstance(cc.get(k), dict):
+                return int(cc[k].get(campo, 0) or 0)
+            if isinstance(cc.get("franjas"), dict) and isinstance(cc["franjas"].get(k), dict):
+                return int(cc["franjas"][k].get(campo, 0) or 0)
+        return 0
+
+    g76_calc = flujo_76_90
+    if g76_calc is None and (cuadro_c_loc is not None or cuadro_c_vis is not None):
+        g76_calc = (
+            _g76(cuadro_c_loc, "anotados") + _g76(cuadro_c_vis, "recibidos")
+            + _g76(cuadro_c_vis, "anotados") + _g76(cuadro_c_loc, "recibidos")
+        )
+    if g76_calc is not None and int(g76_calc) == 0:
+        if ("al final" in txt_low and "0 goles" not in txt_low) or "máxima alerta en el 76'-90'" in txt_low:
+            contradicciones.append({
+                "codigo": "goles_al_final_con_76_90_cero",
+                "detalle": "El texto alerta sobre goles 'al final' pero el tramo 76'-90' tiene 0 goles.",
+            })
+
+    # 3) "Todos los mercados validados superan 70%" vs jugada óptima < 70% / 0 validadas
+    p_opt_eff = jugada_optima_pct
+    if p_opt_eff is None:
+        m_opt = _re_coh.search(r"JUGADA\s+[ÓO]PTIMA[^\n]*?\((\d+(?:\.\d+)?)%\)", txt, _re_coh.IGNORECASE)
+        if m_opt:
+            p_opt_eff = float(m_opt.group(1))
+    elif p_opt_eff <= 1.0:
+        p_opt_eff *= 100.0
+
+    afirma_todos_70 = "todos los mercados validados superan" in txt_low and "70%" in txt_low
+    if afirma_todos_70:
+        fallo_opt = p_opt_eff is not None and p_opt_eff < 70.0
+        fallo_cnt = total_validadas is not None and int(total_validadas) <= 0
+        fallo_lineas = bool(probs_validadas) and any((float(p) * 100.0 if float(p) <= 1.0 else float(p)) < 70.0 for p in probs_validadas)
+        if fallo_opt or fallo_cnt or fallo_lineas:
+            contradicciones.append({
+                "codigo": "todos_mercados_superan_70_inconsistente",
+                "detalle": (
+                    f"Afirma que todos los mercados validados superan 70% "
+                    f"(jugada_optima={p_opt_eff}, total_validadas={total_validadas})."
+                ),
+            })
+
+    # 4) n por métrica en bloque ADN
+    if requerir_n_en_adn and "adn del enfrentamiento" in txt_low:
+        if not _re_coh.search(r"\(n=\d+", txt_low):
+            contradicciones.append({
+                "codigo": "n_por_metrica_ausente_en_adn",
+                "detalle": "El bloque ADN del Enfrentamiento no declara tamaños de muestra (n=) por métrica.",
+            })
+
+    res = {
+        "es_coherente": len(contradicciones) == 0,
+        "bloqueado": bool(contradicciones),
+        "contradicciones": contradicciones,
+        "diff_1x2_pp": diff_pp,
+        "flujo_76_90": g76_calc,
+        "jugada_optima_pct": p_opt_eff,
+    }
+    if bloquear and contradicciones:
+        msgs = "; ".join(c["detalle"] for c in contradicciones)
+        raise ValueError(f"Contradicción texto vs cifras bloqueada: {msgs}")
+    return res

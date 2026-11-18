@@ -1,0 +1,57 @@
+{
+  "data/banco_partidos.csv": {
+    "bytes": 446618,
+    "sha256": "b9c7d2b745737ad3cac2e58c9524145e4958348f130b91082ecb11703bac8065",
+    "git_tracked": true
+  },
+  "tests/fixtures/londrina_nautico_fixtures.json": {
+    "bytes": 1555598,
+    "sha256": "920534aa10d5684e1eef704c53a5bc676bea080191581ef351a5a9ee56b3588c",
+    "git_tracked": true
+  },
+  "data/banco_partidos.db": {
+    "bytes": 638976,
+    "sha256": "67a1b9156da6e9f2e57f34046c834dcc212d14b16555718bb63376194fe76d7b",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_2369_BRA_False_False.json": {
+    "bytes": 776478,
+    "sha256": "5dd276a2dd8beaea9bfbb45629e7d8e407399afb335a054ff6df20aa0dfe314b",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_2369_ITA_False_False.json": {
+    "bytes": 776486,
+    "sha256": "8a30a292b6b228894874b4db7806783d75411ab7cf91b54138af9e00fa221ab8",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_298660_BRA_False_False.json": {
+    "bytes": 766778,
+    "sha256": "a849963e8023143bbd6ab53aaf81fe0cde02d3abb8324591567767c30158ae6a",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_298660_ITA_False_False.json": {
+    "bytes": 779085,
+    "sha256": "2d80d33257c21b393da8d68094ae1079c7757911deef07d339d7ce2e902218dd",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_londrina_BRA_False_False.json": {
+    "bytes": 779127,
+    "sha256": "d83068ae3aa30b9362f717ed74afab625ef87afd4980604a0158f5b3640c2671",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_londrina_INT_False_False.json": {
+    "bytes": 779212,
+    "sha256": "4c68f19929dc2158c71201970c7c53f24a4137320e2251eba58906ba1d9c01a2",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_nautico_BRA_False_False.json": {
+    "bytes": 776478,
+    "sha256": "5dd276a2dd8beaea9bfbb45629e7d8e407399afb335a054ff6df20aa0dfe314b",
+    "git_tracked": false
+  },
+  "cache/cache_fotmob_nautico_ITA_False_False.json": {
+    "bytes": 776617,
+    "sha256": "95418396bc88d882965a4890f3ba9d66e593b46a17ddfd13493ac41b901a7edc",
+    "git_tracked": false
+  }
+}

@@ -351,6 +351,7 @@ def validar_coherencia_1t_2t_ft(
     fila_1t: dict[str, Any] | None,
     fila_2t: dict[str, Any] | None,
     tolerancia_float: float = TOLERANCIA_ADITIVIDAD_FLOAT,
+    incluir_entradas: bool = True,
 ) -> dict[str, Any]:
     """
     Valida `1T + 2T == FT` para goles (`goles_favor`, `goles_contra`) y las 36
@@ -361,6 +362,8 @@ def validar_coherencia_1t_2t_ft(
     discrepancias: list[dict[str, Any]] = []
     verificadas = 0
     variables_objetivo = ("goles_favor", "goles_contra") + tuple(
+        ("entradas", "entradas_ganadas") if incluir_entradas else ()
+    ) + tuple(
         cl for cl in CLAVES_45
         if cl in METRICAS_CONTEO_ADITIVAS_BANCO or cl in METRICAS_CONTINUAS_ADITIVAS_BANCO
     )
@@ -373,7 +376,7 @@ def validar_coherencia_1t_2t_ft(
         v_1t = _a_numero_o_none(f_1t.get(var))
         v_2t = _a_numero_o_none(f_2t.get(var))
 
-        es_conteo = var in METRICAS_CONTEO_ADITIVAS_BANCO
+        es_conteo = var in METRICAS_CONTEO_ADITIVAS_BANCO or (incluir_entradas and var in ("entradas", "entradas_ganadas"))
         tol = 1e-6 if es_conteo else tolerancia_float
 
         if v_ft is not None and v_1t is not None and v_2t is not None:
@@ -401,6 +404,23 @@ def validar_coherencia_1t_2t_ft(
                         "suma_1t_2t": None,
                         "diferencia": round(v_m - v_ft, 4),
                         "motivo": f"mitad_{tag_m}_supera_ft",
+                    })
+
+    if incluir_entradas:
+        for _tag_e, _fp_e in (("FT", f_ft), ("1T", f_1t), ("2T", f_2t)):
+            _et_e = _a_numero_o_none(_fp_e.get("entradas"))
+            _eg_e = _a_numero_o_none(_fp_e.get("entradas_ganadas"))
+            if _et_e is not None and _eg_e is not None:
+                verificadas += 1
+                if _eg_e > _et_e + 1e-6:
+                    discrepancias.append({
+                        "variable": "entradas_ganadas",
+                        "ft": round(_eg_e, 4) if _tag_e == "FT" else None,
+                        "1t": round(_eg_e, 4) if _tag_e == "1T" else None,
+                        "2t": round(_eg_e, 4) if _tag_e == "2T" else None,
+                        "suma_1t_2t": None,
+                        "diferencia": round(_eg_e - _et_e, 4),
+                        "motivo": f"entradas_ganadas_mayor_intentadas_{_tag_e}",
                     })
 
     return {
@@ -1320,3 +1340,369 @@ def guardar_en_banco_no_bloqueante(
     except Exception as exc:
         print(f"[BANCO HISTORICO] ⚠️ Guardado no bloqueante omitido por error: {exc}")
         return None
+
+
+def _cargar_pares_matrices_banco_83(raiz: Path, incluir_colombia_chile: bool = True, londrina_nautico_path: str | Path | None = None) -> tuple[list[tuple[str, dict[str, Any]]], set[str]]:
+    """Reúne las matrices fuente disponibles correspondientes a los 83 partidos únicos del banco."""
+    pares: list[tuple[str, dict[str, Any]]] = []
+    pids_con_matriz: set[str] = set()
+
+    rutas_json = [
+        ("ronda5_docs", raiz / "tests" / "fixtures" / "ronda5_real_fixtures.json", True),
+        ("londrina_nautico", Path(londrina_nautico_path) if londrina_nautico_path else (raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json"), False),
+    ]
+    for _origen, fp, tiene_docs in rutas_json:
+        if not fp.exists():
+            continue
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        docs_map = (data.get("docs") if tiene_docs else {k: data.get(k) for k in ("londrina", "nautico")}) or {}
+        for eq_key, doc in docs_map.items():
+            if not isinstance(doc, dict):
+                continue
+            for p in doc.get("partidos") or []:
+                if not isinstance(p, dict) or not p.get("id_partido"):
+                    continue
+                pids_con_matriz.add(str(p["id_partido"]))
+                pares.append((str(eq_key), p))
+
+    # Completar con auditorías locales del 2026-11-12 para 5181796 si faltan en fixtures
+    for fp_name, eq_key in (
+        ("auditoria_belgica_2026-11-12_082238.json", "belgium"),
+        ("auditoria_turquia_2026-11-12_082229.json", "turkey"),
+    ):
+        fp_aud = raiz / "informes" / "auditorias" / "2026-11-12" / fp_name
+        if fp_aud.exists():
+            try:
+                doc_aud = json.loads(fp_aud.read_text(encoding="utf-8"))
+                for p in doc_aud.get("partidos") or []:
+                    pid = str((p or {}).get("id_partido") or "")
+                    if pid == "5181796":
+                        pids_con_matriz.add(pid)
+                        pares.append((eq_key, p))
+                        break
+            except Exception:
+                pass
+    if incluir_colombia_chile:
+        for fn_cc, eq_cc in (
+            ("cache_fotmob_colombia_COL_False_False.json", "colombia"),
+            ("cache_fotmob_chile_CHL_False_False.json", "chile"),
+        ):
+            fp_cc = raiz / "cache" / fn_cc
+            if not fp_cc.exists():
+                continue
+            try:
+                doc_cc = json.loads(fp_cc.read_text(encoding="utf-8-sig"))
+                for p in doc_cc.get("partidos") or []:
+                    if isinstance(p, dict) and p.get("id_partido"):
+                        pids_con_matriz.add(str(p["id_partido"]))
+                        pares.append((eq_cc, p))
+            except Exception:
+                pass
+    return pares, pids_con_matriz
+
+
+def _evaluar_defectos_matriz_partido(eq_key: str, partido: dict[str, Any], *, incluir_entradas: bool = True) -> list[dict[str, Any]]:
+    """Detecta defectos estructurales y de proveedor sobre una matriz 45-métricas."""
+    pid = str(partido.get("id_partido") or "")
+    fuente_pri = str(partido.get("fuente_primaria") or "fotmob").strip().lower() or "fotmob"
+    fs = partido.get("fuente_secundaria") if isinstance(partido.get("fuente_secundaria"), dict) else {}
+    pareado = bool(fs.get("pareado"))
+    src_label = f"{fuente_pri}+flashscore" if pareado else fuente_pri
+
+    hallazgos: list[dict[str, Any]] = []
+    marc = partido.get("marcador") if isinstance(partido.get("marcador"), dict) else {}
+    empate = marc.get("equipo") is not None and marc.get("equipo") == marc.get("rival")
+    if empate and bool(fs.get("bandos_invertidos")):
+        hallazgos.append({
+            "tipo": "empate_con_bandos_invertidos",
+            "fuente": src_label,
+            "equipo": eq_key,
+            "id_partido": pid,
+            "periodo": "FT",
+            "detalle": "Marcador empatado con bandos_invertidos=True en fuente secundaria",
+        })
+
+    per_map: dict[str, dict[str, dict[str, Any]]] = {}
+    for per in PERIODOS_OFICIALES:
+        filas = ((partido.get("periodos") or {}).get(per) or {}).get("filas") or []
+        per_map[per] = {str(f.get("clave")): f for f in filas if isinstance(f, dict) and f.get("clave")}
+
+    for per, m in per_map.items():
+        for lado in ("equipo", "rival"):
+            pt = _a_numero_o_none((m.get("pases_total") or {}).get(lado))
+            pc = _a_numero_o_none((m.get("pases_completados") or {}).get(lado))
+            if pt is not None and pc is not None and pc > pt:
+                hallazgos.append({
+                    "tipo": "pases_completados_mayor_total",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": per,
+                    "detalle": f"{lado}: pases_completados={pc} > pases_total={pt}",
+                })
+
+            eg = _a_numero_o_none((m.get("entradas_ganadas") or {}).get(lado)) if incluir_entradas else None
+            et = _a_numero_o_none((m.get("entradas") or {}).get(lado)) if incluir_entradas else None
+            if eg is not None and et is not None and eg > et:
+                hallazgos.append({
+                    "tipo": "entradas_ganadas_mayor_intentadas",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": per,
+                    "detalle": f"{lado}: entradas_ganadas={eg} > entradas={et}",
+                })
+
+            ep = _a_numero_o_none((m.get("entradas_pct") or {}).get(lado))
+            if eg is not None and et is not None and abs(eg - et) < 1e-6 and ep == 100.0 and not pareado:
+                hallazgos.append({
+                    "tipo": "entradas_falso_100_pct_sin_denominador",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": per,
+                    "detalle": f"{lado}: entradas==entradas_ganadas={eg} formateado como 100% sin Flashscore",
+                })
+
+            for k_tot, k_pct in (
+                ("pases_tercio_final", "pases_tercio_final_pct"),
+                ("duelos_suelo", "duelos_suelo_pct"),
+                ("duelos_aereos", "duelos_aereos_pct"),
+            ):
+                vt = _a_numero_o_none((m.get(k_tot) or {}).get(lado))
+                vp = _a_numero_o_none((m.get(k_pct) or {}).get(lado))
+                if vt == 100.0 and vp is not None:
+                    hallazgos.append({
+                        "tipo": "falso_denominador_100",
+                        "fuente": src_label,
+                        "equipo": eq_key,
+                        "id_partido": pid,
+                        "periodo": per,
+                        "detalle": f"{lado}: {k_tot}=100.0 con porcentaje={vp}",
+                    })
+
+        fl = m.get("faltas") or {}
+        tl = m.get("tiros_libres") or {}
+        fe, fr = _a_numero_o_none(fl.get("equipo")), _a_numero_o_none(fl.get("rival"))
+        te, tr = _a_numero_o_none(tl.get("equipo")), _a_numero_o_none(tl.get("rival"))
+        if fe is not None and fr is not None and te is not None and tr is not None:
+            if abs(fe - te) < 1e-6 and abs(fr - tr) < 1e-6 and abs(fe - fr) > 1e-6:
+                hallazgos.append({
+                    "tipo": "tiros_libres_sin_invertir_igual_faltas",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": per,
+                    "detalle": f"faltas=({fe},{fr}) == tiros_libres=({te},{tr})",
+                })
+
+    _claves_sum_val = (
+        ("remates_totales", "remates_puerta", "corners", "faltas", "pases_total", "pases_completados", "entradas", "entradas_ganadas", "centros", "bloqueos")
+        if incluir_entradas
+        else ("remates_totales", "remates_puerta", "corners", "faltas", "pases_total", "pases_completados", "centros", "bloqueos")
+    )
+    for cl in _claves_sum_val:
+        for lado in ("equipo", "rival"):
+            vft = _a_numero_o_none((per_map["FT"].get(cl) or {}).get(lado))
+            v1t = _a_numero_o_none((per_map["1T"].get(cl) or {}).get(lado))
+            v2t = _a_numero_o_none((per_map["2T"].get(cl) or {}).get(lado))
+            if vft is not None and v1t is not None and v2t is not None and abs(vft - (v1t + v2t)) > 1e-6:
+                hallazgos.append({
+                    "tipo": "suma_mitades_distinta_ft",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": "FT",
+                    "detalle": f"{lado} {cl}: FT={vft} != 1T({v1t})+2T({v2t})",
+                })
+
+    for lado in ("equipo", "rival"):
+        c_ft = _a_numero_o_none((per_map["FT"].get("centros") or {}).get(lado))
+        c_1t = _a_numero_o_none((per_map["1T"].get("centros") or {}).get(lado))
+        c_2t = _a_numero_o_none((per_map["2T"].get("centros") or {}).get(lado))
+        if c_ft is not None and ((c_1t is not None and c_1t == c_ft and c_2t is None) or (c_1t is not None and c_2t is not None and c_ft > 0 and c_1t == c_ft and c_2t == c_ft)):
+            hallazgos.append({
+                "tipo": "centros_mitad_copiada_de_ft",
+                "fuente": src_label,
+                "equipo": eq_key,
+                "id_partido": pid,
+                "periodo": "1T/2T",
+                "detalle": f"{lado}: centros FT={c_ft}, 1T={c_1t}, 2T={c_2t}",
+            })
+    claves_sum_vistos = {h.get("detalle", "").split(":", 1)[0] for h in hallazgos if h.get("tipo") == "suma_mitades_distinta_ft"}
+    for inc in (partido.get("inconsistencias_aritmeticas") or []):
+        if isinstance(inc, dict) and str(inc.get("motivo") or "") == "suma_mitades_distinta_ft":
+            lado_i = str(inc.get("lado") or "")
+            cl_i = str(inc.get("clave") or "")
+            if f"{lado_i} {cl_i}" not in claves_sum_vistos:
+                claves_sum_vistos.add(f"{lado_i} {cl_i}")
+                hallazgos.append({
+                    "tipo": "suma_mitades_distinta_ft",
+                    "fuente": src_label,
+                    "equipo": eq_key,
+                    "id_partido": pid,
+                    "periodo": "FT",
+                    "detalle": f"{lado_i} {cl_i}: FT={inc.get('FT')} != 1T({inc.get('1T')})+2T({inc.get('2T')}) [fuente cruda]",
+                })
+    return hallazgos
+
+
+def validar_defectos_partidos_banco(
+    *,
+    csv_path: str | Path | None = None,
+    db_path: str | Path | None = None,
+    raiz: str | Path | None = None,
+    incluir_colombia_chile: bool = True,
+    incluir_entradas: bool = True,
+    londrina_nautico_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """
+    Ronda 9 Punto 6(D): Validador integral de defectos sobre los 83 partidos únicos del banco
+    (`data/banco_partidos.csv` / SQLite + matrices crudas asociadas en fixtures/auditorías),
+    reportando conteos antes y después del saneamiento por tipo de defecto y por fuente.
+    """
+    import copy as _copy_bh
+    from auditoria_historica import sanear_partido_auditoria_45 as _sanear_p45
+
+    raiz_p = Path(raiz) if raiz else Path(__file__).resolve().parent
+    _, def_csv = resolver_rutas_banco(db_path=db_path, csv_path=csv_path)
+    filas_csv = cargar_banco_csv(def_csv)
+    if incluir_colombia_chile:
+        filas_banco = list(filas_csv)
+    else:
+        filas_banco = [
+            r for r in filas_csv
+            if str(r.get("equipo_clave") or "") not in ("colombia", "chile")
+        ]
+    por_par_csv: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+    pids_banco: set[str] = set()
+    for r in filas_banco:
+        pid = str(r.get("id_partido") or "")
+        eq = str(r.get("equipo_clave") or "")
+        per = str(r.get("periodo") or "")
+        if pid and per in PERIODOS_OFICIALES:
+            pids_banco.add(pid)
+            por_par_csv.setdefault((pid, eq), {})[per] = r
+
+    defectos_csv: list[dict[str, Any]] = []
+    for (pid, eq), pm in sorted(por_par_csv.items()):
+        ft_r, t1_r, t2_r = pm.get("FT"), pm.get("1T"), pm.get("2T")
+        src_c = str((ft_r or next(iter(pm.values()))).get("fuente_primaria") or "fotmob").lower()
+        if int((ft_r or next(iter(pm.values()))).get("flashscore_pareado") or 0) == 1:
+            src_c = f"{src_c}+flashscore"
+        if ft_r and t1_r and t2_r:
+            val = validar_coherencia_1t_2t_ft(ft_r, t1_r, t2_r, incluir_entradas=incluir_entradas)
+            for d in val.get("discrepancias") or []:
+                defectos_csv.append({
+                    "tipo": str(d.get("motivo") or "suma_mitades_distinta_ft"),
+                    "fuente": src_c,
+                    "equipo": eq,
+                    "id_partido": pid,
+                    "periodo": "FT",
+                    "detalle": f"{d.get('variable')}: FT={d.get('ft')} vs 1T({d.get('1t')})+2T({d.get('2t')})",
+                })
+        for per, r in pm.items():
+            pt = _a_numero_o_none(r.get("pases_total"))
+            pc = _a_numero_o_none(r.get("pases_completados"))
+            if pt is not None and pc is not None and pc > pt:
+                defectos_csv.append({
+                    "tipo": "pases_completados_mayor_total",
+                    "fuente": src_c,
+                    "equipo": eq,
+                    "id_partido": pid,
+                    "periodo": per,
+                    "detalle": f"pases_completados={pc} > pases_total={pt}",
+                })
+
+    pares_mat, pids_mat = _cargar_pares_matrices_banco_83(raiz_p, incluir_colombia_chile=incluir_colombia_chile, londrina_nautico_path=londrina_nautico_path)
+    pids_col_chi = {
+        str(p.get("id_partido") or "")
+        for eq, p in pares_mat
+        if eq in ("colombia", "chile") and p.get("id_partido")
+    }
+    pares_83 = [
+        (eq, p) for eq, p in pares_mat
+        if (str(p.get("id_partido") or "") in pids_banco)
+        or (incluir_colombia_chile and eq in ("colombia", "chile"))
+    ]
+
+    hallazgos_crudos: list[dict[str, Any]] = []
+    hallazgos_post_sanear: list[dict[str, Any]] = []
+    for eq_key, p in pares_83:
+        hallazgos_crudos.extend(_evaluar_defectos_matriz_partido(eq_key, p, incluir_entradas=incluir_entradas))
+        p_san = _sanear_p45(_copy_bh.deepcopy(p))
+        hallazgos_post_sanear.extend(_evaluar_defectos_matriz_partido(eq_key, p_san, incluir_entradas=incluir_entradas))
+
+    def _agrupar(items: list[dict[str, Any]]) -> tuple[dict[str, int], dict[str, int], int]:
+        por_tipo: dict[str, int] = {}
+        por_fuente: dict[str, int] = {}
+        pids_af: set[str] = set()
+        for it in items:
+            t = str(it.get("tipo") or "otro")
+            f = str(it.get("fuente") or "desconocida")
+            por_tipo[t] = por_tipo.get(t, 0) + 1
+            por_fuente[f] = por_fuente.get(f, 0) + 1
+            if it.get("id_partido"):
+                pids_af.add(str(it["id_partido"]))
+        return dict(sorted(por_tipo.items())), dict(sorted(por_fuente.items())), len(pids_af)
+
+    cr_tipo, cr_fuente, cr_pids = _agrupar(hallazgos_crudos)
+    ps_tipo, ps_fuente, ps_pids = _agrupar(hallazgos_post_sanear)
+    csv_tipo, csv_fuente, csv_pids = _agrupar(defectos_csv)
+    cr_b83_t, cr_b83_f, cr_b83_p = _agrupar([x for x in hallazgos_crudos if x.get("equipo") not in ("colombia", "chile")])
+    ps_b83_t, ps_b83_f, ps_b83_p = _agrupar([x for x in hallazgos_post_sanear if x.get("equipo") not in ("colombia", "chile")])
+    cr_cc_t, cr_cc_f, cr_cc_p = _agrupar([x for x in hallazgos_crudos if x.get("equipo") in ("colombia", "chile")])
+    ps_cc_t, ps_cc_f, ps_cc_p = _agrupar([x for x in hallazgos_post_sanear if x.get("equipo") in ("colombia", "chile")])
+
+    return {
+        "n_partidos_unicos_banco_csv": len(pids_banco),
+        "n_pares_equipo_partido_banco_csv": len(por_par_csv),
+        "incluye_colombia_chile": bool(incluir_colombia_chile),
+        "incluye_entradas": bool(incluir_entradas),
+        "n_partidos_unicos_colombia_chile": len(pids_col_chi) if incluir_colombia_chile else 0,
+        "n_matrices_evaluadas": len(pares_83),
+        "n_partidos_unicos_con_matriz_fuente": len(pids_mat & (pids_banco | (pids_col_chi if incluir_colombia_chile else set()))),
+        "ids_sin_matriz_cruda_en_fixtures": sorted(pids_banco - pids_mat),
+        "banco_csv_normalizado": {
+            "total_defectos": len(defectos_csv),
+            "partidos_unicos_con_defecto": csv_pids,
+            "por_tipo": csv_tipo,
+            "por_fuente": csv_fuente,
+            "ejemplos": defectos_csv[:10],
+        },
+        "matrices_crudas_pre_saneamiento": {
+            "total_defectos": len(hallazgos_crudos),
+            "partidos_unicos_con_defecto": cr_pids,
+            "por_tipo": cr_tipo,
+            "por_fuente": cr_fuente,
+            "ejemplos": hallazgos_crudos[:12],
+        },
+        "matrices_post_sanear_partido_auditoria_45": {
+            "total_defectos": len(hallazgos_post_sanear),
+            "partidos_unicos_con_defecto": ps_pids,
+            "por_tipo": ps_tipo,
+            "por_fuente": ps_fuente,
+            "ejemplos": hallazgos_post_sanear[:12],
+        },
+        "resumen_por_ambito": {
+            "banco_83": {
+                "pre_total_defectos": sum(cr_b83_t.values()),
+                "pre_partidos_unicos_con_defecto": cr_b83_p,
+                "pre_por_tipo": cr_b83_t,
+                "post_total_defectos": sum(ps_b83_t.values()),
+                "post_partidos_unicos_con_defecto": ps_b83_p,
+                "post_por_tipo": ps_b83_t,
+            },
+            "colombia_chile_30": {
+                "pre_total_defectos": sum(cr_cc_t.values()),
+                "pre_partidos_unicos_con_defecto": cr_cc_p,
+                "pre_por_tipo": cr_cc_t,
+                "post_total_defectos": sum(ps_cc_t.values()),
+                "post_partidos_unicos_con_defecto": ps_cc_p,
+                "post_por_tipo": ps_cc_t,
+            },
+        },
+    }

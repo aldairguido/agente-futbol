@@ -1,0 +1,266 @@
+{
+  "modo_banderas": "soloA",
+  "denominador_unico_declarado": 73,
+  "composicion_denominador": {
+    "archivados_unicos_reproducibles": 69,
+    "referencia_diseno_control_auditoria": 4,
+    "grupos": {
+      "diseno": 2,
+      "control": 1,
+      "auditoria": 1,
+      "archivado": 69
+    },
+    "nota": "Mismo denominador único declarado que Punto 6 (TOPE DCN): 73 partidos únicos reproducibles offline (69 cruces únicos de los 85 tickets ejecutables en informes/mercados más 4 partidos de referencia TB, IF, LN y COL-CHI)."
+  },
+  "n_archivados_unicos_doble_135": 5,
+  "n_diseno_unicos_doble_135": 1,
+  "n_oos_unicos_doble_135": 3,
+  "n_total_unicos_doble_135": 6,
+  "tasa_sobre_denominador_pct": 8.22,
+  "desglose_explicito": "5 archivados únicos (3 OOS de ev93 + 2 archivados no-OOS) + 1 diseño = 6/73",
+  "partidos_oos_ev93": [
+    {
+      "job_id": "ARCH::1fba9ef796150d73",
+      "partido": "Everton vs Chelsea",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::1edc8c043cfdd28a",
+      "partido": "Newcastle United vs Aston Villa",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::d140040001d88996",
+      "partido": "Union Berlin vs Borussia Dortmund",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
+  "partidos_archivados_no_oos": [
+    {
+      "job_id": "ARCH::6318e0ead09aab95",
+      "partido": "New Zealand vs Inter Miami CF",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    },
+    {
+      "job_id": "ARCH::3839ca85a762a2db",
+      "partido": "Barcelona vs Aston Villa",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
+  "partidos_diseno": [
+    {
+      "job_id": "DESIGN::TB",
+      "partido": "Turkey vs Belgium",
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ]
+    }
+  ],
+  "conciliacion_tickets_vs_partidos_unicos": {
+    "ronda9_tickets_archivados_con_duplicados": "6/85 (+1 diseño = 7)",
+    "ronda10_partidos_unicos_sin_duplicados": "5/69 archivados + 1 diseño = 6/73",
+    "duplicado_eliminado": [
+      {
+        "partido": "new zealand vs inter miami cf",
+        "job_ids_archivados": [
+          "ARCH::new_zealand_vs_inter_miami_cf_6318e0ead09aab95",
+          "ARCH::new_zealand_vs_inter_miami_cf_cf87cad84ed3cf46"
+        ],
+        "conteo_tickets_ronda9": 2,
+        "conteo_partido_unico_ronda10": 1
+      }
+    ]
+  },
+  "partidos_unicos_doble_135": [
+    {
+      "job_id": "DESIGN::TB",
+      "grupo": "diseno",
+      "partido": "Turkey vs Belgium",
+      "es_oos_ev93": false,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 6,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 1.0467,
+          "lam_l_despues": 1.0467,
+          "lam_v_antes": 3.4214,
+          "lam_v_despues": 4.6189
+        },
+        {
+          "paso": 11,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 1.04,
+          "lam_l_despues": 1.04,
+          "lam_v_antes": 2.6289,
+          "lam_v_despues": 3.549
+        }
+      ]
+    },
+    {
+      "job_id": "ARCH::1fba9ef796150d73",
+      "grupo": "archivado",
+      "partido": "Everton vs Chelsea",
+      "es_oos_ev93": true,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 6,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 2.4282,
+          "lam_l_despues": 3.2781,
+          "lam_v_antes": 2.0943,
+          "lam_v_despues": 2.0943
+        },
+        {
+          "paso": 12,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 2.4218,
+          "lam_l_despues": 3.2694,
+          "lam_v_antes": 1.1068,
+          "lam_v_despues": 1.1068
+        }
+      ]
+    },
+    {
+      "job_id": "ARCH::1edc8c043cfdd28a",
+      "grupo": "archivado",
+      "partido": "Newcastle United vs Aston Villa",
+      "es_oos_ev93": true,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 6,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 1.9688,
+          "lam_l_despues": 2.6579,
+          "lam_v_antes": 2.5623,
+          "lam_v_despues": 2.5623
+        },
+        {
+          "paso": 10,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 2.0534,
+          "lam_l_despues": 2.772,
+          "lam_v_antes": 2.2839,
+          "lam_v_despues": 2.2839
+        }
+      ]
+    },
+    {
+      "job_id": "ARCH::d140040001d88996",
+      "grupo": "archivado",
+      "partido": "Union Berlin vs Borussia Dortmund",
+      "es_oos_ev93": true,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 6,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 1.2104,
+          "lam_l_despues": 1.2104,
+          "lam_v_antes": 1.1862,
+          "lam_v_despues": 1.6014
+        },
+        {
+          "paso": 10,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 1.03,
+          "lam_l_despues": 1.03,
+          "lam_v_antes": 1.5971,
+          "lam_v_despues": 2.156
+        }
+      ]
+    },
+    {
+      "job_id": "ARCH::6318e0ead09aab95",
+      "grupo": "archivado",
+      "partido": "New Zealand vs Inter Miami CF",
+      "es_oos_ev93": false,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 7,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 1.0487,
+          "lam_l_despues": 1.0487,
+          "lam_v_antes": 3.45,
+          "lam_v_despues": 4.6575
+        },
+        {
+          "paso": 15,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 1.1639,
+          "lam_l_despues": 1.3385,
+          "lam_v_antes": 3.4932,
+          "lam_v_despues": 4.7158
+        }
+      ]
+    },
+    {
+      "job_id": "ARCH::3839ca85a762a2db",
+      "grupo": "archivado",
+      "partido": "Barcelona vs Aston Villa",
+      "es_oos_ev93": false,
+      "n_aplicaciones": 2,
+      "etapas": [
+        "red_45_dcn",
+        "post_sinc_mercados"
+      ],
+      "pasos": [
+        {
+          "paso": 6,
+          "etapa": "red_45_dcn",
+          "lam_l_antes": 3.45,
+          "lam_l_despues": 5.3475,
+          "lam_v_antes": 1.5176,
+          "lam_v_despues": 1.5176
+        },
+        {
+          "paso": 11,
+          "etapa": "post_sinc_mercados",
+          "lam_l_antes": 3.2268,
+          "lam_l_despues": 5.0016,
+          "lam_v_antes": 1.1346,
+          "lam_v_despues": 1.1346
+        }
+      ]
+    }
+  ]
+}

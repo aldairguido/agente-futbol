@@ -14,6 +14,8 @@ Tests reales del Bloque 3 (Ronda 5+6):
 
 from __future__ import annotations
 
+import pytest
+
 import copy
 import json
 from pathlib import Path
@@ -43,6 +45,12 @@ from motor_mercados import (
 
 FIXTURES_R5 = json.loads((ROOT / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
 
+
+@pytest.fixture(autouse=True)
+def _activar_conjunto_b_en_modulo():
+    from decision_cobertura import banderas_comportamiento
+    with banderas_comportamiento(activar_todas=True):
+        yield
 
 def _strip_corners_from_first_k(doc: dict, keep_n: int) -> dict:
     copia = copy.deepcopy(doc)

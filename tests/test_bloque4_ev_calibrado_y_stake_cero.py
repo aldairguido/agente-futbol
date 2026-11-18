@@ -9,6 +9,8 @@ Tests reales para Bloque 4.1:
 
 from __future__ import annotations
 
+import pytest
+
 import json
 from pathlib import Path
 import sys
@@ -20,6 +22,12 @@ if str(ROOT) not in sys.path:
 import informe as inf_mod
 import motor_mercados as mm
 
+
+@pytest.fixture(autouse=True)
+def _activar_conjunto_b_en_modulo():
+    from decision_cobertura import banderas_comportamiento
+    with banderas_comportamiento(activar_todas=True):
+        yield
 
 def _cargar_ronda5():
     with open(ROOT / "tests" / "fixtures" / "ronda5_real_fixtures.json", "r", encoding="utf-8") as f:

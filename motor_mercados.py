@@ -559,33 +559,111 @@ def _contar_cronologia_doc(doc: Any, cc_extra: Any = None) -> tuple[int, bool]:
     return 0, False
 
 
+def _contar_goles_mitad_doc(doc: Any) -> tuple[int, bool]:
+    """Cuenta partidos con marcador real por mitad (1T y 2T) en un doc de club (sin exigir minuto de gol)."""
+    if not isinstance(doc, dict):
+        return 0, False
+    partidos = doc.get("partidos")
+    if not isinstance(partidos, list) or not partidos:
+        return 0, False
+    n_con_mitad = 0
+    for p in partidos:
+        if not isinstance(p, dict):
+            continue
+        m1 = p.get("marcador_1t")
+        m2 = p.get("marcador_2t")
+        tiene_m1 = isinstance(m1, dict) and (
+            (m1.get("local") is not None and m1.get("visitante") is not None)
+            or (m1.get("equipo") is not None and m1.get("rival") is not None)
+        )
+        tiene_m2 = isinstance(m2, dict) and (
+            (m2.get("local") is not None and m2.get("visitante") is not None)
+            or (m2.get("equipo") is not None and m2.get("rival") is not None)
+        )
+        tiene_flat = (
+            p.get("goles_favor_1t") is not None
+            and p.get("goles_contra_1t") is not None
+            and p.get("goles_favor_2t") is not None
+            and p.get("goles_contra_2t") is not None
+        )
+        per = p.get("periodos") if isinstance(p.get("periodos"), dict) else {}
+        tiene_per = False
+        if isinstance(per.get("1T"), dict) and isinstance(per.get("2T"), dict):
+            def _per_ok(hd: dict[str, Any]) -> bool:
+                hm = hd.get("marcador")
+                if isinstance(hm, dict) and ((hm.get("equipo") is not None and hm.get("rival") is not None) or (hm.get("local") is not None and hm.get("visitante") is not None)):
+                    return True
+                for fl in (hd.get("filas") or []):
+                    if isinstance(fl, dict) and str(fl.get("clave") or "").strip().lower() in ("goles", "goals", "goles_favor"):
+                        if fl.get("equipo") is not None and fl.get("rival") is not None:
+                            return True
+                return False
+            tiene_per = _per_ok(per["1T"]) and _per_ok(per["2T"])
+        if (tiene_m1 and tiene_m2) or tiene_flat or tiene_per:
+            n_con_mitad += 1
+    return n_con_mitad, True
+
+
 def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
     """
-    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) usando
-    estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`).
-    Deja pasar mocks mínimos sin `doc_local`/`doc_visitante` dicts (como `_DummyMotor`).
+    Bloque 3 (3.7): Verifica `min_partidos_cronologia_verificada` (10/15) por minutos
+    usando estrictamente `min(n_ev_l, n_ev_v)` (nunca `else max`), y reporta además
+    la cobertura real de goles por mitad (15/15). Bajo `usar_gate_goles_mitad_15_15`,
+    evalúa el gate por disponibilidad de goles por mitad (15/15) sin exigir minutos.
     """
     try:
-        from decision_cobertura import cargar_umbrales_cobertura
-        k_min = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+        from decision_cobertura import bandera_activa, cargar_umbrales_cobertura
+        umbr = cargar_umbrales_cobertura()
+        k_min = int(umbr.get("min_partidos_cronologia_verificada", 10))
+        k_gm_req = int(umbr.get("min_partidos_goles_mitad", 15))
+        usar_gm = bool(bandera_activa("usar_gate_goles_mitad_15_15"))
     except Exception:
         k_min = 10
+        k_gm_req = 15
+        usar_gm = False
 
     if motor is None:
-        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+        return {
+            "ok": True,
+            "ok_analizar": True,
+            "k_eval": k_min,
+            "k_min": k_min,
+            "aplica": False,
+            "n_goles_mitad_local": k_gm_req,
+            "n_goles_mitad_visitante": k_gm_req,
+            "n_goles_mitad_min": k_gm_req,
+            "goles_mitad_15_15_ok": True,
+            "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
+        }
 
     doc_l = getattr(motor, "doc_local", None)
     doc_v = getattr(motor, "doc_visitante", None)
     cc_l_m = getattr(motor, "cuadro_c_local", None)
     cc_v_m = getattr(motor, "cuadro_c_visita", None)
 
+    n_gm_l, has_gm_l = _contar_goles_mitad_doc(doc_l)
+    n_gm_v, has_gm_v = _contar_goles_mitad_doc(doc_v)
+    n_gm_min = min(n_gm_l, n_gm_v) if (has_gm_l and has_gm_v) else (n_gm_l if has_gm_l else (n_gm_v if has_gm_v else 0))
+    gm_ok = bool((has_gm_l or has_gm_v) and n_gm_min >= k_gm_req)
+
     n_ev_l, has_l = _contar_cronologia_doc(doc_l, cc_l_m)
     n_ev_v, has_v = _contar_cronologia_doc(doc_v, cc_v_m)
     if not (has_l or has_v):
-        return {"ok": True, "ok_analizar": True, "k_eval": k_min, "k_min": k_min, "aplica": False}
+        return {
+            "ok": gm_ok if (usar_gm and (has_gm_l or has_gm_v)) else True,
+            "ok_analizar": gm_ok if (usar_gm and (has_gm_l or has_gm_v)) else True,
+            "k_eval": n_gm_min if usar_gm else k_min,
+            "k_min": k_gm_req if usar_gm else k_min,
+            "aplica": bool(usar_gm and (has_gm_l or has_gm_v)),
+            "n_goles_mitad_local": n_gm_l,
+            "n_goles_mitad_visitante": n_gm_v,
+            "n_goles_mitad_min": n_gm_min,
+            "goles_mitad_15_15_ok": gm_ok,
+            "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
+        }
 
     k_eval = min(n_ev_l, n_ev_v) if (has_l and has_v) else (n_ev_l if has_l else n_ev_v)
-    ok = k_eval >= k_min
+    ok_min = k_eval >= k_min
     tiene_cc = (
         (isinstance(doc_l, dict) and isinstance(doc_l.get("cuadro_c_timeline"), dict))
         or (isinstance(doc_v, dict) and isinstance(doc_v.get("cuadro_c_timeline"), dict))
@@ -594,15 +672,28 @@ def cronologia_mitades_verificada(motor: Any) -> dict[str, Any]:
     )
     nt_l = len((doc_l or {}).get("partidos") or []) if isinstance(doc_l, dict) else 0
     nt_v = len((doc_v or {}).get("partidos") or []) if isinstance(doc_v, dict) else 0
-    ok_analizar = ok or (not tiene_cc and max(nt_l, nt_v) < k_min)
+    ok_analizar_min = ok_min or (not tiene_cc and max(nt_l, nt_v) < k_min)
+
+    if usar_gm and (has_gm_l or has_gm_v):
+        ok_eff = gm_ok
+        ok_an_eff = gm_ok
+    else:
+        ok_eff = ok_min
+        ok_an_eff = ok_analizar_min
+
     return {
-        "ok": ok,
-        "ok_analizar": ok_analizar,
-        "k_eval": k_eval,
+        "ok": ok_eff,
+        "ok_analizar": ok_an_eff,
+        "k_eval": n_gm_min if usar_gm else k_eval,
         "n_ev_local": n_ev_l,
         "n_ev_visitante": n_ev_v,
-        "k_min": k_min,
+        "k_min": k_gm_req if usar_gm else k_min,
         "aplica": True,
+        "n_goles_mitad_local": n_gm_l,
+        "n_goles_mitad_visitante": n_gm_v,
+        "n_goles_mitad_min": n_gm_min,
+        "goles_mitad_15_15_ok": gm_ok,
+        "modo_gate_mitades": "goles_por_mitad_15_15" if usar_gm else "minutos_cronologia_10_15",
     }
 
 
@@ -1196,6 +1287,65 @@ def _xg_periodo(doc: dict[str, Any], periodo: str, condicion: str | None = None,
     return sum(valores) / len(valores)
 
 
+def _repartir_lambdas_por_tiempos_legacy_5e8(
+    doc_local: dict[str, Any], doc_visitante: dict[str, Any],
+    lam_ft_l: float | None, lam_ft_v: float | None,
+    cond_local: str, cond_visitante: str,
+) -> tuple[float | None, float | None, float | None, float | None, str, list[str]]:
+    """
+    Reparte λ FT entre 1T y 2T usando el xG por tiempos de ambos equipos
+    (xG propio y xG concedido por el rival), normalizado para sumar FT.
+
+    Devuelve (lam_l_1t, lam_v_1t, lam_l_2t, lam_v_2t, procedencia, notas).
+    Si faltan los xG por tiempo de las dos mitades, devuelve todo None.
+    """
+    notas: list[str] = []
+    if lam_ft_l is None or lam_ft_v is None:
+        return None, None, None, None, "sin λ FT", ["No hay λ FT: no se pueden repartir tiempos."]
+
+    xg: dict[str, dict[str, float | None]] = {}
+    for etiqueta, doc, cond in (("local", doc_local, cond_local),
+                                ("visitante", doc_visitante, cond_visitante)):
+        xg[etiqueta] = {
+            "1T": _xg_periodo(doc, "1T", cond, "equipo"),
+            "2T": _xg_periodo(doc, "2T", cond, "equipo"),
+            "1T_contra": _xg_periodo(doc, "1T", cond, "rival"),
+            "2T_contra": _xg_periodo(doc, "2T", cond, "rival"),
+        }
+
+    # xG cruzado por mitad: (xG propio + xG concedido por el rival) / 2
+    cruzado: dict[str, dict[str, float | None]] = {"local": {}, "visitante": {}}
+    for eq, rival in (("local", "visitante"), ("visitante", "local")):
+        for per in ("1T", "2T"):
+            propio = xg[eq][per]
+            concedido = xg[rival][f"{per}_contra"]
+            if propio is None or concedido is None:
+                cruzado[eq][per] = None
+            else:
+                cruzado[eq][per] = (propio + concedido) / 2.0
+
+    faltan = [f"{eq}-{per}" for eq in ("local", "visitante") for per in ("1T", "2T")
+              if cruzado[eq][per] is None]
+    if faltan:
+        return (None, None, None, None, "xG por tiempos insuficiente",
+                [f"Sin xG cruzado por tiempos para: {', '.join(faltan)}. "
+                 f"No se inventa el reparto 1T/2T."])
+
+    def reparto(lam_ft: float, eq: str) -> tuple[float, float]:
+        a, b = cruzado[eq]["1T"], cruzado[eq]["2T"]
+        total = (a or 0.0) + (b or 0.0)
+        if total <= 0:
+            return lam_ft / 2.0, lam_ft / 2.0
+        return lam_ft * (a / total), lam_ft * (b / total)
+
+    l1, l2 = reparto(lam_ft_l, "local")
+    v1, v2 = reparto(lam_ft_v, "visitante")
+    notas.append("Probabilidades por tiempo INFERIDAS del xG cruzado por mitades, "
+                 "normalizadas para sumar FT; se asume independencia temporal entre mitades.")
+    return l1, v1, l2, v2, "xG cruzado por tiempos (inferido)", notas
+
+
+
 def repartir_lambdas_por_tiempos(
     doc_local: dict[str, Any], doc_visitante: dict[str, Any],
     lam_ft_l: float | None, lam_ft_v: float | None,
@@ -1208,6 +1358,11 @@ def repartir_lambdas_por_tiempos(
     Devuelve (lam_l_1t, lam_v_1t, lam_l_2t, lam_v_2t, procedencia, notas).
     Si faltan los xG por tiempo de las dos mitades, devuelve todo None.
     """
+    from decision_cobertura import bandera_activa as _ba_rep
+    if not _ba_rep("usar_tensor_65_35_y_diesel"):
+        return _repartir_lambdas_por_tiempos_legacy_5e8(
+            doc_local, doc_visitante, lam_ft_l, lam_ft_v, cond_local, cond_visitante
+        )
     notas: list[str] = []
     if lam_ft_l is None or lam_ft_v is None:
         return None, None, None, None, "sin λ FT", ["No hay λ FT: no se pueden repartir tiempos."]
@@ -1809,7 +1964,8 @@ class MotorMercados:
                 tier_menor = min(tier_L, tier_V)
                 tier_mayor = max(tier_L, tier_V)
                 ratio_fuerza = (tier_menor / tier_mayor) ** 0.80
-                if comparten_torneo_m:
+                from decision_cobertura import bandera_activa as _ba_mm_anc
+                if _ba_mm_anc("usar_anclaje_coef_torneo") and comparten_torneo_m:
                     ratio_fuerza = max(0.90, min(1.0, ratio_fuerza))
                 _ratio_fuerza_log = ratio_fuerza
                 if tier_L < tier_V:
@@ -1951,8 +2107,10 @@ class MotorMercados:
                 info_contexto=ctx_av,
                 contexto_partido=ctx_av,
             )
-            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
             _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
             if isinstance(pat_l, dict):
                 pat_l["_muestra_etiqueta"] = _etq_adn
@@ -1960,8 +2118,10 @@ class MotorMercados:
             if isinstance(pat_v, dict):
                 pat_v["_muestra_etiqueta"] = _etq_adn
                 pat_v["_n_muestra_adn"] = _nv_adn
-            _nl_adn = int((resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_adn = int((resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
+            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
+            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
+            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
             _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
             if isinstance(pat_l, dict):
                 pat_l["_muestra_etiqueta"] = _etq_adn
@@ -2025,25 +2185,49 @@ class MotorMercados:
             if lam_v_red < lam_v and not (es_vivo and roja_v):
                 lam_v_nuevo = max(lam_v_nuevo, round(lam_v * 0.72, 2))
 
-            try:
-                _techo_post = float((cargar_umbrales_cobertura() or {}).get("techo_ajuste_red_dcn_pct", 18.0))
-            except Exception:
-                _techo_post = 18.0
-            _f_t = _techo_post / 100.0
-            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_local")):
-                if abs(f_ctx_l - 1.0) <= 1e-6:
-                    if bool(resultado.get("freno_bajista_dcn_local")):
-                        lam_l_nuevo = min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo)
-                    else:
-                        _piso_t_l = round(min(lam_l * (1.0 - _f_t), lam_l_red), 4)
-                        lam_l_nuevo = max(_piso_t_l, min(round(lam_l * (1.0 + _f_t), 4), lam_l_nuevo))
-            if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_visita")):
-                if abs(f_ctx_v - 1.0) <= 1e-6 and not (pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45))):
-                    if bool(resultado.get("freno_bajista_dcn_visita")):
-                        lam_v_nuevo = min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo)
-                    else:
-                        _piso_t_v = round(min(lam_v * (1.0 - _f_t), lam_v_red), 4)
-                        lam_v_nuevo = max(_piso_t_v, min(round(lam_v * (1.0 + _f_t), 4), lam_v_nuevo))
+            from decision_cobertura import bandera_activa as _ba_techo
+            _tope_ps_info: dict[str, Any] = {
+                "activo": bool(_ba_techo("usar_tope_dcn_18_pct")),
+                "local": {"toco": False, "direccion": None, "lam_pre": round(float(lam_l_nuevo), 4), "lam_post": round(float(lam_l_nuevo), 4)},
+                "visitante": {"toco": False, "direccion": None, "lam_pre": round(float(lam_v_nuevo), 4), "lam_post": round(float(lam_v_nuevo), 4)},
+            }
+            if _ba_techo("usar_tope_dcn_18_pct"):
+                try:
+                    _techo_post = float((cargar_umbrales_cobertura() or {}).get("techo_ajuste_red_dcn_pct", 18.0))
+                except Exception:
+                    _techo_post = 18.0
+                _f_t = _techo_post / 100.0
+                if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_local")):
+                    if abs(f_ctx_l - 1.0) <= 1e-6:
+                        _pre_t_l = float(lam_l_nuevo)
+                        _sup_l = round(lam_l * (1.0 + _f_t), 4)
+                        if bool(resultado.get("freno_bajista_dcn_local")):
+                            lam_l_nuevo = min(_sup_l, lam_l_nuevo)
+                            if _pre_t_l > _sup_l + 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
+                        else:
+                            _piso_t_l = round(min(lam_l * (1.0 - _f_t), lam_l_red), 4)
+                            lam_l_nuevo = max(_piso_t_l, min(_sup_l, lam_l_nuevo))
+                            if _pre_t_l > _sup_l + 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
+                            elif _pre_t_l < _piso_t_l - 1e-6:
+                                _tope_ps_info["local"] = {"toco": True, "direccion": "-18%", "lam_pre": round(_pre_t_l, 4), "lam_post": round(float(lam_l_nuevo), 4)}
+                if not (es_vivo and (roja_l or roja_v)) and not bool(resultado.get("alineado_5_dims_visita")):
+                    if abs(f_ctx_v - 1.0) <= 1e-6 and not (pos_proy_l < 36.0 and lam_v_red > lam_l_red and (p07_l >= 0.38 or (p05_l >= 0.30 and p55_l >= 0.45))):
+                        _pre_t_v = float(lam_v_nuevo)
+                        _sup_v = round(lam_v * (1.0 + _f_t), 4)
+                        if bool(resultado.get("freno_bajista_dcn_visita")):
+                            lam_v_nuevo = min(_sup_v, lam_v_nuevo)
+                            if _pre_t_v > _sup_v + 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
+                        else:
+                            _piso_t_v = round(min(lam_v * (1.0 - _f_t), lam_v_red), 4)
+                            lam_v_nuevo = max(_piso_t_v, min(_sup_v, lam_v_nuevo))
+                            if _pre_t_v > _sup_v + 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "+18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
+                            elif _pre_t_v < _piso_t_v - 1e-6:
+                                _tope_ps_info["visitante"] = {"toco": True, "direccion": "-18%", "lam_pre": round(_pre_t_v, 4), "lam_post": round(float(lam_v_nuevo), 4)}
+            resultado["tope_dcn_18_post_sinc"] = _tope_ps_info
 
             # ── Puntos 21, 22, 34, 35 y 40: Doble Freno de Mano, Techo de Caja Azul, Defensas Rotas, Asedio, Fortín Local y Gigante Visitante ──
             from motor_patrones import aplicar_freno_de_mano_y_matchup_21_22
@@ -2075,6 +2259,17 @@ class MotorMercados:
             _comp_freno = str(getattr(self.p, "competicion", "") or (self.doc_local.get("partidos") or [{}])[0].get("torneo") or "")
             _cob_asedio = bool(mu_l_c.get("posesion_pct") is not None and mu_l_c.get("toques_area_rival") is not None)
             try:
+                from decision_cobertura import bandera_activa as _ba_dr
+                _ev_dr_l = False
+                _ev_dr_v = False
+                if _ba_dr("usar_guarda_doble_defensa_rota"):
+                    for _st_dr in (_traza or []):
+                        if isinstance(_st_dr, dict) and _st_dr.get("regla") == "copa_asedio_defensa_rota":
+                            _mot_dr = str(_st_dr.get("motivo") or "")
+                            if "def_rota_V=x" in _mot_dr and "def_rota_V=x1.00" not in _mot_dr:
+                                _ev_dr_l = True
+                            if "def_rota_L=x" in _mot_dr and "def_rota_L=x1.00" not in _mot_dr:
+                                _ev_dr_v = True
                 lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
                     lam_base_local=float(lam_l),
                     lam_base_visita=float(lam_v),
@@ -2096,6 +2291,8 @@ class MotorMercados:
                     cuadro_b_visita=getattr(self, "cuadro_b_visita", None),
                     traza_out=_traza_post_sinc,
                     etapa_prefijo="post_sinc_mercados",
+                    evitar_doble_defensa_rota_l=_ev_dr_l,
+                    evitar_doble_defensa_rota_v=_ev_dr_v,
                 )
             except TypeError:
                 lam_l_nuevo, lam_v_nuevo, delta_pct_l_21, delta_pct_v_21 = aplicar_freno_de_mano_y_matchup_21_22(
@@ -2159,10 +2356,26 @@ class MotorMercados:
                         fl_old = ct.get("factores_local") or {}
                         fv_old = ct.get("factores_visita") or {}
                         if fl_old:
-                            fl_new = reescalar_factores_a_delta(fl_old, delta_pct_l_21, fijos=("F_posesion_progresiva",))
+                            from decision_cobertura import bandera_activa as _ba_mm_ic
+                            _ic_l_mm = resultado.get("ic_factores_local") or {}
+                            _fij_l_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_l_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn") else [])
+                            _fl_base_mm = (ct.get("factores_crudos_local") or fl_old) if _ba_mm_ic("usar_reescalado_sin_inversion_signo_dcn") else fl_old
+                            fl_new = reescalar_factores_a_delta(_fl_base_mm, delta_pct_l_21, fijos=tuple(_fij_l_mm))
+                            if _ba_mm_ic("usar_filtro_ruido_ic_factores_dcn"):
+                                for _k_ic, _v_ic in _ic_l_mm.items():
+                                    if not _v_ic.get("supera_ruido", False):
+                                        fl_new[_k_ic] = 0.0
                             ct["factores_local"] = fl_new
                         if fv_old:
-                            fv_new = reescalar_factores_a_delta(fv_old, delta_pct_v_21, fijos=("F_posesion_progresiva",))
+                            from decision_cobertura import bandera_activa as _ba_mm_ic_v
+                            _ic_v_mm = resultado.get("ic_factores_visita") or {}
+                            _fij_v_mm = ["F_posesion_progresiva"] + ([k for k, v in _ic_v_mm.items() if not v.get("supera_ruido", False)] if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn") else [])
+                            _fv_base_mm = (ct.get("factores_crudos_visita") or fv_old) if _ba_mm_ic_v("usar_reescalado_sin_inversion_signo_dcn") else fv_old
+                            fv_new = reescalar_factores_a_delta(_fv_base_mm, delta_pct_v_21, fijos=tuple(_fij_v_mm))
+                            if _ba_mm_ic_v("usar_filtro_ruido_ic_factores_dcn"):
+                                for _k_ic, _v_ic in _ic_v_mm.items():
+                                    if not _v_ic.get("supera_ruido", False):
+                                        fv_new[_k_ic] = 0.0
                             ct["factores_visita"] = fv_new
                 except Exception:
                     pass
@@ -2251,14 +2464,18 @@ class MotorMercados:
                 self.xai_factores["visita"]["factores_red_neuronal"] = dict(ct_d.get("factores_red_neuronal_visita") or ct_d.get("factores_visita") or {})
                 self.xai_factores["local"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_local", 0.0))
                 self.xai_factores["visita"]["ajuste_reglas_pct"] = float(ct_d.get("ajuste_reglas_pct_visita", 0.0))
+            from decision_cobertura import bandera_activa as _ba_mm_mp
             try:
-                from motor_patrones import evaluar_micropatrones_combinatorios
-                mp_comb = evaluar_micropatrones_combinatorios(
+                if not _ba_mm_mp("usar_micropatrones_combinatorios"):
+                    mp_comb = {}
+                else:
+                  from motor_patrones import evaluar_micropatrones_combinatorios
+                  mp_comb = evaluar_micropatrones_combinatorios(
                     self.doc_local,
                     self.doc_visitante,
                     eq_l=self.nombre_local,
                     eq_v=self.nombre_visitante,
-                )
+                  )
             except Exception:
                 mp_comb = {}
             self.micropatrones_combinatorios = mp_comb
@@ -2273,6 +2490,12 @@ class MotorMercados:
             self.xai_factores["micropatrones_combinatorios"] = mp_comb
             self.xai_factores["mu_local_casa"] = dict(resultado.get("mu_local_casa", {}))
             self.xai_factores["mu_visita_fuera"] = dict(resultado.get("mu_visita_fuera", {}))
+            self.xai_factores["n_metricas_local"] = contar_n_real_por_metrica_doc(
+                getattr(self, "doc_local", None), getattr(self, "cond_local", None)
+            )
+            self.xai_factores["n_metricas_visita"] = contar_n_real_por_metrica_doc(
+                getattr(self, "doc_visitante", None), getattr(self, "cond_visitante", None)
+            )
 
         # ── Mitades: reescaladas a la λ de la red (λ_1T + λ_2T = λ_FT) ──────
         if self.matriz_1t and self.matriz_2t:
@@ -2777,8 +3000,9 @@ class MotorMercados:
 
     # 24. Total de córneres
     def _m_total_corners(self, numero: int, idm: str, nombre: str) -> ResultadoMercado:
+        from decision_cobertura import bandera_activa as _ba_tc_g
         cob = cobertura_corners_por_equipo(self, bando=None)
-        if not cob["ok_catalogo"]:
+        if _ba_tc_g("usar_gate_corners_8_15") and not cob["ok_catalogo"]:
             return ResultadoMercado(
                 idm, numero, nombre, estado="datos_insuficientes",
                 nota=(f"Córneres: datos insuficientes ({cob['n_min']}/{cob['den']}; "
@@ -2805,7 +3029,8 @@ class MotorMercados:
         k_emp = None
         dist_activa = "poisson"
         base = eventos["poisson"]
-        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+        from decision_cobertura import bandera_activa as _ba_tc_nb
+        if _ba_tc_nb("usar_sobredispersion_nb_corners") and disp["sobredisperso"] and disp.get("var_sobre_media"):
             var_mod = mu_tot * float(disp["var_sobre_media"])
             k_emp = _k_desde_media_varianza(mu_tot, var_mod)
             if k_emp and not math.isinf(k_emp) and k_emp > 0:
@@ -2887,20 +3112,29 @@ class MotorMercados:
 
             # factor_bloqueo_bandas = 0.60 + 0.20 * (centros_propios / 18.0) + 0.20 * (bloqueos_rival + despejes_rival / 8.0) / 5.0
             factor_bloqueo = 0.60 + 0.20 * (centros / 18.0) + 0.20 * ((bloq_riv + (desp_riv / 8.0)) / 5.0)
-            p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
-            factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
-            diff_lam = lam_p - lam_r
-            if diff_lam >= 0.55 and bloq_riv < 2.2:
-                factor_bloqueo *= 0.94
-            elif abs(diff_lam) <= 0.35 and centros >= 20.0:
-                factor_bloqueo *= 1.06
-            rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
-            rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
-            p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
-            if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
-                factor_bloqueo *= 0.90
-            # Punto 1.8: Tope protector de recorte a mu de córneres (máx 10% sin validación cronológica)
-            factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))
+            from decision_cobertura import bandera_activa as _ba_mc_65
+            if _ba_mc_65("usar_corners_reglas_65e377e_diag"):
+                factor_bloqueo = max(0.78, min(1.18, factor_bloqueo))
+                diff_lam = lam_p - lam_r
+                if diff_lam >= 0.55 and bloq_riv < 2.2:
+                    factor_bloqueo *= 0.90
+                elif abs(diff_lam) <= 0.35 and centros >= 20.0:
+                    factor_bloqueo *= 1.08
+            else:
+                p54 = float(pat_55.get("P54_Asedio_Corners_Matchup", 1.0) or 1.0)
+                factor_bloqueo *= (0.94 + 0.06 * min(1.8, max(0.5, p54)))
+                diff_lam = lam_p - lam_r
+                if diff_lam >= 0.55 and bloq_riv < 2.2:
+                    factor_bloqueo *= 0.94
+                elif abs(diff_lam) <= 0.35 and centros >= 20.0:
+                    factor_bloqueo *= 1.06
+                rem_area_l = float(mu_l.get("remates_dentro_area", mu_l.get("remates_area", 7.0)) or 7.0)
+                rem_area_v = float(mu_v.get("remates_dentro_area", mu_v.get("remates_area", 6.5)) or 6.5)
+                p11_prop = float(pat_55.get("P11_Peligro_Area_vs_Fuera", 1.5) or 1.5)
+                if rem_tot > 15.0 or (rem_area_l + rem_area_v) > 15.0 or p11_prop > 2.6:
+                    factor_bloqueo *= 0.90
+                # Punto 1.8: Tope protector de recorte a mu de córneres (máx 10% sin validación cronológica)
+                factor_bloqueo = max(0.90, min(1.15, factor_bloqueo))
             base = base * factor_bloqueo
         except Exception:
             pass
@@ -2973,9 +3207,10 @@ class MotorMercados:
 
     # 28-29. Córneres por equipo
     def _corners_equipo(self, numero: int, idm: str, nombre: str, bando: str) -> ResultadoMercado:
+        from decision_cobertura import bandera_activa as _ba_ce_g
         equipo = self.nombre_local if bando == "local" else self.nombre_visitante
         cob = cobertura_corners_por_equipo(self, bando=bando)
-        if not cob["ok_catalogo"]:
+        if _ba_ce_g("usar_gate_corners_8_15") and not cob["ok_catalogo"]:
             return ResultadoMercado(
                 idm, numero, nombre, estado="datos_insuficientes",
                 nota=(f"Córneres {equipo}: datos insuficientes ({cob['n_min']}/{cob['den']}; "
@@ -2992,7 +3227,8 @@ class MotorMercados:
         disp = _dispersion_corners_muestra(self.doc_local, self.doc_visitante, bando=bando)
         k_emp = None
         dist_activa = "poisson"
-        if disp["sobredisperso"] and disp.get("var_sobre_media"):
+        from decision_cobertura import bandera_activa as _ba_ce_nb
+        if _ba_ce_nb("usar_sobredispersion_nb_corners") and disp["sobredisperso"] and disp.get("var_sobre_media"):
             k_emp = _k_desde_media_varianza(mu, mu * float(disp["var_sobre_media"]))
         if k_emp and not math.isinf(k_emp) and k_emp > 0:
             dist_p = distribucion_conteo(
@@ -3223,7 +3459,8 @@ def _linea_seleccion(seleccion: "Seleccion", umbral: float,
     linea = f"• {etiqueta_corta(seleccion)} ({seleccion.periodo}): " \
             f"{formatear_pct(seleccion.probabilidad, umbral)}"
     extras: list[str] = []
-    if getattr(seleccion, "bajo_vigilancia", False) and getattr(seleccion, "prob_calibrada", None) is not None:
+    from decision_cobertura import bandera_activa as _ba_ls
+    if _ba_ls("usar_calibracion_y_veto_conciencia") and getattr(seleccion, "bajo_vigilancia", False) and getattr(seleccion, "prob_calibrada", None) is not None:
         extras.append(f"calibrada: {float(seleccion.prob_calibrada) * 100.0:.1f}%".replace(".", ","))
     mot = str(getattr(seleccion, "motivo", "") or "").lower()
     if "reparto 50/50 sin validar" in mot:
@@ -4146,6 +4383,60 @@ def evaluar_ensemble_mlp(
     }
 
 
+def contar_n_real_por_metrica_doc(
+    doc: dict[str, Any] | None,
+    condicion: str | None = None,
+) -> dict[str, dict[str, int]]:
+    """
+    Cuenta las observaciones REALES (no nulas y no sintéticas / estimacion_modelo)
+    por métrica para el documento del equipo en su condición (`n_cond`) y en el
+    historial total filtrado (`n_gen`), evitando que imputaciones o valores 0
+    oculten tamaños muestrales pequeños.
+    """
+    if not isinstance(doc, dict):
+        return {}
+    pts = [p for p in (doc.get("partidos") or []) if isinstance(p, dict) and not p.get("es_amistoso")]
+    cond_norm = str(condicion or "").lower().strip()
+    if cond_norm in ("casa", "fuera"):
+        pts_c = [p for p in pts if str(p.get("condicion") or "").lower().strip() == cond_norm]
+    else:
+        pts_c = pts
+
+    claves_clave = (
+        "posesion_pct", "goles_favor", "xg", "goles_contra", "xgot_enfrentado",
+        "remates_totales", "remates_puerta", "toques_area_rival", "corners",
+        "despejes", "duelos_aereos_pct", "faltas", "goles_evitados",
+    )
+
+    def _tiene_real(p: dict[str, Any], k: str) -> bool:
+        if k in ("goles_favor", "goles_contra"):
+            marc = p.get("marcador") if isinstance(p.get("marcador"), dict) else {}
+            lado_k = "equipo" if k == "goles_favor" else "rival"
+            return marc.get(lado_k) is not None or p.get(f"goles_{lado_k}") is not None
+        proc = ((p.get("procedencia") or {}).get("FT") or {}).get("equipo") or {}
+        if isinstance(proc, dict):
+            pr = str(proc.get(k) or "").strip().lower()
+            if pr in ("estimacion_modelo", "estimado", "sintetico", "sin_dato"):
+                return False
+        for fila in ((p.get("periodos") or {}).get("FT") or {}).get("filas") or []:
+            if not isinstance(fila, dict) or fila.get("clave") != k:
+                continue
+            if bool(fila.get("estimado")):
+                return False
+            pr_f = str(fila.get("procedencia") or fila.get("fuente") or "").strip().lower()
+            if pr_f in ("estimacion_modelo", "estimado", "sintetico", "sin_dato"):
+                return False
+            return fila.get("equipo") is not None
+        return False
+
+    out: dict[str, dict[str, int]] = {}
+    for k in claves_clave:
+        nc = sum(1 for p in pts_c if _tiene_real(p, k))
+        ng = sum(1 for p in pts if _tiene_real(p, k))
+        out[k] = {"n_cond": nc, "n_gen": ng}
+    return out
+
+
 def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     """
     Fase 5 y 8: Genera las líneas de IA Explicable (XAI) con Doble ADN, 6 Cruces Tácticos,
@@ -4165,27 +4456,64 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     # 1. ADN del Enfrentamiento (Local en Casa vs. Rival de Visita)
     mu_l = xai.get("mu_local_casa") or (getattr(motor, "recursivo", {}) or {}).get("mu_local_casa") or {}
     mu_v = xai.get("mu_visita_fuera") or (getattr(motor, "recursivo", {}) or {}).get("mu_visita_fuera") or {}
+    n_met_l = xai.get("n_metricas_local") or contar_n_real_por_metrica_doc(
+        getattr(motor, "doc_local", None), getattr(motor, "cond_local", None)
+    )
+    n_met_v = xai.get("n_metricas_visita") or contar_n_real_por_metrica_doc(
+        getattr(motor, "doc_visitante", None), getattr(motor, "cond_visitante", None)
+    )
+    tiene_doc_l = bool(isinstance(getattr(motor, "doc_local", None), dict) and (motor.doc_local.get("partidos") or []))
+    tiene_doc_v = bool(isinstance(getattr(motor, "doc_visitante", None), dict) and (motor.doc_visitante.get("partidos") or []))
 
     if mu_l and mu_v:
-        def _fmt_m(d: dict, k: str, def_val: float, fmt: str = ".1f", suf: str = "") -> str:
+        def _fmt_m(d: dict, k: str, def_val: float, fmt: str = ".1f", suf: str = "", n_map: dict | None = None, tiene_doc: bool = False) -> str:
+            info_n = (n_map or {}).get(k) if isinstance(n_map, dict) else None
+            tag_n = ""
+            if isinstance(info_n, dict):
+                nc = int(info_n.get("n_cond", 0))
+                ng = int(info_n.get("n_gen", 0))
+                tag_n = f" (n={nc}c/{ng}g)"
+                if tiene_doc and nc == 0 and ng == 0 and d.get(k) is None:
+                    return f"sin dato{tag_n}"
             v = d.get(k)
             if v is None:
+                if tiene_doc and isinstance(info_n, dict) and int(info_n.get("n_gen", 0)) == 0:
+                    return f"sin dato{tag_n}"
                 v = def_val
             try:
                 val = float(v)
-                return f"{val:{fmt}}{suf}"
+                return f"{val:{fmt}}{suf}{tag_n}"
             except (ValueError, TypeError):
-                return f"{def_val:{fmt}}{suf}"
+                return f"{def_val:{fmt}}{suf}{tag_n}"
+
+        def _fmt_gf_contraido(
+            d: dict, def_val: float, n_map: dict | None, tiene_doc: bool, cond_fb: str | None
+        ) -> str:
+            base_txt = _fmt_m(d, "goles_favor", def_val, ".2f", " G", n_map, tiene_doc)
+            prior_h = d.get("_h_gf_lstm_15")
+            if prior_h is None or base_txt.startswith("sin dato"):
+                return base_txt
+            info_n = (n_map or {}).get("goles_favor") if isinstance(n_map, dict) else None
+            if isinstance(info_n, dict) and info_n.get("n_cond") is not None:
+                nc = int(info_n["n_cond"])
+            elif d.get("_n_cond") is not None:
+                nc = int(round(float(d["_n_cond"])))
+            else:
+                nc = 0
+            cond_lbl = str(d.get("_cond_objetivo") or cond_fb or "casa").strip().lower()
+            v = d.get("goles_favor")
+            val = float(v) if v is not None else float(def_val)
+            return f"{val:.2f} G estimado contraído (n={nc} {cond_lbl}, prior {float(prior_h):.3f})"
 
         lineas.extend([
             "🧬 ADN del Enfrentamiento (Local en Casa vs. Rival de Visita):",
-            f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%')}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%')}",
-            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_favor', 1.3, '.2f')} G / {_fmt_m(mu_l, 'xg', 1.3, '.2f')} xG]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_favor', 1.2, '.2f')} G / {_fmt_m(mu_v, 'xg', 1.2, '.2f')} xG]",
-            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f')} Gc / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f')} xGOTc]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f')} Gc / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f')} xGOTc]",
-            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f')} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f')} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f')}]",
-            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f')} / {_fmt_m(mu_l, 'corners', 5.0, '.1f')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f')} / {_fmt_m(mu_v, 'corners', 4.5, '.1f')}]",
-            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'despejes', 18.0, '.1f')} / {_fmt_m(mu_l, 'duelos_aereos_pct', 50.0, '.1f', '%')}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'despejes', 20.0, '.1f')} / {_fmt_m(mu_v, 'duelos_aereos_pct', 48.0, '.1f', '%')}]",
-            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'faltas', 11.0, '.1f')} F / {_fmt_m(mu_l, 'goles_evitados', 0.0, '+.2f')} GEv]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'faltas', 13.0, '.1f')} F / {_fmt_m(mu_v, 'goles_evitados', 0.0, '+.2f')} GEv]",
+            f"▸ Posesión: {loc.get('nombre', 'Local')} {_fmt_m(mu_l, 'posesion_pct', 50.0, '.1f', '%', n_met_l, tiene_doc_l)}  vs  {vis.get('nombre', 'Visitante')} {_fmt_m(mu_v, 'posesion_pct', 50.0, '.1f', '%', n_met_v, tiene_doc_v)}",
+            f"▸ Goles / xG: {loc.get('nombre', 'Local')} [{_fmt_gf_contraido(mu_l, 1.3, n_met_l, tiene_doc_l, getattr(motor, 'cond_local', None))} / {_fmt_m(mu_l, 'xg', 1.3, '.2f', ' xG', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_gf_contraido(mu_v, 1.2, n_met_v, tiene_doc_v, getattr(motor, 'cond_visitante', None))} / {_fmt_m(mu_v, 'xg', 1.2, '.2f', ' xG', n_met_v, tiene_doc_v)}]",
+            f"▸ xG Concedido / xGOTc: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'goles_contra', 1.2, '.2f', ' Gc', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'xgot_enfrentado', 1.2, '.2f', ' xGOTc', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'goles_contra', 1.3, '.2f', ' Gc', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'xgot_enfrentado', 1.3, '.2f', ' xGOTc', n_met_v, tiene_doc_v)}]",
+            f"▸ Remates Totales / A Puerta: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'remates_totales', 12.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'remates_puerta', 4.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'remates_totales', 11.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'remates_puerta', 3.5, '.1f', '', n_met_v, tiene_doc_v)}]",
+            f"▸ Toques Área / Córneres: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'toques_area_rival', 22.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'corners', 5.0, '.1f', '', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'toques_area_rival', 18.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'corners', 4.5, '.1f', '', n_met_v, tiene_doc_v)}]",
+            f"▸ Despejes / Duelos Aéreos: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'despejes', 18.0, '.1f', '', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'duelos_aereos_pct', 50.0, '.1f', '%', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'despejes', 20.0, '.1f', '', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'duelos_aereos_pct', 48.0, '.1f', '%', n_met_v, tiene_doc_v)}]",
+            f"▸ Faltas / Portero Goles Evitados: {loc.get('nombre', 'Local')} [{_fmt_m(mu_l, 'faltas', 11.0, '.1f', ' F', n_met_l, tiene_doc_l)} / {_fmt_m(mu_l, 'goles_evitados', 0.0, '+.2f', ' GEv', n_met_l, tiene_doc_l)}]  vs  {vis.get('nombre', 'Visitante')} [{_fmt_m(mu_v, 'faltas', 13.0, '.1f', ' F', n_met_v, tiene_doc_v)} / {_fmt_m(mu_v, 'goles_evitados', 0.0, '+.2f', ' GEv', n_met_v, tiene_doc_v)}]",
         ])
 
     # 2. Patrones Detectados por la Red (XAI)
@@ -4237,6 +4565,7 @@ def es_seleccion_competitiva_ticket(
     eq_v: str = "Visitante",
     p_1x2: tuple[float, float, float] | None = None,
     motor: Any = None,
+    incluir_primer_gol: bool = True,
 ) -> bool:
     """
     Sección 8.4 (Auditoría 30/10/2026):
@@ -4270,13 +4599,14 @@ def es_seleccion_competitiva_ticket(
     if "-0.5 gol" in et or "menos de 0.5 gol" in et:
         return False
 
-    if motor is not None and es_mercado_cronologia_mitades(s):
+    from decision_cobertura import bandera_activa as _ba_esc
+    if _ba_esc("usar_gate_cronologia_mitades_10_15") and motor is not None and es_mercado_cronologia_mitades(s):
         if not cronologia_mitades_verificada(motor).get("ok", True):
             return False
 
     # 1. CÓRNERES
     if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in ev:
-        if motor is not None:
+        if _ba_esc("usar_gate_corners_8_15") and motor is not None:
             bando_c = "local" if (eq and eq == eq_l or ev.startswith("local_")) else ("visitante" if (eq and eq == eq_v or ev.startswith("visitante_")) else None)
             if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
                 return False
@@ -4363,7 +4693,9 @@ def es_seleccion_competitiva_ticket(
         return False
 
     # 5. GOLES PARTIDO (FT, 1T, 2T, BTTS, Primer Gol)
-    if "ambos_marcan" in ev or "btts" in ev or "primer_gol" in ev:
+    if "primer_gol" in ev:
+        return bool(incluir_primer_gol) and (per == "FT")
+    if "ambos_marcan" in ev or "btts" in ev:
         return per == "FT"
     if lin is not None:
         lin_f = float(lin)
@@ -4407,6 +4739,7 @@ def calcular_frecuencia_observada(
     ev = str(_v(sel, "evento") or "").lower()
     et = str(_v(sel, "etiqueta") or "").lower()
     mkt = str(_v(sel, "mercado") or "").lower()
+    per = str(_v(sel, "periodo", "FT") or "FT").strip().upper()
     eq = str(_v(sel, "equipo") or "").strip()
     lin_raw = _v(sel, "linea", None)
     lin = None
@@ -4427,6 +4760,25 @@ def calcular_frecuencia_observada(
             m = p.get("marcador", {}) or {}
             gf = m.get("equipo")
             gc = m.get("rival")
+            gf_per, gc_per = gf, gc
+            if per in ("1T", "2T"):
+                p_per = (p.get("periodos", {}) or {}).get(per, {}) or {}
+                m_per = p_per.get("marcador") or {}
+                if m_per.get("equipo") is not None and m_per.get("rival") is not None:
+                    gf_per, gc_per = m_per.get("equipo"), m_per.get("rival")
+                else:
+                    fg = p.get("franjas_goles") or {}
+                    claves_mitad = ("00_15", "16_30", "31_45") if per == "1T" else ("46_60", "61_75", "76_90")
+                    if fg and all(isinstance(fg.get(k), dict) for k in claves_mitad):
+                        gf_per = sum(float(fg[k].get("anotados", 0) or 0) for k in claves_mitad)
+                        gc_per = sum(float(fg[k].get("recibidos", 0) or 0) for k in claves_mitad)
+                    else:
+                        from auditoria_historica import reconstruir_marcador_mitades_partido
+                        g1, c1, g2, c2, ok_m, _ = reconstruir_marcador_mitades_partido(p, "equipo", "rival")
+                        if ok_m and g1 is not None and c1 is not None and g2 is not None and c2 is not None:
+                            gf_per, gc_per = (g1, c1) if per == "1T" else (g2, c2)
+                        else:
+                            gf_per, gc_per = None, None
             cf, cr, tf, tr = None, None, None, None
             filas = (p.get("periodos", {}).get("FT", {}) or {}).get("filas", [])
             for f in filas:
@@ -4436,7 +4788,7 @@ def calcular_frecuencia_observada(
                 elif f.get("clave") in ("tarjetas_amarillas", "tarjetas"):
                     tf = f.get("equipo")
                     tr = f.get("rival")
-            res.append({"gf": gf, "gc": gc, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
+            res.append({"gf": gf, "gc": gc, "gf_per": gf_per, "gc_per": gc_per, "cf": cf, "cr": cr, "tf": tf, "tr": tr})
         return res
 
     pts_l = _extraer_pts(doc_local)
@@ -4449,6 +4801,7 @@ def calcular_frecuencia_observada(
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
     es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
+    es_al_menos = ("al_menos" in ev or "al menos" in et)
 
     # 1. Doble oportunidad (1X, X2, 12)
     if "doble_oportunidad" in mkt or "doble oportunidad" in mkt or any(k in ev for k in ("dc_1x", "dc_x2", "dc_12")) or any(et.startswith(k) for k in ("1x", "x2", "12")):
@@ -4486,25 +4839,41 @@ def calcular_frecuencia_observada(
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
 
-    # 3. Goles totales
+    # 3. Goles totales (respetando periodo 1T/2T si sel.periodo es mitad)
     if ("total" in mkt or "goles" in mkt) and not eq_norm and not any(k in ev for k in ("local", "visita")) and lin is not None:
-        valid = [float(p["gf"] + p["gc"]) for p in (pts_l + pts_v) if p.get("gf") is not None and p.get("gc") is not None]
+        valid = [
+            float(p["gf_per"] + p["gc_per"])
+            for p in (pts_l + pts_v)
+            if p.get("gf_per") is not None and p.get("gc_per") is not None
+        ]
         if not valid:
             return None
-        return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+        if es_under:
+            return sum(1 for g in valid if g < lin) / len(valid)
+        if es_al_menos:
+            return sum(1 for g in valid if g >= lin) / len(valid)
+        return sum(1 for g in valid if g > lin) / len(valid)
 
-    # 4. Goles por equipo
+    # 4. Goles por equipo (respetando periodo 1T/2T)
     if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
         if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
-            valid = [float(p["gf"]) for p in pts_l if p.get("gf") is not None]
+            valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
             if not valid:
                 return None
-            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+            if es_under:
+                return sum(1 for g in valid if g < lin) / len(valid)
+            if es_al_menos:
+                return sum(1 for g in valid if g >= lin) / len(valid)
+            return sum(1 for g in valid if g > lin) / len(valid)
         elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
-            valid = [float(p["gf"]) for p in pts_v if p.get("gf") is not None]
+            valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
             if not valid:
                 return None
-            return (sum(1 for g in valid if g < lin) / len(valid)) if es_under else (sum(1 for g in valid if g > lin) / len(valid))
+            if es_under:
+                return sum(1 for g in valid if g < lin) / len(valid)
+            if es_al_menos:
+                return sum(1 for g in valid if g >= lin) / len(valid)
+            return sum(1 for g in valid if g > lin) / len(valid)
 
     # 5. Ambos anotan (BTTS)
     if "ambos_anotan" in ev or "btts" in ev:
@@ -4552,8 +4921,26 @@ def tiene_desvio_excesivo_calibracion(
     f_obs = calcular_frecuencia_observada(sel, doc_local, doc_visitante, eq_l, eq_v)
     if f_obs is None:
         return False, None, None
-    desvio_pts = round(abs(p_modelo - f_obs) * 100.0, 2)
-    return (desvio_pts > max_desvio), desvio_pts, f_obs
+    obs_1d = round(float(f_obs) * 100.0, 1)
+    mod_1d = round(float(p_modelo) * 100.0, 1)
+    desvio_pts = round(abs(obs_1d - mod_1d), 1)
+    mkt_dc = str(_v(sel, "id_mercado", "") or "").lower()
+    mkt_nom_dc = str(_v(sel, "mercado", "") or "").lower()
+    ev_dc = str(_v(sel, "evento", "") or "").lower()
+    et_dc = str(_v(sel, "etiqueta", "") or "").lower()
+    es_doble_op = (
+        "doble_oportunidad" in mkt_dc
+        or "doble oportunidad" in mkt_nom_dc
+        or any(k in ev_dc for k in ("dc_1x", "dc_x2", "dc_12"))
+        or ev_dc in ("1x", "x2", "12")
+        or any(et_dc.startswith(k) for k in ("1x", "x2", "12"))
+    )
+    if es_doble_op:
+        # VETO 1X/DC con brecha con signo: solo se veta si el modelo supera lo observado en > max_desvio (10.0 pp)
+        brecha_modelo_sobre_obs = round((p_modelo - f_obs) * 100.0, 2)
+        return (brecha_modelo_sobre_obs > max_desvio), desvio_pts, f_obs
+    desvio_raw = round(abs(p_modelo - f_obs) * 100.0, 2)
+    return (desvio_raw > max_desvio), desvio_pts, f_obs
 
 
 def filtrar_top_opciones_ticket(
@@ -4617,16 +5004,18 @@ def calcular_ev_y_stake_calibrado(
     """
     prob_b = max(0.001, min(0.999, float(prob_bruta or 0.0)))
     cal_info: dict[str, Any] = {}
-    try:
-        from agente_consciente import evaluar_familia_conciencia_cached
-        eq_norm = str(equipo) if equipo and str(equipo) not in ("None", "Total") else None
-        cal_info = evaluar_familia_conciencia_cached(
-            str(mercado or ""),
-            equipo=eq_norm,
-            prob_bruta=prob_b,
-        ) or {}
-    except Exception:
-        cal_info = {}
+    from decision_cobertura import bandera_activa as _ba_evc
+    if _ba_evc("usar_calibracion_y_veto_conciencia"):
+        try:
+            from agente_consciente import evaluar_familia_conciencia_cached
+            eq_norm = str(equipo) if equipo and str(equipo) not in ("None", "Total") else None
+            cal_info = evaluar_familia_conciencia_cached(
+                str(mercado or ""),
+                equipo=eq_norm,
+                prob_bruta=prob_b,
+            ) or {}
+        except Exception:
+            cal_info = {}
 
     p_cal_raw = cal_info.get("prob_calibrada")
     bajo_vig = bool(cal_info.get("bajo_vigilancia", False))
@@ -4657,12 +5046,26 @@ def calcular_ev_y_stake_calibrado(
                 stake_pct = 0.0
                 estado_stake = "sin_stake_bajo_vigilancia"
             elif ev_calibrado > 0:
+                from decision_cobertura import bandera_activa as _ba_k3, cargar_umbrales_cobertura as _cu_k3
                 b_kelly = max(0.05, c_val - 1.0)
                 q_kelly = 1.0 - p_cal
-                f_quarter = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
-                stake_sugerido = round(max(min_stake, min(0.08, f_quarter)), 4)
-                stake_pct = round(stake_sugerido * 100.0, 1)
-                estado_stake = "activo"
+                f_quarter_cal = (((b_kelly * p_cal) - q_kelly) / b_kelly) * 0.25
+                if _ba_k3("usar_kelly_conservador_min_3pct"):
+                    f_quarter_bruta = (((b_kelly * prob_b) - (1.0 - prob_b)) / b_kelly) * 0.25
+                    f_quarter = min(f_quarter_bruta, f_quarter_cal)
+                    tope_k = float(_cu_k3().get("stake_max_conservador_kelly", 0.03) or 0.03)
+                    if f_quarter <= 0.0:
+                        stake_sugerido = 0.0
+                        stake_pct = 0.0
+                        estado_stake = "sin_valor_bruto_o_calibrado"
+                    else:
+                        stake_sugerido = round(max(min_stake, min(tope_k, f_quarter)), 4)
+                        stake_pct = round(stake_sugerido * 100.0, 1)
+                        estado_stake = "activo"
+                else:
+                    stake_sugerido = round(max(min_stake, min(0.08, f_quarter_cal)), 4)
+                    stake_pct = round(stake_sugerido * 100.0, 1)
+                    estado_stake = "activo"
             else:
                 stake_sugerido = 0.0
                 stake_pct = 0.0
@@ -4694,6 +5097,9 @@ def calcular_ev_y_stake_calibrado(
 
 
 def _obtener_micropatrones_motor(motor: Any, eq_l: str = "Local", eq_v: str = "Visitante") -> dict[str, Any]:
+    from decision_cobertura import bandera_activa as _ba_omp
+    if not _ba_omp("usar_micropatrones_combinatorios"):
+        return {}
     if motor is None:
         return {}
     mp = getattr(motor, "micropatrones_combinatorios", None)
@@ -4794,6 +5200,21 @@ def es_seleccion_vetada_por_micropatrones(
     eq_l: str = "Local",
     eq_v: str = "Visitante",
     mp_comb: dict[str, Any] | None = None,
+) -> tuple[bool, bool, str | None]:
+    from decision_cobertura import bandera_activa as _ba_mp_v
+    if not _ba_mp_v("usar_micropatrones_combinatorios"):
+        return False, False, None
+    return _es_seleccion_vetada_por_micropatrones_impl(
+        s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb,
+    )
+
+
+def _es_seleccion_vetada_por_micropatrones_impl(
+    s: Any,
+    motor: Any = None,
+    eq_l: str = "Local",
+    eq_v: str = "Visitante",
+    mp_comb: dict[str, Any] | None = None,
 ) -> tuple[bool, bool, list[str]]:
     """
     Evalúa si una selección queda vetada o respaldada por los micropatrones combinatorios
@@ -4869,18 +5290,30 @@ def seleccionar_top_5_jugadas_recomendadas(
         lin_c = _v(sel_cand, "linea", None)
         # Regla 1.7 (Ronda 5+6): Sin cuota real +EV, cuota justa mínima obligatoria en Top 5
         # para TODOS los mercados (Overs, Unders, 1X2, Doble Oportunidad, DNB, Mitades, Córneres, Tarjetas)
-        from decision_cobertura import cargar_umbrales_cobertura
-        cuota_justa_min = float(cargar_umbrales_cobertura().get("min_cuota_justa_no_trivial_top5", 1.14))
+        from decision_cobertura import bandera_activa as _ba_t5_triv, obtener_umbral_cuota_justa_top5
+        cuota_justa_min = obtener_umbral_cuota_justa_top5()
         prob_max_trivial = round(1.0 / max(0.01, cuota_justa_min), 4)
-        if p_c > prob_max_trivial + 1e-9:
+        if _ba_t5_triv("usar_gatekeeper_multisenal_top5"):
+            if p_c > prob_max_trivial + 1e-9:
+                return True
+            return False
+        if ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) in (3.5, 4.5) and p_c >= prob_max_trivial:
+            return True
+        if any(k in ev_c or k in et_c for k in ("tarjeta", "amarilla")) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 5.5 and p_c >= prob_max_trivial:
+            return True
+        if ("corner" in ev_c or "córner" in et_c) and ("under" in ev_c or "menos" in et_c) and lin_c is not None and float(lin_c) >= 11.5 and p_c >= prob_max_trivial:
+            return True
+        if p_c >= 0.89 and not any(k in ev_c for k in ("1x", "x2", "dc_1x", "dc_x2")):
             return True
         return False
 
     import copy as _copy
+    from decision_cobertura import bandera_activa as _ba_pg
+    _incluir_pg_top5 = not bool(_ba_pg("usar_excluir_primer_gol_top5"))
     candidatas = [
         (dict(s) if isinstance(s, dict) else _copy.copy(s))
         for s in selecciones
-        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2)
+        if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, incluir_primer_gol=_incluir_pg_top5)
         and float(_v(s, "probabilidad", 0.0) or 0.0) >= 0.70
         and not _es_linea_trivial_top5(s)
     ]
@@ -4994,15 +5427,20 @@ def seleccionar_top_5_jugadas_recomendadas(
         try:
             cuota_r = _v(s, "cuota_real", _v(s, "cuota", _v(s, "odds", None)))
             if cuota_r is not None and float(cuota_r) > 1.01:
-                ev_info_f = calcular_ev_y_stake_calibrado(
-                    str(_v(s, "mercado") or ""),
-                    prob_s,
-                    float(cuota_r),
-                    equipo=str(_v(s, "equipo") or "") or None,
-                )
-                ev_cal_f = ev_info_f.get("ev_calibrado")
-                if ev_cal_f is not None and float(ev_cal_f) < 0.03:
-                    continue
+                from decision_cobertura import bandera_activa as _ba_t5_ev
+                if _ba_t5_ev("usar_calibracion_y_veto_conciencia"):
+                    ev_info_f = calcular_ev_y_stake_calibrado(
+                        str(_v(s, "mercado") or ""),
+                        prob_s,
+                        float(cuota_r),
+                        equipo=str(_v(s, "equipo") or "") or None,
+                    )
+                    ev_cal_f = ev_info_f.get("ev_calibrado")
+                    if ev_cal_f is not None and float(ev_cal_f) < 0.03:
+                        continue
+                else:
+                    if ((prob_s * float(cuota_r)) - 1.0) < 0.03:
+                        continue
         except Exception:
             pass
         candidatas_filtradas_ev.append(s)
@@ -5134,7 +5572,8 @@ def seleccionar_top_5_jugadas_recomendadas(
     if isinstance(bloq_mot, (set, list, tuple)):
         for b_m in bloq_mot:
             mercados_mitad_bloq.add(str(b_m).lower())
-    sin_mitades_goles = ("goles" in mercados_mitad_bloq) or (motor is not None and not cron_mitades_ok_top)
+    from decision_cobertura import bandera_activa as _ba_t5_g
+    sin_mitades_goles = ("goles" in mercados_mitad_bloq) or (_ba_t5_g("usar_gate_cronologia_mitades_10_15") and motor is not None and not cron_mitades_ok_top)
     if sin_mitades_goles:
         candidatas = [
             s for s in candidatas
@@ -5146,21 +5585,22 @@ def seleccionar_top_5_jugadas_recomendadas(
             ev_s = str(_v(s, "evento") or "").lower()
             m_s = str(_v(s, "mercado") or "").lower()
             eq_s = _v(s, "equipo", None)
-            if ("corner" in ev_s or "corner" in m_s or "córner" in m_s):
+            if _ba_t5_g("usar_gate_corners_8_15") and ("corner" in ev_s or "corner" in m_s or "córner" in m_s):
                 bando_c = "local" if (eq_s == eq_l or ev_s.startswith("local_")) else ("visitante" if (eq_s == eq_v or ev_s.startswith("visitante_")) else None)
                 if not cobertura_corners_por_equipo(motor, bando=bando_c).get("ok_top", True):
                     continue
-            try:
-                from agente_consciente import evaluar_familia_conciencia_cached
-                cal_chk = evaluar_familia_conciencia_cached(
-                    str(_v(s, "mercado") or ""),
-                    equipo=str(eq_s) if eq_s and str(eq_s) not in ("None", "Total") else None,
-                    prob_bruta=float(_v(s, "probabilidad", 0.0) or 0.0),
-                )
-                if cal_chk.get("veto_top5"):
-                    continue
-            except Exception:
-                pass
+            if _ba_t5_g("usar_calibracion_y_veto_conciencia"):
+                try:
+                    from agente_consciente import evaluar_familia_conciencia_cached
+                    cal_chk = evaluar_familia_conciencia_cached(
+                        str(_v(s, "mercado") or ""),
+                        equipo=str(eq_s) if eq_s and str(eq_s) not in ("None", "Total") else None,
+                        prob_bruta=float(_v(s, "probabilidad", 0.0) or 0.0),
+                    )
+                    if cal_chk.get("veto_top5"):
+                        continue
+                except Exception:
+                    pass
             _c_filt.append(s)
         candidatas = _c_filt
     if "corners" in mercados_mitad_bloq:
@@ -5554,10 +5994,10 @@ def seleccionar_top_5_jugadas_recomendadas(
                 return "Goles 1T: +0.5 Goles"
             if ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
                 return "Goles 2T: +0.5 Goles"
-            signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
+            signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev or "al menos" in et.lower()) else "-"
             return f"Goles {per}: {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
         # Slot 2: Goles Totales FT
-        signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower()) else "-"
+        signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev or "al menos" in et.lower()) else "-"
         return f"Goles Totales ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles ({per}): {et}"
 
     def _respaldo_xai(s: Any, slot: int) -> str:
@@ -5716,16 +6156,20 @@ def seleccionar_top_5_jugadas_recomendadas(
         if _es_dc_12(s):
             return -5.0
 
-        gk_info = _info_gatekeeper_sel(s)
-        if gk_info["vetada_mp"]:
-            return -99.0
-        f_obs_s = gk_info["f_obs"]
-        score_gk_s = float(gk_info["score_gk"])
-        est_bonus += (score_gk_s - p) * 1.50
-        if f_obs_s is not None and f_obs_s >= _u_promo_emp:
-            est_bonus += 0.35
-        if gk_info["apoyada_mp"]:
-            est_bonus += 0.45
+        _gk_on = _ba_t5_g("usar_gatekeeper_multisenal_top5")
+        gk_info = _info_gatekeeper_sel(s) if _gk_on else {"f_obs": None, "score_gk": p, "vetada_mp": False, "apoyada_mp": False}
+        if _ba_t5_g("usar_micropatrones_combinatorios"):
+            _vet_mp_now, _ap_mp_now, _ = es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v, mp_comb=mp_comb_top)
+            if _vet_mp_now:
+                return -99.0
+            if _ap_mp_now:
+                est_bonus += 0.45
+        if _gk_on:
+            f_obs_s = gk_info["f_obs"]
+            score_gk_s = float(gk_info["score_gk"])
+            est_bonus += (score_gk_s - p) * 1.50
+            if f_obs_s is not None and f_obs_s >= _u_promo_emp:
+                est_bonus += 0.35
 
         # Punto 12: Coherencia entre Marcador Exacto (1-0, 0-1, 0-0) y Jugada Principal
         if es_duelo_cerrado or posesion_esteril_vs_portero:
@@ -5761,12 +6205,17 @@ def seleccionar_top_5_jugadas_recomendadas(
             elif sl == 3 and per == "2T" and prop_2t_cc >= 0.55 and (prom_p26 is not None and prom_p26 >= 0.52):
                 est_bonus += 5.0
 
-        # Si es Resultado / DC (Slot 1), ponderar por score compuesto Gatekeeper sin monopolio ciego
         if sl == 1:
-            if 0.70 <= p <= 0.92:
-                return (2.20 + 1.50 * score_gk_s) - abs(p - 0.82) + est_bonus
-            elif p > 0.92:
-                return 2.0 + est_bonus
+            if _gk_on:
+                if 0.70 <= p <= 0.92:
+                    return (2.20 + 1.50 * float(gk_info["score_gk"])) - abs(p - 0.82) + est_bonus
+                elif p > 0.92:
+                    return 2.0 + est_bonus
+            else:
+                if 0.70 <= p <= 0.92:
+                    return 4.0 - abs(p - 0.82) + est_bonus
+                elif p > 0.92:
+                    return 2.5 + est_bonus
 
         # Si Ambos Anotan: No >= 50%, máxima prioridad en Slot 5
         if "btts_no" in ev and p_btts_no_pct >= 50.0:
@@ -5895,7 +6344,7 @@ def seleccionar_top_5_jugadas_recomendadas(
                 continue
             if sl_cand == 5 and n_tarjetas >= 1 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 continue
-            fg_cand = _firma_gol_total_redundante(cand)
+            fg_cand = _firma_gol_total_redundante(cand) if _ba_t5_g("usar_gatekeeper_multisenal_top5") else None
             if fg_cand is not None and fg_cand in firmas_gol_usadas:
                 continue
 
@@ -5908,8 +6357,8 @@ def seleccionar_top_5_jugadas_recomendadas(
             if sl_cand == 5 and ("tarjeta" in str(_v(cand, "evento") or "").lower() or "tarjeta" in str(_v(cand, "mercado") or "").lower()):
                 n_tarjetas += 1
 
-    # Ordenar el Top 5 por score compuesto Gatekeeper real (sin forzar Slot 1 en Puesto #1 si otro mercado lo supera)
-    if elegidas:
+    # Ordenar el Top 5 por score compuesto Gatekeeper real (solo si usar_gatekeeper_multisenal_top5=True)
+    if _ba_t5_g("usar_gatekeeper_multisenal_top5") and elegidas:
         elegidas.sort(key=lambda item: _puntaje_podio(item[1]), reverse=True)
         if _es_dc_12(elegidas[0][1]) and any(not _es_dc_12(it[1]) for it in elegidas[1:]):
             primero_valido = next(i for i, it in enumerate(elegidas) if not _es_dc_12(it[1]))
@@ -6330,10 +6779,33 @@ def clusters_marcador(
 
     # ── Comparativa de Clusters y Regla Anti-Favoritismo Prematuro (<58%) ─────
     max_p_win = max(p_1, p_2)
-    if max_p_win < 0.58:
+    diff_1x2_pp = abs(p_1 - p_2) * 100.0
+    if max_p_win < 0.58 and diff_1x2_pp < 10.0:
         favorito_tipo = "parejo"
         favorito_nombre = "Duelo Parejo"
         comp_favorito_txt = "⚖️ DUELO PAREJO / RIESGO DE EMPATE (No jugar 1x2 directo)"
+    elif max_p_win < 0.58 and p_2 > p_1:
+        favorito_tipo = "ligera_ventaja_visita"
+        favorito_nombre = f"Ligera Ventaja {nombre_visita}"
+        c_btts = next((c for c in lista_clusters if c["id"] == "victoria_visita_btts"), None)
+        c_cero = next((c for c in lista_clusters if c["id"] == "victoria_visita_corta"), None)
+        p_btts_val = c_btts['probabilidad_pct'] if c_btts else 0.0
+        p_cero_val = c_cero['probabilidad_pct'] if c_cero else 0.0
+        comp_favorito_txt = (
+            f"Lig. Ventaja {nombre_visita} ({p_2 * 100.0:.1f}% vs {p_1 * 100.0:.1f}%): "
+            f"c/Ambos {p_btts_val:.1f}% vs a Cero {p_cero_val:.1f}%"
+        )
+    elif max_p_win < 0.58:
+        favorito_tipo = "ligera_ventaja_local"
+        favorito_nombre = f"Ligera Ventaja {nombre_local}"
+        c_btts = next((c for c in lista_clusters if c["id"] == "victoria_local_btts"), None)
+        c_cero = next((c for c in lista_clusters if c["id"] == "victoria_local_cero"), None)
+        p_btts_val = c_btts['probabilidad_pct'] if c_btts else 0.0
+        p_cero_val = c_cero['probabilidad_pct'] if c_cero else 0.0
+        comp_favorito_txt = (
+            f"Lig. Ventaja {nombre_local} ({p_1 * 100.0:.1f}% vs {p_2 * 100.0:.1f}%): "
+            f"c/Ambos {p_btts_val:.1f}% vs a Cero {p_cero_val:.1f}%"
+        )
     elif p_2 > p_1 and p_2 >= p_x:
         favorito_tipo = "visita"
         favorito_nombre = nombre_visita
@@ -7097,11 +7569,15 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                                         params, aviso=avisar)
     requeridos_goles = [n for n, _ in escenarios_goles()]
     requeridos_conteos = [n for n, _ in escenarios_conteos()]
-    _cron_an = cronologia_mitades_verificada(motor)
-    _rep_5050 = _reparto_mitades_sin_validar(motor)
-    _cob_corn_g = cobertura_corners_por_equipo(motor, bando=None)
-    _cob_corn_l = cobertura_corners_por_equipo(motor, bando="local")
-    _cob_corn_v = cobertura_corners_por_equipo(motor, bando="visitante")
+    from decision_cobertura import bandera_activa as _ba_an
+    _an_mit = _ba_an("usar_gate_cronologia_mitades_10_15")
+    _an_crn = _ba_an("usar_gate_corners_8_15")
+    _an_cal = _ba_an("usar_calibracion_y_veto_conciencia")
+    _cron_an = cronologia_mitades_verificada(motor) if _an_mit else {"ok_analizar": True}
+    _rep_5050 = _reparto_mitades_sin_validar(motor) if _an_mit else False
+    _cob_corn_g = cobertura_corners_por_equipo(motor, bando=None) if _an_crn else {"ok_catalogo": True}
+    _cob_corn_l = cobertura_corners_por_equipo(motor, bando="local") if _an_crn else {"ok_catalogo": True}
+    _cob_corn_v = cobertura_corners_por_equipo(motor, bando="visitante") if _an_crn else {"ok_catalogo": True}
 
     selecciones: list[Seleccion] = []
     for res in mercados:
@@ -7116,14 +7592,15 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                 continue
             if res.id_mercado == "corners_visitante" and not _cob_corn_v.get("ok_catalogo", True):
                 continue
-            try:
+            if _an_cal:
+              try:
                 from agente_consciente import evaluar_familia_conciencia_cached
                 _cal_s = evaluar_familia_conciencia_cached(s.mercado, equipo=s.equipo, prob_bruta=float(s.probabilidad))
                 setattr(s, "prob_calibrada", _cal_s.get("prob_calibrada"))
                 setattr(s, "bajo_vigilancia", bool(_cal_s.get("bajo_vigilancia", False)))
                 setattr(s, "veto_top5", bool(_cal_s.get("veto_top5", False)))
                 setattr(s, "familia_conciencia", _cal_s.get("familia"))
-            except Exception:
+              except Exception:
                 pass
             esc = sensibilidad.get(_clave_a_texto(s.clave_unica), {})
             s.escenarios = esc
@@ -7139,7 +7616,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
             )
             if excede_desv:
                 estado = ESTADO_SENSIBLE
-                motivo = f"sin calibración validada (obs: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, desvío {desv_pts:.1f} pts > 10.0)"
+                _brecha_emp_s = round(round(float(f_obs) * 100.0, 1) - round(float(s.probabilidad) * 100.0, 1), 1)
+                motivo = f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, brecha {_brecha_emp_s:+.1f} pp, desvío {desv_pts:.1f} pts > 10.0)"
             s.estado = estado
             if motivo:
                 s.motivo = motivo
@@ -7165,6 +7643,32 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
 
     informe = generar_informe(metadatos, motor, mercados, grupos, sensibilidad, params)
     mensaje = construir_mensaje(metadatos, grupos, params, motor, mercados)
+    try:
+        from motor_inferencia import verificar_coherencia_texto_cifras_ticket as _verif_coh
+        import re as _re_an
+        _mat_ft_an = getattr(motor, "matriz_ft", None) or []
+        _pl_an = sum(_mat_ft_an[i][j] for i in range(len(_mat_ft_an)) for j in range(len(_mat_ft_an[i])) if i > j) if _mat_ft_an else None
+        _pv_an = sum(_mat_ft_an[i][j] for i in range(len(_mat_ft_an)) for j in range(len(_mat_ft_an[i])) if i < j) if _mat_ft_an else None
+        _cl_an = getattr(motor, "clusters", None) or {}
+        _mj_an = _re_an.search(r"\((\d+(?:\.\d+)?)%\)", str(_cl_an.get("jugada_optima") or ""))
+        _popt_an = float(_mj_an.group(1)) if _mj_an else None
+        _sels_val_an = [float(s.probabilidad) for s in (grupos.get(ESTADO_MANTIENE) or []) if s.probabilidad is not None]
+        _req_n = bool((getattr(motor, "xai_factores", None) or {}).get("aplicado")) and "adn del enfrentamiento" in mensaje.lower()
+        _coh = _verif_coh(
+            mensaje,
+            p_local=_pl_an,
+            p_visita=_pv_an,
+            jugada_optima_pct=_popt_an,
+            total_validadas=len(_sels_val_an),
+            probs_validadas=_sels_val_an,
+            requerir_n_en_adn=_req_n,
+            bloquear=True,
+        )
+        metadatos["coherencia_texto_cifras"] = _coh
+    except ValueError:
+        raise
+    except Exception:
+        pass
     return Analisis(metadatos, params, motor, mercados, selecciones, grupos,
                     sensibilidad, informe, mensaje)
 

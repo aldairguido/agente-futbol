@@ -27,6 +27,12 @@ FIXTURE_R5 = Path(__file__).parent / "fixtures" / "ronda5_real_fixtures.json"
 FIXTURE_LN = Path(__file__).parent / "fixtures" / "londrina_nautico_fixtures.json"
 
 
+@pytest.fixture(autouse=True)
+def _activar_conjunto_b_en_modulo():
+    from decision_cobertura import banderas_comportamiento
+    with banderas_comportamiento(activar_todas=True):
+        yield
+
 def _cargar_r5() -> dict:
     return json.loads(FIXTURE_R5.read_text(encoding="utf-8"))["docs"]
 
@@ -100,9 +106,9 @@ def test_1_2_y_1_3_y_1_4_y_1_7_y_1_8_coherencia_multi_superficie_reales(tmp_path
     an = mm.analizar(doc_l, doc_v, eq_l, eq_v, competicion=comp, fecha_partido=fecha)
     top5, sec1, sec2 = sm.obtener_top5_y_seccion1_filtrados(an, metadatos=an.metadatos, umbral=0.70)
 
-    # Regla 1.7: sin cuotas reales, ninguna jugada en Top 5 puede violar min_cuota_justa_no_trivial_top5 (1.14 -> p <= 0.8772)
+    # Regla 1.7: sin cuotas reales, ninguna jugada en Top 5 puede violar min_cuota_justa_no_trivial_top5 (1.25 -> p <= 0.80)
     import decision_cobertura as dc
-    cuota_min_cfg = float((dc.cargar_umbrales_cobertura() or {}).get("min_cuota_justa_no_trivial_top5", 1.14))
+    cuota_min_cfg = float(dc.obtener_umbral_cuota_justa_top5())
     prob_max_cfg = round(1.0 / cuota_min_cfg, 4)
     for it in top5:
         if it.get("ev_pct") is None and it.get("ev") is None:
@@ -341,8 +347,7 @@ def test_1_6_flashscore_header_league_amistosos_region_y_backfill():
 
 
 def test_1_7_regla_cuota_justa_min_125_y_excepcion_cuota_real_ev():
-    # Con min_cuota_justa=1.14 (p_max=0.8772), mercados > 0.8772 sin cuota real quedan excluidos,
-    # mientras que el rango desbloqueado 80.1%-87.7% (0.83, 0.84, 0.85) si califica.
+    # Con min_cuota_justa=1.25 (p_max=0.80), todos los mercados > 0.80 sin cuota real quedan excluidos.
     sels_triviales = [
         {"mercado": "Total de goles", "evento": "under_4.5", "etiqueta": "menos de 4.5 goles", "periodo": "FT", "linea": 4.5, "probabilidad": 0.91, "estado": "mantiene"},
         {"mercado": "Doble oportunidad", "evento": "dc_x2", "etiqueta": "X2", "periodo": "FT", "probabilidad": 0.84, "estado": "mantiene"},
@@ -352,12 +357,10 @@ def test_1_7_regla_cuota_justa_min_125_y_excepcion_cuota_real_ev():
         {"mercado": "Total de goles", "evento": "under_2.5", "etiqueta": "menos de 2.5 goles", "periodo": "FT", "linea": 2.5, "probabilidad": 0.78, "estado": "mantiene"},
     ]
     top5 = mm.seleccionar_top_5_jugadas_recomendadas(sels_triviales, motor=None, eq_l="Turquía", eq_v="Bélgica")
-    probs_top5 = [round(float(x["probabilidad"]), 4) for x in top5]
-    assert 0.91 not in probs_top5
-    assert 0.89 not in probs_top5
-    assert 0.84 in probs_top5 and 0.85 in probs_top5 and 0.78 in probs_top5
+    assert len(top5) == 1
+    assert top5[0]["probabilidad"] == pytest.approx(0.78, abs=1e-4)
 
-    # Con cuota real que genera EV positivo (>= +3%), si puede entrar aunque p > 0.8772
+    # Con cuota real que genera EV positivo (>= +3%), si puede entrar aunque p > 0.80
     sels_con_ev = [
         {"mercado": "Doble oportunidad", "evento": "dc_x2", "etiqueta": "X2", "periodo": "FT", "probabilidad": 0.90, "estado": "mantiene", "cuota_real": 1.30},
         sels_triviales[-1],

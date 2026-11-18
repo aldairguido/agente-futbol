@@ -1358,6 +1358,20 @@ def evaluar_micropatrones_combinatorios(
         "resumen_corto": mp04_resumen if mp04_act else "",
     })
 
+    _origenes_mp = {
+        "MP01_ASEDIO_2T_LOCAL": "Derivado post-hoc de Italy 3-1 France (12/11/2026: Italia xG 2T 2.04, GO 2T 3 vs Francia 1.20->0.43)",
+        "MP02_FRENO_CORNERS_VISITA": "Derivado post-hoc de Turkey 1-2 Belgium y Italy 3-1 France (corners visita <= 3 y concesion local <= 5)",
+        "MP03_1T_CONTENIDO_EXPLOSION_2T": "Derivado post-hoc de Italy 3-1 France y Turkey 1-2 Belgium (1T xG <= 0.70 y ratio 2T/1T >= 1.30)",
+        "MP04_DOMINIO_ESTERIL_VS_MURO": "Umbral heuristico de sesion (posesion >= 57%, remates >= 10, xG/rem < 0.11 vs despejes >= 20 o GeV >= 0.15)",
+    }
+    for _mp_item in patrones:
+        _mp_item["estado_validacion"] = "hipótesis, no validada"
+        _mp_item["validada_cronologicamente"] = False
+        _mp_item["origen_umbrales"] = _origenes_mp.get(
+            str(_mp_item.get("codigo") or ""),
+            "Umbral heuristico sin validacion cronologica",
+        )
+
     activos = [p for p in patrones if p["activo"]]
     favor_agg = sorted({s for p in activos for s in p.get("senales_favor", [])})
     contra_agg = sorted({s for p in activos for s in p.get("senales_contra", [])})
@@ -1544,6 +1558,8 @@ def aplicar_freno_de_mano_y_matchup_21_22(
     es_gigante_visitante: Optional[bool] = None,
     traza_out: Optional[List[Dict[str, Any]]] = None,
     etapa_prefijo: str = "",
+    evitar_doble_defensa_rota_l: bool = False,
+    evitar_doble_defensa_rota_v: bool = False,
 ) -> Tuple[float, float, float, float]:
     """
     Implementa los Puntos 21, 22, 34, 35 y 40:
@@ -1611,6 +1627,11 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         1.15 if (tiene_asedio_verificado_l and posesion_proyectada_local >= 60.0 and defense_rating_visita < 42.0) else 1.0
     )
 
+    if evitar_doble_defensa_rota_l:
+        factor_def_rota_l = 1.0
+    if evitar_doble_defensa_rota_v:
+        factor_def_rota_v = 1.0
+
     # Punto 40: Prohibido apilar copa/eliminatoria con asedio/defensa rota (+68.75%):
     # Si es copa o torneo eliminatorio, el ajuste combinado está acotado estrictamente a <= 1.35x.
     es_copa = bool(ctx_comp.get("es_copa_o_playoff", False)) or factor_copa_l > 1.0
@@ -1671,6 +1692,7 @@ def aplicar_freno_de_mano_y_matchup_21_22(
         lam_l = min(lam_l, 0.60)
         _trazar("freno_local_crisis_extrema_0.60", _al, lam_l, lam_v, lam_v, f"Attack_L={attack_rating_local:.1f}<20 & crisis/gol_ult5={goles_ult5_local:.2f}")
     elif (en_crisis_local or attack_rating_local < 35.0) and defense_rating_visita >= 30.0:
+        # Regla 21b (e68fff4a, 2026-11-09): umbral Attack < 35.0 y techo 1.10 son regla operativa sin validación empírica.
         _al = lam_l
         lam_l = min(lam_l, techo_atk_bajo)
         _trazar("techo_lambda_ataque_bajo_local", _al, lam_l, lam_v, lam_v, f"en_crisis_L={en_crisis_local} o Attack_L={attack_rating_local:.1f}<35 con Def_V={defense_rating_visita:.1f}>=30 -> techo={techo_atk_bajo:.2f}")

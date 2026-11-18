@@ -27,7 +27,7 @@ umbrales:
   min_partidos_cronologia_verificada: 10  # regla operativa, sin validación cronológica
 
   # Cuota justa mínima para calificar una línea como no trivial en el Top 5
-  min_cuota_justa_no_trivial_top5: 1.14  # regla operativa, sin validación cronológica
+  min_cuota_justa_no_trivial_top5: 1.25  # regla operativa, sin validación cronológica
 
   # Desvío máximo permitido entre probabilidad del modelo y frecuencia observada (puntos porcentuales)
   # Todo mercado con desvío > umbral se excluye del Top 5 y de SECCIÓN 1 (o se publica con etiqueta "sin calibración validada")
@@ -36,27 +36,67 @@ umbrales:
   # Salvaguarda estructural: el bloqueo por recorte de lambda > 15% sin cronología es independiente de la calibración
   bloqueo_recorte_independiente_calibracion: true  # cautela estructural sin validación cronológica
 
-  # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0
+  # Regla 21: Tope máximo de lambda ofensivo para equipos con Attack_Rating < 35.0 (umbral 35.0 introducido heurísticamente en e68fff4a el 2026-11-09: regla operativa sin validación)
   techo_lambda_ataque_bajo: 1.10  # regla operativa, sin validación cronológica
 
   # Regla 23 / Patrón 26: Umbral de poder de cierre en 2T (sesgo diésel)
-  # Aísla el cuartil superior (P75 = 0.6041) de equipos con aceleración extrema en 2T
   umbral_p26_cierre_2t: 0.51  # regla operativa, sin validación cronológica
 
-  # Bloque 3 (3.2): Mínimo de partidos con dato real de córneres por equipo para Top 5 / Validadas
+  # Parámetros Set B (solo activos bajo bandera explícita) — regla operativa, sin validación cronológica
   min_partidos_corners_por_equipo: 8  # regla operativa, sin validación cronológica
-
-  # Bloque 3 (3.3): Brecha histórica máxima permitida (pp) en /conciencia para entrar al Top 5
+  min_muestra_corners_dispersion: 5  # regla operativa, sin validación cronológica
+  factor_dispersion_nb_corners: 1.05  # regla operativa, sin validación cronológica
+  min_eval_familia_veto_top5: 10  # regla operativa, sin validación cronológica
+  brecha_veto_top5_pp: -10.0  # regla operativa, sin validación cronológica
   max_brecha_familia_top5_pp: -10.0  # regla operativa, sin validación cronológica
-
-  # Fase 5 (Entrega 2): anclaje torneo actual y tope anti doble-conteo
+  ev_minimo_calibrado: 0.0  # regla operativa, sin validación cronológica
+  fraccion_kelly: 0.25  # regla operativa, sin validación cronológica
+  stake_max_pct: 5.0  # regla operativa, sin validación cronológica
   techo_ajuste_red_dcn_pct: 18.0  # regla operativa, sin validación cronológica
-  peso_prob_modelo_gatekeeper: 0.60  # regla operativa, sin validación cronológica
-  peso_tasa_empirica_gatekeeper: 0.40  # regla operativa, sin validación cronológica
-  umbral_promocion_empirica_top5: 0.85  # regla operativa, sin validación cronológica
-  min_corners_visita_freno: 3.0  # regla operativa, sin validación cronológica
-  max_corners_concedidos_local_freno: 5.0  # regla operativa, sin validación cronológica
+  peso_condicion_tensor: 0.65  # regla operativa, sin validación cronológica
+  peso_general_tensor: 0.35  # regla operativa, sin validación cronológica
   peso_torneo_actual_coef: 0.70  # regla operativa, sin validación cronológica
   peso_promedio_15p_coef: 0.30  # regla operativa, sin validación cronológica
   ratio_coef_shared_min: 0.90  # regla operativa, sin validación cronológica
   ratio_coef_shared_max: 1.10  # regla operativa, sin validación cronológica
+  peso_prob_modelo_gatekeeper: 0.60  # regla operativa, sin validación cronológica
+  peso_tasa_empirica_gatekeeper: 0.40  # regla operativa, sin validación cronológica
+  umbral_promocion_empirica_top5: 0.85  # regla operativa, sin validación cronológica
+  min_corners_visita_freno: 3.0  # hipótesis, no validada
+  max_corners_concedidos_local_freno: 5.0  # hipótesis, no validada
+
+# Banderas de comportamiento Set (B) — TODAS APAGADAS POR DEFECTO hasta validación prospectiva >= 30 partidos
+flags_comportamiento:
+  usar_anclaje_coef_torneo: false  # regla operativa, sin validación cronológica
+  usar_tope_dcn_18_pct: false  # regla operativa, sin validación cronológica
+  usar_tensor_65_35_y_diesel: false  # regla operativa, sin validación cronológica
+  usar_micropatrones_combinatorios: false  # hipótesis, no validada
+  usar_gatekeeper_multisenal_top5: false  # regla operativa, sin validación cronológica
+  usar_sobredispersion_nb_corners: true  # regla operativa sin validación
+  usar_gate_corners_8_15: false  # regla operativa, sin validación cronológica
+  usar_gate_cronologia_mitades_10_15: false  # regla operativa, sin validación cronológica
+  usar_calibracion_y_veto_conciencia: false  # regla operativa, sin validación cronológica
+  usar_cuota_justa_114_top5: false  # regla operativa, sin validación cronológica
+  usar_guarda_doble_defensa_rota: false  # regla operativa, sin validación cronológica
+  usar_gate_goles_mitad_15_15: false  # regla operativa, sin validación cronológica
+  usar_kelly_conservador_min_3pct: false  # regla operativa, sin validación cronológica
+  usar_excluir_primer_gol_top5: false  # regla operativa, sin validación cronológica
+  usar_filtro_ruido_ic_factores_dcn: false  # regla operativa, sin validación cronológica
+  usar_reescalado_sin_inversion_signo_dcn: false  # regla operativa, sin validación cronológica
+  usar_tercer_brazo_plano_sombra: false  # regla operativa, sin validación cronológica
+  usar_sin_dato_si_mitades_no_suman_ft: false  # regla operativa, sin validación cronológica
+  usar_unificacion_h_gf_lstm_15: false  # unificación directa/viva _partido_fuente(p) tras bandera
+  usar_corners_reglas_65e377e_diag: false  # diagnóstico in-sample reglas córneres 65e377e
+
+# Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
+stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica
+min_partidos_goles_mitad: 15  # regla operativa, sin validación cronológica
+
+# Regla Futura de Promoción de Cambios de Comportamiento (Ronda 7 Punto 7)
+regla_futura:
+  min_partidos_modo_sombra: 30  # regla operativa, sin validación cronológica
+  exigir_datos_no_diseno: true
+  exigir_brier_y_logloss_con_ic_por_partido: true
+  exigir_bandera_apagada_por_defecto: true
+  exigir_modo_sombra_dual_en_libro: true
+  prohibir_regla_ad_hoc_por_partido: true

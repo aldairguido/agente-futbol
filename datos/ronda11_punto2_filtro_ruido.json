@@ -1,0 +1,1079 @@
+{
+  "bandera": "usar_filtro_ruido_ic_factores_dcn",
+  "valor_por_defecto": false,
+  "tabla_impacto": {
+    "Colombia-Chile": {
+      "soloA_sin_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.07,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": -0.35,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": -11.4,
+        "F_porteria_rival_reescalado_V": -0.9
+      },
+      "soloA_con_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.28,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 1.7
+      },
+      "AB_sin_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.14,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": -0.35,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": -12.0,
+        "F_porteria_rival_reescalado_V": -0.9
+      },
+      "AB_con_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.28,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 1.7
+      },
+      "AB_sininv_sin_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.39,
+          0.82
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": -0.35,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": -12.0,
+        "F_porteria_rival_reescalado_V": -3.8
+      },
+      "AB_sininv_con_filtro": {
+        "lambda_base": [
+          1.39,
+          0.82
+        ],
+        "lambda_red": [
+          1.49,
+          0.69
+        ],
+        "lambda_final": [
+          1.1,
+          0.82
+        ],
+        "1x2_pct": [
+          42.05,
+          30.72,
+          27.23
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": -0.0295,
+        "F_porteria_rival_crudo_L": -3.9,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": -3.8
+      }
+    },
+    "TB": {
+      "soloA_sin_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.05,
+          2.71
+        ],
+        "lambda_final": [
+          1.04,
+          3.55
+        ],
+        "1x2_pct": [
+          8.34,
+          9.96,
+          81.7
+        ],
+        "ajuste_portero_local": 0.2761,
+        "ajuste_portero_visita": 0.3937,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": 0.3,
+        "F_porteria_rival_reescalado_V": 13.8
+      },
+      "soloA_con_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.27,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.62
+        ],
+        "1x2_pct": [
+          15.56,
+          15.23,
+          69.21
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sin_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.18,
+          2.21
+        ],
+        "lambda_final": [
+          1.1,
+          2.98
+        ],
+        "1x2_pct": [
+          12.55,
+          13.16,
+          74.29
+        ],
+        "ajuste_portero_local": 0.2761,
+        "ajuste_portero_visita": 0.3937,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": -1.3,
+        "F_porteria_rival_reescalado_V": 13.8
+      },
+      "AB_con_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.27,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.62
+        ],
+        "1x2_pct": [
+          15.56,
+          15.23,
+          69.21
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sininv_sin_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.38,
+          2.21
+        ],
+        "lambda_final": [
+          1.12,
+          2.98
+        ],
+        "1x2_pct": [
+          12.83,
+          13.27,
+          73.9
+        ],
+        "ajuste_portero_local": 0.2761,
+        "ajuste_portero_visita": 0.3937,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": 3.2,
+        "F_porteria_rival_reescalado_V": 15.0
+      },
+      "AB_sininv_con_filtro": {
+        "lambda_base": [
+          1.44,
+          1.87
+        ],
+        "lambda_red": [
+          1.27,
+          1.87
+        ],
+        "lambda_final": [
+          1.1,
+          2.62
+        ],
+        "1x2_pct": [
+          15.56,
+          15.23,
+          69.21
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 3.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      }
+    },
+    "IF": {
+      "soloA_sin_filtro": {
+        "lambda_base": [
+          1.23,
+          1.72
+        ],
+        "lambda_red": [
+          1.14,
+          2.28
+        ],
+        "lambda_final": [
+          1.03,
+          2.33
+        ],
+        "1x2_pct": [
+          15.9,
+          17.01,
+          67.09
+        ],
+        "ajuste_portero_local": 0.0425,
+        "ajuste_portero_visita": 0.051,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": -2.6,
+        "F_porteria_rival_reescalado_V": 9.5
+      },
+      "soloA_con_filtro": {
+        "lambda_base": [
+          1.23,
+          1.72
+        ],
+        "lambda_red": [
+          1.09,
+          2.04
+        ],
+        "lambda_final": [
+          0.98,
+          2.1
+        ],
+        "1x2_pct": [
+          17.65,
+          18.34,
+          64.01
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sin_filtro": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_red": [
+          1.46,
+          1.79
+        ],
+        "lambda_final": [
+          1.31,
+          1.79
+        ],
+        "1x2_pct": [
+          28.74,
+          22.01,
+          49.25
+        ],
+        "ajuste_portero_local": 0.0531,
+        "ajuste_portero_visita": -0.0537,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": -2.6,
+        "F_porteria_rival_reescalado_V": -0.3
+      },
+      "AB_con_filtro": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_red": [
+          1.4,
+          1.57
+        ],
+        "lambda_final": [
+          1.26,
+          1.58
+        ],
+        "1x2_pct": [
+          31.3,
+          23.18,
+          45.52
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sininv_sin_filtro": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_red": [
+          1.46,
+          1.79
+        ],
+        "lambda_final": [
+          1.31,
+          1.79
+        ],
+        "1x2_pct": [
+          28.74,
+          22.01,
+          49.25
+        ],
+        "ajuste_portero_local": 0.0531,
+        "ajuste_portero_visita": -0.0537,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": -0.0,
+        "F_porteria_rival_reescalado_V": -2.0
+      },
+      "AB_sininv_con_filtro": {
+        "lambda_base": [
+          1.54,
+          1.52
+        ],
+        "lambda_red": [
+          1.4,
+          1.57
+        ],
+        "lambda_final": [
+          1.26,
+          1.58
+        ],
+        "1x2_pct": [
+          31.3,
+          23.18,
+          45.52
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": -0.0,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      }
+    },
+    "LN": {
+      "soloA_sin_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.29,
+          0.9
+        ],
+        "lambda_final": [
+          1.14,
+          0.85
+        ],
+        "1x2_pct": [
+          42.41,
+          30.28,
+          27.31
+        ],
+        "ajuste_portero_local": -0.0,
+        "ajuste_portero_visita": 0.0837,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": -4.2,
+        "F_porteria_rival_reescalado_V": -3.5
+      },
+      "soloA_con_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.65,
+          0.97
+        ],
+        "lambda_final": [
+          1.41,
+          0.94
+        ],
+        "1x2_pct": [
+          47.5,
+          27.72,
+          24.78
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sin_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.29,
+          0.9
+        ],
+        "lambda_final": [
+          1.14,
+          0.86
+        ],
+        "1x2_pct": [
+          42.17,
+          30.22,
+          27.61
+        ],
+        "ajuste_portero_local": -0.0,
+        "ajuste_portero_visita": 0.0837,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": -4.2,
+        "F_porteria_rival_reescalado_V": -3.3
+      },
+      "AB_con_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.65,
+          0.97
+        ],
+        "lambda_final": [
+          1.41,
+          0.94
+        ],
+        "1x2_pct": [
+          47.5,
+          27.72,
+          24.78
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      },
+      "AB_sininv_sin_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.62,
+          1.04
+        ],
+        "lambda_final": [
+          1.38,
+          0.6
+        ],
+        "1x2_pct": [
+          56.06,
+          27.64,
+          16.29
+        ],
+        "ajuste_portero_local": -0.0,
+        "ajuste_portero_visita": 0.0837,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": 5.2,
+        "F_porteria_rival_reescalado_V": 2.3
+      },
+      "AB_sininv_con_filtro": {
+        "lambda_base": [
+          1.59,
+          1.1
+        ],
+        "lambda_red": [
+          1.69,
+          1.16
+        ],
+        "lambda_final": [
+          1.1,
+          0.6
+        ],
+        "1x2_pct": [
+          47.05,
+          33.39,
+          19.55
+        ],
+        "ajuste_portero_local": 0.0,
+        "ajuste_portero_visita": 0.0,
+        "F_porteria_rival_crudo_L": 5.2,
+        "F_porteria_rival_reescalado_L": 0.0,
+        "F_porteria_rival_reescalado_V": 0.0
+      }
+    }
+  },
+  "trazas_colombia_chile": {
+    "soloA_sin_filtro": [
+      {
+        "etapa": "base_plana",
+        "regla": "tasas_goles_plano",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.4135,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.8075,
+        "motivo": "Promedios ponderados goles/xG (w_cond=0.5, w_xg=0.5)",
+        "paso": 1
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "moduladores_tacticos",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.2475,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.7509,
+        "motivo": "mult=(0.8826, 0.93); metricas=despejes/bloqueos,duelos_aereos_pct,goles_evitados,grandes_ocasiones,npxG/remate,posesion_pct,toques_area_rival,xgot/xg",
+        "paso": 2
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "lambda_efectivo_finalizacion",
+        "lam_l_antes": 1.2475,
+        "lam_l_despues": 1.2819,
+        "lam_v_antes": 0.7509,
+        "lam_v_despues": 0.9605,
+        "motivo": "λ_efectivo calibrado (xGOT/finalización, portero vulnerable y errores defensivos): L 1.25→1.28, V 0.75→0.96 (finalización L 1.03x, finalización V 1.01x, errores rival V +0.20).",
+        "paso": 3
+      },
+      {
+        "etapa": "doble_adn",
+        "regla": "doble_adn_60_40",
+        "lam_l_antes": 1.2819,
+        "lam_l_despues": 1.3925,
+        "lam_v_antes": 0.9605,
+        "lam_v_despues": 0.8175,
+        "motivo": "Doble ADN k=3.5 cond=(casa,fuera) delta_tier=(1,1) uefa=(1.000,1.000)",
+        "paso": 4
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "red_recursiva_45_dcn_bucle",
+        "lam_l_antes": 1.39,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 1.0508,
+        "motivo": "Convergencia it=2 (cruces: grandes_ocasiones ⊗ paradas_rival / grandes_ocasiones ⊗ paradas_rival)",
+        "paso": 5
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 1.0508,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 6
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "clamping_rango_y_redondeo",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.07,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Rango operativo [0.25, 4.20] y redondeo a 2 dec.",
+        "paso": 7
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "sincronizacion_55_patrones_racha_contexto",
+        "lam_l_antes": 1.07,
+        "lam_l_despues": 1.0,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.9627,
+        "motivo": "mult_sinc=(0.9000, 1.1740), ratio_55=(0.820, 1.174), racha=(1.000, 1.000), ctx=(1.000, 1.000)",
+        "paso": 8
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "copa_asedio_defensa_rota",
+        "lam_l_antes": 1.0,
+        "lam_l_despues": 1.15,
+        "lam_v_antes": 0.9627,
+        "lam_v_despues": 0.9627,
+        "motivo": "copa=True (x1.15), asedio_L=x1.00, def_rota_V=x1.00 (Def_V=60.2), def_rota_L=x1.00 (Def_L=80.7)",
+        "paso": 9
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_lambda_ataque_bajo_local",
+        "lam_l_antes": 1.15,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9627,
+        "lam_v_despues": 0.9627,
+        "motivo": "en_crisis_L=False o Attack_L=27.9<35 con Def_V=60.2>=30 -> techo=1.10",
+        "paso": 10
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.1,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9627,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 11
+      }
+    ],
+    "soloA_con_filtro": [
+      {
+        "etapa": "base_plana",
+        "regla": "tasas_goles_plano",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.4135,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.8075,
+        "motivo": "Promedios ponderados goles/xG (w_cond=0.5, w_xg=0.5)",
+        "paso": 1
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "moduladores_tacticos",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.2475,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.7509,
+        "motivo": "mult=(0.8826, 0.93); metricas=despejes/bloqueos,duelos_aereos_pct,goles_evitados,grandes_ocasiones,npxG/remate,posesion_pct,toques_area_rival,xgot/xg",
+        "paso": 2
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "lambda_efectivo_finalizacion",
+        "lam_l_antes": 1.2475,
+        "lam_l_despues": 1.2819,
+        "lam_v_antes": 0.7509,
+        "lam_v_despues": 0.9605,
+        "motivo": "λ_efectivo calibrado (xGOT/finalización, portero vulnerable y errores defensivos): L 1.25→1.28, V 0.75→0.96 (finalización L 1.03x, finalización V 1.01x, errores rival V +0.20).",
+        "paso": 3
+      },
+      {
+        "etapa": "doble_adn",
+        "regla": "doble_adn_60_40",
+        "lam_l_antes": 1.2819,
+        "lam_l_despues": 1.3925,
+        "lam_v_antes": 0.9605,
+        "lam_v_despues": 0.8175,
+        "motivo": "Doble ADN k=3.5 cond=(casa,fuera) delta_tier=(1,1) uefa=(1.000,1.000)",
+        "paso": 4
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "red_recursiva_45_dcn_bucle",
+        "lam_l_antes": 1.39,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 1.0508,
+        "motivo": "Convergencia it=2 (cruces: grandes_ocasiones ⊗ paradas_rival / grandes_ocasiones ⊗ paradas_rival)",
+        "paso": 5
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 1.0508,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 6
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "clamping_rango_y_redondeo",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.07,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Rango operativo [0.25, 4.20] y redondeo a 2 dec.",
+        "paso": 7
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "reescalado_caja_azul_y_factores_xai",
+        "lam_l_antes": 1.07,
+        "lam_l_despues": 1.28,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Sincronización final Caja Azul: lambda_base*(1+sum_factores/100) (L -8.1%, V +0.0%)",
+        "paso": 8
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "sincronizacion_55_patrones_racha_contexto",
+        "lam_l_antes": 1.28,
+        "lam_l_despues": 1.152,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.9749,
+        "motivo": "mult_sinc=(0.9000, 1.1889), ratio_55=(0.820, 1.189), racha=(1.000, 1.000), ctx=(1.000, 1.000)",
+        "paso": 9
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "copa_asedio_defensa_rota",
+        "lam_l_antes": 1.152,
+        "lam_l_despues": 1.3248,
+        "lam_v_antes": 0.9749,
+        "lam_v_despues": 0.9749,
+        "motivo": "copa=True (x1.15), asedio_L=x1.00, def_rota_V=x1.00 (Def_V=60.2), def_rota_L=x1.00 (Def_L=80.7)",
+        "paso": 10
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_lambda_ataque_bajo_local",
+        "lam_l_antes": 1.3248,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9749,
+        "lam_v_despues": 0.9749,
+        "motivo": "en_crisis_L=False o Attack_L=27.9<35 con Def_V=60.2>=30 -> techo=1.10",
+        "paso": 11
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.1,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9749,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 12
+      }
+    ],
+    "AB_sin_filtro": [
+      {
+        "etapa": "base_plana",
+        "regla": "tasas_goles_plano",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.4135,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.8075,
+        "motivo": "Promedios ponderados goles/xG (w_cond=0.5, w_xg=0.5)",
+        "paso": 1
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "moduladores_tacticos",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.2475,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.7509,
+        "motivo": "mult=(0.8826, 0.93); metricas=despejes/bloqueos,duelos_aereos_pct,goles_evitados,grandes_ocasiones,npxG/remate,posesion_pct,toques_area_rival,xgot/xg",
+        "paso": 2
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "lambda_efectivo_finalizacion",
+        "lam_l_antes": 1.2475,
+        "lam_l_despues": 1.2819,
+        "lam_v_antes": 0.7509,
+        "lam_v_despues": 0.9605,
+        "motivo": "λ_efectivo calibrado (xGOT/finalización, portero vulnerable y errores defensivos): L 1.25→1.28, V 0.75→0.96 (finalización L 1.03x, finalización V 1.01x, errores rival V +0.20).",
+        "paso": 3
+      },
+      {
+        "etapa": "doble_adn",
+        "regla": "doble_adn_60_40",
+        "lam_l_antes": 1.2819,
+        "lam_l_despues": 1.3925,
+        "lam_v_antes": 0.9605,
+        "lam_v_despues": 0.8175,
+        "motivo": "Doble ADN k=3.5 cond=(casa,fuera) delta_tier=(1,1) uefa=(1.000,1.000)",
+        "paso": 4
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "red_recursiva_45_dcn_bucle",
+        "lam_l_antes": 1.39,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 1.0508,
+        "motivo": "Convergencia it=2 (cruces: grandes_ocasiones ⊗ paradas_rival / grandes_ocasiones ⊗ paradas_rival)",
+        "paso": 5
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 1.0508,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 6
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "clamping_rango_y_redondeo",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.07,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Rango operativo [0.25, 4.20] y redondeo a 2 dec.",
+        "paso": 7
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "reescalado_caja_azul_y_factores_xai",
+        "lam_l_antes": 1.07,
+        "lam_l_despues": 1.14,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Sincronización final Caja Azul: lambda_base*(1+sum_factores/100) (L -18.0%, V +0.0%)",
+        "paso": 8
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "sincronizacion_55_patrones_racha_contexto",
+        "lam_l_antes": 1.14,
+        "lam_l_despues": 1.1398,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.9624,
+        "motivo": "mult_sinc=(0.9000, 1.1737), ratio_55=(0.820, 1.174), racha=(1.000, 1.000), ctx=(1.000, 1.000)",
+        "paso": 9
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "copa_asedio_defensa_rota",
+        "lam_l_antes": 1.1398,
+        "lam_l_despues": 1.3108,
+        "lam_v_antes": 0.9624,
+        "lam_v_despues": 0.9624,
+        "motivo": "copa=True (x1.15), asedio_L=x1.00, def_rota_V=x1.00 (Def_V=60.2), def_rota_L=x1.00 (Def_L=80.7)",
+        "paso": 10
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_lambda_ataque_bajo_local",
+        "lam_l_antes": 1.3108,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9624,
+        "lam_v_despues": 0.9624,
+        "motivo": "en_crisis_L=False o Attack_L=27.9<35 con Def_V=60.2>=30 -> techo=1.10",
+        "paso": 11
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.1,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9624,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 12
+      }
+    ],
+    "AB_con_filtro": [
+      {
+        "etapa": "base_plana",
+        "regla": "tasas_goles_plano",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.4135,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.8075,
+        "motivo": "Promedios ponderados goles/xG (w_cond=0.5, w_xg=0.5)",
+        "paso": 1
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "moduladores_tacticos",
+        "lam_l_antes": 1.4135,
+        "lam_l_despues": 1.2475,
+        "lam_v_antes": 0.8075,
+        "lam_v_despues": 0.7509,
+        "motivo": "mult=(0.8826, 0.93); metricas=despejes/bloqueos,duelos_aereos_pct,goles_evitados,grandes_ocasiones,npxG/remate,posesion_pct,toques_area_rival,xgot/xg",
+        "paso": 2
+      },
+      {
+        "etapa": "base_plana",
+        "regla": "lambda_efectivo_finalizacion",
+        "lam_l_antes": 1.2475,
+        "lam_l_despues": 1.2819,
+        "lam_v_antes": 0.7509,
+        "lam_v_despues": 0.9605,
+        "motivo": "λ_efectivo calibrado (xGOT/finalización, portero vulnerable y errores defensivos): L 1.25→1.28, V 0.75→0.96 (finalización L 1.03x, finalización V 1.01x, errores rival V +0.20).",
+        "paso": 3
+      },
+      {
+        "etapa": "doble_adn",
+        "regla": "doble_adn_60_40",
+        "lam_l_antes": 1.2819,
+        "lam_l_despues": 1.3925,
+        "lam_v_antes": 0.9605,
+        "lam_v_despues": 0.8175,
+        "motivo": "Doble ADN k=3.5 cond=(casa,fuera) delta_tier=(1,1) uefa=(1.000,1.000)",
+        "paso": 4
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "red_recursiva_45_dcn_bucle",
+        "lam_l_antes": 1.39,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 1.0508,
+        "motivo": "Convergencia it=2 (cruces: grandes_ocasiones ⊗ paradas_rival / grandes_ocasiones ⊗ paradas_rival)",
+        "paso": 5
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.0718,
+        "lam_v_antes": 1.0508,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 6
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "clamping_rango_y_redondeo",
+        "lam_l_antes": 1.0718,
+        "lam_l_despues": 1.07,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Rango operativo [0.25, 4.20] y redondeo a 2 dec.",
+        "paso": 7
+      },
+      {
+        "etapa": "red_45_dcn",
+        "regla": "reescalado_caja_azul_y_factores_xai",
+        "lam_l_antes": 1.07,
+        "lam_l_despues": 1.28,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.82,
+        "motivo": "Sincronización final Caja Azul: lambda_base*(1+sum_factores/100) (L -8.1%, V +0.0%)",
+        "paso": 8
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "sincronizacion_55_patrones_racha_contexto",
+        "lam_l_antes": 1.28,
+        "lam_l_despues": 1.152,
+        "lam_v_antes": 0.82,
+        "lam_v_despues": 0.9676,
+        "motivo": "mult_sinc=(0.9000, 1.1889), ratio_55=(0.820, 1.189), racha=(1.000, 1.000), ctx=(1.000, 1.000)",
+        "paso": 9
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "copa_asedio_defensa_rota",
+        "lam_l_antes": 1.152,
+        "lam_l_despues": 1.3248,
+        "lam_v_antes": 0.9676,
+        "lam_v_despues": 0.9676,
+        "motivo": "copa=True (x1.15), asedio_L=x1.00, def_rota_V=x1.00 (Def_V=60.2), def_rota_L=x1.00 (Def_L=80.7)",
+        "paso": 10
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_lambda_ataque_bajo_local",
+        "lam_l_antes": 1.3248,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9676,
+        "lam_v_despues": 0.9676,
+        "motivo": "en_crisis_L=False o Attack_L=27.9<35 con Def_V=60.2>=30 -> techo=1.10",
+        "paso": 11
+      },
+      {
+        "etapa": "post_sinc_mercados",
+        "regla": "techo_caja_azul_visita_26",
+        "lam_l_antes": 1.1,
+        "lam_l_despues": 1.1,
+        "lam_v_antes": 0.9676,
+        "lam_v_despues": 0.82,
+        "motivo": "Attack_V=15.6<26 (delta<=0%, lam<=0.90)",
+        "paso": 12
+      }
+    ]
+  },
+  "explicacion_techo_107_a_110": "techo_lambda_ataque_bajo_local aplica min(lam_l, 1.10) cuando Attack_L < 35.0 y Def_V >= 30.0. No sube lambda de 1.07 a 1.10: tras salir de red_45_dcn en 1.07, sincronizacion_55 recorta a 1.00, luego copa_asedio_defensa_rota (copa=True, x1.15) sube a 1.15, y techo_lambda_ataque_bajo_local lo topa a la baja de 1.15 -> 1.10. Con filtro de ruido activo, red_45_dcn sube a 1.28 (o 1.49 sin inversión) con ajuste_portero_local=0.0 y F_porteria_rival=0.0, luego copa x1.15 sube a 1.3248, y el mismo techo vuelve a recortar lambda_final a 1.10.",
+  "origen_umbral_attack_lt_35": {
+    "umbral": "Attack_L < 35.0 (techo_lambda_ataque_bajo = 1.10)",
+    "commit_introduccion": "e68fff4a0e947955644be3a66d66c988a76bbd0f",
+    "fecha_commit": "2026-11-09T01:14:18-05:00",
+    "archivo": "motor_patrones.py",
+    "tiene_validacion_oos": false,
+    "registro_validacion": "regla operativa sin validación"
+  }
+}

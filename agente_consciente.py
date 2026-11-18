@@ -107,16 +107,22 @@ def _es_equipo_especifico_mercado(mercado: str, equipo: str | None = None) -> bo
 
 def _familia_mercado_norm(mercado: str, equipo: str | None = None) -> str:
     """
-    Clasifica un nombre de mercado en su familia estándar de evaluación,
-    separando explícitamente mercados por equipo vs totales de partido
-    (ej. 'Córneres por equipo' vs 'Córneres partido').
+    Clasifica un nombre de mercado en su familia estándar de evaluación.
+    La desagregación por equipo vs totales de partido (`Córneres por equipo`,
+    `Goles por equipo`) queda detrás de `usar_calibracion_y_veto_conciencia`.
     """
+    from decision_cobertura import bandera_activa as _ba_ac_f
     m = (mercado or "").lower()
-    es_por_equipo = _es_equipo_especifico_mercado(mercado, equipo=equipo)
+    desag = _ba_ac_f("usar_calibracion_y_veto_conciencia")
+    es_por_equipo = _es_equipo_especifico_mercado(mercado, equipo=equipo) if desag else False
     if "total de goles" in m or "goles por equipo" in m:
-        return "Goles por equipo" if es_por_equipo else "Goles totales partido"
+        if desag:
+            return "Goles por equipo" if es_por_equipo else "Goles totales partido"
+        return "Total de goles"
     if "córner" in m or "corner" in m or "esquina" in m:
-        return "Córneres por equipo" if es_por_equipo else "Córneres partido"
+        if desag:
+            return "Córneres por equipo" if es_por_equipo else "Córneres partido"
+        return "Córneres"
     if "tarjeta" in m or "amarilla" in m or "roja" in m:
         return "Tarjetas"
     if "doble oportunidad" in m or m in ("1x", "x2", "12"):
@@ -617,7 +623,8 @@ class AgenteConsciente:
                 p_med = reg["suma_p"] / n_tot if n_tot > 0 else 0.0
                 brecha = 100.0 * (ac_obs - p_med)
                 boot = _bootstrap_cluster_partidos(fam_clusters.get(fam_canon, {}))
-                veto_t5 = bool(n_tot >= 10 and brecha <= max_brecha_top5)
+                from decision_cobertura import bandera_activa as _ba_ac
+                veto_t5 = bool(_ba_ac("usar_calibracion_y_veto_conciencia") and n_tot >= 10 and brecha <= max_brecha_top5)
                 bajo_vig = bool(n_tot >= 5 and (brecha <= max_brecha_top5 or brecha < -4.0 or ac_obs < 0.80))
                 por_familia_consolidada[fam_canon] = {
                     "familia": fam_canon,
@@ -665,7 +672,8 @@ class AgenteConsciente:
                     ac_obs = gan_tot / n_tot if n_tot > 0 else 0.0
                     p_med = reg["suma_p"] / n_tot if n_tot > 0 else 0.0
                     brecha = 100.0 * (ac_obs - p_med)
-                    veto_t5 = bool(n_tot >= 10 and brecha <= max_brecha_top5)
+                    from decision_cobertura import bandera_activa as _ba_ac2
+                    veto_t5 = bool(_ba_ac2("usar_calibracion_y_veto_conciencia") and n_tot >= 10 and brecha <= max_brecha_top5)
                     bajo_vig = bool(n_tot >= 5 and (brecha <= max_brecha_top5 or brecha < -4.0 or ac_obs < 0.80))
                     por_familia_consolidada[fam_canon] = {
                         "familia": fam_canon,
@@ -1105,6 +1113,22 @@ class AgenteConsciente:
         o banda de calibración, además de señalar si la familia está `bajo_vigilancia`
         o vetada del Top 5 (`veto_top5` si `brecha_pp <= max_brecha_familia_top5_pp`).
         """
+        from decision_cobertura import bandera_activa as _ba_ev
+        if not _ba_ev("usar_calibracion_y_veto_conciencia"):
+            return {
+                "familia": _familia_mercado_norm(mercado, equipo=equipo),
+                "evaluables": 0,
+                "partidos_unicos": None,
+                "acierto_observado": None,
+                "probabilidad_media": None,
+                "brecha_pp": None,
+                "brecha_ic95_lo": None,
+                "brecha_ic95_hi": None,
+                "bajo_vigilancia": False,
+                "veto_top5": False,
+                "prob_calibrada": float(prob_bruta) if prob_bruta is not None else None,
+                "origen_calibracion": "bandera_apagada",
+            }
         ev = getattr(self, "evaluacion_real", {}) or {}
         fam = _familia_mercado_norm(mercado, equipo=equipo)
         por_fam = (ev.get("por_familia") or {}).get(fam) or {}
@@ -1903,6 +1927,24 @@ def evaluar_familia_conciencia_cached(
     Consulta rápida en disco (sin llamadas HTTP/LLM) de autoconciencia por
     familia, invalidando automáticamente cuando cambia algún evaluacion_*.json.
     """
+    from decision_cobertura import bandera_activa as _ba_cch
+    if not _ba_cch("usar_calibracion_y_veto_conciencia"):
+        return {
+            "familia": _familia_mercado_norm(mercado, equipo=equipo),
+            "evaluables": 0,
+            "partidos_unicos": 0,
+            "acierto_observado": None,
+            "probabilidad_media": None,
+            "brecha_pp": None,
+            "acierto_ic95_lo": None,
+            "acierto_ic95_hi": None,
+            "brecha_ic95_lo": None,
+            "brecha_ic95_hi": None,
+            "bajo_vigilancia": False,
+            "veto_top5": False,
+            "prob_calibrada": prob_bruta,
+            "origen_calibracion": "bandera_apagada",
+        }
     global _CONCIENCIA_DISK_CACHE
     try:
         eval_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "informes", "evaluacion")

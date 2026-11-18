@@ -305,6 +305,23 @@ def _valor_metrica(partido: Dict[str, Any], clave: str) -> Optional[float]:
     return None
 
 
+def _valor_metrica_observado_real(partido: Dict[str, Any], clave: str) -> Optional[float]:
+    """
+    Devuelve el valor estrictamente observado en la matriz (excluyendo celdas cuya
+    `procedencia` sea `'estimacion_modelo'` o `'sin_dato'`).
+    Garantiza que `n` sea el conteo de datos no nulos reales de cada serie y nunca el
+    conteo total de partidos.
+    """
+    fuente = _partido_fuente(partido)
+    proc_root = fuente.get("procedencia") or partido.get("procedencia") or {}
+    proc_ft_eq = ((proc_root.get("FT") or {}).get("equipo") if isinstance(proc_root, dict) else None) or {}
+    proc_eq = (proc_root.get("equipo") if isinstance(proc_root, dict) else None) or {}
+    tag_proc = str(proc_ft_eq.get(clave) or proc_eq.get(clave) or "").strip().lower()
+    if tag_proc in ("estimacion_modelo", "sin_dato"):
+        return None
+    return _valor_metrica(partido, clave)
+
+
 def _valor_metrica_periodo(partido: Dict[str, Any], clave: str, corte: str,
                            bando: str = "equipo") -> Optional[float]:
     """Valor real de una métrica en un periodo concreto ('1T'/'2T'/'FT') y bando ('equipo'/'rival')."""
@@ -385,24 +402,26 @@ def obtener_tier_coef_liga(nombre_torneo_o_liga: str) -> float:
     ]):
         return 0.50
 
-    # 2. Torneos de selecciones mayores y clasificatorias UEFA/CONMEBOL (no confundir WCQ con previa club UECL)
-    es_sel_qual = any(k in t for k in ["world cup", "euro", "copa del mundo", "copa america", "eliminatoria"]) and any(
-        k in t for k in ["qual", "previa", "clasificaci", "eliminatoria", "round"]
-    )
-    if es_sel_qual:
-        if any(k in t for k in ["uefa", "conmebol", "euro", "europe"]):
-            return 0.90
-        return 0.78
+    # 2. Torneos de selecciones mayores y clasificatorias UEFA/CONMEBOL (Set B: usar_anclaje_coef_torneo)
+    from decision_cobertura import bandera_activa as _ba_dcn_tc
+    if _ba_dcn_tc("usar_anclaje_coef_torneo"):
+        es_sel_qual = any(k in t for k in ["world cup", "euro", "copa del mundo", "copa america", "eliminatoria"]) and any(
+            k in t for k in ["qual", "previa", "clasificaci", "eliminatoria", "round"]
+        )
+        if es_sel_qual:
+            if any(k in t for k in ["uefa", "conmebol", "euro", "europe"]):
+                return 0.90
+            return 0.78
 
-    if "nations league" in t:
-        if any(d in t for d in ["league c", "league d", "liga c", "liga d", "grupo c", "grupo d"]):
-            return 0.75
-        if any(d in t for d in ["league b", "liga b", "grupo b"]):
-            return 0.88
-        return 1.00
+        if "nations league" in t:
+            if any(d in t for d in ["league c", "league d", "liga c", "liga d", "grupo c", "grupo d"]):
+                return 0.75
+            if any(d in t for d in ["league b", "liga b", "grupo b"]):
+                return 0.88
+            return 1.00
 
-    if any(k in t for k in ["world cup", "copa del mundo", "eurocopa", "uefa euro", "copa america", "finalissima"]):
-        return 1.00
+        if any(k in t for k in ["world cup", "copa del mundo", "eurocopa", "uefa euro", "copa america", "finalissima"]):
+            return 1.00
 
     # 2b. Fases previas / clasificación de clubes europeos (UCL Qual., UEL Qual., UECL Qual.)
     if any(k in t for k in ["qual", "previa", "clasificaci"]):
@@ -650,6 +669,24 @@ def obtener_coefs_torneo_anclados(
     y limita cualquier asimetría residual entre rivales de la misma competencia
     al rango [0.90, 1.10].
     """
+    from decision_cobertura import bandera_activa as _ba_dcn_anc
+    if not _ba_dcn_anc("usar_anclaje_coef_torneo"):
+        c15_L = obtener_tier_coef(partidos_L or [], perfil_L, nombre_L)
+        c15_V = obtener_tier_coef(partidos_V or [], perfil_V, nombre_V)
+        fu_L = factor_uefa_relativo(c15_L, c15_V, mismo_torneo=False)
+        fu_V = factor_uefa_relativo(c15_V, c15_L, mismo_torneo=False)
+        return {
+            "torneo_actual": "",
+            "comparten_torneo": False,
+            "coef_L": c15_L,
+            "coef_V": c15_V,
+            "coef_15p_L": round(c15_L, 4),
+            "coef_15p_V": round(c15_V, 4),
+            "fu_L": fu_L,
+            "fu_V": fu_V,
+            "ratio_raw": round(c15_L / max(0.1, c15_V), 4),
+            "aplica_coef_liga": True,
+        }
     parms = _cargar_umbrales_dcn_seguro()
     torneo_act, comparten_torneo = resolver_torneo_actual_partido(competicion_str, partidos_L, partidos_V)
     es_copa_clubes_uefa = any(
@@ -699,6 +736,9 @@ def factor_uefa_relativo(
     tier_coef_rival: float,
     mismo_torneo: bool = False,
 ) -> float:
+    from decision_cobertura import bandera_activa as _ba_frel
+    if not _ba_frel("usar_anclaje_coef_torneo"):
+        mismo_torneo = False
     """(tier_propio / tier_rival) cuando el propio es de liga más débil; clamp >=0.90 si comparten torneo."""
     try:
         tp, tr = float(tier_coef_propio), float(tier_coef_rival)
@@ -741,6 +781,7 @@ def reescalar_factores_a_delta(
     fijos: Optional[Tuple[str, ...]] = None,
     pisos: Optional[Dict[str, float]] = None,
     techos: Optional[Dict[str, float]] = None,
+    evitar_inversion_signo: Optional[bool] = None,
 ) -> Dict[str, float]:
     """
     Acota cada uno de los 5 factores latentes estrictamente en [-12.0%, +15.0%]
@@ -751,15 +792,37 @@ def reescalar_factores_a_delta(
     Progresiva de suma cero, para que Local y Visita nunca reciban ambos bono).
     `pisos` / `techos`: restricciones de signo y magnitud táctica (p. ej. FragRiv > 0
     si el rival concede xGOTc >= 1.50).
+    `evitar_inversion_signo` / bandera `usar_reescalado_sin_inversion_signo_dcn`:
+    cuando está activa, impide que el reparto aditivo del residuo invierta el signo
+    (o mueva en dirección opuesta) a un factor táctico crudo (p. ej. evita que
+    `F_finalizacion = +0.9%` pase a `-8.2%` cuando `delta_pct_real < 0`).
     """
+    if evitar_inversion_signo is None:
+        try:
+            from decision_cobertura import bandera_activa as _ba_reesc
+            evitar_inversion_signo = bool(_ba_reesc("usar_reescalado_sin_inversion_signo_dcn"))
+        except Exception:
+            evitar_inversion_signo = False
+
     claves = ["F_posesion_progresiva", "F_creacion", "F_finalizacion", "F_porteria_rival", "F_fragilidad_rival"]
     idx_fijos = {i for i, k in enumerate(claves) if fijos and k in fijos}
-    pisos_dict = pisos or {}
-    techos_dict = techos or {}
+    pisos_dict = dict(pisos or {})
+    techos_dict = dict(techos or {})
+    raw_vals = {k: round(float(_safe_float(factores.get(k), 0.0)), 1) for k in claves}
+
+    if evitar_inversion_signo:
+        for i, k in enumerate(claves):
+            v_r = raw_vals[k]
+            if v_r > 0.0:
+                pisos_dict[k] = max(0.0, pisos_dict.get(k, 0.0))
+            elif v_r < 0.0:
+                techos_dict[k] = min(0.0, techos_dict.get(k, 0.0))
+            else:
+                idx_fijos.add(i)
 
     vals = []
     for k in claves:
-        v = _safe_float(factores.get(k), 0.0)
+        v = raw_vals[k]
         piso = max(-12.0, pisos_dict.get(k, -12.0))
         techo = min(15.0, techos_dict.get(k, 15.0))
         vals.append(round(float(np.clip(v, piso, techo)), 1))
@@ -774,6 +837,8 @@ def reescalar_factores_a_delta(
         libres = []
         for i, k in enumerate(claves):
             if i in idx_fijos:
+                continue
+            if evitar_inversion_signo and (raw_vals[k] * dif) <= 0.0:
                 continue
             piso = max(-12.0, pisos_dict.get(k, -12.0))
             techo = min(15.0, techos_dict.get(k, 15.0))
@@ -797,6 +862,8 @@ def reescalar_factores_a_delta(
             if i in idx_fijos:
                 continue
             k = claves[i]
+            if evitar_inversion_signo and (raw_vals[k] * residuo) <= 0.0:
+                continue
             piso = max(-12.0, pisos_dict.get(k, -12.0))
             techo = min(15.0, techos_dict.get(k, 15.0))
             nuevo = round(vals[i] + residuo, 1)
@@ -888,6 +955,12 @@ def extraer_series_reales_15_partidos(
 
     # Primera pasada: valores reales + reconstrucción de métricas sin tracking + ajuste relativo de división
     crudos: Dict[str, List[Optional[float]]] = {}
+    _unificar_h_lstm = False
+    try:
+        from decision_cobertura import bandera_activa as _ba_h_u
+        _unificar_h_lstm = bool(_ba_h_u("usar_unificacion_h_gf_lstm_15"))
+    except Exception:
+        _unificar_h_lstm = False
     factores_of_partido = []
     factores_def_partido = []
 
@@ -949,7 +1022,8 @@ def extraer_series_reales_15_partidos(
                 v = max(1.0, float(rem_fuera_riv - palo_riv))
 
             if v is not None:
-                torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+                _src_1019 = _partido_fuente(p) if _unificar_h_lstm else p
+                torneo_p = str(_src_1019.get("torneo") or _src_1019.get("competition") or _src_1019.get("competicion") or p.get("torneo") or "").lower()
                 if es_copa_nacional(torneo_p) and (gf_p - gc_p) >= 4:
                     if clave in ("xg", "xgot", "xg_juego_abierto", "xg_sin_penalti"):
                         v = min(float(v), 2.2)
@@ -998,7 +1072,8 @@ def extraer_series_reales_15_partidos(
         if gf is None or gc is None:
             gf = _safe_float(m.get("goles_favor", m.get("goles_favor_est")), 1.30)
             gc = _safe_float(m.get("goles_contra", m.get("goles_contra_real")), 1.25)
-        torneo_p = str(p.get("torneo") or p.get("competition") or p.get("competicion") or "").lower()
+        _src_1068 = _partido_fuente(p) if _unificar_h_lstm else p
+        torneo_p = str(_src_1068.get("torneo") or _src_1068.get("competition") or _src_1068.get("competicion") or p.get("torneo") or "").lower()
         if es_copa_nacional(torneo_p) and (gf - gc) >= 4:
             gf = min(float(gf), 2.2)
         gf = gf * factores_of_partido[idx_p]
@@ -1700,6 +1775,9 @@ def calcular_doble_adn_con_shrinkage(
     mu["goles_contra"] = round(w_cond * media_gc + (1.0 - w_cond) * h_gc, 2)
     mu["_n_cond"] = float(n_cond)
     mu["_w_cond"] = round(w_cond, 4)
+    mu["_cond_objetivo"] = str(cond_target)
+    mu["_h_gf_lstm_15"] = round(float(h_gf), 4)
+    mu["_h_gc_lstm_15"] = round(float(h_gc), 4)
 
     return mu
 
@@ -2030,6 +2108,245 @@ def calcular_los_6_cruces_tacticos(
     }
 
 
+def calcular_ic_factores_dcn_partido(
+    partidos_15_local: Optional[List[Dict[str, Any]]],
+    partidos_15_visita: Optional[List[Dict[str, Any]]],
+    estados_L: Dict[str, Any],
+    estados_V: Dict[str, Any],
+    mu_L_casa: Dict[str, Any],
+    mu_V_fuera: Dict[str, Any],
+    perfil_local: Dict[str, Any],
+    perfil_visita: Dict[str, Any],
+    rL: Dict[str, Any],
+    rV: Dict[str, Any],
+    factores_pre_L: Optional[Dict[str, float]] = None,
+    factores_pre_V: Optional[Dict[str, float]] = None,
+    n_boot: int = 400,
+    seed: int = 20261114,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    """
+    Ronda 8 Punto 5(b): Calcula intervalos de confianza al 95% (IC95 por partido y bootstrap)
+    para los factores tácticos de los 6 cruces (especialmente F_porteria_rival y F_finalizacion)
+    y para la métrica subyacente (goles_evitados del rival y xgot - xg del atacante).
+    Un factor solo supera el ruido (`supera_ruido=True`) si su IC95 excluye el 0
+    tanto en la métrica subyacente por partido como en el bootstrap de los 6 cruces.
+    """
+    rng = np.random.default_rng(seed)
+    pts_L = [p for p in (partidos_15_local or []) if isinstance(p, dict)]
+    pts_V = [p for p in (partidos_15_visita or []) if isinstance(p, dict)]
+
+    def _ic_media(vals: List[float]) -> Tuple[Optional[float], Optional[float], Optional[float], Optional[float], int]:
+        arr = [float(x) for x in vals if isinstance(x, (int, float)) and not math.isnan(float(x))]
+        n = len(arr)
+        if n == 0:
+            return None, None, None, None, 0
+        mu = float(np.mean(arr))
+        if n < 2:
+            return round(mu, 4), 0.0, round(mu, 4), round(mu, 4), n
+        se = float(np.std(arr, ddof=1) / math.sqrt(n))
+        return round(mu, 4), round(se, 4), round(mu - 1.96 * se, 4), round(mu + 1.96 * se, 4), n
+
+    gev_V_all, gev_V_fuera = [], []
+    for p in pts_V:
+        v_ge = _valor_metrica_observado_real(p, "goles_evitados")
+        if v_ge is not None:
+            gev_V_all.append(float(v_ge))
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                gev_V_fuera.append(float(v_ge))
+
+    gev_L_all, gev_L_casa = [], []
+    for p in pts_L:
+        v_ge = _valor_metrica_observado_real(p, "goles_evitados")
+        if v_ge is not None:
+            gev_L_all.append(float(v_ge))
+            cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+            if cond_p in ("casa", "local", "h", "home"):
+                gev_L_casa.append(float(v_ge))
+
+    fin_L_all, fin_L_casa = [], []
+    g_xg_L_all, g_xg_L_casa = [], []
+    for p in pts_L:
+        v_xg = _valor_metrica_observado_real(p, "xg")
+        v_xgot = _valor_metrica_observado_real(p, "xgot")
+        gf_p, _ = _goles_equipo(p)
+        cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+        if v_xg is not None and v_xgot is not None:
+            d_f = float(v_xgot) - float(v_xg)
+            fin_L_all.append(d_f)
+            if cond_p in ("casa", "local", "h", "home"):
+                fin_L_casa.append(d_f)
+        if v_xg is not None and gf_p is not None:
+            d_g = float(gf_p) - float(v_xg)
+            g_xg_L_all.append(d_g)
+            if cond_p in ("casa", "local", "h", "home"):
+                g_xg_L_casa.append(d_g)
+
+    fin_V_all, fin_V_fuera = [], []
+    g_xg_V_all, g_xg_V_fuera = [], []
+    for p in pts_V:
+        v_xg = _valor_metrica_observado_real(p, "xg")
+        v_xgot = _valor_metrica_observado_real(p, "xgot")
+        gf_p, _ = _goles_equipo(p)
+        cond_p = str((_partido_fuente(p).get("condicion") or p.get("condicion") or "")).lower()
+        if v_xg is not None and v_xgot is not None:
+            d_f = float(v_xgot) - float(v_xg)
+            fin_V_all.append(d_f)
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                fin_V_fuera.append(d_f)
+        if v_xg is not None and gf_p is not None:
+            d_g = float(gf_p) - float(v_xg)
+            g_xg_V_all.append(d_g)
+            if cond_p in ("fuera", "visita", "visitante", "a", "away"):
+                g_xg_V_fuera.append(d_g)
+
+    def _limpiar_partido_obs_boot(p: Dict[str, Any]) -> Dict[str, Any]:
+        src = _partido_fuente(p)
+        proc_root = src.get("procedencia") or p.get("procedencia") or {}
+        proc_ft_eq = ((proc_root.get("FT") or {}).get("equipo") if isinstance(proc_root, dict) else None) or {}
+        proc_eq = (proc_root.get("equipo") if isinstance(proc_root, dict) else None) or {}
+        if not proc_ft_eq and not proc_eq:
+            return p
+        periodos_orig = src.get("periodos") or {}
+        periodos_new = {}
+        for c_k, c_v in periodos_orig.items():
+            if not isinstance(c_v, dict):
+                periodos_new[c_k] = c_v
+                continue
+            filas_new = []
+            for fila in (c_v.get("filas") or []):
+                if not isinstance(fila, dict):
+                    filas_new.append(fila)
+                    continue
+                k_f = str(fila.get("clave") or "")
+                tag_p = str(proc_ft_eq.get(k_f) or proc_eq.get(k_f) or "").strip().lower()
+                if tag_p in ("estimacion_modelo", "sin_dato"):
+                    f_copy = dict(fila)
+                    f_copy["equipo"] = None
+                    filas_new.append(f_copy)
+                else:
+                    filas_new.append(fila)
+            c_copy = dict(c_v)
+            c_copy["filas"] = filas_new
+            periodos_new[c_k] = c_copy
+        src_new = dict(src)
+        src_new["periodos"] = periodos_new
+        p_new = dict(p)
+        if "_partido" in p_new and isinstance(p_new["_partido"], dict):
+            p_new["_partido"] = src_new
+        else:
+            p_new["periodos"] = periodos_new
+        return p_new
+
+    pts_L_boot = [_limpiar_partido_obs_boot(p) for p in pts_L]
+    pts_V_boot = [_limpiar_partido_obs_boot(p) for p in pts_V]
+
+    claves_f = (
+        "F_posesion_progresiva",
+        "F_creacion",
+        "F_finalizacion",
+        "F_porteria_rival",
+        "F_fragilidad_rival",
+    )
+    boot_L: Dict[str, List[float]] = {k: [] for k in claves_f}
+    boot_V: Dict[str, List[float]] = {k: [] for k in claves_f}
+    if len(pts_L_boot) >= 5 and len(pts_V_boot) >= 5 and n_boot > 0:
+        nL = len(pts_L_boot)
+        nV = len(pts_V_boot)
+        for _ in range(n_boot):
+            idx_L = rng.integers(0, nL, size=nL)
+            idx_V = rng.integers(0, nV, size=nV)
+            sub_L = [pts_L_boot[int(i)] for i in idx_L]
+            sub_V = [pts_V_boot[int(i)] for i in idx_V]
+            mu_b_L = calcular_doble_adn_con_shrinkage(sub_L, estados_L, "casa", perfil_local)
+            mu_b_V = calcular_doble_adn_con_shrinkage(sub_V, estados_V, "fuera", perfil_visita)
+            c_b = calcular_los_6_cruces_tacticos(
+                mu_b_L, mu_b_V, estados_L, estados_V,
+                perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,
+            )
+            for k in claves_f:
+                boot_L[k].append(float(c_b["factores_local"].get(k, 0.0)))
+                boot_V[k].append(float(c_b["factores_visita"].get(k, 0.0)))
+
+    def _armar_info_factor(
+        k: str,
+        val_puntual: float,
+        vals_boot: List[float],
+        serie_cond: List[float],
+        serie_15p: List[float],
+        nombre_insumo: str,
+        serie_g_xg_cond: Optional[List[float]] = None,
+        serie_g_xg_15p: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        mu_c, se_c, lo_c, hi_c, n_c = _ic_media(serie_cond)
+        mu_g, se_g, lo_g, hi_g, n_g = _ic_media(serie_15p)
+        if vals_boot:
+            lo_b = round(float(np.percentile(vals_boot, 2.5)), 2)
+            hi_b = round(float(np.percentile(vals_boot, 97.5)), 2)
+            se_b = round(float(np.std(vals_boot, ddof=1)), 2)
+            mu_b = round(float(np.mean(vals_boot)), 2)
+        else:
+            lo_b = hi_b = mu_b = round(float(val_puntual), 2)
+            se_b = 0.0
+        excluye_0_boot = (lo_b > 0.0) or (hi_b < 0.0)
+        excluye_0_cond = (lo_c is not None and hi_c is not None and ((lo_c > 0.0) or (hi_c < 0.0))) if n_c >= 2 else False
+        excluye_0_15p = (lo_g is not None and hi_g is not None and ((lo_g > 0.0) or (hi_g < 0.0))) if n_g >= 2 else False
+        if nombre_insumo:
+            supera_ruido = bool(excluye_0_boot and (excluye_0_cond or excluye_0_15p) and abs(val_puntual) > 0.05)
+        else:
+            supera_ruido = bool(excluye_0_boot and abs(val_puntual) > 0.05)
+        info_out: Dict[str, Any] = {
+            "factor_sin_reescalar_pct": round(float(val_puntual), 2),
+            "boot_media_pct": mu_b,
+            "boot_se_pct": se_b,
+            "boot_ic95_pct": [lo_b, hi_b],
+            "insumo": nombre_insumo,
+            "insumo_cond_valores": [round(float(x), 4) for x in serie_cond],
+            "insumo_cond_media": mu_c,
+            "insumo_cond_se": se_c,
+            "insumo_cond_ic95": [lo_c, hi_c] if lo_c is not None else None,
+            "insumo_cond_n": n_c,
+            "insumo_15p_valores": [round(float(x), 4) for x in serie_15p],
+            "insumo_15p_media": mu_g,
+            "insumo_15p_se": se_g,
+            "insumo_15p_ic95": [lo_g, hi_g] if lo_g is not None else None,
+            "insumo_15p_n": n_g,
+            "supera_ruido": supera_ruido,
+        }
+        if serie_g_xg_cond is not None and serie_g_xg_15p is not None:
+            mu_gc, se_gc, lo_gc, hi_gc, n_gc = _ic_media(serie_g_xg_cond)
+            mu_gg, se_gg, lo_gg, hi_gg, n_gg = _ic_media(serie_g_xg_15p)
+            info_out["insumo_g_menos_xg"] = {
+                "cond_valores": [round(float(x), 4) for x in serie_g_xg_cond],
+                "cond_media": mu_gc,
+                "cond_se": se_gc,
+                "cond_ic95": [lo_gc, hi_gc] if lo_gc is not None else None,
+                "cond_n": n_gc,
+                "15p_valores": [round(float(x), 4) for x in serie_g_xg_15p],
+                "15p_media": mu_gg,
+                "15p_se": se_gg,
+                "15p_ic95": [lo_gg, hi_gg] if lo_gg is not None else None,
+                "15p_n": n_gg,
+            }
+        return info_out
+
+    f0_L = factores_pre_L or {}
+    f0_V = factores_pre_V or {}
+    out_L: Dict[str, Dict[str, Any]] = {}
+    out_V: Dict[str, Dict[str, Any]] = {}
+    for k in claves_f:
+        if k == "F_porteria_rival":
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], gev_V_fuera, gev_V_all, "goles_evitados_rival")
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], gev_L_casa, gev_L_all, "goles_evitados_rival")
+        elif k == "F_finalizacion":
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], fin_L_casa, fin_L_all, "xgot_menos_xg", g_xg_L_casa, g_xg_L_all)
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], fin_V_fuera, fin_V_all, "xgot_menos_xg", g_xg_V_fuera, g_xg_V_all)
+        else:
+            out_L[k] = _armar_info_factor(k, float(f0_L.get(k, 0.0)), boot_L[k], [], [], "")
+            out_V[k] = _armar_info_factor(k, float(f0_V.get(k, 0.0)), boot_V[k], [], [], "")
+    return out_L, out_V
+
+
 def calcular_indice_bloqueo_cerrojo(
     xgot_atacante: float,
     xg_atacante: float,
@@ -2184,7 +2501,9 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     # Ajuste por salto competitivo de liga doméstica (ratio_tier < 1.0):
     # Si un equipo de liga menor (ej. Ferencváros en Hungría 0.65) enfrenta a un club de élite (ej. Milan 1.00):
     # Sus números defensivos domésticos se descuentan severamente para reflejar el salto competitivo.
-    if ratio_tier_L < 0.90 and ratio_tier_L > 0.05:
+    from decision_cobertura import bandera_activa as _ba_rt
+    _umbral_rt = 0.90 if _ba_rt("usar_anclaje_coef_torneo") else 1.0
+    if ratio_tier_L < _umbral_rt and ratio_tier_L > 0.05:
         if mu_L_casa.get("goles_contra") is not None:
             mu_L_casa["goles_contra"] = round(mu_L_casa["goles_contra"] / ratio_tier_L, 2)
         if mu_L_casa.get("xgot_enfrentado") is not None:
@@ -2202,18 +2521,21 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         1 for _p in (partidos_15_local or [])
         if isinstance(_p, dict) and str((_partido_fuente(_p).get("condicion") or _p.get("condicion") or "")).lower() in ("casa", "local", "h", "home")
     )
-    gc_gen_L = mL.get("goles_contra")
-    gc_cond_L = mu_L_casa.get("goles_contra")
-    if gc_cond_L is not None and gc_gen_L is not None and n_cond_adn_L >= 4:
-        gc_w_L = 0.65 * float(gc_cond_L) + 0.35 * float(gc_gen_L)
-    elif gc_gen_L is not None:
-        gc_w_L = float(gc_gen_L)
-    else:
-        gc_w_L = float(gc_cond_L) if gc_cond_L is not None else None
-    if gc_w_L is not None:
-        tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_L), 1)
+    if _ba_rt("usar_tensor_65_35_y_diesel"):
+        gc_gen_L = mL.get("goles_contra")
+        gc_cond_L = mu_L_casa.get("goles_contra")
+        if gc_cond_L is not None and gc_gen_L is not None and n_cond_adn_L >= 4:
+            gc_w_L = 0.65 * float(gc_cond_L) + 0.35 * float(gc_gen_L)
+        elif gc_gen_L is not None:
+            gc_w_L = float(gc_gen_L)
+        else:
+            gc_w_L = float(gc_cond_L) if gc_cond_L is not None else None
+        if gc_w_L is not None:
+            tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_L), 1)
+    elif ratio_tier_L < _umbral_rt and ratio_tier_L > 0.05 and mu_L_casa.get("goles_contra") is not None:
+        tL["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_L_casa["goles_contra"]), 1)
 
-    if ratio_tier_V < 0.90 and ratio_tier_V > 0.05:
+    if ratio_tier_V < _umbral_rt and ratio_tier_V > 0.05:
         if mu_V_fuera.get("goles_contra") is not None:
             mu_V_fuera["goles_contra"] = round(mu_V_fuera["goles_contra"] / ratio_tier_V, 2)
         if mu_V_fuera.get("xgot_enfrentado") is not None:
@@ -2231,16 +2553,19 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         1 for _p in (partidos_15_visita or [])
         if isinstance(_p, dict) and str((_partido_fuente(_p).get("condicion") or _p.get("condicion") or "")).lower() in ("fuera", "visita", "visitante", "a", "away")
     )
-    gc_gen_V = mV.get("goles_contra")
-    gc_cond_V = mu_V_fuera.get("goles_contra")
-    if gc_cond_V is not None and gc_gen_V is not None and n_cond_adn_V >= 4:
-        gc_w_V = 0.65 * float(gc_cond_V) + 0.35 * float(gc_gen_V)
-    elif gc_gen_V is not None:
-        gc_w_V = float(gc_gen_V)
-    else:
-        gc_w_V = float(gc_cond_V) if gc_cond_V is not None else None
-    if gc_w_V is not None:
-        tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_V), 1)
+    if _ba_rt("usar_tensor_65_35_y_diesel"):
+        gc_gen_V = mV.get("goles_contra")
+        gc_cond_V = mu_V_fuera.get("goles_contra")
+        if gc_cond_V is not None and gc_gen_V is not None and n_cond_adn_V >= 4:
+            gc_w_V = 0.65 * float(gc_cond_V) + 0.35 * float(gc_gen_V)
+        elif gc_gen_V is not None:
+            gc_w_V = float(gc_gen_V)
+        else:
+            gc_w_V = float(gc_cond_V) if gc_cond_V is not None else None
+        if gc_w_V is not None:
+            tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, gc_w_V), 1)
+    elif ratio_tier_V < _umbral_rt and ratio_tier_V > 0.05 and mu_V_fuera.get("goles_contra") is not None:
+        tV["Avg_Seconds_Between_Goals_Conceded"] = round(5400.0 / max(0.25, mu_V_fuera["goles_contra"]), 1)
 
     # ── λ EFECTIVO: finalización, portería rival vulnerable y errores regalados ──
     comp_L = componentes_lambda_efectivo(estados_L, estados_V)
@@ -2251,8 +2576,37 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         perfil_local=perfil_local, perfil_visita=perfil_visita, rL=rL, rV=rV,
     )
 
-    f_l = cruces_6["factores_local"]
-    f_v = cruces_6["factores_visita"]
+    f_l = dict(cruces_6["factores_local"])
+    f_v = dict(cruces_6["factores_visita"])
+    cruces_6["factores_crudos_local"] = dict(f_l)
+    cruces_6["factores_crudos_visita"] = dict(f_v)
+    ic_factores_L, ic_factores_V = calcular_ic_factores_dcn_partido(
+        partidos_15_local, partidos_15_visita, estados_L, estados_V,
+        mu_L_casa, mu_V_fuera, perfil_local, perfil_visita, rL, rV,
+        factores_pre_L=f_l, factores_pre_V=f_v,
+        n_boot=40 if (partidos_15_local and partidos_15_visita) else 0,
+    )
+    fijos_ruido_L: List[str] = ["F_posesion_progresiva"]
+    fijos_ruido_V: List[str] = ["F_posesion_progresiva"]
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf, _inf in ic_factores_L.items():
+            if not _inf.get("supera_ruido", False):
+                f_l[_kf] = 0.0
+                if _kf not in fijos_ruido_L:
+                    fijos_ruido_L.append(_kf)
+        for _kf, _inf in ic_factores_V.items():
+            if not _inf.get("supera_ruido", False):
+                f_v[_kf] = 0.0
+                if _kf not in fijos_ruido_V:
+                    fijos_ruido_V.append(_kf)
+        if not ic_factores_L.get("F_porteria_rival", {}).get("supera_ruido", False):
+            cruces_6["ajuste_portero_local"] = 0.0
+            comp_L["regalo_portero"] = 0.0
+            comp_L["goles_evitados_rival"] = 0.0
+        if not ic_factores_V.get("F_porteria_rival", {}).get("supera_ruido", False):
+            cruces_6["ajuste_portero_visita"] = 0.0
+            comp_V["regalo_portero"] = 0.0
+            comp_V["goles_evitados_rival"] = 0.0
     comp_L["ajuste_portero"] = cruces_6["ajuste_portero_local"]
     comp_V["ajuste_portero"] = cruces_6["ajuste_portero_visita"]
     comp_L["regalo_errores"] = cruces_6["regalo_errores_local"]
@@ -2698,16 +3052,40 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         for t in traza_red_45_dcn
     )
 
-    if not alineado_5_L and abs(delta_pct_real_L) > _techo_dcn:
-        if delta_pct_real_L < -_techo_dcn and _freno_bajista_L:
-            delta_pct_real_L = round(min(delta_pct_real_L, _techo_dcn), 1)
-        else:
-            delta_pct_real_L = round(clip(delta_pct_real_L, -_techo_dcn, _techo_dcn), 1)
-    if not alineado_5_V and abs(delta_pct_real_V) > _techo_dcn:
-        if delta_pct_real_V < -_techo_dcn and _freno_bajista_V:
-            delta_pct_real_V = round(min(delta_pct_real_V, _techo_dcn), 1)
-        else:
-            delta_pct_real_V = round(clip(delta_pct_real_V, -_techo_dcn, _techo_dcn), 1)
+    delta_pre_tope_L = float(delta_pct_real_L)
+    delta_pre_tope_V = float(delta_pct_real_V)
+    toco_tope_red_L = False
+    toco_tope_red_V = False
+    dir_tope_red_L = None
+    dir_tope_red_V = None
+
+    if _ba_rt("usar_tope_dcn_18_pct"):
+        if not alineado_5_L and abs(delta_pct_real_L) > _techo_dcn:
+            if delta_pct_real_L < -_techo_dcn and _freno_bajista_L:
+                delta_pct_real_L = round(min(delta_pct_real_L, _techo_dcn), 1)
+            else:
+                toco_tope_red_L = True
+                dir_tope_red_L = "+18%" if delta_pct_real_L > _techo_dcn else "-18%"
+                delta_pct_real_L = round(clip(delta_pct_real_L, -_techo_dcn, _techo_dcn), 1)
+        elif not alineado_5_L and abs(delta_pct_real_L - _techo_dcn) < 1e-6:
+            toco_tope_red_L = True
+            dir_tope_red_L = "+18%"
+        elif not alineado_5_L and not _freno_bajista_L and abs(delta_pct_real_L + _techo_dcn) < 1e-6:
+            toco_tope_red_L = True
+            dir_tope_red_L = "-18%"
+        if not alineado_5_V and abs(delta_pct_real_V) > _techo_dcn:
+            if delta_pct_real_V < -_techo_dcn and _freno_bajista_V:
+                delta_pct_real_V = round(min(delta_pct_real_V, _techo_dcn), 1)
+            else:
+                toco_tope_red_V = True
+                dir_tope_red_V = "+18%" if delta_pct_real_V > _techo_dcn else "-18%"
+                delta_pct_real_V = round(clip(delta_pct_real_V, -_techo_dcn, _techo_dcn), 1)
+        elif not alineado_5_V and abs(delta_pct_real_V - _techo_dcn) < 1e-6:
+            toco_tope_red_V = True
+            dir_tope_red_V = "+18%"
+        elif not alineado_5_V and not _freno_bajista_V and abs(delta_pct_real_V + _techo_dcn) < 1e-6:
+            toco_tope_red_V = True
+            dir_tope_red_V = "-18%"
 
     pisos_L = {}
     if f_l.get("F_fragilidad_rival", 0.0) >= 3.0:
@@ -2719,8 +3097,22 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     if f_v.get("F_fragilidad_rival", 0.0) <= -1.0:
         techos_V["F_fragilidad_rival"] = -1.5
 
-    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=("F_posesion_progresiva",), pisos=pisos_L)
-    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=("F_posesion_progresiva",), techos=techos_V)
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _fk in fijos_ruido_L:
+            pisos_L.pop(_fk, None)
+        for _fk in fijos_ruido_V:
+            techos_V.pop(_fk, None)
+
+    f_l = reescalar_factores_a_delta(f_l, delta_pct_real_L, fijos=tuple(fijos_ruido_L), pisos=pisos_L)
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf in fijos_ruido_L:
+            if _kf != "F_posesion_progresiva" and not ic_factores_L.get(_kf, {}).get("supera_ruido", False):
+                f_l[_kf] = 0.0
+    f_v = reescalar_factores_a_delta(f_v, delta_pct_real_V, fijos=tuple(fijos_ruido_V), techos=techos_V)
+    if _ba_rt("usar_filtro_ruido_ic_factores_dcn"):
+        for _kf in fijos_ruido_V:
+            if _kf != "F_posesion_progresiva" and not ic_factores_V.get(_kf, {}).get("supera_ruido", False):
+                f_v[_kf] = 0.0
 
     pct_tot_L = round(float(sum(f_l.values())), 1)
     pct_tot_V = round(float(sum(f_v.values())), 1)
@@ -2729,7 +3121,7 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
     lam_k_L = round(float(lam_base_local * (1.0 + pct_tot_L / 100.0)), 2)
     lam_k_V = round(float(lam_base_visita * (1.0 + pct_tot_V / 100.0)), 2)
 
-    if abs(lam_k_L - lam_pre_reesc_L) > 1e-4 or abs(lam_k_V - lam_pre_reesc_V) > 1e-4:
+    if (_ba_rt("usar_tope_dcn_18_pct") or _ba_rt("usar_filtro_ruido_ic_factores_dcn")) and (abs(lam_k_L - lam_pre_reesc_L) > 1e-4 or abs(lam_k_V - lam_pre_reesc_V) > 1e-4):
         try:
             def _pmf_poisson_vec(lam_v: float, dim: int) -> np.ndarray:
                 v = np.array([math.exp(-lam_v) * (lam_v ** k) / math.factorial(k) for k in range(dim)], dtype=float)
@@ -2828,4 +3220,30 @@ def ejecutar_bucle_recursivo_infinito_hasta_convergencia(
         "seg_gol_V": float(tV.get("Avg_Seconds_Between_Goals", 3500.0)),
         "cerrojo_L_activo": cerrojo_L_activo,
         "cerrojo_V_activo": cerrojo_V_activo,
+        "n_cond_local": n_cond_adn_L,
+        "n_cond_visita": n_cond_adn_V,
+        "meta_condicion_local": {"n_en_condicion": n_cond_adn_L},
+        "meta_condicion_visita": {"n_en_condicion": n_cond_adn_V},
+        "ic_factores_local": ic_factores_L,
+        "ic_factores_visita": ic_factores_V,
+        "tope_dcn_18_red": {
+            "activo": bool(_ba_rt("usar_tope_dcn_18_pct")),
+            "techo_pct": float(_techo_dcn),
+            "local": {
+                "toco": bool(toco_tope_red_L),
+                "direccion": dir_tope_red_L,
+                "delta_pre_pct": round(delta_pre_tope_L, 2),
+                "delta_post_pct": round(float(delta_pct_real_L), 2),
+                "alineado_5": bool(alineado_5_L),
+                "freno_bajista": bool(_freno_bajista_L),
+            },
+            "visitante": {
+                "toco": bool(toco_tope_red_V),
+                "direccion": dir_tope_red_V,
+                "delta_pre_pct": round(delta_pre_tope_V, 2),
+                "delta_post_pct": round(float(delta_pct_real_V), 2),
+                "alineado_5": bool(alineado_5_V),
+                "freno_bajista": bool(_freno_bajista_V),
+            },
+        },
     }

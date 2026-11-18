@@ -1,0 +1,242 @@
+{
+  "m1_entradas": {
+    "id_partido": "4653849",
+    "fecha": "2026-07-07",
+    "partido": "Colombia vs Switzerland",
+    "fotmob_matchdetails_tackles": {
+      "key": "matchstats.headers.tackles",
+      "title": "Tackles",
+      "format": "integer",
+      "stats_ft": [
+        12,
+        17
+      ],
+      "stats_1t_api": [
+        6,
+        11
+      ],
+      "stats_2t_api": [
+        2,
+        5
+      ],
+      "orden_fotmob": [
+        "Switzerland (home=12)",
+        "Colombia (away=17)"
+      ],
+      "son_conteos_enteros": true,
+      "son_porcentajes": false
+    },
+    "cache_crudo": {
+      "ft_entradas": [
+        17.0,
+        12.0
+      ],
+      "ft_entradas_pct_falso_100": [
+        100.0,
+        100.0
+      ],
+      "1t_entradas": [
+        12.0,
+        9.0
+      ],
+      "2t_entradas": [
+        5.0,
+        3.0
+      ]
+    },
+    "post_saneamiento": {
+      "ft_entradas_pct_conteo": [
+        17.0,
+        12.0
+      ],
+      "ft_entradas_ganadas": [
+        17.0,
+        12.0
+      ],
+      "ft_entradas_denominador": [
+        null,
+        null
+      ],
+      "fila_32_markdown": "| 32 | Entradas (tackles ganados) (`entradas_pct`) | 12 | 17 | 9 | 12 | 3 | 5 | FotMob |"
+    },
+    "conclusion": "17 (Colombia) y 12 (Suiza) son conteos enteros de tackles (`format='integer'` en FotMob matchDetails 4653849), no porcentajes; el falso 100.0 provenía de derivación sin denominador observado y queda saneado sin convertir los conteos en porcentajes."
+  },
+  "m3_inversion_bandos": {
+    "id_fotmob": "4667823",
+    "id_flashscore": "vL2qotaK",
+    "cache_bandos_invertidos_heredado": true,
+    "emparejamiento_sobre_candidato_real_vL2qotaK": {
+      "candidato_flashscore": {
+        "id": "vL2qotaK",
+        "fecha": "2026-06-27",
+        "local": "Colombia",
+        "visitante": "Portugal",
+        "goles_local": 0,
+        "goles_visitante": 0
+      },
+      "ac_dir": 2,
+      "amb_dir": true,
+      "ac_inv": 0,
+      "amb_inv": false,
+      "regla_actual_ac_inv_gt_ac_dir": false,
+      "bandos_invertidos_actual": false,
+      "explicacion_bug_historico_pre_d6cdbe4": "Antes de d6cdbe4, `invertido = (c.gl == gv and c.gv == gl)` daba True en empates 0-0 sin verificar ac_inv > ac_dir (obteniendo ac_inv=0 sobre Colombia vs Portugal), lo que cruzaba los porcentajes/ganadas de Flashscore (53% 8/15 Colombia, 56% 5/9 Portugal) en 5/15 (56%) y 8/9 (53%)."
+    },
+    "emparejamiento_candidato_invertido_control": {
+      "candidato_simulado": {
+        "id": "vL2qotaK",
+        "fecha": "2026-06-27",
+        "local": "Portugal",
+        "visitante": "Colombia",
+        "goles_local": 0,
+        "goles_visitante": 0
+      },
+      "ac_dir": 0,
+      "ac_inv": 2,
+      "bandos_invertidos_actual": true
+    },
+    "entradas_post_saneamiento": {
+      "FT": {
+        "equipo_colombia": [
+          8.0,
+          15.0,
+          53.0
+        ],
+        "rival_portugal": [
+          5.0,
+          9.0,
+          56.0
+        ]
+      },
+      "1T": {
+        "equipo_colombia": [
+          2.0,
+          6.0,
+          33.0
+        ],
+        "rival_portugal": [
+          3.0,
+          5.0,
+          60.0
+        ]
+      },
+      "2T": {
+        "equipo_colombia": [
+          6.0,
+          9.0,
+          67.0
+        ],
+        "rival_portugal": [
+          2.0,
+          4.0,
+          50.0
+        ]
+      }
+    }
+  },
+  "tiros_libres_17_y_col_chi": {
+    "banco_pre_tiros_libres_sin_invertir": 17,
+    "banco_post_tiros_libres_sin_invertir": 0,
+    "banco_post_total_defectos": 7,
+    "banco_post_por_tipo": {
+      "empate_con_bandos_invertidos": 6,
+      "suma_mitades_distinta_ft": 1
+    },
+    "validacion_colombia_chile_2026_11_13": {
+      "FT": {
+        "faltas_colombia": 19,
+        "faltas_chile": 14,
+        "tiros_libres_colombia": 14,
+        "tiros_libres_chile": 19,
+        "cumple_tl_propio_igual_faltas_rival": true
+      },
+      "1T": {
+        "faltas_colombia": 9,
+        "faltas_chile": 6,
+        "tiros_libres_colombia": 6,
+        "tiros_libres_chile": 9,
+        "cumple_tl_propio_igual_faltas_rival": true
+      },
+      "2T": {
+        "faltas_colombia": 10,
+        "faltas_chile": 8,
+        "tiros_libres_colombia": 8,
+        "tiros_libres_chile": 10,
+        "cumple_tl_propio_igual_faltas_rival": true
+      }
+    },
+    "sanear_repara_colombia_chile_sin_invertir": {
+      "FT": [
+        14.0,
+        19.0
+      ],
+      "1T": [
+        6.0,
+        9.0
+      ],
+      "2T": [
+        8.0,
+        10.0
+      ]
+    }
+  },
+  "turkey_belgium_caches_truncados": {
+    "caches_truncados_detectados": [
+      {
+        "archivo": "cache/cache_flashscore_turquia.json",
+        "existe": true,
+        "bytes": 481224,
+        "sha256_prefix": "6fcf4b4478cac6d0",
+        "json_valido": false,
+        "error": "JSONDecodeError: Expecting value: line 1 column 479072 (char 479071)",
+        "encabezado_generado_en": "2026-11-16 11:33:35",
+        "termina_con": "], \"proveedor\": \"flashscore\", \"identidad_verificada\": true, \"partidos_futuros\": "
+      },
+      {
+        "archivo": "cache/cache_fotmob_fs_tur_123_TUR_False_False.json",
+        "existe": true,
+        "bytes": 481224,
+        "sha256_prefix": "6fcf4b4478cac6d0",
+        "json_valido": false,
+        "error": "JSONDecodeError: Expecting value: line 1 column 479072 (char 479071)",
+        "encabezado_generado_en": "2026-11-16 11:33:35",
+        "termina_con": "], \"proveedor\": \"flashscore\", \"identidad_verificada\": true, \"partidos_futuros\": "
+      },
+      {
+        "archivo": "cache/cache_fotmob_turkey_TUR_False_False.json",
+        "existe": true,
+        "bytes": 481224,
+        "sha256_prefix": "6fcf4b4478cac6d0",
+        "json_valido": false,
+        "error": "JSONDecodeError: Expecting value: line 1 column 479072 (char 479071)",
+        "encabezado_generado_en": "2026-11-16 11:33:35",
+        "termina_con": "], \"proveedor\": \"flashscore\", \"identidad_verificada\": true, \"partidos_futuros\": "
+      }
+    ],
+    "referencias_en_codigo_py": [],
+    "ronda5_real_fixtures_turkey": {
+      "ruta": "tests/fixtures/ronda5_real_fixtures.json",
+      "n_partidos": 15,
+      "json_valido": true,
+      "primeros_3_ids_fotmob": [
+        "5181795",
+        "5181792",
+        "5181791"
+      ]
+    },
+    "cache_flashscore_turquia_valido": {
+      "ruta": "cache/cache_fotmob_qeijuho5_TUR_False_False.json",
+      "bytes": 763083,
+      "generado_en": "2026-11-12 07:33:26",
+      "n_partidos": 15,
+      "json_valido": true
+    },
+    "auditoria_turquia_belgica_2026_11_13": {
+      "ruta": "informes/auditorias/2026-11-13/auditoria_matrices_turquia_vs_belgica_2026-11-13_parte1de8.md",
+      "usa_fotmob_100_opta": true,
+      "contiene_id_5181795": true
+    },
+    "turkey_belgium_uso_caches_truncados": false,
+    "conclusion": "No: Turkey-Belgium utilizó únicamente matrices válidas de FotMob (`tests/fixtures/ronda5_real_fixtures.json`, IDs `5181795..4689339`, auditoría 2026-11-13 04:52:26). Los 3 cachés truncados (481,224 bytes, idéntico SHA-256 6fcf4b4478cac6d0, generados en 2026-11-16 11:33:35 y cortados en `partidos_futuros`) no se cargan en ningún módulo ni en el replay de Turkey-Belgium."
+  }
+}

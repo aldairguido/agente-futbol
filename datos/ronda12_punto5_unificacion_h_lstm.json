@@ -1,0 +1,986 @@
+{
+  "bandera_usar_unificacion_h_gf_lstm_15_defecto": false,
+  "resumen_unificacion": {
+    "denominador_registros": 73,
+    "con_bandera_apagada_defecto": {
+      "n_lados_con_diferencia_directa_vs_viva": 27,
+      "n_local_con_diferencia": 12,
+      "n_visitante_con_diferencia": 15,
+      "n_partidos_con_diferencia": 26,
+      "causa_tecnica": "En `motor_recursivo_45_dcn.extraer_series_reales_15_partidos`, las líneas L1019 y L1068 leían `p.get('torneo')` en lugar de `_partido_fuente(p)`. En la ruta viva (`cuadro_especialista.partidos_para_red_neuronal`), el diccionario envoltorio no incluye `'torneo'` en el nivel raíz (solo dentro de `_partido`), por lo que no activaba `es_copa_nacional(torneo_p)` ni el recorte de goleadas (>=4 goles) a 2.2 antes del blend de credibilidad (0.35), mientras la ruta directa sí lo activaba."
+    },
+    "con_bandera_activa": {
+      "n_lados_con_diferencia_directa_vs_viva": 0,
+      "n_local_con_diferencia": 0,
+      "n_visitante_con_diferencia": 0,
+      "n_partidos_con_diferencia": 0,
+      "unificacion_100_pct": true
+    }
+  },
+  "efecto_sobre_73_registros": {
+    "n_partidos_con_cambio_h_gf_lstm": 26,
+    "n_lados_con_cambio_h_gf_lstm": 27,
+    "n_partidos_con_cambio_lambda": 8,
+    "n_partidos_sin_cambio": 47,
+    "registros_afectados": [
+      {
+        "job_id": "DESIGN::TB",
+        "partido": "Turkey vs Belgium",
+        "hl_viva_antes": 1.0471,
+        "hl_viva_despues": 1.0471,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.7961,
+        "hv_viva_despues": 1.7689,
+        "delta_hv": -0.0272,
+        "lambda_antes": [
+          1.04,
+          3.55
+        ],
+        "lambda_despues": [
+          1.04,
+          3.57
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.02
+      },
+      {
+        "job_id": "AUDIT::COL_CHI",
+        "partido": "Colombia vs Chile",
+        "hl_viva_antes": 0.9891,
+        "hl_viva_despues": 0.965,
+        "delta_hl": -0.0241,
+        "hv_viva_antes": 1.0925,
+        "hv_viva_despues": 1.0925,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          1.1,
+          0.82
+        ],
+        "lambda_despues": [
+          1.1,
+          0.82
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::d3d45be6c72ec657",
+        "partido": "RB Leipzig vs PSV Eindhoven",
+        "hl_viva_antes": 2.2406,
+        "hl_viva_despues": 2.3398,
+        "delta_hl": 0.0992,
+        "hv_viva_antes": 2.2112,
+        "hv_viva_despues": 2.2112,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          2.59,
+          1.32
+        ],
+        "lambda_despues": [
+          2.59,
+          1.33
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.01
+      },
+      {
+        "job_id": "ARCH::895402c59f17d314",
+        "partido": "Sabah FK vs Slavia Prague",
+        "hl_viva_antes": 2.0764,
+        "hl_viva_despues": 2.0764,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.7353,
+        "hv_viva_despues": 1.6448,
+        "delta_hv": -0.0905,
+        "lambda_antes": [
+          1.97,
+          1.19
+        ],
+        "lambda_despues": [
+          1.97,
+          1.18
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": -0.01
+      },
+      {
+        "job_id": "ARCH::177d446a97606f01",
+        "partido": "Brentford vs Liverpool FC",
+        "hl_viva_antes": 2.0051,
+        "hl_viva_despues": 1.9539,
+        "delta_hl": -0.0512,
+        "hv_viva_antes": 2.3804,
+        "hv_viva_despues": 2.3804,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          2.02,
+          1.53
+        ],
+        "lambda_despues": [
+          2.02,
+          1.53
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::1fba9ef796150d73",
+        "partido": "Everton vs Chelsea",
+        "hl_viva_antes": 1.2926,
+        "hl_viva_despues": 1.2699,
+        "delta_hl": -0.0227,
+        "hv_viva_antes": 2.7158,
+        "hv_viva_despues": 2.7158,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          2.98,
+          1.1
+        ],
+        "lambda_despues": [
+          2.98,
+          1.1
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::62a4e4b9ef6adf62",
+        "partido": "Manchester City vs Ipswich Town",
+        "hl_viva_antes": 2.5416,
+        "hl_viva_despues": 2.4799,
+        "delta_hl": -0.0617,
+        "hv_viva_antes": 1.4741,
+        "hv_viva_despues": 1.4741,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          2.43,
+          1.02
+        ],
+        "lambda_despues": [
+          2.43,
+          1.02
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::d140040001d88996",
+        "partido": "Union Berlin vs Borussia Dortmund",
+        "hl_viva_antes": 1.2256,
+        "hl_viva_despues": 1.2256,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.1038,
+        "hv_viva_despues": 1.2096,
+        "delta_hv": 0.1058,
+        "lambda_antes": [
+          1.03,
+          2.16
+        ],
+        "lambda_despues": [
+          1.03,
+          2.74
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.58
+      },
+      {
+        "job_id": "ARCH::432de1d4c35d0f37",
+        "partido": "Celta Fortuna vs Tenerife",
+        "hl_viva_antes": 1.6498,
+        "hl_viva_despues": 1.6498,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.1856,
+        "hv_viva_despues": 1.174,
+        "delta_hv": -0.0116,
+        "lambda_antes": [
+          1.09,
+          0.93
+        ],
+        "lambda_despues": [
+          1.09,
+          0.93
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::6676e02e47888387",
+        "partido": "Tottenham Hotspur vs Coventry City",
+        "hl_viva_antes": 0.8896,
+        "hl_viva_despues": 0.8531,
+        "delta_hl": -0.0365,
+        "hv_viva_antes": 1.5211,
+        "hv_viva_despues": 1.5211,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          0.87,
+          1.1
+        ],
+        "lambda_despues": [
+          0.87,
+          1.1
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::264113ea1900872f",
+        "partido": "Fenerbahçe vs Slavia Prague",
+        "hl_viva_antes": 2.5296,
+        "hl_viva_despues": 2.5296,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 0.4766,
+        "hv_viva_despues": 0.4252,
+        "delta_hv": -0.0514,
+        "lambda_antes": [
+          1.88,
+          1.17
+        ],
+        "lambda_despues": [
+          1.88,
+          1.17
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::881c46e4eb7f5c59",
+        "partido": "Fenerbahçe (W) vs Slavia Prague (W)",
+        "hl_viva_antes": 2.5296,
+        "hl_viva_despues": 2.5296,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 0.4766,
+        "hv_viva_despues": 0.4252,
+        "delta_hv": -0.0514,
+        "lambda_antes": [
+          1.88,
+          1.17
+        ],
+        "lambda_despues": [
+          1.88,
+          1.17
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::0592cec465480956",
+        "partido": "Manchester City vs AEK Athens",
+        "hl_viva_antes": 2.7566,
+        "hl_viva_despues": 2.6954,
+        "delta_hl": -0.0612,
+        "hv_viva_antes": 0.9526,
+        "hv_viva_despues": 0.8694,
+        "delta_hv": -0.0832,
+        "lambda_antes": [
+          3.29,
+          0.96
+        ],
+        "lambda_despues": [
+          3.3,
+          0.95
+        ],
+        "delta_lambda_l": 0.01,
+        "delta_lambda_v": -0.01
+      },
+      {
+        "job_id": "ARCH::6ea309941d8da82a",
+        "partido": "Napoli vs Bodø/Glimt",
+        "hl_viva_antes": 1.1734,
+        "hl_viva_despues": 1.1734,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 0.8971,
+        "hv_viva_despues": 0.8742,
+        "delta_hv": -0.0229,
+        "lambda_antes": [
+          1.68,
+          1.15
+        ],
+        "lambda_despues": [
+          1.68,
+          1.14
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": -0.01
+      },
+      {
+        "job_id": "ARCH::79b9319df5e2fdf6",
+        "partido": "Sabah FK vs Borussia Dortmund",
+        "hl_viva_antes": 2.3617,
+        "hl_viva_despues": 2.3617,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 0.6328,
+        "hv_viva_despues": 0.6998,
+        "delta_hv": 0.067,
+        "lambda_antes": [
+          1.2,
+          1.16
+        ],
+        "lambda_despues": [
+          1.2,
+          1.16
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::031ff13d60700ffb",
+        "partido": "VfB Stuttgart vs Atlético Madrid",
+        "hl_viva_antes": 1.918,
+        "hl_viva_despues": 1.9676,
+        "delta_hl": 0.0496,
+        "hv_viva_antes": 1.9801,
+        "hv_viva_despues": 1.9801,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          1.41,
+          1.8
+        ],
+        "lambda_despues": [
+          1.41,
+          1.8
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::d7c180d368cfb593",
+        "partido": "Arsenal vs Everton",
+        "hl_viva_antes": 1.742,
+        "hl_viva_despues": 1.742,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 0.9514,
+        "hv_viva_despues": 0.9326,
+        "delta_hv": -0.0188,
+        "lambda_antes": [
+          1.8,
+          1.03
+        ],
+        "lambda_despues": [
+          1.8,
+          1.03
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::a5380106704096e6",
+        "partido": "Aston Villa vs Manchester City",
+        "hl_viva_antes": 2.7443,
+        "hl_viva_despues": 2.7443,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 4.2178,
+        "hv_viva_despues": 4.3242,
+        "delta_hv": 0.1064,
+        "lambda_antes": [
+          1.59,
+          1.69
+        ],
+        "lambda_despues": [
+          1.59,
+          1.69
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::16e029c654c85554",
+        "partido": "Chelsea vs Tottenham Hotspur",
+        "hl_viva_antes": 2.7257,
+        "hl_viva_despues": 2.7257,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.4343,
+        "hv_viva_despues": 1.4122,
+        "delta_hv": -0.0221,
+        "lambda_antes": [
+          1.19,
+          1.0
+        ],
+        "lambda_despues": [
+          1.19,
+          1.0
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::0ed8682238d4b1fc",
+        "partido": "AEK Athens vs Real Madrid",
+        "hl_viva_antes": 0.6042,
+        "hl_viva_despues": 0.7248,
+        "delta_hl": 0.1206,
+        "hv_viva_antes": 3.1042,
+        "hv_viva_despues": 3.1042,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          1.1,
+          1.91
+        ],
+        "lambda_despues": [
+          1.1,
+          1.91
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::2620e71a20445340",
+        "partido": "Bodø/Glimt vs Lille",
+        "hl_viva_antes": 0.8971,
+        "hl_viva_despues": 0.8742,
+        "delta_hl": -0.0229,
+        "hv_viva_antes": 1.4528,
+        "hv_viva_despues": 1.4528,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          1.09,
+          2.0
+        ],
+        "lambda_despues": [
+          1.09,
+          2.0
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::50e4f9a99cf945ad",
+        "partido": "Bodø/Glimt vs Lillestrøm",
+        "hl_viva_antes": 0.3884,
+        "hl_viva_despues": 0.6154,
+        "delta_hl": 0.227,
+        "hv_viva_antes": 0.9614,
+        "hv_viva_despues": 0.9614,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          1.12,
+          1.1
+        ],
+        "lambda_despues": [
+          1.15,
+          1.1
+        ],
+        "delta_lambda_l": 0.03,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::c2744c4d701a91e9",
+        "partido": "Borussia Dortmund vs Real Betis",
+        "hl_viva_antes": 1.5405,
+        "hl_viva_despues": 1.6126,
+        "delta_hl": 0.0721,
+        "hv_viva_antes": 1.6964,
+        "hv_viva_despues": 1.6964,
+        "delta_hv": 0.0,
+        "lambda_antes": [
+          2.13,
+          1.57
+        ],
+        "lambda_despues": [
+          2.12,
+          1.57
+        ],
+        "delta_lambda_l": -0.01,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::beacf9541def6a9a",
+        "partido": "Galatasaray vs VfB Stuttgart",
+        "hl_viva_antes": 1.4926,
+        "hl_viva_despues": 1.4926,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 1.918,
+        "hv_viva_despues": 1.9676,
+        "delta_hv": 0.0496,
+        "lambda_antes": [
+          1.54,
+          1.1
+        ],
+        "lambda_despues": [
+          1.54,
+          1.1
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::58e00d8632f7036b",
+        "partido": "Nottingham Forest vs Manchester City",
+        "hl_viva_antes": 0.6432,
+        "hl_viva_despues": 0.6432,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 3.4118,
+        "hv_viva_despues": 3.527,
+        "delta_hv": 0.1152,
+        "lambda_antes": [
+          0.77,
+          1.78
+        ],
+        "lambda_despues": [
+          0.77,
+          1.78
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      },
+      {
+        "job_id": "ARCH::fbede112a43a0260",
+        "partido": "Nottingham Forest vs Manchester City",
+        "hl_viva_antes": 0.6432,
+        "hl_viva_despues": 0.6432,
+        "delta_hl": 0.0,
+        "hv_viva_antes": 2.5416,
+        "hv_viva_despues": 2.4799,
+        "delta_hv": -0.0617,
+        "lambda_antes": [
+          1.2,
+          2.57
+        ],
+        "lambda_despues": [
+          1.2,
+          2.57
+        ],
+        "delta_lambda_l": 0.0,
+        "delta_lambda_v": 0.0
+      }
+    ]
+  },
+  "explicacion_prior_099_vs_media_147": {
+    "media_simple_15p_crudos": {
+      "goles_favor_cronologicos": [
+        1.0,
+        0.0,
+        1.0,
+        3.0,
+        2.0,
+        3.0,
+        1.0,
+        5.0,
+        1.0,
+        0.0,
+        3.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "suma_goles": 22,
+      "n_partidos": 15,
+      "media_simple": 1.4667
+    },
+    "primeros_8_vs_ultimos_7_crudos": {
+      "media_primeros_8_idx0_7": 2.0,
+      "media_ultimos_7_idx8_14": 0.8571,
+      "media_ultimos_5_idx10_14": 1.0
+    },
+    "ruta_viva_bandera_apagada_09891": {
+      "serie_entrada_lstm": [
+        1.0,
+        0.0,
+        1.0,
+        3.0,
+        2.0,
+        3.0,
+        1.0,
+        2.7033,
+        1.0,
+        0.0,
+        3.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "panama_5_0_idx7_entrada": 2.7033,
+      "c_memoria": 1.3136,
+      "std": 1.1083,
+      "escala": 1.3136,
+      "alpha_semivida_4_2": 0.1521,
+      "estado_h_final_idx14": 0.9819,
+      "ultimos_5_entrada": [
+        3.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "media_ult5": 1.0,
+      "formula_060_h14_mas_040_u5": "0.60 * 0.9819 + 0.40 * 1.0 = 0.9891",
+      "h_gf_lstm_15": 0.9891,
+      "pasos_15_partidos": [
+        {
+          "idx_cronologico": 0,
+          "fecha": "2021-06-24",
+          "rival": "Brazil",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 2.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1521,
+          "h_t": 1.0
+        },
+        {
+          "idx_cronologico": 1,
+          "fecha": "2021-07-03",
+          "rival": "Uruguay",
+          "torneo": "Copa America",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1811,
+          "h_t": 0.8189
+        },
+        {
+          "idx_cronologico": 2,
+          "fecha": "2021-07-07",
+          "rival": "Argentina",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1574,
+          "h_t": 0.8474
+        },
+        {
+          "idx_cronologico": 3,
+          "fecha": "2021-07-10",
+          "rival": "Peru",
+          "torneo": "Copa America",
+          "gf_crudo": 3.0,
+          "gc_crudo": 2.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.2145,
+          "h_t": 1.3091
+        },
+        {
+          "idx_cronologico": 4,
+          "fecha": "2024-06-24",
+          "rival": "Paraguay",
+          "torneo": "Copa America",
+          "gf_crudo": 2.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 2.0,
+          "gate_i": 0.1721,
+          "h_t": 1.428
+        },
+        {
+          "idx_cronologico": 5,
+          "fecha": "2024-06-28",
+          "rival": "Costa Rica",
+          "torneo": "Copa America",
+          "gf_crudo": 3.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.1977,
+          "h_t": 1.7387
+        },
+        {
+          "idx_cronologico": 6,
+          "fecha": "2024-07-03",
+          "rival": "Brazil",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1735,
+          "h_t": 1.6105
+        },
+        {
+          "idx_cronologico": 7,
+          "fecha": "2024-07-06",
+          "rival": "Panama",
+          "torneo": "Copa America",
+          "gf_crudo": 5.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 2.7033,
+          "gate_i": 0.1838,
+          "h_t": 1.8114
+        },
+        {
+          "idx_cronologico": 8,
+          "fecha": "2024-07-11",
+          "rival": "Uruguay",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1756,
+          "h_t": 1.6689
+        },
+        {
+          "idx_cronologico": 9,
+          "fecha": "2024-07-15",
+          "rival": "Argentina",
+          "torneo": "Copa America",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.2005,
+          "h_t": 1.3343
+        },
+        {
+          "idx_cronologico": 10,
+          "fecha": "2026-06-18",
+          "rival": "Uzbekistan",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 3.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.2004,
+          "h_t": 1.6681
+        },
+        {
+          "idx_cronologico": 11,
+          "fecha": "2026-06-24",
+          "rival": "DR Congo",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1715,
+          "h_t": 1.5535
+        },
+        {
+          "idx_cronologico": 12,
+          "fecha": "2026-06-27",
+          "rival": "Portugal",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1971,
+          "h_t": 1.2473
+        },
+        {
+          "idx_cronologico": 13,
+          "fecha": "2026-07-04",
+          "rival": "Ghana",
+          "torneo": "World Cup",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1593,
+          "h_t": 1.2079
+        },
+        {
+          "idx_cronologico": 14,
+          "fecha": "2026-07-07",
+          "rival": "Switzerland",
+          "torneo": "World Cup",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1871,
+          "h_t": 0.9819
+        }
+      ]
+    },
+    "ruta_unificada_bandera_activa_09650": {
+      "serie_entrada_lstm": [
+        1.0,
+        0.0,
+        1.0,
+        3.0,
+        2.0,
+        3.0,
+        1.0,
+        1.602,
+        1.0,
+        0.0,
+        3.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "panama_5_0_idx7_entrada": 1.602,
+      "c_memoria": 1.2401,
+      "std": 1.0487,
+      "escala": 1.2401,
+      "alpha_semivida_4_2": 0.1521,
+      "estado_h_final_idx14": 0.9417,
+      "ultimos_5_entrada": [
+        3.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0
+      ],
+      "media_ult5": 1.0,
+      "formula_060_h14_mas_040_u5": "0.60 * 0.9417 + 0.40 * 1.0 = 0.965",
+      "h_gf_lstm_15": 0.965,
+      "pasos_15_partidos": [
+        {
+          "idx_cronologico": 0,
+          "fecha": "2021-06-24",
+          "rival": "Brazil",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 2.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1521,
+          "h_t": 1.0
+        },
+        {
+          "idx_cronologico": 1,
+          "fecha": "2021-07-03",
+          "rival": "Uruguay",
+          "torneo": "Copa America",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1828,
+          "h_t": 0.8172
+        },
+        {
+          "idx_cronologico": 2,
+          "fecha": "2021-07-07",
+          "rival": "Argentina",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1577,
+          "h_t": 0.846
+        },
+        {
+          "idx_cronologico": 3,
+          "fecha": "2021-07-10",
+          "rival": "Peru",
+          "torneo": "Copa America",
+          "gf_crudo": 3.0,
+          "gc_crudo": 2.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.2182,
+          "h_t": 1.316
+        },
+        {
+          "idx_cronologico": 4,
+          "fecha": "2024-06-24",
+          "rival": "Paraguay",
+          "torneo": "Copa America",
+          "gf_crudo": 2.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 2.0,
+          "gate_i": 0.1731,
+          "h_t": 1.4344
+        },
+        {
+          "idx_cronologico": 5,
+          "fecha": "2024-06-28",
+          "rival": "Costa Rica",
+          "torneo": "Copa America",
+          "gf_crudo": 3.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.2002,
+          "h_t": 1.7478
+        },
+        {
+          "idx_cronologico": 6,
+          "fecha": "2024-07-03",
+          "rival": "Brazil",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1751,
+          "h_t": 1.6169
+        },
+        {
+          "idx_cronologico": 7,
+          "fecha": "2024-07-06",
+          "rival": "Panama",
+          "torneo": "Copa America",
+          "gf_crudo": 5.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.602,
+          "gate_i": 0.1526,
+          "h_t": 1.6146
+        },
+        {
+          "idx_cronologico": 8,
+          "fecha": "2024-07-11",
+          "rival": "Uruguay",
+          "torneo": "Copa America",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.171,
+          "h_t": 1.5095
+        },
+        {
+          "idx_cronologico": 9,
+          "fecha": "2024-07-15",
+          "rival": "Argentina",
+          "torneo": "Copa America",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1984,
+          "h_t": 1.21
+        },
+        {
+          "idx_cronologico": 10,
+          "fecha": "2026-06-18",
+          "rival": "Uzbekistan",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 3.0,
+          "gc_crudo": 1.0,
+          "gf_entrada_lstm": 3.0,
+          "gate_i": 0.207,
+          "h_t": 1.5806
+        },
+        {
+          "idx_cronologico": 11,
+          "fecha": "2026-06-24",
+          "rival": "DR Congo",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1699,
+          "h_t": 1.4819
+        },
+        {
+          "idx_cronologico": 12,
+          "fecha": "2026-06-27",
+          "rival": "Portugal",
+          "torneo": "World Cup Grp. K",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1976,
+          "h_t": 1.1891
+        },
+        {
+          "idx_cronologico": 13,
+          "fecha": "2026-07-04",
+          "rival": "Ghana",
+          "torneo": "World Cup",
+          "gf_crudo": 1.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 1.0,
+          "gate_i": 0.1579,
+          "h_t": 1.1592
+        },
+        {
+          "idx_cronologico": 14,
+          "fecha": "2026-07-07",
+          "rival": "Switzerland",
+          "torneo": "World Cup",
+          "gf_crudo": 0.0,
+          "gc_crudo": 0.0,
+          "gf_entrada_lstm": 0.0,
+          "gate_i": 0.1877,
+          "h_t": 0.9417
+        }
+      ]
+    },
+    "sintesis_tres_factores": [
+      "1) Penalización por credibilidad en el 5-0 vs Panamá (Copa América, idx=7, peso=0.35): en ruta viva por defecto 5.0 pasa a 0.35*5.0 + 0.65*(22/15) = 2.7033 (c_memoria baja de 1.4667 a 1.3136); en ruta unificada L1068 recorta primero 5.0 -> 2.2 por Copa América y luego mezcla 0.35*2.2 + 0.65*(19.2/15) = 1.6020 (c_memoria baja a 1.2401).",
+      "2) Decaimiento exponencial LSTM secuencial (semivida=4.2 -> alpha_input=0.1521 más compuerta de sorpresa hasta 0.20): tras alcanzar h_7=1.8114 (ruta viva) en el idx 7, los últimos 7 partidos suman solo 6 goles [1, 0, 3, 1, 0, 1, 0] (media 0.857), haciendo caer el estado oculto hasta h_14=0.9819 (o 0.9417 unificado).",
+      "3) Mezcla final 60/40 con los últimos 5 partidos (`h_reciente = 0.60 * h_14 + 0.40 * media_ult5`): como los últimos 5 partidos [3, 1, 0, 1, 0] promedian 1.0000, `0.60 * 0.9819 + 0.40 * 1.0000 = 0.9891` (~0.99 en ruta viva) y `0.60 * 0.9417 + 0.40 * 1.0000 = 0.9650` (~0.97 unificado)."
+    ]
+  }
+}

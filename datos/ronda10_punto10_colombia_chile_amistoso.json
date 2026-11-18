@@ -1,0 +1,165 @@
+{
+  "registro_ledger": {
+    "registrado": false,
+    "ya_existia": true,
+    "indice": 2,
+    "sha256": "a6d53fd445c562d81d97a4fc90ad4628c42efa39bf4f8c4eb85419edec380d9d",
+    "ruta": "D:\\agente_futbol\\informes\\evaluacion\\ledger_oos.jsonl"
+  },
+  "cadena_sha256": {
+    "ok": true,
+    "ruta": "D:\\agente_futbol\\informes\\evaluacion\\ledger_oos.jsonl",
+    "entradas": 3,
+    "ultimo_sha256": "a6d53fd445c562d81d97a4fc90ad4628c42efa39bf4f8c4eb85419edec380d9d",
+    "errores": []
+  },
+  "resumen_ledger_sin_amistosos": {
+    "ruta_ledger": "D:\\agente_futbol\\informes\\evaluacion\\ledger_oos.jsonl",
+    "cadena_sha256_ok": true,
+    "n_registros_totales": 3,
+    "n_incluidos_promedios_calibracion": 2,
+    "n_excluidos_amistosos": 1,
+    "partidos_incluidos": [
+      "Turkiye vs Belgium (2026-11-12)",
+      "Italy vs France (2026-11-12)"
+    ],
+    "amistosos_excluidos": [
+      {
+        "indice": 2,
+        "id_partido": "6539346",
+        "partido": "Colombia vs Chile",
+        "fecha": "2026-11-13",
+        "tipo_partido": "amistoso",
+        "entra_promedios": false,
+        "entra_calibracion": false
+      }
+    ],
+    "n_lineas_evaluables": 102,
+    "acierto_medio_equilibrado": 0.8687304075235109,
+    "brier_medio_equilibrado": 0.10964189896553539,
+    "tasa_acierto_global": 0.8725490196078431
+  },
+  "evidencia_corners_nb_posteriores": {
+    "corte_iso": "2026-11-13T04:16:01-05:00",
+    "estado": "sin_partidos_oos_posteriores",
+    "n_partidos_posteriores": 0,
+    "n_filas_posteriores": 0,
+    "partidos": [],
+    "amistosos_excluidos": [
+      {
+        "id_partido": "6539346",
+        "partido": "Colombia vs Chile",
+        "fecha_partido": "2026-11-13",
+        "tipo_partido": "amistoso"
+      }
+    ],
+    "brier": null,
+    "log_loss": null,
+    "ic95": null
+  },
+  "explicacion_1_0_y_gev_chile": {
+    "remates_puerta_colombia": {
+      "1T": 1.0,
+      "2T": 1.0,
+      "FT": 2.0
+    },
+    "paradas_chile": {
+      "1T": 1.0,
+      "2T": 1.0,
+      "FT": 2.0
+    },
+    "errores_gol_chile": {
+      "1T": 1.0,
+      "2T": 0.0,
+      "FT": 1.0
+    },
+    "autogol_fotmob_6539346": {
+      "Maripán": [
+        {
+          "reactKey": "1473207735Goal402830undefinedtrue",
+          "timeStr": 35,
+          "type": "Goal",
+          "time": 35,
+          "overloadTime": null,
+          "eventId": 14732077,
+          "player": {
+            "id": 402830,
+            "name": "Guillermo Maripán",
+            "profileUrl": "/players/402830/guillermo-maripan"
+          },
+          "homeScore": 0,
+          "awayScore": 0,
+          "profileUrl": "/players/402830/guillermo-maripan",
+          "overloadTimeStr": false,
+          "isHome": true,
+          "ownGoal": true,
+          "goalDescription": "Own goal",
+          "goalDescriptionKey": "owngoal",
+          "suffix": "OG",
+          "suffixKey": "own_goal_short",
+          "isPenaltyShootoutEvent": false,
+          "nameStr": "Guillermo Maripán",
+          "firstName": "Guillermo",
+          "lastName": "Maripán",
+          "fullName": "Guillermo Maripán",
+          "playerId": 402830,
+          "newScore": [
+            1,
+            0
+          ],
+          "penShootoutScore": null,
+          "shotmapEvent": null,
+          "assistStr": null,
+          "assistProfileUrl": null
+        }
+      ]
+    },
+    "gev_chile_fuente_sin_corregir": {
+      "1T": 0.9,
+      "2T": 0.18,
+      "FT": 1.08,
+      "suma_mitades": 1.08
+    }
+  },
+  "parser_3_pantallas_ft_1t_2t": {
+    "n_etiquetas_por_pantalla": {
+      "FT": 34,
+      "1T": 34,
+      "2T": 34
+    },
+    "n_metricas_aditivas_validadas": 46,
+    "mismatches_aditivos": [],
+    "tiros_libres_vs_faltas": {
+      "FT": {
+        "faltas": [
+          19.0,
+          14.0
+        ],
+        "tiros_libres": [
+          14.0,
+          19.0
+        ]
+      },
+      "1T": {
+        "faltas": [
+          9.0,
+          6.0
+        ],
+        "tiros_libres": [
+          6.0,
+          9.0
+        ]
+      },
+      "2T": {
+        "faltas": [
+          10.0,
+          8.0
+        ],
+        "tiros_libres": [
+          8.0,
+          10.0
+        ]
+      }
+    }
+  }
+}

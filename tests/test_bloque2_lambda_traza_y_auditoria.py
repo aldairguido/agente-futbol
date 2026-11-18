@@ -10,6 +10,8 @@ Tests reales del Bloque 2 (Ronda 5+6):
 
 from __future__ import annotations
 
+import pytest
+
 import copy
 import json
 from pathlib import Path
@@ -33,6 +35,12 @@ from razonador_cuantitativo import RazonadorCuantitativo
 FIXTURES_R5 = json.loads((ROOT / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
 FIXTURES_LN = json.loads((ROOT / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
 
+
+@pytest.fixture(autouse=True)
+def _activar_conjunto_b_en_modulo():
+    from decision_cobertura import banderas_comportamiento
+    with banderas_comportamiento(activar_todas=True):
+        yield
 
 def test_traza_lambda_ordenada_y_continua_sin_cambiar_lambdas():
     casos = [

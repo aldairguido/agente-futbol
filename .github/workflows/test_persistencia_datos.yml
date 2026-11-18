@@ -1,0 +1,64 @@
+name: Test Persistencia Datos (Simulacro Sin Telegram)
+
+on:
+  push:
+    branches:
+      - pruebas-persistencia-datos
+  workflow_dispatch:
+    inputs:
+      rama_pruebas:
+        description: Rama dedicada de pruebas en el repositorio privado de datos
+        required: false
+        default: pruebas-persistencia-datos
+        type: string
+
+concurrency:
+  group: test-persistencia-datos-ronda13
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke_persistencia_datos:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio público
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependencias Python (sin Playwright)
+        run: |
+          pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements.txt
+
+      - name: Inicializar rama produccion-datos limpia en repo privado si no existe
+        env:
+          MPLBACKEND: "Agg"
+          PYTHONIOENCODING: "utf-8"
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
+        run: |
+          python -u -m persistencia_produccion --inicializar-produccion-limpia --rama-produccion produccion-datos --ci-anotacion
+
+      - name: Smoke test contra repositorio privado bajo timeout -k 60 285m (sin Telegram)
+        env:
+          MPLBACKEND: "Agg"
+          PYTHONIOENCODING: "utf-8"
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_RAMA_DATOS: ${{ inputs.rama_pruebas || 'pruebas-persistencia-datos' }}
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
+        run: |
+          mkdir -p informes/pronosticos informes/evaluacion informes/evaluacion/eventos
+          timeout -k 60 285m python -u -m persistencia_produccion --smoke-prueba --rama-pruebas "${PERSISTENCIA_RAMA_DATOS}" --ci-anotacion

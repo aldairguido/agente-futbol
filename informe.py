@@ -472,6 +472,92 @@ def _extraer_probabilidades_red_general(analisis: Any) -> dict[str, Any]:
     }
 
 
+def _construir_filas_ticket_valor_legacy_5e8(
+    analisis: Any,
+    cuotas_flashscore: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Cruza las probabilidades de la Red Neuronal General (15 partidos) con las cuotas
+    de Flashscore y calcula Cuota Justa, Cuota Mínima +EV, Stake Kelly (0.25x), Valor Esperado (EV) y Recomendación.
+    """
+    info = _extraer_probabilidades_red_general(analisis)
+    eq_l = info["equipo_local"]
+    eq_v = info["equipo_visitante"]
+    cuotas = dict(cuotas_flashscore or {})
+    dropping_odds = bool(cuotas.get("dropping_odds"))
+    alerta_drop = " [ALERTA DROPPING ODDS]" if dropping_odds else ""
+
+    c_loc = cuotas.get("local")
+    c_emp = cuotas.get("empate")
+    c_vis = cuotas.get("visitante")
+
+    # Derivar cuotas equivalentes de Doble Oportunidad (1X, X2, 12) si existen cuotas 1X2 reales
+    c_1x = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+            if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else cuotas.get("1x"))
+    c_x2 = (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+            if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else cuotas.get("x2"))
+    c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+            if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
+
+    definiciones = [
+        (f"1 — Victoria {eq_l}", info["p_local"], c_loc),
+        ("X — Empate", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", info["p_12"], c_12),
+    ]
+
+    filas: list[dict[str, Any]] = []
+    for nombre_mkt, prob_bot, cuota_fs in definiciones:
+        prob_f = max(0.001, min(0.999, float(prob_bot or 0.0)))
+        cuota_justa = round(1.0 / prob_f, 2)
+        cuota_minima = round(1.05 * cuota_justa, 2)
+        b_min = max(0.01, cuota_minima - 1.0)
+        f_star_min = max(0.0, (prob_f * cuota_minima - 1.0) / b_min)
+        stake_kelly_min_pct = round(0.25 * f_star_min * 100.0, 1)
+
+        cuota_fs_val = round(float(cuota_fs), 2) if isinstance(cuota_fs, (int, float)) and cuota_fs > 1.0 else None
+
+        if cuota_fs_val is not None:
+            ev_pct = round(((prob_f * cuota_fs_val) - 1.0) * 100.0, 2)
+            tiene_valor = bool(cuota_fs_val > cuota_justa)
+            b_fs = max(0.01, cuota_fs_val - 1.0)
+            f_star = max(0.0, (prob_f * cuota_fs_val - 1.0) / b_fs)
+            stake_kelly_pct = round(0.25 * f_star * 100.0, 1) if tiene_valor else 0.0
+
+            if tiene_valor and ev_pct >= 5.0 and prob_f >= 0.45:
+                recomendacion = f"VALOR ALTO (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+            elif tiene_valor:
+                recomendacion = f"VALOR (+EV {ev_pct:+.1f}%) · Stake {stake_kelly_pct:.1f}%{alerta_drop}"
+            else:
+                recomendacion = f"SIN VALOR (Cuota <= Justa){alerta_drop}"
+        else:
+            ev_pct = None
+            tiene_valor = False
+            recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
+
+        filas.append({
+            "mercado": nombre_mkt,
+            "prob_bot": prob_f,
+            "prob_bot_str": f"{prob_f * 100.0:.1f}%",
+            "cuota_justa": cuota_justa,
+            "cuota_justa_str": f"{cuota_justa:.2f}",
+            "cuota_minima": cuota_minima,
+            "cuota_minima_str": f"{cuota_minima:.2f}",
+            "cuota_flashscore": cuota_fs_val,
+            "cuota_flashscore_str": f"{cuota_fs_val:.2f}" if cuota_fs_val is not None else "N/D",
+            "ev_pct": ev_pct,
+            "ev_str": (f"+{ev_pct:.1f}%" if ev_pct is not None and ev_pct > 0
+                       else (f"{ev_pct:.1f}%" if ev_pct is not None else "N/D")),
+            "tiene_valor": tiene_valor,
+            "recomendacion": recomendacion,
+        })
+
+    return filas
+
+
+
 def construir_filas_ticket_valor(
     analisis: Any,
     cuotas_flashscore: dict[str, Any] | None = None,
@@ -499,6 +585,9 @@ def construir_filas_ticket_valor(
     c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
             if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
 
+    from decision_cobertura import bandera_activa as _ba_inf
+    if not _ba_inf("usar_calibracion_y_veto_conciencia"):
+        return _construir_filas_ticket_valor_legacy_5e8(analisis, cuotas_flashscore)
     from motor_mercados import calcular_ev_y_stake_calibrado
 
     definiciones = [

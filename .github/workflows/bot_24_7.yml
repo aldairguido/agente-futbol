@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: bot-telegram-24-7
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   actions: write
@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Instalar fuentes del sistema (DejaVu)
         run: |
@@ -31,7 +33,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Instalar PyTorch CPU ligero y dependencias
         run: |
@@ -39,20 +40,35 @@ jobs:
           pip install --no-cache-dir -r requirements.txt 
       - name: Instalar Playwright
         run: playwright install --with-deps chromium
-      - name: Crear directorios de informes
+      - name: Crear directorios de informes y pronósticos
         run: |
-          mkdir -p informes/auditorias informes/h2h informes/mercados informes/evaluacion
+          mkdir -p informes/auditorias informes/h2h informes/mercados informes/pronosticos informes/evaluacion informes/evaluacion/eventos
 
-      - name: Ejecutar Bot Interactivo (Hasta 330 minutos)
+      - name: Hidratar snapshots y ledger desde rama de datos privada al arranque
+        env:
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_RAMA_DATOS: ${{ vars.PERSISTENCIA_RAMA_DATOS || 'produccion-datos' }}
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
+        run: |
+          python -u -m persistencia_produccion --hidratar --ci-anotacion
+
+      - name: Ejecutar Bot Interactivo (Hasta 285 minutos con SIGTERM ordenado)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           PORT: 7860
           MPLBACKEND: "Agg"
-          PYTHONIOENCODING: utf-8
+          PYTHONIOENCODING: "utf-8"
+          PERSISTENCIA_PRODUCCION_ACTIVA: "1"
+          PERSISTENCIA_RAMA_DATOS: ${{ vars.PERSISTENCIA_RAMA_DATOS || 'produccion-datos' }}
+          PERSISTENCIA_REMOTO_URL: ${{ secrets.PERSISTENCIA_REMOTO_URL }}
+          PERSISTENCIA_REMOTO_TOKEN: ${{ secrets.PERSISTENCIA_REMOTO_TOKEN }}
+          PERSISTENCIA_REMOTO_SSH_KEY: ${{ secrets.PERSISTENCIA_REMOTO_SSH_KEY }}
         run: |
-          timeout 330m python -u bot_interactivo.py || true
+          timeout -k 60 285m python -u bot_interactivo.py || true
 
       - name: Relanzar Workflow automáticamente (Ciclo Continuo 24/7)
         if: always()
