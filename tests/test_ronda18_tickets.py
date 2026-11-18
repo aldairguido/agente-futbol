@@ -683,3 +683,88 @@ def test_bloque_k_aviso_liga_sin_falso_positivo_brazil_y_sin_desbordar_fecha(tmp
     assert av_items[0][1] < fecha_items[0][1]  # debajo de la fecha
     assert av_items[0][3].get("va") == "top"
     assert "\n" in av_items[0][2]  # wrapped limpiamente sin desbordar a la derecha
+
+
+def test_bloque_l_snapshot_guarda_traza_etapa6_y_reglas_ataque_bajo_sin_alterar_lambdas(tmp_path) -> None:
+    import copy
+    import json
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+    import motor_patrones as mp
+
+    # 1) Verificar mecánica exacta Etapa 6 para Attack_L < 35:
+    #    - Si post_sinc lam_l > 1.10 y Def_V >= 30 y no hay piso >= 1.10 -> techo_lambda_ataque_bajo_local recorta a 1.10
+    #    - Si lam_red < lam_base y piso_doble_castigo_punto50_local (0.72*base) = 1.15 > 1.10 -> piso eleva a 1.15
+    #    - Si post_sinc lam_l = 0.99 <= 1.10 -> techo_lambda_ataque_bajo_local NO mueve λ (solo sinc/clamping)
+    tr_coritiba: list[dict] = []
+    l_cor, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.20, lam_base_visita=1.10,
+        lam_red_local=1.15, lam_red_visita=1.10,
+        ratings_local={"Final_Attack_Strength": 32.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 45.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=50.0, posesion_proyectada_visita=50.0,
+        traza_out=tr_coritiba, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_cor == 1.10
+    assert any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_coritiba)
+
+    tr_corinthians: list[dict] = []
+    l_corin, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.60, lam_base_visita=0.95,
+        lam_red_local=1.32, lam_red_visita=0.90,
+        ratings_local={"Final_Attack_Strength": 33.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 45.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=50.0, posesion_proyectada_visita=50.0,
+        traza_out=tr_corinthians, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_corin == 1.19 or l_corin >= 1.15
+    assert any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_corinthians)
+    assert any(r["regla"] == "piso_doble_castigo_punto50_local" for r in tr_corinthians)
+
+    tr_alianza: list[dict] = []
+    l_ali, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.05, lam_base_visita=1.60,
+        lam_red_local=0.99, lam_red_visita=1.77,
+        ratings_local={"Final_Attack_Strength": 33.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 55.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=45.0, posesion_proyectada_visita=55.0,
+        traza_out=tr_alianza, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_ali == 0.99
+    assert not any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_alianza)
+
+    # 2) Snapshot guardado desde análisis real persiste traza_etapa_6 y resumen_etapa_6 con deltas
+    from pathlib import Path as _Path_L
+    repo_root = _Path_L(__file__).resolve().parent.parent
+    r5 = json.loads((repo_root / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
+    an = mm.analizar(copy.deepcopy(r5["docs"]["turkey"]), copy.deepcopy(r5["docs"]["belgium"]), "Turkey", "Belgium")
+    if not getattr(an, "metadatos", None):
+        an.metadatos = {
+            "equipo_local": "Turkey",
+            "equipo_visitante": "Belgium",
+            "fecha_partido": "2026-11-12",
+            "competicion": "UEFA Nations League",
+            "generado_en": "2026-11-12 08:00:00",
+        }
+    snap = ep.snapshot_desde_analisis(
+        {
+            "id_trabajo": "test_l_tb",
+            "analisis": an,
+            "rutas": {"informe": "dummy.md"},
+        }
+    )
+    snap_dict = snap.a_dict()
+    assert isinstance(snap_dict.get("traza_etapa_6"), list)
+    assert len(snap_dict["traza_etapa_6"]) >= 1
+    assert all(st.get("etapa") == "post_sinc_mercados" for st in snap_dict["traza_etapa_6"])
+    assert "delta_l" in snap_dict["traza_etapa_6"][0]
+    res6 = snap_dict.get("resumen_etapa_6") or {}
+    assert res6.get("lam_l_final") == an.motor.tasas.lambda_local_ft
+    assert res6.get("lam_l_red") is not None
+    assert "techo_lambda_ataque_bajo_local_activo" in res6
+
+    # Compatibilidad con snapshots antiguos sin traza_etapa_6
+    antiguo = dict(snap_dict)
+    antiguo.pop("traza_etapa_6", None)
+    antiguo.pop("resumen_etapa_6", None)
+    assert antiguo.get("esquema") == "pronostico-v1"

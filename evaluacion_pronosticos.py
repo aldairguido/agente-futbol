@@ -195,6 +195,8 @@ class SnapshotPronostico:
     telegram_message_date: int | None = None
     telegram_origen: dict[str, Any] | None = None
     telegram_envio: dict[str, Any] | None = None
+    traza_etapa_6: list[dict[str, Any]] | None = None
+    resumen_etapa_6: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -227,7 +229,83 @@ class SnapshotPronostico:
             out["telegram_origen"] = self.telegram_origen
         if self.telegram_envio is not None:
             out["telegram_envio"] = self.telegram_envio
+        if self.traza_etapa_6 is not None:
+            out["traza_etapa_6"] = self.traza_etapa_6
+        if self.resumen_etapa_6 is not None:
+            out["resumen_etapa_6"] = self.resumen_etapa_6
         return out
+
+
+def _extraer_traza_etapa_6_snapshot(motor: Any) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
+    """Extrae la traza inmutable de la Etapa 6 (`post_sinc_mercados`) y cuánto movió cada regla."""
+    if motor is None:
+        return None, None
+    rec = getattr(motor, "recursivo", None)
+    traza_full = list(
+        getattr(motor, "traza_lambda", None)
+        or (rec.get("traza_lambda") if isinstance(rec, dict) else None)
+        or []
+    )
+    if not traza_full:
+        return None, None
+
+    etapa6_raw = [st for st in traza_full if isinstance(st, dict) and st.get("etapa") == "post_sinc_mercados"]
+    pre6 = [st for st in traza_full if isinstance(st, dict) and st.get("etapa") != "post_sinc_mercados"]
+    traza_6: list[dict[str, Any]] = []
+    for st in etapa6_raw:
+        al = st.get("lam_l_antes")
+        dl = st.get("lam_l_despues")
+        av = st.get("lam_v_antes")
+        dv = st.get("lam_v_despues")
+        traza_6.append({
+            "paso": st.get("paso"),
+            "etapa": st.get("etapa"),
+            "regla": st.get("regla"),
+            "lam_l_antes": al,
+            "lam_l_despues": dl,
+            "delta_l": round(float(dl) - float(al), 4) if (al is not None and dl is not None) else None,
+            "lam_v_antes": av,
+            "lam_v_despues": dv,
+            "delta_v": round(float(dv) - float(av), 4) if (av is not None and dv is not None) else None,
+            "motivo": st.get("motivo"),
+        })
+
+    lam_l_red = None
+    lam_v_red = None
+    if etapa6_raw:
+        lam_l_red = etapa6_raw[0].get("lam_l_antes")
+        lam_v_red = etapa6_raw[0].get("lam_v_antes")
+    elif pre6:
+        lam_l_red = pre6[-1].get("lam_l_despues")
+        lam_v_red = pre6[-1].get("lam_v_despues")
+
+    tasas = getattr(motor, "tasas", None)
+    lam_l_final = getattr(tasas, "lambda_local_ft", None) if tasas is not None else (etapa6_raw[-1].get("lam_l_despues") if etapa6_raw else lam_l_red)
+    lam_v_final = getattr(tasas, "lambda_visitante_ft", None) if tasas is not None else (etapa6_raw[-1].get("lam_v_despues") if etapa6_raw else lam_v_red)
+
+    delta_pct_l = None
+    if lam_l_red is not None and lam_l_final is not None and float(lam_l_red) > 0:
+        delta_pct_l = round(((float(lam_l_final) - float(lam_l_red)) / float(lam_l_red)) * 100.0, 1)
+    delta_pct_v = None
+    if lam_v_red is not None and lam_v_final is not None and float(lam_v_red) > 0:
+        delta_pct_v = round(((float(lam_v_final) - float(lam_v_red)) / float(lam_v_red)) * 100.0, 1)
+
+    resumen_6 = {
+        "lam_l_red": lam_l_red,
+        "lam_l_final": lam_l_final,
+        "delta_l_pct_vs_red": delta_pct_l,
+        "lam_v_red": lam_v_red,
+        "lam_v_final": lam_v_final,
+        "delta_v_pct_vs_red": delta_pct_v,
+        "techo_lambda_ataque_bajo_local_activo": any(s.get("regla") == "techo_lambda_ataque_bajo_local" for s in traza_6),
+        "techo_lambda_ataque_bajo_visita_activo": any(s.get("regla") == "techo_lambda_ataque_bajo_visita" for s in traza_6),
+        "reglas_activadas": [
+            str(s.get("regla") or "")
+            for s in traza_6
+            if (abs(float(s.get("delta_l") or 0.0)) > 1e-6 or abs(float(s.get("delta_v") or 0.0)) > 1e-6)
+        ],
+    }
+    return traza_6, resumen_6
 
 
 def ruta_snapshot(id_trabajo: str, directorio: str | None = None) -> str:
@@ -399,6 +477,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             if s.probabilidad > umbral:
                 publicadas.append(dict(entrada))
 
+    traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
+
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
         equipos={"local": metadatos.get("equipo_local"),
@@ -436,6 +516,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         telegram_message_id=tg_mid,
         telegram_message_date=tg_mdt,
         telegram_origen=tg_org,
+        traza_etapa_6=traza_6,
+        resumen_etapa_6=resumen_6,
     )
 
 
