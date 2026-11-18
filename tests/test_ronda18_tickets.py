@@ -306,3 +306,51 @@ def test_bloque_f_mensaje_cobertura_sin_variables_comparables_no_contradictorio(
     assert "sin variables comparables" in dec.alerta_descriptiva.lower()
     assert "solo 0 de 3 partidos emparejados requeridos comparten al menos 5 claves métricas comunes en FT" in dec.alerta_descriptiva
     assert "(mínimo requerido: 3)" not in dec.alerta_descriptiva
+
+
+def test_bloque_g_encabezado_partido_con_zona_o_sin_partido_programado() -> None:
+    import servicio_mercados as sm
+
+    res_fix = sm.resolver_fecha_encuentro_lima("2026-11-19T00:30:00Z", es_partido_programado=True)
+    assert res_fix["etiqueta_fecha"] == "Partido: 2026-11-18 19:30 America/Lima"
+    assert res_fix["hora_inicio_partido"] == "2026-11-19T00:30:00Z"
+    assert res_fix["fixture_confirmado"] is True
+    assert res_fix["fuente_fecha"] == "fixture"
+
+    res_no = sm.resolver_fecha_encuentro_lima(None, es_partido_programado=False)
+    assert res_no["etiqueta_fecha"] == "Sin partido programado encontrado"
+    assert res_no["fecha_partido"] is None
+    assert res_no["fixture_confirmado"] is False
+    assert res_no["fuente_fecha"] == "fallback"
+    assert "Análisis del" not in res_no["etiqueta_fecha"]
+
+    # Auditoría 15P PNG muestra la etiqueta completa con hora/zona o 'Sin partido programado encontrado'
+    analisis = MagicMock()
+    analisis.metadatos = dict(res_fix, equipo_local="Corinthians", equipo_visitante="Botafogo", competicion="Serie A")
+    analisis.motor = None
+    analisis.selecciones = []
+    analisis.mercados = []
+    doc_vacio = {"equipo": {"nombre": "X"}, "partidos": []}
+    captured = []
+    with patch("matplotlib.pyplot.Figure.text") as mock_ft:
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis, doc_vacio, doc_vacio, destino=os.path.join(td, "g.png"))
+            for c in mock_ft.call_args_list:
+                if len(c[0]) >= 3 and isinstance(c[0][2], str):
+                    captured.append(c[0][2])
+    assert any("Partido: 2026-11-18 19:30 America/Lima" in t for t in captured)
+
+    analisis_sin = MagicMock()
+    analisis_sin.metadatos = dict(res_no, equipo_local="Cruzeiro", equipo_visitante="Palmeiras", competicion="Serie A")
+    analisis_sin.motor = None
+    analisis_sin.selecciones = []
+    analisis_sin.mercados = []
+    captured_sin = []
+    with patch("matplotlib.pyplot.Figure.text") as mock_ft2:
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis_sin, doc_vacio, doc_vacio, destino=os.path.join(td, "g2.png"))
+            for c in mock_ft2.call_args_list:
+                if len(c[0]) >= 3 and isinstance(c[0][2], str):
+                    captured_sin.append(c[0][2])
+    assert any("Sin partido programado encontrado" in t for t in captured_sin)
+    assert all("Análisis del" not in t for t in captured_sin)

@@ -82,6 +82,48 @@ def _clave_equipo(nombre: str) -> str:
 # RESOLUCIÓN DEL ENFRENTAMIENTO Y ZONA HORARIA OFICIAL AMERICA/LIMA (PUNTO 42)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def formatear_etiqueta_fecha_encabezado(meta: dict[str, Any] | None) -> str:
+    """
+    Bloque G (Ronda 18): Etiqueta única de fecha para encabezados de Ticket PNG,
+    Súper-Cuadro y Auditoría 15P:
+      - Con fixture confirmado: `"Partido: <fecha y hora de inicio con zona>"`
+      - Sin fixture confirmado: `"Sin partido programado encontrado"` (nunca la fecha de hoy)
+    """
+    m = meta if isinstance(meta, dict) else {}
+    etq = str(m.get("etiqueta_fecha") or "").strip()
+    if etq.startswith(("Partido:", "Sin partido programado")):
+        return etq
+    if bool(m.get("sin_partido_proximo")) or (m.get("es_fecha_analisis") is True and not bool(m.get("fixture_confirmado"))):
+        return "Sin partido programado encontrado"
+    h_loc = str(m.get("hora_inicio_local") or "").strip()
+    if h_loc:
+        return f"Partido: {h_loc}"
+    h_utc = str(m.get("hora_inicio_partido") or "").strip()
+    if h_utc:
+        try:
+            from datetime import timedelta
+            tz_lima = timezone(timedelta(hours=-5), name="America/Lima")
+            s_c = h_utc.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s_c)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return f"Partido: {dt.astimezone(tz_lima).strftime('%Y-%m-%d %H:%M')} America/Lima"
+        except Exception:
+            pass
+    f_raw = str(m.get("fecha_partido") or "").strip()
+    f_low = f_raw.lower()
+    if (
+        not f_raw
+        or f_low in ("none", "null", "no disponible", "s/f")
+        or f_low.startswith(("análisis del", "analisis del", "sin partido"))
+    ):
+        return "Sin partido programado encontrado"
+    if bool(m.get("fixture_confirmado")) or re.match(r"^\d{4}-\d{2}-\d{2}$", f_raw[:10]):
+        zona = str(m.get("zona_horaria") or "America/Lima")
+        return f"Partido: {f_raw[:10]} (hora s/d, {zona})"
+    return "Sin partido programado encontrado"
+
+
 def resolver_fecha_encuentro_lima(
     fecha_utc_o_iso: str | None = None,
     es_partido_programado: bool = True,
@@ -105,10 +147,14 @@ def resolver_fecha_encuentro_lima(
     raw = str(fecha_utc_o_iso or "").strip()
     est_txt = f"{estado_partido or ''} {raw}".lower()
     if any(k in est_txt for k in ("aplazado", "postponed", "cancelled", "cancelado", "suspendido", "abandoned")):
-        etiqueta_apl = f"Partido aplazado (Análisis del {hoy_lima})"
+        etiqueta_apl = "Sin partido programado encontrado (aplazado)"
         return {
-            "fecha_partido": etiqueta_apl,
+            "fecha_partido": None,
             "etiqueta_fecha": etiqueta_apl,
+            "hora_inicio_partido": None,
+            "hora_inicio_local": None,
+            "fixture_confirmado": False,
+            "fuente_fecha": "fallback",
             "zona_horaria": "America/Lima",
             "es_fecha_analisis": True,
             "partido_activo": False,
@@ -117,7 +163,7 @@ def resolver_fecha_encuentro_lima(
             "alcance_mercado": "90_minutos_reglamentarios",
         }
 
-    if raw and raw.lower() not in ("none", "null", "no disponible", "s/f") and not raw.lower().startswith("análisis del"):
+    if raw and raw.lower() not in ("none", "null", "no disponible", "s/f") and not raw.lower().startswith(("análisis del", "analisis del", "sin partido programado")):
         try:
             # 1) Timestamp con hora explícita -> convertir a America/Lima
             if "T" in raw or ":" in raw:
@@ -127,12 +173,18 @@ def resolver_fecha_encuentro_lima(
                 dt = datetime.fromisoformat(s_clean)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
+                dt_utc = dt.astimezone(timezone.utc)
                 dt_lima = dt.astimezone(tz_lima)
                 f_str = dt_lima.strftime("%Y-%m-%d")
+                h_loc = f"{dt_lima.strftime('%Y-%m-%d %H:%M')} America/Lima"
                 if es_partido_programado:
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {h_loc}",
+                        "hora_inicio_partido": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "hora_inicio_local": h_loc,
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -146,7 +198,11 @@ def resolver_fecha_encuentro_lima(
                 if es_partido_programado:
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {f_str} (hora s/d, America/Lima)",
+                        "hora_inicio_partido": None,
+                        "hora_inicio_local": f"{f_str} (hora s/d, America/Lima)",
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -162,7 +218,11 @@ def resolver_fecha_encuentro_lima(
                     f_str = f"{yyyy:04d}-{mm_n:02d}-{dd:02d}"
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {f_str} (hora s/d, America/Lima)",
+                        "hora_inicio_partido": None,
+                        "hora_inicio_local": f"{f_str} (hora s/d, America/Lima)",
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -173,13 +233,18 @@ def resolver_fecha_encuentro_lima(
         except Exception:
             pass
 
-    etiqueta = raw if raw.lower().startswith("análisis del") else f"Análisis del {hoy_lima}"
+    _ = hoy_lima
+    etiqueta_sin = "Sin partido programado encontrado"
     return {
-        "fecha_partido": etiqueta,
-        "etiqueta_fecha": etiqueta,
+        "fecha_partido": None,
+        "etiqueta_fecha": etiqueta_sin,
+        "hora_inicio_partido": None,
+        "hora_inicio_local": None,
+        "fixture_confirmado": False,
+        "fuente_fecha": "fallback",
         "zona_horaria": "America/Lima",
         "es_fecha_analisis": True,
-        "partido_activo": bool(es_partido_programado),
+        "partido_activo": False,
         "estado_encuentro": "analisis_sin_fecha_futura",
         "conversion_utc_aplicada": False,
         "alcance_mercado": "90_minutos_reglamentarios",
@@ -268,10 +333,14 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             continue
         vistos.add(clave)
         es_casa = es_directo
-        candidatos.append((fecha, {
+        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), {
             "id_partido": str(f.get("id_partido") or ""),
             "fecha_partido": fecha,
             "etiqueta_fecha": info_f["etiqueta_fecha"],
+            "hora_inicio_partido": info_f.get("hora_inicio_partido"),
+            "hora_inicio_local": info_f.get("hora_inicio_local"),
+            "fixture_confirmado": True,
+            "fuente_fecha": "fixture",
             "zona_horaria": "America/Lima",
             "es_fecha_analisis": False,
             "partido_activo": True,
@@ -365,8 +434,12 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                 "goles_local": g_l,
                 "goles_visitante": g_v,
                 "fecha_jugado": fecha_jug,
-                "fecha_partido": info_analisis["etiqueta_fecha"],
+                "fecha_partido": info_analisis["fecha_partido"],
                 "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+                "hora_inicio_partido": None,
+                "hora_inicio_local": None,
+                "fixture_confirmado": False,
+                "fuente_fecha": "fallback",
                 "fecha_ultimo_h2h": fecha_jug,
                 "zona_horaria": "America/Lima",
                 "es_fecha_analisis": True,
@@ -387,8 +460,12 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
     reciente_l, reciente_v = mas_reciente(doc_local), mas_reciente(doc_visitante)
     return {
         "id_partido": None,
-        "fecha_partido": info_analisis["etiqueta_fecha"],
+        "fecha_partido": info_analisis["fecha_partido"],
         "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+        "hora_inicio_partido": None,
+        "hora_inicio_local": None,
+        "fixture_confirmado": False,
+        "fuente_fecha": "fallback",
         "zona_horaria": "America/Lima",
         "es_fecha_analisis": True,
         "partido_activo": False,
@@ -1285,8 +1362,7 @@ def renderizar_ticket_mercados_png(
     eq_v = str(meta.get("equipo_visitante") or "Visitante")
     partido_titulo = f"{eq_l} vs {eq_v}"
     competicion = str(meta.get("competicion") or "Competición oficial")
-    fecha_raw_t = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or meta.get("generado_en") or _ahora()).strip()
-    fecha = fecha_raw_t if fecha_raw_t.lower().startswith("análisis del") else (fecha_raw_t[:19] if len(fecha_raw_t) > 19 else fecha_raw_t)
+    fecha = formatear_etiqueta_fecha_encabezado(meta)
 
     sels_raw = _val(analisis, "selecciones_filtradas", []) or []
     if not sels_raw and hasattr(analisis, "grupos"):
@@ -1864,7 +1940,10 @@ def renderizar_ticket_mercados_png(
             if not son_ligas_equivalentes(p_decl, p_det):
                 meta_parts_pre.append(f"⚠️ {meta['advertencia_liga']}")
         if fecha:
-            meta_parts_pre.append(f"Fecha: {fecha}")
+            if fecha.startswith(("Partido:", "Sin partido programado")):
+                meta_parts_pre.append(fecha)
+            else:
+                meta_parts_pre.append(f"Fecha: {fecha}")
         meta_parts_pre.append("Modelo: Poisson bivariado con contracción bayesiana")
         _rec_ticket = (getattr(getattr(analisis, "motor", None), "recursivo", None) or {})
         if _rec_ticket.get("aplicado"):
@@ -2515,6 +2594,11 @@ def preparar_analisis(
             "equipo_visitante": contexto["equipo_visitante"],
             "competicion": ctx.get("competicion", "Competición oficial"),
             "fecha_partido": ctx.get("fecha_partido"),
+            "etiqueta_fecha": ctx.get("etiqueta_fecha") or formatear_etiqueta_fecha_encabezado(ctx),
+            "hora_inicio_partido": ctx.get("hora_inicio_partido"),
+            "hora_inicio_local": ctx.get("hora_inicio_local"),
+            "fixture_confirmado": bool(ctx.get("fixture_confirmado", False)),
+            "fuente_fecha": ctx.get("fuente_fecha") or ("fixture" if ctx.get("fixture_confirmado") else "fallback"),
             "generado_en": _ahora(),
             "abstenido": True,
             "bloqueado_por_cobertura": True,
@@ -2644,6 +2728,12 @@ def preparar_analisis(
     analisis.doc_visitante = contexto.get("doc_visitante")
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
+        if _k_fec in ctx:
+            analisis.metadatos[_k_fec] = ctx.get(_k_fec)
+    analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
+    analisis.metadatos.setdefault("fuente_fecha", "fixture" if analisis.metadatos.get("fixture_confirmado") else "fallback")
+    analisis.metadatos.setdefault("etiqueta_fecha", formatear_etiqueta_fecha_encabezado(analisis.metadatos))
 
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build

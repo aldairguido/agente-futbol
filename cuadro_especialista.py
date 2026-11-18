@@ -2814,7 +2814,11 @@ def generar_cuadro_desde_analisis(
         etiqueta_modelo += f" · métricas con expulsión a peso {peso_roja:.2f}"
 
     metadatos = getattr(analisis, "metadatos", {}) or {}
-    fecha = (metadatos.get("fecha_partido") or metadatos.get("generado_en") or "")
+    try:
+        from servicio_mercados import formatear_etiqueta_fecha_encabezado
+        fecha = formatear_etiqueta_fecha_encabezado(metadatos)
+    except Exception:
+        fecha = str(metadatos.get("etiqueta_fecha") or metadatos.get("fecha_partido") or "Sin partido programado encontrado")
     competicion = metadatos.get("competicion") or "Análisis especialista (45 métricas)"
 
     if not destino:
@@ -2929,8 +2933,12 @@ def generar_cuadro_auditoria_15_partidos_png(
     eq_L = str(meta.get("equipo_local") or (doc_local.get("equipo") or {}).get("nombre") if doc_local else "Local")
     eq_V = str(meta.get("equipo_visitante") or (doc_visita.get("equipo") or {}).get("nombre") if doc_visita else "Visitante")
     competicion = str(meta.get("competicion") or "Competición oficial")
-    fecha_raw_2 = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or meta.get("generado_en") or "").strip()
-    fecha = fecha_raw_2 if fecha_raw_2.lower().startswith("análisis del") else fecha_raw_2[:10]
+    try:
+        from servicio_mercados import formatear_etiqueta_fecha_encabezado
+        fecha = formatear_etiqueta_fecha_encabezado(meta)
+    except Exception:
+        fecha_raw_2 = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or "").strip()
+        fecha = fecha_raw_2 if fecha_raw_2 else "Sin partido programado encontrado"
 
     def _ordenar_recientes(pts: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         if not pts:
@@ -2981,7 +2989,8 @@ def generar_cuadro_auditoria_15_partidos_png(
              fontsize=9.0, fontweight="bold", color="#64748B")
     fig.text(0.04, 0.955, f"{eq_L} vs {eq_V}",
              fontsize=20.0, fontweight="bold", color="#0F172A")
-    fig.text(0.04, 0.936, f"Fecha: {fecha}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
+    _etq_f_aud = fecha if fecha.startswith(("Partido:", "Sin partido programado")) else f"Fecha: {fecha}"
+    fig.text(0.04, 0.936, f"{_etq_f_aud}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
              fontsize=8.5, color="#64748B")
     if mostrar_adv:
         fig.text(0.04, 0.916, _sanear_para_canvas(f"AVISO LIGA: {meta['advertencia_liga']}"), fontsize=8.3, fontweight="bold", color="#B45309")
