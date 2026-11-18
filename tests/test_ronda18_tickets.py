@@ -430,6 +430,8 @@ def test_bloque_i_repo_vacio_crea_main_placeholder_antes_de_produccion_datos_e_h
     )
     assert res_fallo["ok"] is False
     assert res_fallo["codigo_error"] == "rechazada_rama_prohibida"
+    assert "Acción requerida:" in str(res_fallo.get("error") or "")
+    assert "Default branch" in str(res_fallo.get("error") or "")
 
     # Ahora caso corregido: repo vacío -> inicializar_produccion_limpia -> hidratar_desde_remoto_datos
     rem_priv = tmp_path / "privado_vacio.git"

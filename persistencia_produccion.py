@@ -104,11 +104,17 @@ def validar_rama_datos(
     if not rama:
         raise ValueError("Rama de datos vacía o inválida.")
     rl = rama.lower()
+    remediacion = (
+        "Acción requerida: crea o marca 'main' como rama por defecto (Default branch) "
+        "en el repositorio privado de datos o ejecuta `inicializar_produccion_limpia()` "
+        "para inicializar `main` antes de `produccion-datos`."
+    )
     if rl in RAMAS_DEFECTO_PROHIBIDAS:
-        raise ValueError(f"La rama por defecto {rama!r} está prohibida como rama de datos.")
+        raise ValueError(f"La rama por defecto {rama!r} está prohibida como rama de datos. {remediacion}")
     if rama_defecto_remota and rl == str(rama_defecto_remota).strip().lower():
         raise ValueError(
-            f"La rama {rama!r} coincide con la rama por defecto remota {rama_defecto_remota!r} y está prohibida."
+            f"La rama {rama!r} coincide con la rama por defecto remota {rama_defecto_remota!r} "
+            f"y está prohibida. {remediacion}"
         )
     return rama
 
