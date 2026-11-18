@@ -1170,42 +1170,225 @@ def _sanear_para_canvas(texto: str) -> str:
     return t.strip()
 
 
-def obtener_top5_y_seccion1_filtrados(
-    analisis,
-    metadatos = None,
-    umbral = None,
-):
-    """
-    Extrae el Top-5 Podio y la lista filtrada de Sección 1 (Gatekeeper)
-    garantizando que las líneas triviales como -6.5 Goles o -5.5 Goles sean eliminadas
-    y que las selecciones correspondan al subconjunto competitivo de 15-20 opciones.
-    Devuelve (top5_podio, mantiene_raw, total_validadas).
-    """
-    def _val(obj, clave, defecto=None):
-        if isinstance(obj, dict):
-            return obj.get(clave, defecto)
-        return getattr(obj, clave, defecto)
+ORDEN_CATEGORIAS_SECCION1 = [
+    "GOLES PARTIDO",
+    "GOLES POR EQUIPO",
+    "CÓRNERES",
+    "TARJETAS",
+    "HÁNDICAP / 1X2 / DC",
+]
 
-    meta = metadatos or _val(analisis, "metadatos", {}) or {}
-    params = _val(analisis, "parametros", None)
-    umbral_val = (umbral if umbral is not None else _val(params, "umbral", 0.70))
+
+def _val_sel(obj: Any, clave: str, defecto: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(clave, defecto)
+    return getattr(obj, clave, defecto)
+
+
+def clasificar_categoria_ambito_seccion1(s: Any) -> tuple[str, str]:
+    m_l = str(_val_sel(s, "mercado") or "").lower()
+    e_l = str(_val_sel(s, "evento") or "").lower()
+    eq_raw = _val_sel(s, "equipo", None)
+    eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
+    per = str(_val_sel(s, "periodo") or "FT").strip().upper()
+    if per not in ("FT", "1T", "2T"):
+        per = "FT"
+    per_nombre = "Tiempo Completo (FT)" if per == "FT" else ("1er Tiempo (1T)" if per == "1T" else "2º Tiempo (2T)")
+
+    if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
+        cat = "CÓRNERES"
+        amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
+        return cat, amb
+
+    if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
+        cat = "TARJETAS"
+        amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
+        return cat, amb
+
+    if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
+        cat = "HÁNDICAP / 1X2 / DC"
+        amb = per_nombre
+        return cat, amb
+
+    if eq:
+        cat = "GOLES POR EQUIPO"
+        amb = f"{eq} · Total ({per})" if per == "FT" else f"{eq} · {per}"
+        return cat, amb
+
+    return "GOLES PARTIDO", per_nombre
+
+
+def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[str, str, float]:
+    ev = str(_val_sel(s, "evento") or "").lower()
+    et = str(_val_sel(s, "etiqueta") or "")
+    lin = _val_sel(s, "linea", None)
+    prob = float(_val_sel(s, "probabilidad", 0.0) or 0.0)
+    pct = f"{prob:.0%}"
+
+    try:
+        from decision_cobertura import bandera_activa as _ba_cal_s1
+        if _ba_cal_s1("usar_calibracion_y_veto_conciencia"):
+            p_cal_att = _val_sel(s, "prob_calibrada", None)
+            vig_att = bool(_val_sel(s, "bajo_vigilancia", False) or _val_sel(s, "veto_top5", False))
+            if p_cal_att is None:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                info_c = evaluar_familia_conciencia_cached(str(_val_sel(s, "mercado") or ""), equipo=_val_sel(s, "equipo", None), prob_bruta=prob)
+                p_cal_att = info_c.get("prob_calibrada")
+                vig_att = bool(info_c.get("bajo_vigilancia") or info_c.get("veto_top5"))
+            if vig_att and p_cal_att is not None:
+                pct = f"{prob:.0%} (cal {float(p_cal_att):.0%})"
+    except Exception:
+        pass
+
+    eq_raw_p = _val_sel(s, "equipo", None)
+    eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
+    per_p = str(_val_sel(s, "periodo") or "FT").strip().upper()
+    if per_p not in ("FT", "1T", "2T"):
+        per_p = "FT"
+
+    if cat == "GOLES POR EQUIPO":
+        if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+            return "", "", 0.0
+        eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
+        if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+        elif "under_" in ev or "menos de" in et.lower():
+            lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+        elif "al_menos_" in ev or "al menos" in et.lower():
+            if lin is not None and isinstance(lin, (int, float)):
+                lbl = f"{eq_corto} +{float(lin) - 0.5:g} Goles ({per_p})"
+            else:
+                lbl = f"{eq_corto} {et}"
+        elif "primer_gol" in ev:
+            lbl = f"1er Gol: {eq_corto}"
+        else:
+            lbl = f"{eq_corto} {et}"
+        return lbl, pct, prob
+
+    if "GOL" in cat:
+        if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+            return "", "", 0.0
+        suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
+        if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
+            lbl = "+0.5 Goles (1T)"
+        elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
+            lbl = "+0.5 Goles (2T)"
+        elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
+        elif "under_" in ev or "menos de" in et.lower():
+            lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
+        elif "al_menos_" in ev or "al menos" in et.lower():
+            if lin is not None and isinstance(lin, (int, float)):
+                lbl = f"+{float(lin) - 0.5:g} Goles{suf_p}"
+            else:
+                lbl = et
+        elif "primer_gol" in ev:
+            lbl = f"1er Gol: {eq_p or eq_l}"
+        elif "ambos_marcan" in ev or "btts" in ev:
+            lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
+        else:
+            lbl = et
+    elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
+        if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
+            return "", "", 0.0
+        pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
+        if "over_" in ev or "mas de" in et.lower() or "más" in et.lower():
+            lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
+        elif "under_" in ev or "menos" in et.lower():
+            lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
+        else:
+            lbl = et
+        return lbl, pct, prob
+    elif "TARJETA" in cat:
+        if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
+            return "", "", 0.0
+        if "roja" in ev or "roja" in et.lower():
+            lbl = f"+{lin:g} Roja" if lin is not None else "Tarjeta Roja"
+        elif "over_" in ev or "mas de" in et.lower() or "mas" in et.lower():
+            lbl = f"+{lin:g} Tarj." if lin is not None else et
+        elif "under_" in ev or "menos" in et.lower():
+            lbl = f"-{lin:g} Tarj." if lin is not None else et
+        else:
+            lbl = et
+    else:
+        if ev in ("1", "local_gana"):
+            lbl = f"{eq_l} Gana"
+        elif ev in ("2", "visitante_gana"):
+            lbl = f"{eq_v} Gana"
+        elif ev in ("x", "empate"):
+            lbl = "Empate"
+        elif ev == "1x":
+            lbl = f"1X ({eq_l} o X)"
+        elif ev == "x2":
+            lbl = f"X2 (X o {eq_v})"
+        elif ev == "12":
+            lbl = "12 (Sin Empate)"
+        elif "dnb" in ev:
+            lbl = f"{_val_sel(s, 'equipo') or eq_l} DNB"
+        elif "h0_" in ev:
+            lbl = f"H0 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h1_" in ev:
+            lbl = f"H+1 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h2_" in ev:
+            lbl = f"H+2 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h3_" in ev:
+            lbl = f"H+3 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h_minus1_" in ev or "h-1_" in ev:
+            lbl = f"H-1 {_val_sel(s, 'equipo') or eq_l}"
+        else:
+            lbl = et
+
+    for eq_nom in (eq_l, eq_v):
+        if lbl.startswith(eq_nom + ":"):
+            lbl = lbl[len(eq_nom) + 1:].strip()
+        elif lbl.startswith(eq_nom + " - "):
+            lbl = lbl[len(eq_nom) + 3:].strip()
+    return lbl, pct, prob
+
+
+def calcular_seccion1_unificada(
+    analisis: Any,
+    metadatos: dict[str, Any] | None = None,
+    umbral: float | None = None,
+    *,
+    sec1_data: list[Any] | None = None,
+    eq_l: str | None = None,
+    eq_v: str | None = None,
+    matriz_prob: list[list[float]] | None = None,
+    top5_podio: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Fuente única de verdad compartida entre Telegram/Ticket y Súper-Cuadro para:
+      - Top 5 Podio
+      - Sección 1 (`estado == 'mantiene'` + Punto 27 + verificación `p_1x2`)
+      - Sección 2 (`estado != 'mantiene'`)
+      - Conteo exacto `total_validadas` (sin truncar píldoras ni contar placeholders).
+    """
+    meta = metadatos or _val_sel(analisis, "metadatos", {}) or {}
+    params = _val_sel(analisis, "parametros", None)
+    umbral_val = umbral if umbral is not None else _val_sel(params, "umbral", 0.70)
     if isinstance(umbral_val, (int, float)) and umbral_val > 1.0:
         umbral_val = umbral_val / 100.0
+    umbral_val = float(umbral_val or 0.70)
 
-    eq_l_raw = meta.get("equipo_local") or "Local"
-    eq_l = str(eq_l_raw.get("nombre") or eq_l_raw.get("nombre_oficial") or "Local") if isinstance(eq_l_raw, dict) else str(eq_l_raw)
-    eq_v_raw = meta.get("equipo_visitante") or "Visitante"
-    eq_v = str(eq_v_raw.get("nombre") or eq_v_raw.get("nombre_oficial") or "Visitante") if isinstance(eq_v_raw, dict) else str(eq_v_raw)
+    if not eq_l:
+        eq_l_raw = meta.get("equipo_local") or "Local"
+        eq_l = str(eq_l_raw.get("nombre") or eq_l_raw.get("nombre_oficial") or "Local") if isinstance(eq_l_raw, dict) else str(eq_l_raw)
+    if not eq_v:
+        eq_v_raw = meta.get("equipo_visitante") or "Visitante"
+        eq_v = str(eq_v_raw.get("nombre") or eq_v_raw.get("nombre_oficial") or "Visitante") if isinstance(eq_v_raw, dict) else str(eq_v_raw)
 
-    sels_raw = _val(analisis, "selecciones_filtradas", []) or []
-    if not sels_raw and hasattr(analisis, "grupos"):
-        g = getattr(analisis, "grupos", {})
-        sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
-    if not sels_raw and hasattr(analisis, "selecciones_validadas"):
-        sels_raw = getattr(analisis, "selecciones_validadas", []) or []
+    if sec1_data is not None:
+        sels_raw = list(sec1_data)
+    else:
+        sels_raw = list(_val_sel(analisis, "selecciones_filtradas", []) or [])
+        if not sels_raw and analisis is not None and hasattr(analisis, "grupos"):
+            g = getattr(analisis, "grupos", {}) or {}
+            sels_raw = list(g.get("mantiene", []) or []) + list(g.get("sensible", []) or [])
+        if not sels_raw and analisis is not None and hasattr(analisis, "selecciones_validadas"):
+            sels_raw = list(getattr(analisis, "selecciones_validadas", []) or [])
 
-    motor = getattr(analisis, "motor", None)
-
+    motor = getattr(analisis, "motor", None) if analisis is not None else None
     bloquear_corners = False
     bloquear_tarjetas = False
     if motor and hasattr(motor, "_mu_corners"):
@@ -1234,82 +1417,118 @@ def obtener_top5_y_seccion1_filtrados(
 
     from motor_mercados import (
         es_seleccion_competitiva_ticket,
+        es_seleccion_vetada_por_micropatrones,
         filtrar_top_opciones_ticket,
         seleccionar_top_5_jugadas_recomendadas,
     )
 
+    mat_ref = matriz_prob or (getattr(motor, "matriz_ft", None) if motor is not None else None) or (getattr(analisis, "matriz_ft", None) if analisis is not None else None)
     p_1x2 = None
-    if motor and getattr(motor, "matriz_ft", None):
-        mat = motor.matriz_ft
-        R = len(mat)
-        C = len(mat[0]) if R else 0
-        p1 = sum(mat[i][j] for i in range(R) for j in range(C) if i > j)
-        px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
-        p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
-        p_1x2 = (p1, px, p2)
+    if mat_ref:
+        try:
+            R = len(mat_ref)
+            C = len(mat_ref[0]) if R else 0
+            p1 = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i > j)
+            px = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i == j)
+            p2 = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i < j)
+            p_1x2 = (p1, px, p2)
+        except Exception:
+            p_1x2 = None
 
-    def _clasificar_cat(s):
-        m_l = str(_val(s, "mercado") or "").lower()
-        e_l = str(_val(s, "evento") or "").lower()
-        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
-            return "CÓRNERES"
-        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
-            return "TARJETAS"
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
-            return "HÁNDICAP / 1X2 / DC"
-        eq_raw = _val(s, "equipo", None)
-        if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", ""):
-            return "GOLES POR EQUIPO"
-        return "GOLES PARTIDO"
-
-    def _permitida_sel(s):
-        cat_s = _clasificar_cat(s)
+    def _permitida_sel(s: Any) -> bool:
+        cat_s, _ = clasificar_categoria_ambito_seccion1(s)
         if bloquear_corners and cat_s == "CÓRNERES":
             return False
         if bloquear_tarjetas and cat_s == "TARJETAS":
             return False
-        if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
-            ev_s = str(_val(s, "evento") or "").lower()
-            et_s = str(_val(s, "etiqueta") or "").lower()
-            if "under" in ev_s or "menos" in et_s or "-" in et_s:
+        if sec1_data is None:
+            if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
+                ev_s = str(_val_sel(s, "evento") or "").lower()
+                et_s = str(_val_sel(s, "etiqueta") or "").lower()
+                if "under" in ev_s or "menos" in et_s or "-" in et_s:
+                    return False
+            if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
                 return False
-        from motor_mercados import es_seleccion_vetada_por_micropatrones
-        if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
-            return False
         return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
     sels_validas = [
         s for s in sels_raw
-        if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
+        if float(_val_sel(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
     ]
-    if not sels_validas and sels_raw:
-        sels_validas = [
-            s for s in sels_raw
-            if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6)
-            and not (bloquear_corners and _clasificar_cat(s) == "CÓRNERES")
-            and not (bloquear_tarjetas and _clasificar_cat(s) == "TARJETAS")
-        ]
 
-    top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
-    if not sels_top_tabla and sels_validas:
-        sels_top_tabla = sels_validas[:18]
+    if top5_podio is None:
+        top5_podio_out = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
+    else:
+        top5_podio_out = list(top5_podio)
 
-    mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
-    if not mantiene_raw and sels_top_tabla:
-        mantiene_raw = sels_top_tabla
+    if sec1_data is not None and len(sels_validas) <= 18:
+        sels_top_tabla = list(sels_validas)
+    else:
+        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
 
-    # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
-    tiene_res_sec1 = any(_clasificar_cat(s) == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
-    if not tiene_res_sec1 and top5_podio:
-        for item_t5 in top5_podio:
+    def _es_mantiene(s: Any) -> bool:
+        est = _val_sel(s, "estado", None)
+        if est is None and sec1_data is not None:
+            return True
+        return str(est or "").strip().lower() == "mantiene"
+
+    mantiene_raw = [s for s in sels_top_tabla if _es_mantiene(s)]
+    sensibles_raw = [s for s in sels_top_tabla if not _es_mantiene(s)]
+
+    # Punto 27 y Punto 40: verificar 1X/X2 contra p_1x2 real
+    if p_1x2 is not None:
+        p1_m, px_m, p2_m = p_1x2
+        mantiene_sinc: list[Any] = []
+        for s_m in mantiene_raw:
+            ev_m = str(_val_sel(s_m, "evento") or "").lower().strip()
+            per_m = str(_val_sel(s_m, "periodo") or "FT").strip().upper()
+            if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
+                p_real_1x = round(p1_m + px_m, 6)
+                if p_real_1x < umbral_val:
+                    continue
+                if isinstance(s_m, dict):
+                    s_m["probabilidad"] = p_real_1x
+                else:
+                    try:
+                        s_m.probabilidad = p_real_1x
+                    except Exception:
+                        pass
+            elif per_m == "FT" and (ev_m in ("x2", "dc_x2") or ev_m.endswith("_x2")):
+                p_real_x2 = round(px_m + p2_m, 6)
+                if p_real_x2 < umbral_val:
+                    continue
+                if isinstance(s_m, dict):
+                    s_m["probabilidad"] = p_real_x2
+                else:
+                    try:
+                        s_m.probabilidad = p_real_x2
+                    except Exception:
+                        pass
+            mantiene_sinc.append(s_m)
+        mantiene_raw = mantiene_sinc
+
+    tiene_res_sec1 = any(clasificar_categoria_ambito_seccion1(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
+    if not tiene_res_sec1 and top5_podio_out:
+        for item_t5 in top5_podio_out:
+            prob_t5 = float(item_t5.get("probabilidad", 0.0) or 0.0)
             if (
                 int(item_t5.get("slot", 0) or 0) == 1
-                and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70
+                and prob_t5 >= umbral_val
                 and str(item_t5.get("categoria_podio") or "") == "RESULTADO / DOBLE OPORTUNIDAD"
             ):
                 et_t5 = str(item_t5.get("etiqueta") or "")
                 ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
+                if p_1x2 is not None:
+                    if ev_t5 == "1x":
+                        prob_t5 = round(p_1x2[0] + p_1x2[1], 6)
+                    elif ev_t5 == "x2":
+                        prob_t5 = round(p_1x2[1] + p_1x2[2], 6)
+                    elif ev_t5 == "1":
+                        prob_t5 = round(p_1x2[0], 6)
+                    elif ev_t5 == "2":
+                        prob_t5 = round(p_1x2[2], 6)
+                if prob_t5 < umbral_val:
+                    continue
                 mantiene_raw.append({
                     "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
                     "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
@@ -1318,13 +1537,107 @@ def obtener_top5_y_seccion1_filtrados(
                     "periodo": "FT",
                     "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
                     "linea": None,
-                    "probabilidad": _safe_float(item_t5.get("probabilidad"), 0.72),
+                    "probabilidad": prob_t5,
                     "estado": "mantiene",
                 })
                 break
 
-    total_validadas = len(mantiene_raw)
-    return top5_podio, mantiene_raw, total_validadas
+    # Deduplicación canónica de píldoras (sin truncar a 4 ni omitir líneas válidas)
+    def _orden_amb(amb: str) -> int:
+        if amb == "Tiempo Completo (FT)":
+            return 0
+        if amb == "1er Tiempo (1T)":
+            return 1
+        if amb == "2º Tiempo (2T)":
+            return 2
+        if eq_l in amb:
+            return 11 if "1T" in amb else (12 if "2T" in amb else 10)
+        if eq_v in amb:
+            return 21 if "1T" in amb else (22 if "2T" in amb else 20)
+        return 30
+
+    agrupado: dict[str, dict[str, list[dict[str, Any]]]] = {c: {} for c in ORDEN_CATEGORIAS_SECCION1}
+    mantiene_filtrada: list[Any] = []
+    vistos_global_cat: dict[str, set[str]] = {c: set() for c in ORDEN_CATEGORIAS_SECCION1}
+
+    candidatos_fmt: list[tuple[str, str, str, str, float, Any]] = []
+    for s in mantiene_raw:
+        cat_s, amb_s = clasificar_categoria_ambito_seccion1(s)
+        lbl_s, pct_s, prob_s = formatear_pildora_seccion1(s, cat_s, eq_l, eq_v)
+        if not lbl_s:
+            continue
+        candidatos_fmt.append((cat_s, amb_s, lbl_s, pct_s, prob_s, s))
+
+    # Ordenar por probabilidad descendente antes de deduplicar por etiqueta dentro de cada categoría
+    candidatos_fmt.sort(key=lambda x: -x[4])
+    for cat_s, amb_s, lbl_s, pct_s, prob_s, s in candidatos_fmt:
+        if lbl_s in vistos_global_cat.setdefault(cat_s, set()):
+            continue
+        vistos_global_cat[cat_s].add(lbl_s)
+        mantiene_filtrada.append(s)
+        agrupado.setdefault(cat_s, {}).setdefault(amb_s, []).append({
+            "lbl": lbl_s,
+            "pct": pct_s,
+            "prob": prob_s,
+            "ambito": amb_s,
+        })
+
+    _orden_canon_amb = ("Tiempo Completo (FT)", "1er Tiempo (1T)", "2º Tiempo (2T)")
+    sec1_por_categoria: list[dict[str, Any]] = []
+    total_validadas = 0
+    for cat_s in ORDEN_CATEGORIAS_SECCION1:
+        ambs_d = agrupado.get(cat_s, {})
+        filas_cat: list[dict[str, Any]] = []
+        pildoras_cat: list[dict[str, Any]] = []
+        for amb_s in sorted(ambs_d.keys(), key=_orden_amb):
+            pills_amb = sorted(ambs_d[amb_s], key=lambda x: -x["prob"])
+            filas_cat.append({"ambito": amb_s, "pildoras": pills_amb})
+            pildoras_cat.extend(pills_amb)
+        pildoras_cat.sort(key=lambda x: -x["prob"])
+        total_validadas += len(pildoras_cat)
+
+        ambs_presentes = []
+        for ac in _orden_canon_amb:
+            if any(p.get("ambito") == ac for p in pildoras_cat):
+                ambs_presentes.append(ac)
+        for p in pildoras_cat:
+            ao = p.get("ambito")
+            if ao and ao not in ambs_presentes:
+                ambs_presentes.append(ao)
+        amb_str = " · ".join(ambs_presentes) if ambs_presentes else "Tiempo Completo (FT)"
+        sec1_por_categoria.append({
+            "categoria": cat_s,
+            "ambito": amb_str,
+            "filas": filas_cat,
+            "pildoras": pildoras_cat,
+        })
+
+    return {
+        "top5_podio": top5_podio_out,
+        "mantiene_raw": mantiene_filtrada,
+        "sensibles_raw": sensibles_raw,
+        "sec1_por_categoria": sec1_por_categoria,
+        "total_validadas": total_validadas,
+        "eq_l": eq_l,
+        "eq_v": eq_v,
+        "umbral": umbral_val,
+        "bloquear_corners": bloquear_corners,
+        "bloquear_tarjetas": bloquear_tarjetas,
+    }
+
+
+def obtener_top5_y_seccion1_filtrados(
+    analisis,
+    metadatos = None,
+    umbral = None,
+):
+    """
+    Extrae el Top-5 Podio, las selecciones exactas de Sección 1 y su conteo canónico
+    usando `calcular_seccion1_unificada` (misma fuente que Ticket PNG y Súper-Cuadro).
+    Devuelve (top5_podio, mantiene_raw, total_validadas).
+    """
+    res = calcular_seccion1_unificada(analisis, metadatos=metadatos, umbral=umbral)
+    return res["top5_podio"], res["mantiene_raw"], res["total_validadas"]
 
 
 def renderizar_ticket_mercados_png(
@@ -1471,165 +1784,9 @@ def renderizar_ticket_mercados_png(
         im.save(ruta_salida, format="PNG")
         return ruta_salida
 
-    def _formatear_pildora(s: Any, cat: str) -> tuple[str, str, float]:
-        ev = str(_val(s, "evento") or "").lower()
-        et = str(_val(s, "etiqueta") or "")
-        lin = _val(s, "linea", None)
-        prob = float(_val(s, "probabilidad", 0.0) or 0.0)
-        pct = f"{prob:.0%}"
-
-        eq_raw_p = _val(s, "equipo", None)
-        eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
-        per_p = str(_val(s, "periodo") or "FT").strip().upper()
-        if per_p not in ("FT", "1T", "2T"):
-            per_p = "FT"
-
-        if cat == "GOLES POR EQUIPO":
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"{eq_corto} +{lin - 0.5:g} Goles ({per_p})"
-                else:
-                    lbl = f"{eq_corto} {et}"
-            elif "primer_gol" in ev:
-                lbl = f"1er Gol: {eq_corto}"
-            else:
-                lbl = f"{eq_corto} {et}"
-            return lbl, pct, prob
-
-        if "GOL" in cat:
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
-            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
-                lbl = "+0.5 Goles (1T)"
-            elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
-                lbl = "+0.5 Goles (2T)"
-            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"+{lin - 0.5:g} Goles{suf_p}"
-                else:
-                    lbl = et
-            elif "primer_gol" in ev:
-                eq_anota = eq_p or eq_l
-                lbl = f"1er Gol: {eq_anota}"
-            elif "ambos_marcan" in ev or "btts" in ev:
-                lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
-            else:
-                lbl = et
-        elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
-            # Prohibido imprimir líneas negativas o imposibles como -0.5 Córn. 100%
-            if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
-                return "", "", 0.0
-            pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
-            else:
-                lbl = et
-            return lbl, pct, prob
-        elif "TARJETA" in cat:
-            # Prohibido imprimir líneas negativas o imposibles como -0.5 Tarj. 100%
-            if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
-                return "", "", 0.0
-            if "roja" in ev or "roja" in et.lower():
-                lbl = f"+{lin:g} Roja" if lin is not None else "Tarjeta Roja"
-            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Tarj." if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Tarj." if lin is not None else et
-            else:
-                lbl = et
-        else: # Hándicap / 1X2 / DC
-            if ev in ("1", "local_gana"):
-                lbl = f"{eq_l} Gana"
-            elif ev in ("2", "visitante_gana"):
-                lbl = f"{eq_v} Gana"
-            elif ev in ("x", "empate"):
-                lbl = "Empate"
-            elif ev == "1x":
-                lbl = f"1X ({eq_l} o X)"
-            elif ev == "x2":
-                lbl = f"X2 (X o {eq_v})"
-            elif ev == "12":
-                lbl = "12 (Sin Empate)"
-            elif "dnb" in ev:
-                eq_dnb = _val(s, "equipo") or eq_l
-                lbl = f"{eq_dnb} DNB"
-            elif "h0_" in ev:
-                lbl = f"H0 {_val(s, 'equipo') or eq_l}"
-            elif "h1_" in ev:
-                lbl = f"H+1 {_val(s, 'equipo') or eq_l}"
-            elif "h2_" in ev:
-                lbl = f"H+2 {_val(s, 'equipo') or eq_l}"
-            elif "h3_" in ev:
-                lbl = f"H+3 {_val(s, 'equipo') or eq_l}"
-            elif "h_minus1_" in ev or "h-1_" in ev:
-                lbl = f"H-1 {_val(s, 'equipo') or eq_l}"
-            else:
-                lbl = et
-
-        for eq_nom in (eq_l, eq_v):
-            if lbl.startswith(eq_nom + ":"):
-                lbl = lbl[len(eq_nom) + 1:].strip()
-            elif lbl.startswith(eq_nom + " - "):
-                lbl = lbl[len(eq_nom) + 3:].strip()
-
-        return lbl, pct, prob
-
-    def _clasificar_categoria_ambito(s: Any) -> tuple[str, str]:
-        m_l = str(_val(s, "mercado") or "").lower()
-        e_l = str(_val(s, "evento") or "").lower()
-        eq_raw = _val(s, "equipo", None)
-        eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
-        per = str(_val(s, "periodo") or "FT").strip().upper()
-        if per not in ("FT", "1T", "2T"):
-            per = "FT"
-
-        per_nombre = "Tiempo Completo (FT)" if per == "FT" else ("1er Tiempo (1T)" if per == "1T" else "2º Tiempo (2T)")
-
-        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
-            cat = "CÓRNERES"
-            amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
-            return cat, amb
-
-        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
-            cat = "TARJETAS"
-            amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
-            return cat, amb
-
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
-            cat = "HÁNDICAP / 1X2 / DC"
-            amb = per_nombre
-            return cat, amb
-
-        if eq:
-            cat = "GOLES POR EQUIPO"
-            amb = f"{eq} · Total ({per})" if per == "FT" else f"{eq} · {per}"
-            return cat, amb
-
-        cat = "GOLES PARTIDO"
-        amb = per_nombre
-        return cat, amb
-
-    ORDEN_CATEGORIAS = [
-        "GOLES PARTIDO",
-        "GOLES POR EQUIPO",
-        "CÓRNERES",
-        "TARJETAS",
-        "HÁNDICAP / 1X2 / DC",
-    ]
+    _formatear_pildora = lambda s, cat: formatear_pildora_seccion1(s, cat, eq_l, eq_v)
+    _clasificar_categoria_ambito = clasificar_categoria_ambito_seccion1
+    ORDEN_CATEGORIAS = ORDEN_CATEGORIAS_SECCION1
 
     def _orden_ambito(amb: str) -> int:
         if amb == "Tiempo Completo (FT)":
@@ -1758,156 +1915,23 @@ def renderizar_ticket_mercados_png(
         return res_cats
 
     motor = getattr(analisis, "motor", None)
+    if True:
+        from motor_mercados import clusters_marcador
 
-    # Bloqueo estricto de categorías sin cobertura oficial (cero líneas negativas o imposibles)
-    bloquear_corners = False
-    bloquear_tarjetas = False
-    if motor and hasattr(motor, "_mu_corners"):
-        try:
-            mu_cl = motor._mu_corners("local")
-            mu_cv = motor._mu_corners("visitante")
-            ml_g = motor.muestras.get("local_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
-            mv_g = motor.muestras.get("visitante_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
-            p_ceros_l = ml_g.pct_ceros if (ml_g and hasattr(ml_g, "pct_ceros")) else 0.0
-            p_ceros_v = mv_g.pct_ceros if (mv_g and hasattr(mv_g, "pct_ceros")) else 0.0
-            if mu_cl is None or mu_cv is None or (mu_cl + mu_cv) < 1.5 or p_ceros_l > 0.30 or p_ceros_v > 0.30:
-                bloquear_corners = True
-        except Exception:
-            pass
-    if motor and hasattr(motor, "_mu_tarjetas"):
-        try:
-            mu_am = motor._mu_tarjetas("amarillas")
-            ml_am = motor.muestras.get("local_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
-            mv_am = motor.muestras.get("visitante_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
-            p_c_l = ml_am.pct_ceros if (ml_am and hasattr(ml_am, "pct_ceros")) else 0.0
-            p_c_v = mv_am.pct_ceros if (mv_am and hasattr(mv_am, "pct_ceros")) else 0.0
-            if mu_am is None or mu_am < 0.5 or p_c_l > 0.30 or p_c_v > 0.30:
-                bloquear_tarjetas = True
-        except Exception:
-            pass
-
-        from motor_mercados import (
-            clusters_marcador,
-            es_seleccion_competitiva_ticket,
-            filtrar_top_opciones_ticket,
-            seleccionar_top_5_jugadas_recomendadas,
+        res_sec1_uni = calcular_seccion1_unificada(
+            analisis,
+            metadatos=meta,
+            umbral=umbral_val,
+            eq_l=eq_l,
+            eq_v=eq_v,
         )
-
-        p_1x2 = None
-        if motor and getattr(motor, "matriz_ft", None):
-            mat = motor.matriz_ft
-            R = len(mat)
-            C = len(mat[0]) if R else 0
-            p1 = sum(mat[i][j] for i in range(R) for j in range(C) if i > j)
-            px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
-            p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
-            p_1x2 = (p1, px, p2)
-
-        def _permitida_sel(s: Any) -> bool:
-            cat_s, _ = _clasificar_categoria_ambito(s)
-            if bloquear_corners and cat_s == "CÓRNERES":
-                return False
-            if bloquear_tarjetas and cat_s == "TARJETAS":
-                return False
-            if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
-                ev_s = str(_val(s, "evento") or "").lower()
-                et_s = str(_val(s, "etiqueta") or "").lower()
-                if "under" in ev_s or "menos" in et_s or "-" in et_s:
-                    return False
-            from motor_mercados import es_seleccion_vetada_por_micropatrones
-            if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
-                return False
-            return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
-
-        sels_validas = [
-            s for s in sels_raw
-            if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
-        ]
-        # Si el filtro competitivo deja vacía una muestra sintética mínima, usar las permitidas por cobertura
-        if not sels_validas and sels_raw:
-            sels_validas = [
-                s for s in sels_raw
-                if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6)
-                and not (bloquear_corners and _clasificar_categoria_ambito(s)[0] == "CÓRNERES")
-                and not (bloquear_tarjetas and _clasificar_categoria_ambito(s)[0] == "TARJETAS")
-            ]
-
-        top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-
-        # Limitar el total de opciones en la tabla inferior a las 15-20 opciones más competitivas
-        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
-        if not sels_top_tabla and sels_validas:
-            sels_top_tabla = sels_validas[:18]
-
-        mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
-        sensibles_raw = [s for s in sels_top_tabla if _val(s, "estado") != "mantiene"]
-
-        # Punto 27 y Punto 40: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
-        # únicamente cuando su probabilidad real en la matriz final sea >= 70.0% (si se veta 1X y X2 < 70%, dejar sin jugada forzada)
-        if p_1x2 is not None:
-            p1_m, px_m, p2_m = p_1x2
-            mantiene_sinc: list[Any] = []
-            for s_m in mantiene_raw:
-                ev_m = str(_val(s_m, "evento") or "").lower().strip()
-                per_m = str(_val(s_m, "periodo") or "FT").strip().upper()
-                if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
-                    p_real_1x = round(p1_m + px_m, 6)
-                    if p_real_1x < 0.70:
-                        continue
-                    if isinstance(s_m, dict):
-                        s_m["probabilidad"] = p_real_1x
-                    else:
-                        try:
-                            s_m.probabilidad = p_real_1x
-                        except Exception:
-                            pass
-                elif per_m == "FT" and (ev_m in ("x2", "dc_x2") or ev_m.endswith("_x2")):
-                    p_real_x2 = round(px_m + p2_m, 6)
-                    if p_real_x2 < 0.70:
-                        continue
-                    if isinstance(s_m, dict):
-                        s_m["probabilidad"] = p_real_x2
-                    else:
-                        try:
-                            s_m.probabilidad = p_real_x2
-                        except Exception:
-                            pass
-                mantiene_sinc.append(s_m)
-            mantiene_raw = mantiene_sinc
-
-        tiene_res_sec1 = any(_clasificar_categoria_ambito(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
-        if not tiene_res_sec1 and top5_podio:
-            for item_t5 in top5_podio:
-                prob_t5 = float(item_t5.get("probabilidad", 0.0) or 0.0)
-                if int(item_t5.get("slot", 0) or 0) == 1 and prob_t5 >= 0.70:
-                    et_t5 = str(item_t5.get("etiqueta") or "")
-                    ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
-                    if p_1x2 is not None:
-                        if ev_t5 == "1x":
-                            prob_t5 = round(p_1x2[0] + p_1x2[1], 6)
-                        elif ev_t5 == "x2":
-                            prob_t5 = round(p_1x2[1] + p_1x2[2], 6)
-                        elif ev_t5 == "1":
-                            prob_t5 = round(p_1x2[0], 6)
-                        elif ev_t5 == "2":
-                            prob_t5 = round(p_1x2[2], 6)
-                    if prob_t5 < 0.70:
-                        continue
-                    mantiene_raw.append({
-                        "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
-                        "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
-                        "evento": ev_t5,
-                        "etiqueta": et_t5,
-                        "periodo": "FT",
-                        "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
-                        "linea": None,
-                        "probabilidad": prob_t5,
-                        "estado": "mantiene",
-                    })
-                    break
+        top5_podio = res_sec1_uni["top5_podio"]
+        mantiene_raw = res_sec1_uni["mantiene_raw"]
+        sensibles_raw = res_sec1_uni["sensibles_raw"]
 
         sec1_data = _organizar_bloque(mantiene_raw, es_seccion_1=True)
         sec2_data = _organizar_bloque(sensibles_raw, es_seccion_1=False)
+        total_validadas_canonico = int(res_sec1_uni["total_validadas"])
 
         clusters_info = getattr(motor, "clusters", None)
         if not clusters_info and hasattr(analisis, "matriz_ft"):
@@ -2245,8 +2269,11 @@ def renderizar_ticket_mercados_png(
 
             return y
 
-        # 2. Sección 1: Alta Probabilidad
-        total_pills_sec1 = sum(len(f.get("pildoras", [])) for cat in sec1_data for f in cat.get("filas", []))
+        # 2. Sección 1: Alta Probabilidad (excluye placeholders sin_lineas)
+        total_pills_sec1 = sum(
+            1 for cat in sec1_data for f in cat.get("filas", [])
+            for p in f.get("pildoras", []) if not p.get("sin_lineas")
+        )
         cnt1_txt = f"{total_pills_sec1} opciones validadas"
         y_c = _dibujar_seccion(
             y_inicio=y_c,

@@ -1388,294 +1388,30 @@ def _organizar_sec1_para_cuadro(
     top5_podio: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Organiza las selecciones >= 70% en las 5 categorías completas:
-      1. GOLES PARTIDO
-      2. GOLES POR EQUIPO
-      3. CÓRNERES
-      4. TARJETAS
-      5. HÁNDICAP / 1X2 / DC
-    Filtra rigurosamente líneas triviales (>89% como -6.5 Goles o -5.5 Goles).
+    Organiza las selecciones >= 70% en las 5 categorías usando exactamente la misma
+    función compartida que el Ticket PNG (`calcular_seccion1_unificada`), sin
+    truncar píldoras silenciosamente.
     """
-    def _v(obj: Any, clave: str, defecto: Any = None) -> Any:
-        if isinstance(obj, dict):
-            return obj.get(clave, defecto)
-        return getattr(obj, clave, defecto)
+    from servicio_mercados import calcular_seccion1_unificada
 
-    from motor_mercados import es_seleccion_competitiva_ticket, filtrar_top_opciones_ticket
-
-    lista_sels = sec1_data
-    if lista_sels is None:
-        lista_sels = _v(analisis, "selecciones_filtradas", []) or []
-        if not lista_sels and hasattr(analisis, "grupos"):
-            g = getattr(analisis, "grupos", {})
-            lista_sels = (g.get("mantiene", []) + g.get("sensible", []))
-        if not lista_sels and hasattr(analisis, "selecciones_validadas"):
-            lista_sels = getattr(analisis, "selecciones_validadas", []) or []
-
-    p_1x2_mat = None
-    if matriz_prob:
-        try:
-            R_p = len(matriz_prob)
-            C_p = len(matriz_prob[0]) if R_p else 0
-            p1_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i > j)
-            px_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i == j)
-            p2_m = sum(float(matriz_prob[i][j]) for i in range(R_p) for j in range(C_p) if i < j)
-            p_1x2_mat = (p1_m, px_m, p2_m)
-        except Exception:
-            p_1x2_mat = None
-
-    # Filtrar estrictamente con Gatekeeper (corners >=8/15, mitades >=10/15, etc.)
-    from decision_cobertura import bandera_activa as _ba_ce_sec
-    _mot_activo_sec = (
-        _ba_ce_sec("usar_gatekeeper_multisenal_top5")
-        or _ba_ce_sec("usar_gate_corners_8_15")
-        or _ba_ce_sec("usar_gate_cronologia_mitades_10_15")
+    uni = calcular_seccion1_unificada(
+        analisis,
+        sec1_data=sec1_data,
+        eq_l=eq_L,
+        eq_v=eq_V,
+        matriz_prob=matriz_prob,
+        top5_podio=top5_podio,
     )
-    mot_gate = getattr(analisis, "motor", None) if (analisis is not None and _mot_activo_sec) else None
-    validadas = []
-    for s in (lista_sels or []):
-        p = float(_v(s, "probabilidad", 0.0) or 0.0)
-        if p >= 0.70 and es_seleccion_competitiva_ticket(s, eq_L, eq_V, p_1x2_mat, motor=mot_gate):
-            validadas.append(s)
-
-    # Si vienen más de 18, acotar a las 18 más competitivas
-    if len(validadas) > 18:
-        mot_obj = getattr(analisis, "motor", None) if analisis is not None else None
-        validadas = filtrar_top_opciones_ticket(validadas, eq_l=eq_L, eq_v=eq_V, p_1x2=p_1x2_mat, max_opciones=18, motor=mot_obj)
-
-    def _clasificar(s: Any) -> tuple[str, str]:
-        m_l = str(_v(s, "mercado") or "").lower()
-        e_l = str(_v(s, "evento") or "").lower()
-        eq_raw = _v(s, "equipo", None)
-        eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
-        per = str(_v(s, "periodo") or "FT").strip().upper()
-        if per not in ("FT", "1T", "2T"):
-            per = "FT"
-        per_nombre = "Tiempo Completo (FT)" if per == "FT" else ("1er Tiempo (1T)" if per == "1T" else "2º Tiempo (2T)")
-
-        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
-            cat = "CÓRNERES"
-            amb = f"{eq} · {per}" if eq else per_nombre
-            return cat, amb
-
-        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
-            cat = "TARJETAS"
-            amb = f"{eq} · {per}" if eq else per_nombre
-            return cat, amb
-
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
-            cat = "HÁNDICAP / 1X2 / DC"
-            amb = per_nombre
-            return cat, amb
-
-        if eq:
-            cat = "GOLES POR EQUIPO"
-            amb = f"{eq} · {per}"
-            return cat, amb
-
-        cat = "GOLES PARTIDO"
-        amb = per_nombre
-        return cat, amb
-
-    def _fmt_pill(s: Any, cat: str) -> tuple[str, str, float]:
-        ev = str(_v(s, "evento") or "").lower()
-        et = str(_v(s, "etiqueta") or "")
-        lin = _v(s, "linea", None)
-        prob = float(_v(s, "probabilidad", 0.0) or 0.0)
-        pct = f"{prob:.0%}"
-        from decision_cobertura import bandera_activa as _ba_ce_cal
-        if _ba_ce_cal("usar_calibracion_y_veto_conciencia"):
-            try:
-                p_cal_att = _v(s, "prob_calibrada", None)
-                vig_att = bool(_v(s, "bajo_vigilancia", False) or _v(s, "veto_top5", False))
-                if p_cal_att is None:
-                    from agente_consciente import evaluar_familia_conciencia_cached
-                    info_c = evaluar_familia_conciencia_cached(str(_v(s, "mercado") or ""), equipo=_v(s, "equipo", None), prob_bruta=prob)
-                    p_cal_att = info_c.get("prob_calibrada")
-                    vig_att = bool(info_c.get("bajo_vigilancia") or info_c.get("veto_top5"))
-                if vig_att and p_cal_att is not None:
-                    pct = f"{prob:.0%} (cal {float(p_cal_att):.0%})"
-            except Exception:
-                pass
-        per_s = str(_v(s, "periodo") or "FT").strip().upper()
-        if per_s not in ("FT", "1T", "2T"):
-            per_s = "FT"
-
-        eq_raw_s = _v(s, "equipo", None)
-        eq_s = str(eq_raw_s).strip() if eq_raw_s and str(eq_raw_s).strip() not in ("None", "Total", "null", "") else None
-
-        if cat == "GOLES POR EQUIPO":
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            eq_corto = (eq_s[:10] if len(eq_s) > 10 else eq_s) if eq_s else eq_L[:10]
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"{eq_corto} +{lin:g} Goles ({per_s})" if lin is not None else f"{eq_corto} {et}"
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"{eq_corto} -{lin:g} Goles ({per_s})" if lin is not None else f"{eq_corto} {et}"
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"{eq_corto} +{float(lin) - 0.5:g} Goles ({per_s})"
-                else:
-                    lbl = f"{eq_corto} {et}"
-            elif "primer_gol" in ev:
-                lbl = f"1er Gol: {eq_corto}"
-            else:
-                lbl = f"{eq_corto} {et}"
-            return lbl, pct, prob
-
-        if "GOL" in cat:
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            suf_p = f" ({per_s})" if per_s in ("1T", "2T") else ""
-            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
-                lbl = "+0.5 Goles (1T)"
-            elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
-                lbl = "+0.5 Goles (2T)"
-            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"+{float(lin) - 0.5:g} Goles{suf_p}"
-                else:
-                    lbl = et
-            elif "primer_gol" in ev:
-                lbl = f"1er Gol: {eq_s or eq_L}"
-            elif "ambos_marcan" in ev or "btts" in ev:
-                lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
-            else:
-                lbl = et
-        elif "CÓRNER" in cat or "CORNER" in cat:
-            if lin is not None and lin <= 0.5 and "under_" in ev:
-                return "", "", 0.0
-            pref_c = (eq_s[:11] if len(eq_s) > 11 else eq_s) if eq_s else "Total"
-            if "over_" in ev or "mas" in et.lower() or "más" in et.lower():
-                lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
-            elif "under_" in ev or "menos" in et.lower():
-                lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
-            else:
-                lbl = et
-            return lbl, pct, prob
-        elif "TARJETA" in cat:
-            if lin is not None and lin <= 0.5 and "under_" in ev:
-                return "", "", 0.0
-            if "roja" in ev:
-                lbl = "Tarjeta Roja"
-            elif "over_" in ev or "mas" in et.lower():
-                lbl = f"+{lin:g} Tarj." if lin is not None else et
-            elif "under_" in ev or "menos" in et.lower():
-                lbl = f"-{lin:g} Tarj." if lin is not None else et
-            else:
-                lbl = et
-        else:
-            if ev in ("1", "local_gana"):
-                lbl = f"{eq_L} Gana"
-            elif ev in ("2", "visitante_gana"):
-                lbl = f"{eq_V} Gana"
-            elif ev in ("x", "empate"):
-                lbl = "Empate"
-            elif ev == "1x":
-                lbl = f"1X ({eq_L} o X)"
-            elif ev == "x2":
-                lbl = f"X2 (X o {eq_V})"
-            elif ev == "12":
-                lbl = "12 (Sin Empate)"
-            elif "dnb" in ev:
-                lbl = f"{_v(s, 'equipo') or eq_L} DNB"
-            else:
-                lbl = et
-
-        for eq_nom in (eq_L, eq_V):
-            if lbl.startswith(eq_nom + ":"):
-                lbl = lbl[len(eq_nom) + 1:].strip()
-            elif lbl.startswith(eq_nom + " - "):
-                lbl = lbl[len(eq_nom) + 3:].strip()
-        return lbl, pct, prob
-
-    orden_cats = [
-        "GOLES PARTIDO",
-        "GOLES POR EQUIPO",
-        "CÓRNERES",
-        "TARJETAS",
-        "HÁNDICAP / 1X2 / DC",
-    ]
-    agrupado = {c: {} for c in orden_cats}
-    for s in validadas:
-        cat, amb = _clasificar(s)
-        lbl, pct, prob = _fmt_pill(s, cat)
-        if not lbl:
-            continue
-        pill = {"lbl": lbl, "pct": pct, "prob": prob}
-        agrupado.setdefault(cat, {}).setdefault(amb, []).append(pill)
-
-    # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
-    if not agrupado.get("HÁNDICAP / 1X2 / DC") and top5_podio:
-        for item_t5 in top5_podio:
-            if (
-                int(item_t5.get("slot", 0) or 0) == 1
-                and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70
-                and str(item_t5.get("categoria_podio") or "") == "RESULTADO / DOBLE OPORTUNIDAD"
-            ):
-                et_t5 = str(item_t5.get("etiqueta") or "")
-                prob_t5 = float(item_t5.get("probabilidad", 0.72))
-                ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_L.lower() in et_t5.lower() else "2"))
-                sel_sinc = {
-                    "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
-                    "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
-                    "evento": ev_t5,
-                    "etiqueta": et_t5,
-                    "periodo": "FT",
-                    "equipo": eq_L if ev_t5 in ("1", "1x") else eq_V,
-                    "linea": None,
-                    "probabilidad": prob_t5,
-                    "estado": "mantiene",
-                }
-                cat_s, amb_s = _clasificar(sel_sinc)
-                lbl_s, pct_s, prob_s = _fmt_pill(sel_sinc, cat_s)
-                if lbl_s:
-                    agrupado.setdefault("HÁNDICAP / 1X2 / DC", {}).setdefault(amb_s, []).append({"lbl": lbl_s, "pct": pct_s, "prob": prob_s})
-                break
-
-    _orden_canon_amb = ("Tiempo Completo (FT)", "1er Tiempo (1T)", "2º Tiempo (2T)")
-    res = []
-    for cat in orden_cats:
-        ambs = agrupado.get(cat, {})
-        todas_pildoras = []
-        for amb, pildoras in ambs.items():
-            if not pildoras:
-                continue
-            for p_it in pildoras:
-                p_cp = dict(p_it)
-                p_cp["_amb_origen"] = amb
-                todas_pildoras.append(p_cp)
-
-        unicas = []
-        vistos = set()
-        for p in sorted(todas_pildoras, key=lambda x: -x["prob"]):
-            if p["lbl"] not in vistos:
-                vistos.add(p["lbl"])
-                unicas.append(p)
-
-        pills_kept = unicas[:4]
-        ambs_kept = []
-        for amb_c in _orden_canon_amb:
-            if any(pk.get("_amb_origen") == amb_c for pk in pills_kept):
-                ambs_kept.append(amb_c)
-        for pk in pills_kept:
-            a_o = pk.get("_amb_origen")
-            if a_o and a_o not in ambs_kept:
-                ambs_kept.append(a_o)
-            pk.pop("_amb_origen", None)
-
-        amb_str = " · ".join(ambs_kept) if ambs_kept else "Tiempo Completo (FT)"
-        if not pills_kept:
-            pills_kept = [{"lbl": "Sin líneas validadas >= 70%", "pct": "-", "prob": 0.0}]
-
+    res: list[dict[str, Any]] = []
+    for cat_info in uni["sec1_por_categoria"]:
+        pildoras = list(cat_info.get("pildoras") or [])
+        if not pildoras:
+            pildoras = [{"lbl": "Sin líneas validadas >= 70%", "pct": "-", "prob": 0.0, "sin_lineas": True}]
         res.append({
-            "categoria": cat,
-            "ambito": amb_str,
-            "pildoras": pills_kept,
+            "categoria": cat_info["categoria"],
+            "ambito": cat_info.get("ambito") or "Tiempo Completo (FT)",
+            "pildoras": pildoras,
+            "total_validadas_categoria": len(cat_info.get("pildoras") or []),
         })
     return res
 
@@ -2505,22 +2241,33 @@ def generar_cuadro_visual_partido(
     ax_sec1 = fig.add_subplot(gs_bot[2])
     ax_sec1.axis("off")
 
-    # Extraer y organizar selecciones >= 70%
+    # Extraer y organizar selecciones >= 70% sin truncar ni descartar píldoras válidas
     sec1_organizada = _organizar_sec1_para_cuadro(analisis, sec1_data, eq_L, eq_V, matriz_prob, top5_podio=top5_podio_calc)
-    # Punto 1.6: Conteo exacto de píldoras verdes efectivamente renderizadas en la tabla
-    pildoras_renderizadas = 0
+
+    # Pre-envolver todas las píldoras por fila para que ninguna supere el ancho ni se recorte
+    filas_layout: list[dict[str, Any]] = []
+    total_validadas_cnt = 0
     for cat_info_c in sec1_organizada[:5]:
-        x_p_check = 0.50
-        for pill_c in cat_info_c.get("pildoras", [])[:4]:
-            if pill_c.get("pct") == "-":
-                continue
-            p_txt_c = f"{pill_c['lbl']}  {pill_c['pct']}"
-            p_w_c = min(0.18, max(0.10, len(p_txt_c) * 0.0072))
-            if x_p_check + p_w_c > 0.98:
-                break
-            pildoras_renderizadas += 1
-            x_p_check += p_w_c + 0.012
-    total_validadas_cnt = pildoras_renderizadas
+        pills_cat = list(cat_info_c.get("pildoras") or [])
+        lineas_p: list[list[tuple[dict[str, Any], str, float]]] = [[]]
+        x_cur = 0.50
+        for pill_c in pills_cat:
+            es_placeholder = bool(pill_c.get("sin_lineas") or pill_c.get("pct") == "-")
+            if not es_placeholder:
+                total_validadas_cnt += 1
+            p_txt_c = pill_c["lbl"] if es_placeholder else f"{pill_c['lbl']}  {pill_c['pct']}"
+            p_w_c = min(0.46, max(0.095, len(p_txt_c) * 0.0063 + 0.022))
+            if lineas_p[-1] and (x_cur + p_w_c > 0.985):
+                lineas_p.append([])
+                x_cur = 0.50
+            lineas_p[-1].append((pill_c, p_txt_c, p_w_c))
+            x_cur += p_w_c + 0.010
+        n_lin = max(1, len(lineas_p))
+        filas_layout.append({
+            "cat_info": cat_info_c,
+            "lineas_p": lineas_p,
+            "peso": 1.0 + 0.72 * (n_lin - 1),
+        })
 
     rect_banner_sec1 = FancyBboxPatch((0.0, 0.88), 1.0, 0.12, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.2, transform=ax_sec1.transAxes)
     ax_sec1.add_patch(rect_banner_sec1)
@@ -2537,37 +2284,74 @@ def generar_cuadro_visual_partido(
     ax_sec1.text(0.24, 0.825, "ÁMBITO / PERIODO", fontsize=7.6, fontweight="bold", color="#FFFFFF", transform=ax_sec1.transAxes)
     ax_sec1.text(0.50, 0.825, "LÍNEAS Y PROBABILIDADES VALIDADAS (>= 70%)", fontsize=7.6, fontweight="bold", color="#FFFFFF", transform=ax_sec1.transAxes)
 
-    y_sec1_cursor = 0.735
-    h_fila_sec1 = 0.14
-    for idx_c, cat_info in enumerate(sec1_organizada[:5]):
-        y_c = y_sec1_cursor - idx_c * h_fila_sec1
+    gap_filas = 0.008
+    n_filas_lay = max(1, len(filas_layout))
+    total_peso_sec1 = sum(f["peso"] for f in filas_layout) or 1.0
+    h_usable_sec1 = 0.76 - gap_filas * max(0, n_filas_lay - 1)
+    y_top_cursor = 0.785
+    for idx_c, f_lay in enumerate(filas_layout):
+        cat_info = f_lay["cat_info"]
+        lineas_p = f_lay["lineas_p"]
+        n_lin = len(lineas_p)
+        row_h = h_usable_sec1 * (f_lay["peso"] / total_peso_sec1)
+        y_bot = y_top_cursor - row_h
         bg_col = "#FFFFFF" if (idx_c % 2 == 0) else "#F8FAFC"
-        rect_row_sec1 = Rectangle((0.0, y_c - 0.12), 1.0, 0.13, facecolor=bg_col, edgecolor="#CBD5E1", lw=0.8, transform=ax_sec1.transAxes)
+        rect_row_sec1 = Rectangle((0.0, y_bot), 1.0, row_h, facecolor=bg_col, edgecolor="#CBD5E1", lw=0.8, transform=ax_sec1.transAxes)
         ax_sec1.add_patch(rect_row_sec1)
-        rect_acc_cat = Rectangle((0.0, y_c - 0.12), 0.008, 0.13, facecolor="#2E7D32", edgecolor="none", transform=ax_sec1.transAxes)
+        rect_acc_cat = Rectangle((0.0, y_bot), 0.008, row_h, facecolor="#2E7D32", edgecolor="none", transform=ax_sec1.transAxes)
         ax_sec1.add_patch(rect_acc_cat)
 
-        ax_sec1.text(0.02, y_c - 0.06, cat_info["categoria"], fontsize=7.8, fontweight="bold", color="#0F172A", transform=ax_sec1.transAxes)
-        ax_sec1.text(0.24, y_c - 0.06, cat_info["ambito"], fontsize=7.4, color="#334155", transform=ax_sec1.transAxes)
+        y_mid = y_bot + row_h * 0.50
+        ax_sec1.text(0.02, y_mid, cat_info["categoria"], fontsize=7.6, fontweight="bold", color="#0F172A", va="center", transform=ax_sec1.transAxes)
+        amb_txt_c = str(cat_info.get("ambito") or "")
+        if len(amb_txt_c) > 28 and " · " in amb_txt_c:
+            amb_txt_c = amb_txt_c.replace(" · ", "\n", 1)
+        ax_sec1.text(0.24, y_mid, amb_txt_c, fontsize=7.0, color="#334155", va="center", transform=ax_sec1.transAxes)
 
-        # Dibujar píldoras verdes en la 3ra columna
-        x_pill = 0.50
-        for pill in cat_info["pildoras"][:4]:
-            p_txt = f"{pill['lbl']}  {pill['pct']}"
-            p_w = min(0.24, max(0.10, len(p_txt) * 0.0072))
-            if x_pill + p_w > 0.98:
-                break
-            rect_p = FancyBboxPatch((x_pill, y_c - 0.095), p_w, 0.08, boxstyle="round,pad=0.01", facecolor="#E8F5EE", edgecolor="#2E7D32", lw=1.0, transform=ax_sec1.transAxes)
-            ax_sec1.add_patch(rect_p)
-            ax_sec1.text(x_pill + p_w / 2.0, y_c - 0.055, p_txt, ha="center", va="center", fontsize=7.2, fontweight="bold", color="#1B5E20", transform=ax_sec1.transAxes)
-            x_pill += p_w + 0.012
+        band_h = (row_h - 0.010) / n_lin
+        pill_h = min(0.078, max(0.036, band_h * 0.78))
+        fs_pill = 7.0 if n_lin == 1 else (6.3 if n_lin == 2 else 5.8)
+        for idx_lin, ln_pills in enumerate(lineas_p):
+            y_center = (y_top_cursor - 0.005) - (idx_lin + 0.5) * band_h
+            x_pill = 0.50
+            for pill_c, p_txt, p_w in ln_pills:
+                es_ph = bool(pill_c.get("sin_lineas") or pill_c.get("pct") == "-")
+                f_bg = "#F1F5F9" if es_ph else "#E8F5EE"
+                f_ed = "#CBD5E1" if es_ph else "#2E7D32"
+                f_fg = "#64748B" if es_ph else "#1B5E20"
+                rect_p = FancyBboxPatch(
+                    (x_pill, y_center - pill_h / 2.0),
+                    p_w,
+                    pill_h,
+                    boxstyle="round,pad=0.008",
+                    facecolor=f_bg,
+                    edgecolor=f_ed,
+                    lw=0.9,
+                    transform=ax_sec1.transAxes,
+                )
+                ax_sec1.add_patch(rect_p)
+                ax_sec1.text(
+                    x_pill + p_w / 2.0,
+                    y_center,
+                    p_txt,
+                    ha="center",
+                    va="center",
+                    fontsize=fs_pill,
+                    fontweight="bold",
+                    color=f_fg,
+                    transform=ax_sec1.transAxes,
+                )
+                x_pill += p_w + 0.010
+        y_top_cursor = y_bot - gap_filas
 
     import re as _re_ver
     _m_jopt = _re_ver.search(r"\((\d+(?:\.\d+)?)%\)", str((info_clusters or {}).get("jugada_optima") or ""))
     _prob_jopt = float(_m_jopt.group(1)) if _m_jopt else None
     _probs_render = []
     for _cat_r in sec1_organizada[:5]:
-        for _pil_r in (_cat_r.get("pildoras") or [])[:4]:
+        for _pil_r in (_cat_r.get("pildoras") or []):
+            if _pil_r.get("sin_lineas") or _pil_r.get("pct") == "-":
+                continue
             _m_pr = _re_ver.search(r"(\d+(?:\.\d+)?)%", str(_pil_r.get("pct") or ""))
             if _m_pr:
                 _probs_render.append(float(_m_pr.group(1)))
@@ -2847,33 +2631,13 @@ def generar_cuadro_desde_analisis(
         rec_motor = getattr(motor, "recursivo", None)
         res_red_pre = rec_motor if (isinstance(rec_motor, dict) and rec_motor.get("aplicado")) else None
         clusters_pre = getattr(motor, "clusters", None)
-        sels_raw = getattr(analisis, "selecciones_filtradas", []) or []
-        if not sels_raw and hasattr(analisis, "grupos"):
-            g = getattr(analisis, "grupos", {})
-            sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
-        sec1_filtrada_usar = sels_raw
-        top5_podio = []
-        try:
-            from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_calc, sec1_mantiene, cnt_val = obtener_top5_y_seccion1_filtrados(analisis)
-            if top5_calc:
-                top5_podio = top5_calc
-            if sec1_mantiene:
-                sec1_filtrada_usar = sec1_mantiene
-        except Exception:
-            pass
-
-        if not top5_podio:
-            try:
-                import motor_mercados as _mm
-                top5_podio = _mm.seleccionar_top_5_jugadas_recomendadas(
-                    sec1_filtrada_usar, motor, motor.nombre_local, motor.nombre_visitante
-                )
-            except Exception:
-                top5_podio = []
+        from servicio_mercados import calcular_seccion1_unificada
+        uni_desde = calcular_seccion1_unificada(analisis)
+        top5_podio = list(uni_desde.get("top5_podio") or [])
+        sec1_filtrada_usar = list(uni_desde.get("mantiene_raw") or [])
 
         fecha_compartida = str(fecha or "").strip()
-        if not fecha_compartida.lower().startswith("análisis del"):
+        if not fecha_compartida.lower().startswith(("análisis del", "partido:", "sin partido programado")):
             fecha_compartida = fecha_compartida[:10]
 
         ruta = generar_cuadro_visual_partido(

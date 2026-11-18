@@ -482,3 +482,141 @@ def test_bloque_i_repo_vacio_crea_main_placeholder_antes_de_produccion_datos_e_h
     ok_hid = pp.hidratar_desde_remoto_datos(cfg)
     assert ok_hid["ok"] is True
     assert ok_hid["ledger"]["n_final"] == 3
+
+
+def test_bloque_j_misma_lista_y_conteo_validadas_entre_ticket_y_supercuadro_sin_truncar(tmp_path) -> None:
+    from types import SimpleNamespace
+    import servicio_mercados as sm
+
+    # Construir 6 selecciones 'mantiene' en la MISMA categoría GOLES PARTIDO (>4 píldoras para probar wrapping sin [:4]),
+    # más 1 selección 'sensible' (1X) que NO está en Top-5 #1 y debe quedar fuera de Sección 1 en AMBAS superficies.
+    sels = [
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_4.5", etiqueta="menos de 4.5 goles", periodo="FT", equipo=None, linea=4.5, probabilidad=0.87, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_3.5", etiqueta="menos de 3.5 goles", periodo="FT", equipo=None, linea=3.5, probabilidad=0.82, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="over_2.5", etiqueta="más de 2.5 goles", periodo="FT", equipo=None, linea=2.5, probabilidad=0.77, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="over_1.5", etiqueta="más de 1.5 goles", periodo="FT", equipo=None, linea=1.5, probabilidad=0.76, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_2.5", etiqueta="menos de 2.5 goles", periodo="FT", equipo=None, linea=2.5, probabilidad=0.73, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="ambos_marcan", mercado="Ambos equipos anotan", evento="ambos_marcan_no", etiqueta="Ambos equipos no anotan", periodo="FT", equipo=None, linea=None, probabilidad=0.79, estimable=True, estado="mantiene"),
+        # Línea sensible en HÁNDICAP / 1X2 / DC con p_real < 0.70 (1X = 0.65): no debe colarse a Sección 1
+        SimpleNamespace(id_mercado="doble_oportunidad", mercado="Doble oportunidad", evento="1x", etiqueta="1X (Local o X)", periodo="FT", equipo="LocalFC", linea=None, probabilidad=0.71, estimable=True, estado="sensible"),
+    ]
+    # Matriz con P(1)+P(X) = 0.65 (< 0.70) para verificar que 1X sensible queda fuera en AMBAS imágenes
+    mat = [
+        [0.10, 0.12, 0.08, 0.03],
+        [0.18, 0.10, 0.08, 0.02],
+        [0.14, 0.06, 0.02, 0.01],
+        [0.04, 0.01, 0.01, 0.00],
+    ]
+    tasas = SimpleNamespace(lambda_local_ft=1.20, lambda_visitante_ft=0.95, lambda_local_1t=0.55, lambda_visitante_1t=0.42, lambda_local_2t=0.65, lambda_visitante_2t=0.53)
+    motor = SimpleNamespace(
+        matriz_ft=mat,
+        matriz_1t=mat,
+        matriz_2t=mat,
+        tasas=tasas,
+        muestras={},
+        doc_local={"partidos": []},
+        doc_visitante={"partidos": []},
+        recursivo={"aplicado": False},
+        xai_factores={},
+        hay_tension_asedio_tarjetas=False,
+        nombre_local="LocalFC",
+        nombre_visitante="VisitaFC",
+    )
+    analisis = SimpleNamespace(
+        motor=motor,
+        metadatos={
+            "equipo_local": "LocalFC",
+            "equipo_visitante": "VisitaFC",
+            "competicion": "Serie A",
+            "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        },
+        parametros=SimpleNamespace(umbral=0.70),
+        selecciones_filtradas=sels,
+        selecciones=sels,
+        abstenido=False,
+    )
+
+    uni = sm.calcular_seccion1_unificada(analisis)
+    top5, mantiene_raw, total_uni = sm.obtener_top5_y_seccion1_filtrados(analisis)
+    assert total_uni == 6
+    assert len(mantiene_raw) == 6
+    assert all("1X" not in str(getattr(s, "etiqueta", "")) for s in mantiene_raw)
+
+    sec1_cuadro = ce._organizar_sec1_para_cuadro(analisis, mantiene_raw, "LocalFC", "VisitaFC", mat, top5_podio=top5)
+    pills_cuadro = [
+        p["lbl"] for c in sec1_cuadro for p in c["pildoras"]
+        if not p.get("sin_lineas") and p.get("pct") != "-"
+    ]
+    pills_uni = [p["lbl"] for c in uni["sec1_por_categoria"] for p in c["pildoras"]]
+    assert pills_cuadro == pills_uni
+    assert len(pills_cuadro) == 6
+
+    # Verificar que ni Ticket PNG ni Súper-Cuadro truncan las 6 píldoras ni cuentan placeholders de TARJETAS
+    from PIL import ImageDraw
+    draw_texts_ticket: list[str] = []
+    orig_image_draw = ImageDraw.Draw
+    def _wrap_draw(im):
+        d = orig_image_draw(im)
+        orig_text = d.text
+        def _cap_text(xy, text, *a, **kw):
+            if isinstance(text, str):
+                draw_texts_ticket.append(text)
+            return orig_text(xy, text, *a, **kw)
+        d.text = _cap_text
+        return d
+
+    with patch.object(ImageDraw, "Draw", side_effect=_wrap_draw):
+        ruta_tkt = sm.renderizar_ticket_mercados_png(analisis, destino=str(tmp_path / "tkt_j.png"))
+    assert os.path.exists(ruta_tkt)
+    assert "6 opciones validadas" in draw_texts_ticket
+    assert all("1X" not in p["lbl"] for c in uni["sec1_por_categoria"] for p in c["pildoras"])
+    for lbl_esp in pills_uni:
+        assert any(lbl_esp in t for t in draw_texts_ticket), f"Faltó píldora {lbl_esp!r} en Ticket PNG"
+
+    # Verificar Súper-Cuadro PNG: debe renderizar '6 Validadas' y las 6 píldoras reales sin cortar en 4
+    ax_texts: list[str] = []
+    from matplotlib.axes import Axes
+    orig_ax_text = Axes.text
+    def _cap_ax_text(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            ax_texts.append(s)
+        return orig_ax_text(self, x, y, s, *a, **kw)
+
+    perfil_dum = {
+        "equipo": "LocalFC",
+        "ratings_0_100": {k: 50.0 for k in ("Overall_Hybrid_Rating", "Final_Attack_Strength", "Final_Defense_Strength", "Pressing_Intensity_Score", "Build_Up_Quality_Score", "Goalkeeper_Rating")},
+        "tempo_segundos": {
+            "Avg_Seconds_Between_Shots": 360.0,
+            "Avg_Seconds_Between_Goals": 3200.0,
+            "Avg_Seconds_Between_Shots_Conceded": 400.0,
+            "Avg_Seconds_Between_Goals_Conceded": 3400.0,
+            "Avg_Seconds_Between_Goals_Scored": 3200.0,
+        },
+        "mu_goles": 1.2,
+        "metricas_clave": {"xg_favor": 1.2, "xgot_favor": 1.1},
+    }
+    perfil_dum_v = {
+        **perfil_dum,
+        "equipo": "VisitaFC",
+        "ratings_0_100": dict(perfil_dum["ratings_0_100"]),
+        "tempo_segundos": dict(perfil_dum["tempo_segundos"]),
+        "metricas_clave": dict(perfil_dum["metricas_clave"]),
+    }
+    res_red_dum = {
+        "iteracion_convergencia": 1,
+        "ratings_finales_local": dict(perfil_dum["ratings_0_100"]),
+        "ratings_finales_visita": dict(perfil_dum_v["ratings_0_100"]),
+        "patrones_55_local": {},
+        "patrones_55_visita": {},
+        "lambdas": {"local": 1.20, "visitante": 0.95},
+    }
+    with patch.object(Axes, "text", new=_cap_ax_text):
+        ruta_sc = ce.generar_cuadro_visual_partido(
+            perfil_dum, perfil_dum_v, 1.20, 0.95, mat, str(tmp_path / "sc_j.png"),
+            res_red_precalculado=res_red_dum,
+            top5_podio=top5, sec1_data=mantiene_raw, analisis=analisis,
+        )
+    assert os.path.exists(ruta_sc)
+    assert "6 Validadas" in ax_texts
+    for lbl_esp in pills_uni:
+        assert any(lbl_esp in t for t in ax_texts), f"Faltó píldora {lbl_esp!r} en Súper-Cuadro"
