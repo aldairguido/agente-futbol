@@ -1485,7 +1485,7 @@ def calcular_seccion1_unificada(
     else:
         top5_podio_out = list(top5_podio)
 
-    if sec1_data is not None and len(sels_validas) <= 18:
+    if sec1_data is not None and len(sels_validas) <= 20:
         sels_top_tabla = list(sels_validas)
     else:
         sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
@@ -1638,7 +1638,7 @@ def calcular_seccion1_unificada(
 
     return {
         "top5_podio": top5_podio_out,
-        "mantiene_raw": mantiene_filtrada,
+        "mantiene_raw": mantiene_raw,
         "sensibles_raw": sensibles_raw,
         "sec1_por_categoria": sec1_por_categoria,
         "total_validadas": total_validadas,
@@ -1953,7 +1953,72 @@ def renderizar_ticket_mercados_png(
         mantiene_raw = res_sec1_uni["mantiene_raw"]
         sensibles_raw = res_sec1_uni["sensibles_raw"]
 
-        sec1_data = _organizar_bloque(mantiene_raw, es_seccion_1=True)
+        def _construir_sec1_desde_canonico(sec1_cats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            res_c: list[dict[str, Any]] = []
+            for cat_b in sec1_cats:
+                cat = cat_b["categoria"]
+                filas_src = cat_b.get("filas") or []
+                if not filas_src:
+                    if cat == "TARJETAS":
+                        lbl_sin = "Sin líneas validadas >= 70%"
+                        w_lbl = _get_w(lbl_sin, f_pill_lbl)
+                        pildora_sin = {
+                            "lbl": lbl_sin, "pct": "", "prob": 0.0,
+                            "w": 8 + w_lbl + 8, "w_lbl": w_lbl, "w_pct": 0, "sin_lineas": True,
+                        }
+                        res_c.append({
+                            "categoria": cat,
+                            "filas": [{
+                                "ambito": "Tiempo Completo (FT)",
+                                "pildoras": [pildora_sin],
+                                "lineas_pills": [[pildora_sin]],
+                                "alto": 38,
+                            }],
+                            "alto_total": 38,
+                        })
+                    continue
+                filas_out: list[dict[str, Any]] = []
+                for fl in filas_src:
+                    pills_medidas: list[dict[str, Any]] = []
+                    for p_it in (fl.get("pildoras") or []):
+                        lbl_p = p_it["lbl"]
+                        pct_p = p_it["pct"]
+                        w_lbl = _get_w(lbl_p, f_pill_lbl)
+                        w_pct = _get_w(pct_p, f_pill_pct)
+                        pills_medidas.append({
+                            "lbl": lbl_p,
+                            "pct": pct_p,
+                            "prob": p_it["prob"],
+                            "w": 8 + w_lbl + 5 + w_pct + 8,
+                            "w_lbl": w_lbl,
+                            "w_pct": w_pct,
+                        })
+                    if not pills_medidas:
+                        continue
+                    cur_x = X_COL3 + 10
+                    lineas_pills: list[list[dict[str, Any]]] = [[]]
+                    for p_m in pills_medidas:
+                        if cur_x + p_m["w"] > X_LIMIT_PILLS and lineas_pills[-1]:
+                            lineas_pills.append([])
+                            cur_x = X_COL3 + 10
+                        lineas_pills[-1].append(p_m)
+                        cur_x += p_m["w"] + 6
+                    n_lin = max(1, len(lineas_pills))
+                    filas_out.append({
+                        "ambito": fl["ambito"],
+                        "pildoras": pills_medidas,
+                        "lineas_pills": lineas_pills,
+                        "alto": max(38, 8 + n_lin * 24 + (n_lin - 1) * 6 + 8),
+                    })
+                if filas_out:
+                    res_c.append({
+                        "categoria": cat,
+                        "filas": filas_out,
+                        "alto_total": sum(f["alto"] for f in filas_out),
+                    })
+            return res_c
+
+        sec1_data = _construir_sec1_desde_canonico(res_sec1_uni["sec1_por_categoria"])
         sec2_data = _organizar_bloque(sensibles_raw, es_seccion_1=False)
         total_validadas_canonico = int(res_sec1_uni["total_validadas"])
 
