@@ -507,3 +507,133 @@ def test_b6_hora_inicio_discrepante_guarda_ambas_y_marca_no_oos_si_mayor_15_min(
     assert ev_no_oos["estado_canonico"] == "no_oos"
     assert ev_no_oos["hora_inicio_discrepante"] is True
     assert ev_no_oos["diferencia_hora_inicio_min"] == 30.0
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VERIFICACIONES PREVIAS RONDA 22 (Pasos 1 y 2)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_v1_botafogo_camerun_2017_abstiene_falso_homonimo_y_falla_sin_guarda(monkeypatch):
+    import servicio_mercados as sm
+
+    fechas_2026 = [f"2026-11-{15 - i:02d}" for i in range(15)]
+    fechas_2017 = [f"2017-05-{20 - i:02d}" for i in range(15)]
+    doc_cor_fs = _doc_minimo(
+        "Corinthians", "BRAZIL: Serie A", "BRA", fechas_2026,
+        ["Flamengo", "Palmeiras", "Bahia"], fuente="flashscore",
+    )
+    # Caso original: Botafogo de Camerún 2017 (incluso con pais_iso contaminado a BRA, 0 rivales comunes)
+    doc_bot_cmr_2017 = _doc_minimo(
+        "Botafogo", "CAMEROON: Elite One", "CMR", fechas_2017,
+        ["Coton Sport", "Canon Yaounde", "Apejes"], fuente="flashscore",
+    )
+    res_enf = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": doc_cor_fs,
+        "doc_visitante": doc_bot_cmr_2017,
+        "contexto": {
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "fecha_partido": "2026-11-19",
+        },
+    }
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **kw: dict(res_enf))
+    res = sm.preparar_analisis("Corinthians", "Botafogo")
+    assert res["abstenido"] is True
+    assert res["estado_cobertura"] == "falso_homonimo_extranjero"
+    assert "FALSO HOMÓNIMO EXTRANJERO" in res["motivo_abstencion"]
+
+    # Comprobación negativa: si se desactiva la guarda de coherencia, NO abstiene por falso_homonimo_extranjero
+    monkeypatch.setattr(
+        sm,
+        "validar_coherencia_competitiva_local_visita",
+        lambda *a, **kw: {"coherente": True, "estado": "OK", "motivo": "guarda desactivada"},
+    )
+    res_sin_guarda = sm.preparar_analisis("Corinthians", "Botafogo")
+    assert res_sin_guarda["estado_cobertura"] != "falso_homonimo_extranjero"
+
+
+def test_v1_club_brasileno_legitimo_flashscore_no_abstiene(monkeypatch, tmp_path):
+    import servicio_mercados as sm
+    from tests.test_ronda19_tickets import _doc_equipo_sintetico
+
+    dl = _doc_equipo_sintetico("Corinthians", fuente="flashscore", con_minutos=False)
+    dv = _doc_equipo_sintetico("Botafogo", fuente="fotmob", con_minutos=True)
+    res_enf = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": dl,
+        "doc_visitante": dv,
+        "meta_local": None,
+        "meta_visitante": None,
+        "contexto": {
+            "fecha_partido": "2026-11-20",
+            "hora_inicio_partido": "2026-11-20T22:00:00Z",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fotmob_fixture",
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "origen_condicion": "fixture_real",
+            "sede": "Neo Química Arena",
+            "id_partido_objetivo": "5109999",
+        },
+        "liga_solicitada": {"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+        "estado_identidad": "verificada",
+        "motivo_identidad": "verificada en test",
+        "identidad_verificada": True,
+        "criterio_desempate": None,
+    }
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **kw: dict(res_enf))
+    prep = sm.preparar_analisis(
+        "Corinthians",
+        "Botafogo",
+        umbral=0.70,
+        directorio_salida=str(tmp_path),
+        liga={"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+    )
+    assert not prep.get("abstenido")
+    assert prep["analisis"].metadatos.get("fuente_local") == "flashscore"
+    assert prep["analisis"].metadatos.get("fuente_visitante") == "fotmob"
+
+
+def test_v2_escanear_oficiales_descarta_partido_flashscore_con_goles_none():
+    from fuentes_xg import FuenteFlashscore
+
+    class _ListadorFake:
+        def _leer_listado(self, cand, contexto=None):
+            return [
+                {
+                    "id": "OK123456",
+                    "fecha": "2026-11-10",
+                    "torneo": "BRAZIL: Serie A",
+                    "local": "Palmeiras",
+                    "visitante": "Bahia",
+                    "goles_local": 2,
+                    "goles_visitante": 0,
+                },
+                {
+                    "id": "NO90CONF",
+                    "fecha": "2026-11-08",
+                    "torneo": "Copa",
+                    "estado_extra": "Pen",
+                    "local": "Vasco",
+                    "visitante": "Palmeiras",
+                    "goles_local": None,
+                    "goles_visitante": None,
+                },
+            ]
+
+    ff = FuenteFlashscore()
+    ff._listador = _ListadorFake()
+    ff.ctx = None
+    ff.abrir = lambda: None
+    res = ff.escanear_oficiales(
+        {"nombre": "Palmeiras", "slug": "palmeiras", "id": "hMn9FTbH", "liga": "Serie A"},
+        objetivo=15,
+    )
+    ids = [p.id_partido for p in res.oficiales]
+    assert ids == ["OK123456"]
