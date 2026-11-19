@@ -410,6 +410,67 @@ def evaluar_contabilidad_oos_registro(
     }
 
 
+def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
+    """
+    Clasifica cualquier entrada del ledger (incluido historial previo a Regla M sin reescribir hashes):
+      - Con campos explícitos de Regla M -> `canonica` | `no_canonica` | `no_oos` | `legacy_sin_fixture`.
+      - Sin `es_oos_valido` y sin `(fixture_confirmado=True y hora_inicio_partido)` -> `legacy_sin_fixture` (no-OOS).
+    """
+    if not isinstance(reg, dict):
+        return {
+            "clasificacion_oos": "legacy_sin_fixture",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": True,
+        }
+    if "es_oos_valido" in reg:
+        est_c = str(reg.get("estado_canonico") or "").strip().lower()
+        if est_c == "legacy_sin_fixture":
+            return {
+                "clasificacion_oos": "legacy_sin_fixture",
+                "es_oos_valido": False,
+                "es_canonica": False,
+                "es_legacy_sin_fixture": True,
+            }
+        es_v = bool(reg.get("es_oos_valido") is True)
+        es_c = bool(es_v and reg.get("es_canonica") is True)
+        cls = est_c or ("canonica" if es_c else ("no_canonica" if es_v else "no_oos"))
+        return {
+            "clasificacion_oos": cls,
+            "es_oos_valido": es_v,
+            "es_canonica": es_c,
+            "es_legacy_sin_fixture": False,
+        }
+
+    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(reg.get("hora_inicio_partido"))
+    if not tiene_fx:
+        return {
+            "clasificacion_oos": "legacy_sin_fixture",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": True,
+        }
+
+    ev = evaluar_contabilidad_oos_registro(
+        fixture_confirmado=reg.get("fixture_confirmado"),
+        fuente_fecha=reg.get("fuente_fecha"),
+        hora_inicio_partido=reg.get("hora_inicio_partido"),
+        telegram_message_date=reg.get("telegram_message_date"),
+        hora_mensaje_utc=reg.get("hora_mensaje_utc"),
+        partido=reg.get("partido"),
+        fecha=reg.get("fecha"),
+        id_partido=reg.get("id_partido"),
+        estado_registro=str(reg.get("estado_registro") or "liquidado"),
+        id_trabajo=str(reg.get("id_trabajo") or ""),
+    )
+    return {
+        "clasificacion_oos": str(ev["estado_canonico"]),
+        "es_oos_valido": bool(ev["es_oos_valido"]),
+        "es_canonica": bool(ev["es_canonica"]),
+        "es_legacy_sin_fixture": False,
+    }
+
+
 def _extraer_fuentes_y_firma_registro(
     *,
     preparado: dict[str, Any] | None = None,
@@ -8884,11 +8945,14 @@ def resumen_ledger_oos(
     ruta_ledger: str | None = None,
     *,
     incluir_amistosos: bool = False,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
     """
     Calcula promedios por partido y agregados de calibración desde `ledger_oos.jsonl`,
     excluyendo estrictamente registros etiquetados como `amistoso` o con
     `entra_promedios=False` / `entra_calibracion=False` por defecto.
+    Las entradas previas a Regla M sin fixture confirmado ni hora de inicio se
+    clasifican lógicamente como no-OOS (`legacy_sin_fixture`) sin reescribir hashes.
     """
     ruta = ruta_ledger or LEDGER_OOS_PATH
     verif = verificar_cadena_ledger_oos(ruta)
@@ -8896,17 +8960,50 @@ def resumen_ledger_oos(
     excluidos: list[dict[str, Any]] = []
     excluidos_no_oos = 0
     excluidos_no_canonica = 0
+    excluidos_legacy_sin_fixture = 0
+    clasificacion_entradas: list[dict[str, Any]] = []
+    n_legacy_pre = 0
+    n_legacy_liq = 0
+    n_oos_validos_confirmados = 0
     incluidos: list[dict[str, Any]] = []
     for r in registros:
-        if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
+        est_reg = str(r.get("estado_registro") or "liquidado").strip().lower()
+        cls_r = clasificar_oos_entrada_ledger(r)
+        es_leg = bool(cls_r["es_legacy_sin_fixture"])
+        if es_leg:
+            if est_reg == "pre_partido":
+                n_legacy_pre += 1
+            else:
+                n_legacy_liq += 1
+        elif est_reg != "pre_partido" and cls_r["es_oos_valido"] and cls_r["es_canonica"]:
+            if incluir_amistosos or not es_registro_amistoso_excluido(r):
+                n_oos_validos_confirmados += 1
+        clasificacion_entradas.append({
+            "indice": r.get("indice"),
+            "id_trabajo": r.get("id_trabajo"),
+            "id_partido": r.get("id_partido"),
+            "partido": r.get("partido"),
+            "fecha": r.get("fecha"),
+            "estado_registro": est_reg,
+            "clasificacion_oos": cls_r["clasificacion_oos"],
+            "es_oos_valido": cls_r["es_oos_valido"],
+            "es_legacy_sin_fixture": es_leg,
+        })
+        if est_reg == "pre_partido":
             continue
         if "es_oos_valido" in r:
             if r.get("es_oos_valido") is not True:
                 excluidos_no_oos += 1
+                if es_leg:
+                    excluidos_legacy_sin_fixture += 1
                 continue
             if r.get("es_canonica") is not True:
                 excluidos_no_canonica += 1
                 continue
+        elif es_leg and excluir_legacy_sin_fixture:
+            excluidos_no_oos += 1
+            excluidos_legacy_sin_fixture += 1
+            continue
         if (not incluir_amistosos) and es_registro_amistoso_excluido(r):
             excluidos.append({
                 "indice": r.get("indice"),
@@ -8951,6 +9048,13 @@ def resumen_ledger_oos(
         if b_p is not None:
             briers_partido.append(float(b_p))
 
+    res_oos_estricto = _metricas_subconjunto_ledger(
+        registros,
+        incluir_amistosos=incluir_amistosos,
+        excluir_contaminados_diseno=False,
+        umbral_excl_prob_alta=None,
+        excluir_legacy_sin_fixture=True,
+    )
     return {
         "ruta_ledger": ruta,
         "cadena_sha256_ok": bool(verif.get("ok")),
@@ -8959,6 +9063,14 @@ def resumen_ledger_oos(
         "n_excluidos_amistosos": len(excluidos),
         "n_excluidos_no_oos": excluidos_no_oos,
         "n_excluidos_no_canonica": excluidos_no_canonica,
+        "n_excluidos_legacy_sin_fixture": excluidos_legacy_sin_fixture,
+        "n_legacy_sin_fixture": n_legacy_pre + n_legacy_liq,
+        "n_legacy_sin_fixture_pre_partido": n_legacy_pre,
+        "n_legacy_sin_fixture_liquidados": n_legacy_liq,
+        "n_oos_validos_confirmados": n_oos_validos_confirmados,
+        "politica_legacy_oos": "legacy_sin_fixture",
+        "clasificacion_oos_entradas": clasificacion_entradas,
+        "resumen_oos_estricto": res_oos_estricto,
         "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
         "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
         "amistosos_excluidos": excluidos,
@@ -10670,6 +10782,7 @@ def extraer_observaciones_sombra_desde_ledger(
     excluir_diseno: bool = True,
     excluir_amistosos: bool = True,
     brazo_regla: str | None = None,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
     """
     Extrae desde `ledger_oos` las observaciones duales (`base` vs `sombra`, o un brazo de
@@ -10685,6 +10798,7 @@ def extraer_observaciones_sombra_desde_ledger(
     partidos_validos: set[str] = set()
     pre_pendientes: list[str] = []
     liquidados_con_obs_ids: set[str] = set()
+    n_legacy_sin_fixture_excl = 0
 
     for r in registros:
         est = str(r.get("estado_registro") or "liquidado").strip().lower()
@@ -10705,9 +10819,13 @@ def extraer_observaciones_sombra_desde_ledger(
                 continue
             if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
                 continue
+            cls_obs = clasificar_oos_entrada_ledger(r)
             if r.get("estado_canonico") == "no_canonica":
                 continue
             if r.get("telegram_message_date") is not None and r.get("es_oos_valido") is False:
+                continue
+            if excluir_legacy_sin_fixture and cls_obs["es_legacy_sin_fixture"]:
+                n_legacy_sin_fixture_excl += 1
                 continue
             obs_r = ms.get("observaciones") or []
             if clave_regla is not None:
@@ -10741,6 +10859,7 @@ def extraer_observaciones_sombra_desde_ledger(
     return {
         "n_partidos_sombra_validos": len(partidos_validos),
         "n_observaciones": len(obs),
+        "n_excluidos_legacy_sin_fixture": n_legacy_sin_fixture_excl,
         "partidos_sombra_validos": sorted(partidos_validos),
         "pre_partido_pendientes_liquidacion": pre_pendientes,
         "observaciones": obs,
@@ -10885,16 +11004,30 @@ def _metricas_subconjunto_ledger(
     incluir_amistosos: bool = False,
     excluir_contaminados_diseno: bool = False,
     umbral_excl_prob_alta: float | None = None,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
-    """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral."""
+    """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral y legacy sin fixture."""
     incluidos: list[dict[str, Any]] = []
     excluidos_amistosos: list[dict[str, Any]] = []
     excluidos_diseno: list[dict[str, Any]] = []
+    n_excluidos_no_oos = 0
+    n_excluidos_legacy = 0
 
     for r in registros:
         if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
             continue
-        if "es_oos_valido" in r and (r.get("es_oos_valido") is not True or r.get("es_canonica") is not True):
+        cls_m = clasificar_oos_entrada_ledger(r)
+        if "es_oos_valido" in r:
+            if r.get("es_oos_valido") is not True:
+                n_excluidos_no_oos += 1
+                if cls_m["es_legacy_sin_fixture"]:
+                    n_excluidos_legacy += 1
+                continue
+            if r.get("es_canonica") is not True:
+                continue
+        elif excluir_legacy_sin_fixture and cls_m["es_legacy_sin_fixture"]:
+            n_excluidos_no_oos += 1
+            n_excluidos_legacy += 1
             continue
         es_amis = es_registro_amistoso_excluido(r)
         es_dis = es_registro_contaminado_por_diseno(r)
@@ -11035,6 +11168,8 @@ def _metricas_subconjunto_ledger(
         "n_incluidos": len(incluidos),
         "n_excluidos_amistosos": len(excluidos_amistosos),
         "n_excluidos_diseno": len(excluidos_diseno),
+        "n_excluidos_no_oos": n_excluidos_no_oos,
+        "n_excluidos_legacy_sin_fixture": n_excluidos_legacy,
         "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
         "amistosos_excluidos": excluidos_amistosos,
         "diseno_excluidos": excluidos_diseno,

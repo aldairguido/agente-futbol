@@ -712,3 +712,167 @@ def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_bande
         assert filas[1]["lambdas_plano"] == lp
         assert "lambdas_plano" not in filas[1]["modo_sombra"]
         assert ep.verificar_cadena_ledger_oos(ruta_ledger)["ok"] is True
+
+
+def test_bloque_6_legacy_sin_fixture_clasificacion_oos_y_resumen() -> None:
+    import hashlib
+    from pathlib import Path
+
+    # Construir un ledger mixto en disco sin alterar sus hashes originales:
+    #   0: TB histórico (sin fixture_confirmado ni hora_inicio_partido)
+    #   1: bec34ed5 pre_partido previo a M (Remo vs Chapecoense, sin fixture_confirmado ni hora_inicio_partido)
+    #   2: 06a85843 pre_partido previo a M (Grêmio vs Bahia, sin fixture_confirmado ni hora_inicio_partido)
+    #   3: liquidado previo a M sin fixture_confirmado ni es_oos_valido
+    #   4: liquidado post-M OOS válido (canonica)
+    def _firmar_linea(reg_in: dict, idx: int, prev_sha: str) -> dict:
+        rec = dict(reg_in)
+        rec["version"] = 1
+        rec["indice"] = idx
+        rec["retroalimenta_modelo"] = False
+        rec["prev_sha256"] = prev_sha
+        canon = json.dumps(
+            {k: v for k, v in rec.items() if k != "sha256"},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        rec["sha256"] = hashlib.sha256(canon).hexdigest()
+        return rec
+
+    legacy_regs_raw = [
+        {
+            "id_partido": "5181796",
+            "partido": "Turkiye vs Belgium",
+            "fecha": "2026-11-12",
+            "competicion": "UEFA Nations League",
+            "resumen": {"aciertos": 52, "fallos": 6, "n_evaluables": 58, "brier": 0.0966945},
+        },
+        {
+            "estado_registro": "pre_partido",
+            "corte_temporal": "pre_partido",
+            "id_trabajo": "bec34ed530d241a6",
+            "id_partido": "",
+            "partido": "Remo vs Chapecoense",
+            "fecha": "2026-11-18",
+            "competicion": "serie A Brasil",
+            "telegram_message_date": 1795039913,
+            "modo_sombra": {"esquema": "sombra-v1", "comparaciones": []},
+        },
+        {
+            "estado_registro": "pre_partido",
+            "corte_temporal": "pre_partido",
+            "id_trabajo": "06a85843e007b41b",
+            "id_partido": "",
+            "partido": "Grêmio vs Bahia",
+            "fecha": "2026-11-19",
+            "competicion": "serie A Brasil",
+            "telegram_message_date": 1795040070,
+            "modo_sombra": {"esquema": "sombra-v1", "comparaciones": []},
+        },
+        {
+            "estado_registro": "liquidado",
+            "id_trabajo": "legacy_liq_sin_fx",
+            "id_partido": "7770001",
+            "partido": "Club X vs Club Y",
+            "fecha": "2026-11-18",
+            "competicion": "Serie A",
+            "resumen": {"aciertos": 3, "fallos": 1, "n_evaluables": 4, "brier": 0.2},
+            "modo_sombra": {
+                "esquema": "sombra-v1",
+                "observaciones": [
+                    {
+                        "id_partido": "7770001",
+                        "partido": "Club X vs Club Y",
+                        "familia": "goles_totales",
+                        "evento_ocurrio": 1,
+                        "probs": {"base": 0.8, "sombra": 0.78},
+                    }
+                ],
+            },
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ruta_led = os.path.join(tmpdir, "ledger_mixto_b6.jsonl")
+        firmadas = []
+        prev = "0" * 64
+        for idx, rr in enumerate(legacy_regs_raw):
+            f_rec = _firmar_linea(rr, idx, prev)
+            prev = f_rec["sha256"]
+            firmadas.append(f_rec)
+        Path(ruta_led).write_text(
+            "\n".join(json.dumps(x, ensure_ascii=False, sort_keys=True) for x in firmadas) + "\n",
+            encoding="utf-8",
+        )
+        hashes_legacy_antes = [x["sha256"] for x in firmadas]
+        lineas_legacy_antes = Path(ruta_led).read_text(encoding="utf-8").splitlines()
+
+        # Añadir entrada post-M OOS válida (canonica) y verificar hashes históricos intactos
+        ep.registrar_en_ledger_oos(
+            {
+                "estado_registro": "liquidado",
+                "id_trabajo": "post_m_valido",
+                "id_partido": "8880001",
+                "partido": "Corinthians vs Botafogo",
+                "fecha": "2026-11-22",
+                "fixture_confirmado": True,
+                "fuente_fecha": "fotmob_fixture",
+                "hora_inicio_partido": "2026-11-22T22:00:00Z",
+                "telegram_message_date": 1795200000,
+                "hora_mensaje_utc": "2026-11-20T05:00:00Z",
+                "resumen": {"aciertos": 5, "fallos": 0, "n_evaluables": 5, "brier": 0.04},
+                "modo_sombra": {
+                    "esquema": "sombra-v1",
+                    "observaciones": [
+                        {
+                            "id_partido": "8880001",
+                            "partido": "Corinthians vs Botafogo",
+                            "familia": "goles_totales",
+                            "evento_ocurrio": 1,
+                            "probs": {"base": 0.85, "sombra": 0.82},
+                        }
+                    ],
+                },
+            },
+            ruta_ledger=ruta_led,
+        )
+
+        # No reescribe hashes legacy en disco
+        lineas_despues = Path(ruta_led).read_text(encoding="utf-8").splitlines()
+        assert lineas_despues[:4] == lineas_legacy_antes
+        regs_disk = ep.cargar_ledger_oos(ruta_led)
+        assert [r["sha256"] for r in regs_disk[:4]] == hashes_legacy_antes
+        assert ep.verificar_cadena_ledger_oos(ruta_led)["ok"] is True
+
+        # Clasificación individual de bec34ed5 y 06a85843 como legacy_sin_fixture (no-OOS)
+        c_bec = ep.clasificar_oos_entrada_ledger(regs_disk[1])
+        c_gre = ep.clasificar_oos_entrada_ledger(regs_disk[2])
+        c_post = ep.clasificar_oos_entrada_ledger(regs_disk[4])
+        assert c_bec["clasificacion_oos"] == "legacy_sin_fixture" and c_bec["es_oos_valido"] is False
+        assert c_gre["clasificacion_oos"] == "legacy_sin_fixture" and c_gre["es_oos_valido"] is False
+        assert c_post["clasificacion_oos"] == "canonica" and c_post["es_oos_valido"] is True
+
+        # resumen_ledger_oos reporta correctamente ambos conteos OOS y resumen_oos_estricto
+        res_def = ep.resumen_ledger_oos(ruta_led)
+        assert res_def["cadena_sha256_ok"] is True
+        assert res_def["politica_legacy_oos"] == "legacy_sin_fixture"
+        assert res_def["n_legacy_sin_fixture"] == 4
+        assert res_def["n_legacy_sin_fixture_pre_partido"] == 2
+        assert res_def["n_legacy_sin_fixture_liquidados"] == 2
+        assert res_def["n_oos_validos_confirmados"] == 1
+        assert res_def["resumen_oos_estricto"]["n_incluidos"] == 1
+        assert res_def["resumen_oos_estricto"]["n_excluidos_legacy_sin_fixture"] == 2
+        assert res_def["resumen_oos_estricto"]["n_excluidos_no_oos"] == 2
+        assert res_def["resumen_oos_estricto"]["partidos_incluidos"] == ["Corinthians vs Botafogo (2026-11-22)"]
+
+        # Modo estricto explícito también excluye legacy_sin_fixture en conteo principal y en sombra
+        res_est = ep.resumen_ledger_oos(ruta_led, excluir_legacy_sin_fixture=True)
+        assert res_est["n_incluidos_promedios_calibracion"] == 1
+        assert res_est["n_excluidos_legacy_sin_fixture"] == 2
+        assert res_est["n_excluidos_no_oos"] == 2
+        assert res_est["partidos_incluidos"] == ["Corinthians vs Botafogo (2026-11-22)"]
+
+        obs_est = ep.extraer_observaciones_sombra_desde_ledger(ruta_led, excluir_legacy_sin_fixture=True)
+        assert obs_est["n_partidos_sombra_validos"] == 1
+        assert obs_est["n_excluidos_legacy_sin_fixture"] == 1
+        assert obs_est["partidos_sombra_validos"] == ["8880001"]
