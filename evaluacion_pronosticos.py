@@ -1536,13 +1536,26 @@ def extraer_resultado(detalle: dict[str, Any], consultado_en: str | None = None,
 
     header = detalle.get("header") or {}
     equipos = header.get("teams") or []
+    status = header.get("status") or {}
     if len(equipos) >= 2:
         res.local = str(equipos[0].get("name") or "")
         res.visitante = str(equipos[1].get("name") or "")
-        res.goles_local = equipos[0].get("score")
-        res.goles_visitante = equipos[1].get("score")
-
-    status = header.get("status") or {}
+        gl_raw = equipos[0].get("score")
+        gv_raw = equipos[1].get("score")
+        try:
+            from fuentes_xg import resolver_marcador_reglamentario_fotmob
+            gl_90, gv_90, _razon_fin, marcador_desemp = resolver_marcador_reglamentario_fotmob(
+                status, gl_raw, gv_raw, detalle=detalle
+            )
+            res.goles_local = gl_90
+            res.goles_visitante = gv_90
+            if marcador_desemp:
+                res.notas.append(
+                    f"Liquidación 90' reglamentarios ({gl_90}-{gv_90}); marcador desempate: {marcador_desemp}"
+                )
+        except Exception:
+            res.goles_local = gl_raw
+            res.goles_visitante = gv_raw
     # Hora PROGRAMADA del partido: es la que debe usarse para comprobar que el
     # pronóstico es anterior. El nombre del partido la trae en UTC.
     nombre = str((detalle.get("general") or {}).get("matchName") or "")

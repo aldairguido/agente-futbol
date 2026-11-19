@@ -1713,16 +1713,23 @@ def resolver_marcador_reglamentario_flashscore(
             continue
         tokens_filtrados.append(tok)
 
-    numeros_planos = [int(tok) for tok in tokens_filtrados if tok.isdigit()]
-    numeros_parentesis: list[int] = []
-    for tok in tokens_filtrados:
+    pos_planos: list[tuple[int, int]] = []
+    pos_parentesis: list[tuple[int, int]] = []
+    for idx_tok, tok in enumerate(tokens_filtrados):
+        if tok.isdigit():
+            pos_planos.append((idx_tok, int(tok)))
+            continue
         m_par = re.fullmatch(r"\((\d+)\)", tok)
         if m_par:
-            numeros_parentesis.append(int(m_par.group(1)))
+            pos_parentesis.append((idx_tok, int(m_par.group(1))))
             continue
         m_par_duo = re.fullmatch(r"\((\d+)\s*[-:]\s*(\d+)\)", tok)
         if m_par_duo:
-            numeros_parentesis.extend([int(m_par_duo.group(1)), int(m_par_duo.group(2))])
+            pos_parentesis.append((idx_tok, int(m_par_duo.group(1))))
+            pos_parentesis.append((idx_tok, int(m_par_duo.group(2))))
+
+    numeros_planos = [v for _, v in pos_planos]
+    numeros_parentesis = [v for _, v in pos_parentesis]
 
     if len(numeros_planos) < 2 and len(numeros_parentesis) < 2:
         for tok in tokens_filtrados:
@@ -1732,6 +1739,20 @@ def resolver_marcador_reglamentario_flashscore(
                 break
 
     if hay_estado_desemp and len(numeros_parentesis) >= 2:
+        es_prorroga = est_norm in ("aet", "et", "after et", "prórroga", "prorroga")
+        es_intercalado = (
+            len(pos_planos) >= 2
+            and len(pos_parentesis) >= 2
+            and pos_planos[0][0] < pos_parentesis[0][0] < pos_planos[1][0]
+        )
+        # En el DOM real de Flashscore para tandas de penaltis ("Pen"), el formato
+        # es intercalado: [goles_local_90, (pen_local), goles_visitante_90, (pen_visitante)]
+        # (p. ej. ['2', '(4)', '1', '(5)', 'W'] -> 90' FT 2-1, tanda 4-5).
+        # En prórroga (AET/ET) o formato contiguo [pen_l, pen_v, (90_l), (90_v)],
+        # el marcador reglamentario 90' está entre paréntesis.
+        if es_intercalado and not es_prorroga:
+            desemp = f"{numeros_parentesis[0]}-{numeros_parentesis[1]} ({estado_extra or 'Pen'})"
+            return numeros_planos[0], numeros_planos[1], desemp
         desemp = (
             f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra or 'Pen/AET'})"
             if len(numeros_planos) >= 2
