@@ -271,3 +271,173 @@ def test_bloque_1_fuente_por_equipo_y_firma_datos_en_snapshot_y_ledger() -> None
         assert snap_abs["fuente_local"] == "flashscore"
         assert snap_abs["fuente_visitante"] == "fotmob"
         assert snap_abs["firma_datos"] == sm.calcular_firma_datos(dl, res_abs["doc_visitante"])
+
+
+def test_bloque_3_seccion2_siempre_visible_y_redaccion_unificada_sensible() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+    from PIL import ImageDraw
+    import motor_inferencia as mi
+
+    # Caso tipo ce5dbea6: 1X es sensible >= 70% pero tiene desvío > 10 pts (por lo que filtrar_top_opciones_ticket lo omite)
+    s_mantiene = SimpleNamespace(
+        id_mercado="goles_totales",
+        mercado="Total de goles",
+        evento="under_3.5",
+        etiqueta="Menos de 3.5",
+        periodo="FT",
+        equipo=None,
+        linea=3.5,
+        probabilidad=0.88,
+        estado="mantiene",
+        motivo="",
+    )
+    s_1x_sensible = SimpleNamespace(
+        id_mercado="doble_oportunidad",
+        mercado="Doble oportunidad",
+        evento="1x",
+        etiqueta="1X",
+        periodo="FT",
+        equipo=None,
+        linea=None,
+        probabilidad=0.714,
+        estado="sensible",
+        motivo="sin calibración validada (desvío > 10.0)",
+    )
+    # Matriz con P(1)+P(X) = 0.714
+    mat = [[0.0] * 4 for _ in range(4)]
+    mat[1][0] = 0.422
+    mat[0][0] = 0.292
+    mat[0][1] = 0.286
+
+    dl_bad = _doc_equipo_sintetico("Corinthians", fuente="flashscore")
+    dv_bad = _doc_equipo_sintetico("Botafogo", fuente="fotmob")
+    # Forzar ~86.7% empírico en under_3.5 (desvío 1.3 pts <= 10.0, sigue mantiene)
+    # y ~0% en 1X para Corinthians (desvío > 10.0, replicando el filtro que ocultaba 1X en ce5dbea6)
+    for idx_m, p in enumerate(dl_bad["partidos"]):
+        if idx_m < 13:
+            p["marcador"] = {"equipo": 0, "rival": 2}
+            p["goles_equipo"], p["goles_rival"] = 0, 2
+        else:
+            p["marcador"] = {"equipo": 0, "rival": 4}
+            p["goles_equipo"], p["goles_rival"] = 0, 4
+    for idx_m, p in enumerate(dv_bad["partidos"]):
+        if idx_m < 13:
+            p["marcador"] = {"equipo": 2, "rival": 0}
+            p["goles_equipo"], p["goles_rival"] = 2, 0
+        else:
+            p["marcador"] = {"equipo": 4, "rival": 0}
+            p["goles_equipo"], p["goles_rival"] = 4, 0
+
+    motor_mock = SimpleNamespace(
+        matriz_ft=mat,
+        doc_local=dl_bad,
+        doc_visitante=dv_bad,
+        tasas=SimpleNamespace(lambda_local_ft=1.15, lambda_visitante_ft=0.90, lambda_local_1t=0.5, lambda_visitante_1t=0.4, lambda_local_2t=0.65, lambda_visitante_2t=0.5),
+        muestras={},
+        recursivo={"aplicado": True, "iteracion_convergencia": 3},
+        _grupos_resumen={"mantiene": [s_mantiene], "sensible": [s_1x_sensible]},
+    )
+    analisis_fake = SimpleNamespace(
+        metadatos={
+            "equipo_local": "Corinthians",
+            "equipo_visitante": "Botafogo",
+            "competicion": "Série A (Brasil)",
+            "fecha_partido": "2026-11-20",
+            "fuente_local": "flashscore",
+            "fuente_visitante": "fotmob",
+        },
+        parametros=SimpleNamespace(umbral=0.70),
+        motor=motor_mock,
+        selecciones_filtradas=[s_mantiene, s_1x_sensible],
+        grupos={"mantiene": [s_mantiene], "sensible": [s_1x_sensible], "incompleta": []},
+    )
+
+    res_u = sm.calcular_seccion1_unificada(analisis_fake)
+    evs_m = {getattr(s, "evento", None) for s in res_u["mantiene_raw"]}
+    evs_s = {getattr(s, "evento", None) for s in res_u["sensibles_raw"]}
+    assert evs_m == {"under_3.5"}
+    assert evs_s == {"1x"}
+    assert res_u["total_validadas"] == 1
+
+    # Verificar que renderizar_ticket_mercados_png dibuja Sección 2 sin usar "VALIDADAS" en Sección 2
+    draw_texts: list[str] = []
+    orig_draw_fn = ImageDraw.Draw
+
+    def _cap_draw(im, *args, **kwargs):
+        d = orig_draw_fn(im, *args, **kwargs)
+        orig_txt = d.text
+
+        def _cap_text(xy, text, *a, **kw):
+            draw_texts.append(str(text))
+            return orig_txt(xy, text, *a, **kw)
+
+        d.text = _cap_text
+        return d
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_png = os.path.join(tmpdir, "ticket_b3.png")
+        with patch("PIL.ImageDraw.Draw", side_effect=_cap_draw):
+            sm.renderizar_ticket_mercados_png(analisis_fake, destino=out_png)
+        assert os.path.exists(out_png)
+
+    assert any("SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (>= 70%)" in t for t in draw_texts), draw_texts
+    assert "LÍNEAS Y PROBABILIDADES VALIDADAS" in draw_texts
+    assert "LÍNEAS Y PROBABILIDADES SENSIBLES" in draw_texts
+    assert "1 opciones validadas" in draw_texts
+    assert "1 opciones sensibles" in draw_texts
+
+    # Verificar redacción unificada en Predicción Final (Telegram XAI) y Veredicto 4 Conclusiones
+    cb_ok = {"sin_derrotas": 9, "victorias": 5, "n_partidos": 15}
+    cc_none = {"sin_dato": True, "_meta": {"n_partidos_con_eventos": 0}}
+    pat_vac = {"posesion_pct": 52.0, "faltas": 12.0, "corners": 5.0, "P26_Poder_Cierre_2T": 0.55, "_muestra_etiqueta": "Doble ADN pond."}
+    txt_xai = mi.generar_reporte_xai_telegram(
+        "Corinthians",
+        "Botafogo",
+        pat_vac,
+        pat_vac,
+        {"local": 0.422, "empate": 0.292, "visita": 0.286},
+        [],
+        cb_ok,
+        cb_ok,
+        cc_none,
+        cc_none,
+        top5_podio=[
+            {"etiqueta": "Doble Oportunidad 1X: Corinthians o Empate", "evento": "1x", "probabilidad": 0.714, "estado": "sensible"},
+            {"etiqueta": "Tarjetas Totales (FT): -6.5 Tarj.", "evento": "amarillas_under_6.5", "probabilidad": 0.739, "estado": "sensible"},
+            {"etiqueta": "Goles 2T: +0.5 Goles", "evento": "gol_2t", "probabilidad": 0.720, "estado": "sensible"},
+        ],
+        selecciones_sec1=res_u["mantiene_raw"],
+        selecciones_sec2=res_u["sensibles_raw"],
+        motor=motor_mock,
+    )
+    assert "Predicción Final:* Inclinación estadística (sensible): Corinthians gana o empata (Doble Oportunidad 1X) (71.4%) — ver Sección 2" in txt_xai
+    assert "Inclinación estadística (sensible): Doble Oportunidad 1X: Corinthians o Empate (71.4%) — ver Sección 2" in txt_xai
+    assert "Inclinación estadística (sensible): Tarjetas Totales (FT): -6.5 Tarj. (73.9%) — ver Sección 2" in txt_xai
+    assert "Inclinación estadística (sensible): Goles 2T: +0.5 Goles (72.0%) — ver Sección 2" in txt_xai
+    assert "El agente valida" not in txt_xai
+    assert "El modelo valida" not in txt_xai
+
+    # Con estado='mantiene' y cronología completa, conserva redacción de selección validada
+    cc_ok = {"sin_dato": False, "_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 3}, "recibidos": {"76'-90'": 2}}
+    txt_xai_ok = mi.generar_reporte_xai_telegram(
+        "Corinthians",
+        "Botafogo",
+        pat_vac,
+        pat_vac,
+        {"local": 0.422, "empate": 0.292, "visita": 0.286},
+        [],
+        cb_ok,
+        cb_ok,
+        cc_ok,
+        cc_ok,
+        top5_podio=[
+            {"etiqueta": "Doble Oportunidad 1X: Corinthians o Empate", "evento": "1x", "probabilidad": 0.714, "estado": "mantiene"},
+            {"etiqueta": "Tarjetas Totales (FT): -6.5 Tarj.", "evento": "amarillas_under_6.5", "probabilidad": 0.739, "estado": "mantiene"},
+            {"etiqueta": "Goles 2T: +0.5 Goles", "evento": "gol_2t", "probabilidad": 0.720, "estado": "mantiene"},
+        ],
+        selecciones_sec1=[s_1x_sensible],
+    )
+    assert "Probabilidad Ajustada: 71.4%" in txt_xai_ok
+    assert "El agente valida 'Tarjetas Totales (FT): -6.5 Tarj.'" in txt_xai_ok
+    assert "El modelo valida 'Goles 2T: +0.5 Goles'" in txt_xai_ok

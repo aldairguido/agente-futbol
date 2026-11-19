@@ -1021,6 +1021,7 @@ def generar_reporte_xai_telegram(
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -1033,13 +1034,37 @@ def generar_reporte_xai_telegram(
     p_x2 = p_emp + p_vis
 
     if p_loc >= 0.58:
-        veredicto = f"Gana {nombre_local} (1x2 Directo) | Probabilidad Ajustada: {p_loc*100:.1f}%"
+        _ev_pred = "1"
+        _pick_pred = f"Gana {nombre_local} (1x2 Directo)"
+        _prob_pred = p_loc * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     elif p_vis >= 0.58:
-        veredicto = f"Gana {nombre_visita} (2 Directo) | Probabilidad Ajustada: {p_vis*100:.1f}%"
+        _ev_pred = "2"
+        _pick_pred = f"Gana {nombre_visita} (2 Directo)"
+        _prob_pred = p_vis * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     elif p_x2 > p_1x:
-        veredicto = f"{nombre_visita} gana o empata (Doble Oportunidad X2) | Probabilidad Ajustada: {p_x2*100:.1f}%"
+        _ev_pred = "x2"
+        _pick_pred = f"{nombre_visita} gana o empata (Doble Oportunidad X2)"
+        _prob_pred = p_x2 * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     else:
-        veredicto = f"{nombre_local} gana o empata (Doble Oportunidad 1X) | Probabilidad Ajustada: {p_1x*100:.1f}%"
+        _ev_pred = "1x"
+        _pick_pred = f"{nombre_local} gana o empata (Doble Oportunidad 1X)"
+        _prob_pred = p_1x * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
+
+    _est_pred = _inferir_estado_pick_dc(
+        _ev_pred,
+        top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
+        selecciones_sec2=selecciones_sec2,
+        motor=motor,
+    )
+    if _est_pred == "sensible":
+        veredicto = formatear_pick_segun_estado(_pick_pred, _prob_pred, "sensible")
+    else:
+        veredicto = _ver_mantiene
 
     def _cnt_b(d: Dict[str, Any], *claves: str) -> int:
         for k in claves:
@@ -1173,12 +1198,90 @@ def generar_reporte_xai_telegram(
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
         motor=motor,
+        selecciones_sec2=selecciones_sec2,
     )
     if veredicto_4:
         lineas.append("")
         lineas.append(veredicto_4)
 
     return "\n".join(lineas)
+
+
+def formatear_pick_segun_estado(
+    pick_texto: str,
+    prob_pct: Optional[float],
+    estado: str,
+    *,
+    sufijo_extra: str = "",
+) -> str:
+    """Redacción unificada: para picks sensibles evita 'Validada' y remite a Sección 2."""
+    est = str(estado or "mantiene").strip().lower()
+    prob_str = f" ({prob_pct:.1f}%)" if prob_pct is not None else ""
+    has_pct = (
+        prob_pct is not None
+        and (f"{prob_pct:.1f}%" in pick_texto or f"{prob_pct:.0f}%" in pick_texto or "%" in pick_texto)
+    )
+    pick_con_pct = pick_texto if (has_pct or not prob_str) else f"{pick_texto}{prob_str}"
+    if est == "sensible":
+        return f"Inclinación estadística (sensible): {pick_con_pct} — ver Sección 2{sufijo_extra}"
+    return f"{pick_con_pct}{sufijo_extra}"
+
+
+def _inferir_estado_pick_dc(
+    codigo_ev: str,
+    *,
+    top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec1: Optional[List[Any]] = None,
+    selecciones_sec2: Optional[List[Any]] = None,
+    motor: Any = None,
+) -> str:
+    ev_obj = str(codigo_ev or "").strip().lower()
+    aliases = {
+        "1": {"1", "local_gana"},
+        "2": {"2", "visitante_gana"},
+        "1x": {"1x", "dc_1x"},
+        "x2": {"x2", "dc_x2"},
+    }.get(ev_obj, {ev_obj})
+
+    def _ev_de(item: Any) -> str:
+        return str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").strip().lower()
+
+    def _per_de(item: Any) -> str:
+        return str((item.get("periodo") if isinstance(item, dict) else getattr(item, "periodo", "FT")) or "FT").strip().upper()
+
+    def _est_de(item: Any) -> str:
+        return str((item.get("estado") if isinstance(item, dict) else getattr(item, "estado", "")) or "").strip().lower()
+
+    for it in (selecciones_sec1 or []):
+        if _per_de(it) == "FT" and (_ev_de(it) in aliases or any(_ev_de(it).endswith(f"_{a}") for a in aliases)):
+            if _est_de(it) in ("", "mantiene"):
+                return "mantiene"
+
+    grupos_ref = getattr(motor, "_grupos_resumen", None) if motor is not None else None
+    if isinstance(grupos_ref, dict):
+        for s in (grupos_ref.get("mantiene") or []):
+            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+                return "mantiene"
+        for s in (grupos_ref.get("sensible") or []):
+            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+                return "sensible"
+
+    for s in (selecciones_sec2 or []):
+        if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+            return "sensible"
+
+    for it in (top5_podio or []):
+        ev_t = _ev_de(it)
+        et_t = str((it.get("etiqueta") if isinstance(it, dict) else getattr(it, "etiqueta", "")) or "").lower()
+        cat_t = str((it.get("categoria_podio") if isinstance(it, dict) else "") or "").upper()
+        if ev_t in aliases or (ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}") or (
+            ev_obj in ("1", "2") and "1x2" in et_t and "gana" in et_t and cat_t == "RESULTADO / DOBLE OPORTUNIDAD"
+        ):
+            if _est_de(it) == "sensible":
+                return "sensible"
+            if _est_de(it) == "mantiene":
+                return "mantiene"
+    return "mantiene"
 
 
 def generar_veredicto_tactico_partido(
@@ -1198,6 +1301,7 @@ def generar_veredicto_tactico_partido(
     para_canvas: bool = False,
     motor: Any = None,
     micropatrones_combinatorios: Optional[Dict[str, Any]] = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """
     Genera dinámicamente el bloque '🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?'
@@ -1252,11 +1356,25 @@ def generar_veredicto_tactico_partido(
     p_dc_base = (p_loc + p_emp) * 100.0 if es_fav_local else (p_emp + p_vis) * 100.0
     jugada_1_nombre = f"Doble Oportunidad {dc_code}: Empate o {eq_fav}" if not es_fav_local else f"Doble Oportunidad {dc_code}: {eq_fav} o Empate"
     jugada_1_prob = p_dc_base
+    estado_j1 = _inferir_estado_pick_dc(
+        dc_code.lower(),
+        top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
+        selecciones_sec2=selecciones_sec2,
+        motor=motor,
+    )
     if top5_podio and len(top5_podio) > 0:
         j1 = top5_podio[0]
         jugada_1_nombre = str(j1.get("etiqueta") or jugada_1_nombre)
         jugada_1_prob = _safe_float(j1.get("probabilidad"), jugada_1_prob / 100.0) * 100.0
         p_dc_base = _safe_float(j1.get("prob_base_poisson"), jugada_1_prob)
+        estado_j1 = str(j1.get("estado") or "").strip().lower() or _inferir_estado_pick_dc(
+            str(j1.get("evento") or ""),
+            top5_podio=top5_podio,
+            selecciones_sec1=selecciones_sec1,
+            selecciones_sec2=selecciones_sec2,
+            motor=motor,
+        )
 
     # 2. Franja crítica en Cuadro C (Timeline de 15 min)
     pares_franjas = [
@@ -1341,15 +1459,17 @@ def generar_veredicto_tactico_partido(
     fal_l = float(patrones_loc.get("faltas") or 11.0)
     fal_v = float(patrones_vis.get("faltas") or 11.5)
     am_tot = float(patrones_loc.get("amarillas", patrones_loc.get("tarjetas_amarillas", 1.8)) or 1.8) + float(patrones_vis.get("amarillas", patrones_vis.get("tarjetas_amarillas", 1.9)) or 1.9)
-    # 3. Ritmo y Tarjetas: exclusivamente desde mercado validado en Top 5 / Sección 1
+    # 3. Ritmo y Tarjetas: exclusivamente desde mercado en Top 5 / Sección 1
     mkt_tarjetas = None
     prob_tarjetas = 0.0
+    estado_tarjetas = "mantiene"
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
             if "tarj" in et_i.lower() or "amarill" in et_i.lower():
                 mkt_tarjetas = et_i
                 prob_tarjetas = float(item.get("probabilidad", 0.80)) * 100.0
+                estado_tarjetas = str(item.get("estado") or "mantiene").strip().lower()
                 break
     if mkt_tarjetas is None and selecciones_sec1:
         for item in selecciones_sec1:
@@ -1416,22 +1536,27 @@ def generar_veredicto_tactico_partido(
     mkt_2t = None
     mkt_2t_tipo = None
     prob_2t = 0.0
+    estado_2t = "mantiene"
     mkt_ft_coh = None
     prob_ft_coh = 0.0
     if top5_podio:
         cand_under_2t = None
         prob_under_2t = 0.0
+        est_under_2t = "mantiene"
         for item in top5_podio:
             et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
+            est_i = str((item.get("estado") if isinstance(item, dict) else getattr(item, "estado", "mantiene")) or "mantiene").strip().lower()
             tipo_c, prob_c = _clasificar_mkt_2t_o_ft(item)
             if tipo_c == "2t_over":
                 mkt_2t = et_i
                 mkt_2t_tipo = "2t_over"
                 prob_2t = prob_c
+                estado_2t = est_i
                 break
             if tipo_c == "2t_under" and cand_under_2t is None:
                 cand_under_2t = et_i
                 prob_under_2t = prob_c
+                est_under_2t = est_i
             elif tipo_c == "ft_goles" and mkt_ft_coh is None:
                 mkt_ft_coh = et_i
                 prob_ft_coh = prob_c
@@ -1439,6 +1564,7 @@ def generar_veredicto_tactico_partido(
             mkt_2t = cand_under_2t
             mkt_2t_tipo = "2t_under"
             prob_2t = prob_under_2t
+            estado_2t = est_under_2t
 
     encabezado = (
         "VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?"
@@ -1465,22 +1591,25 @@ def generar_veredicto_tactico_partido(
         c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
+    if estado_j1 == "sensible":
+        accion_ticket = formatear_pick_segun_estado(
+            jugada_1_nombre,
+            jugada_1_prob,
+            "sensible",
+            sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
+        )
+    elif es_under or (es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))):
+        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+    else:
+        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+
     if es_under:
         c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
-        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
         c1 = (
             f"{c1_tit} Las métricas ofensivas proyectan contención (Attack {atk_fav:.1f} vs {atk_riv:.1f} de {eq_riv}), "
             f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
         )
-    elif es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap")):
-        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
-        c1 = (
-            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
-            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
-            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
-        )
     else:
-        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
         c1 = (
             f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
             f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
@@ -1542,8 +1671,13 @@ def generar_veredicto_tactico_partido(
             if (hay_asedio_verif or not ("-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower()))
             else "Partido limpio (Pocas tarjetas)"
         )
+        _txt_tarj_pick = (
+            formatear_pick_segun_estado(mkt_tarjetas, prob_tarjetas, "sensible")
+            if estado_tarjetas == "sensible"
+            else f"El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%)"
+        )
         c3 = (
-            f"3. {titulo_ritmo}: El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
+            f"3. {titulo_ritmo}: {_txt_tarj_pick}. Es coherente con el guion: "
             f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}) y "
             f"fricción de {txt_faltas_eq}."
         )
@@ -1559,14 +1693,24 @@ def generar_veredicto_tactico_partido(
             f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT{_txt_ft_coh})."
         )
     elif mkt_2t_tipo == "2t_under":
+        _txt_2t_u = (
+            formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+            if estado_2t == "sensible"
+            else f"El modelo valida '{mkt_2t}' al {prob_2t:.0f}%"
+        )
         c4 = (
-            f"4. Contención proyectada en la segunda mitad (2T): El modelo valida '{mkt_2t}' al {prob_2t:.0f}% "
+            f"4. Contención proyectada en la segunda mitad (2T): {_txt_2t_u} "
             f"({xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}){txt_cron_obs}."
         )
     else:
         if k_eval_ver < k_min_cron:
+            _txt_2t_nc = (
+                formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+                if estado_2t == "sensible"
+                else f"{mkt_2t} al {prob_2t:.0f}%"
+            )
             c4 = (
-                f"4. Dinámica de la segunda mitad: {mkt_2t} al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"4. Dinámica de la segunda mitad: {_txt_2t_nc} ({xg_2t_comb:.2f} "
                 f"{etq_vol_2t} y {txt_p26}) [reparto mitades no validado en Sección 1/Top 5 por "
                 f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
@@ -1575,8 +1719,13 @@ def generar_veredicto_tactico_partido(
                 f"Sumado al flujo del tramo 76'-90' ({flujo_76_90} goles combinados)"
                 if flujo_76_90 > 0 else "Flujo 76'-90': 0 goles combinados"
             )
+            _txt_2t_ok = (
+                formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+                if estado_2t == "sensible"
+                else f"El modelo valida '{mkt_2t}' al {prob_2t:.0f}%"
+            )
             c4 = (
-                f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"4. La segunda mitad tendrá goles: {_txt_2t_ok} ({xg_2t_comb:.2f} "
                 f"{etq_vol_2t} y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
             )
     from decision_cobertura import bandera_activa as _ba_mi_mp
@@ -1776,6 +1925,7 @@ def generar_informe_narrativo_xai(
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -1798,6 +1948,7 @@ def generar_informe_narrativo_xai(
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
         motor=motor,
+        selecciones_sec2=selecciones_sec2,
     )
 
 

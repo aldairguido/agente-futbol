@@ -1526,14 +1526,12 @@ def calcular_seccion1_unificada(
             return True
         return str(est or "").strip().lower() == "mantiene"
 
-    mantiene_raw = [s for s in sels_top_tabla if _es_mantiene(s)]
-    sensibles_raw = [s for s in sels_top_tabla if not _es_mantiene(s)]
-
-    # Punto 27 y Punto 40: verificar 1X/X2 contra p_1x2 real
-    if p_1x2 is not None:
+    def _sinc_dc_con_p1x2(lista_sels_in: list[Any]) -> list[Any]:
+        if p_1x2 is None:
+            return list(lista_sels_in)
         p1_m, px_m, p2_m = p_1x2
-        mantiene_sinc: list[Any] = []
-        for s_m in mantiene_raw:
+        out_s: list[Any] = []
+        for s_m in lista_sels_in:
             ev_m = str(_val_sel(s_m, "evento") or "").lower().strip()
             per_m = str(_val_sel(s_m, "periodo") or "FT").strip().upper()
             if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
@@ -1558,8 +1556,32 @@ def calcular_seccion1_unificada(
                         s_m.probabilidad = p_real_x2
                     except Exception:
                         pass
-            mantiene_sinc.append(s_m)
-        mantiene_raw = mantiene_sinc
+            out_s.append(s_m)
+        return out_s
+
+    mantiene_raw = _sinc_dc_con_p1x2([s for s in sels_top_tabla if _es_mantiene(s)])
+    _claves_mantiene = {
+        (
+            str(_val_sel(s, "id_mercado") or ""),
+            str(_val_sel(s, "evento") or "").lower(),
+            str(_val_sel(s, "periodo") or "FT").upper(),
+            str(_val_sel(s, "equipo") or ""),
+            _val_sel(s, "linea"),
+        )
+        for s in mantiene_raw
+    }
+    sensibles_cand = [
+        s for s in sels_validas
+        if not _es_mantiene(s)
+        and (
+            str(_val_sel(s, "id_mercado") or ""),
+            str(_val_sel(s, "evento") or "").lower(),
+            str(_val_sel(s, "periodo") or "FT").upper(),
+            str(_val_sel(s, "equipo") or ""),
+            _val_sel(s, "linea"),
+        ) not in _claves_mantiene
+    ]
+    sensibles_raw = _sinc_dc_con_p1x2(sensibles_cand)
 
     tiene_res_sec1 = any(clasificar_categoria_ambito_seccion1(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
     if not tiene_res_sec1 and top5_podio_out:
@@ -2296,6 +2318,7 @@ def renderizar_ticket_mercados_png(
             c_pill_border: tuple[int, int, int],
             c_pill_pct: tuple[int, int, int],
             accent_cat_color: tuple[int, int, int],
+            titulo_col3: str = "LÍNEAS Y PROBABILIDADES VALIDADAS",
         ) -> int:
             y = y_inicio
 
@@ -2317,7 +2340,7 @@ def renderizar_ticket_mercados_png(
             d.rectangle([PAD_X, y, PAD_X + ANCHO_TABLA, y + alto_tbl_hdr], fill=C_NAVY_HDR)
             d.text((PAD_X + 14, y + 8), "CATEGORÍA", font=f_tbl_hdr, fill=C_TXT_WHITE)
             d.text((X_COL2 + 14, y + 8), "ÁMBITO / PERIODO", font=f_tbl_hdr, fill=C_TXT_WHITE)
-            d.text((X_COL3 + 14, y + 8), "LÍNEAS Y PROBABILIDADES VALIDADAS", font=f_tbl_hdr, fill=C_TXT_WHITE)
+            d.text((X_COL3 + 14, y + 8), titulo_col3, font=f_tbl_hdr, fill=C_TXT_WHITE)
             y += alto_tbl_hdr
 
             if not datos_sec:
@@ -2416,8 +2439,8 @@ def renderizar_ticket_mercados_png(
             cnt2_txt = f"{total_pills_sec2} opciones sensibles"
             y_c = _dibujar_seccion(
                 y_inicio=y_c,
-                titulo_sec="SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (70% - 75%)",
-                subtitulo_sec="Superan el umbral central (>=70%), pero su probabilidad varía bajo escenarios de estrés.",
+                titulo_sec=f"SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (>= {umbral_val:.0%})",
+                subtitulo_sec="Superan el umbral central (>=70%), pero su probabilidad varía bajo escenarios de estrés o desvío empírico.",
                 conteo_txt=cnt2_txt,
                 datos_sec=sec2_data,
                 c_banner_bg=C_SEC2_BANNER_BG,
@@ -2427,6 +2450,7 @@ def renderizar_ticket_mercados_png(
                 c_pill_border=C_SEC2_PILL_BORDER,
                 c_pill_pct=C_SEC2_PILL_PCT,
                 accent_cat_color=C_SEC2_BANNER_BORDER,
+                titulo_col3="LÍNEAS Y PROBABILIDADES SENSIBLES",
             )
 
         # 4. Pie de ticket

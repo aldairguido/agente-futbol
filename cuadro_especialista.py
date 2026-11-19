@@ -2978,10 +2978,14 @@ def generar_cuadro_auditoria_15_partidos_png(
                 b_v_v = bloque_para_lado(motor_obj, "visitante", peso_roja=PESO_PARTIDO_CON_ROJA)
                 ratings_L_v = construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
                 ratings_V_v = construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
-            from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
+            from servicio_mercados import calcular_seccion1_unificada
+            res_u_ver = calcular_seccion1_unificada(analisis)
+            top5_v = res_u_ver["top5_podio"]
+            sec1_v = res_u_ver["mantiene_raw"]
+            sec2_v = res_u_ver["sensibles_raw"]
         except Exception:
             sec1_v = None
+            sec2_v = None
         texto_veredicto = generar_veredicto_tactico_partido(
             nombre_local=eq_L,
             nombre_visita=eq_V,
@@ -3002,6 +3006,7 @@ def generar_cuadro_auditoria_15_partidos_png(
                 getattr(motor_obj, "micropatrones_combinatorios", None)
                 or (getattr(motor_obj, "recursivo", None) or {}).get("micropatrones_combinatorios")
             ),
+            selecciones_sec2=sec2_v,
         )
         lineas_ver = [ln.strip() for ln in texto_veredicto.splitlines() if ln.strip()]
     except Exception:

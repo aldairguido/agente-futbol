@@ -7633,6 +7633,10 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
     grupos = {ESTADO_MANTIENE: [], ESTADO_SENSIBLE: [], ESTADO_INCOMPLETA: []}
     for s in selecciones:
         grupos.setdefault(s.estado, []).append(s)
+    motor._grupos_resumen = {
+        ESTADO_MANTIENE: list(grupos.get(ESTADO_MANTIENE) or []),
+        ESTADO_SENSIBLE: list(grupos.get(ESTADO_SENSIBLE) or []),
+    }
     avisar(f"{len(selecciones)} selecciones superan el {params.umbral:.0%} central "
            f"({len(grupos[ESTADO_MANTIENE])} mantienen, "
            f"{len(grupos[ESTADO_SENSIBLE])} sensibles, "

@@ -1093,10 +1093,14 @@ def generar_bloque_narrativo_xai_desde_analisis(
                 b_v_v = _ce.bloque_para_lado(motor, "visitante", peso_roja=_ce.PESO_PARTIDO_CON_ROJA)
                 ratings_L_v = _ce.construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
                 ratings_V_v = _ce.construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
-            from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
+            from servicio_mercados import calcular_seccion1_unificada
+            res_u_xai = calcular_seccion1_unificada(analisis)
+            top5_v = res_u_xai["top5_podio"]
+            sec1_v = res_u_xai["mantiene_raw"]
+            sec2_v = res_u_xai["sensibles_raw"]
         except Exception:
             sec1_v = None
+            sec2_v = None
 
         return generar_informe_narrativo_xai(
             eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V,
@@ -1105,6 +1109,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
             top5_podio=top5_v,
             selecciones_sec1=sec1_v,
             motor=motor,
+            selecciones_sec2=sec2_v,
         )
     except Exception:
         return ""
