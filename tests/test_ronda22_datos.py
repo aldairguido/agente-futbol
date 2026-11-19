@@ -358,3 +358,42 @@ def test_b4_calidad_fuente_por_club_y_datos_reducidos_en_encabezado():
 
     hdr_fm = formatear_fuentes_clubes_encabezado({}, doc_fm, doc_fm)
     assert "datos reducidos" not in hdr_fm
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 5: Etiquetas (λ base tras Doble ADN, lambdas_finales_soloA) y Veredicto #1
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_b5_etiquetas_lambda_base_adn_y_veredicto_under_35_y_attack_orden():
+    from types import SimpleNamespace
+    from evaluacion_pronosticos import extraer_lambdas_base_doble_adn_desde_analisis
+    from motor_inferencia import generar_veredicto_tactico_partido
+
+    # (a) Extraer lambdas_base_doble_adn desde motor.recursivo
+    an_stub = SimpleNamespace(
+        motor=SimpleNamespace(recursivo={"lambda_base_local": 1.33, "lambda_base_visita": 1.23})
+    )
+    lb = extraer_lambdas_base_doble_adn_desde_analisis(an_stub)
+    assert lb == {"local_ft": 1.33, "visitante_ft": 1.23}
+
+    # (b) y (c) Veredicto #1 con -3.5 goles al 71% y 2.71 goles esperados (Vitória vs RB Bragantino)
+    ver = generar_veredicto_tactico_partido(
+        nombre_local="Vitória",
+        nombre_visita="RB Bragantino",
+        probs={"local": 0.21, "empate": 0.25, "visita": 0.54, "lambda_local": 0.96, "lambda_visita": 1.75},
+        ratings_loc={"Final_Attack_Strength": 17.1},
+        ratings_vis={"Final_Attack_Strength": 39.0},
+        patrones_loc={"posesion_pct": 46.0},
+        patrones_vis={"posesion_pct": 54.0},
+        cuadro_b_loc={"sin_derrotas": 7, "victorias": 4, "n_partidos": 15},
+        cuadro_b_vis={"sin_derrotas": 11, "victorias": 8, "n_partidos": 15},
+        cuadro_c_loc={"_meta": {"n_partidos_con_eventos": 15}},
+        cuadro_c_vis={"_meta": {"n_partidos_con_eventos": 15}},
+        top5_podio=[{"etiqueta": "Menos de 3.5 goles", "probabilidad": 0.71, "estado": "mantiene"}],
+        para_canvas=True,
+    )
+    assert "Partido cerrado / Tendencia baja en goles" not in ver
+    assert "Control de techo de goles" in ver
+    assert "2.71 goles esperados" in ver
+    assert "Attack 39.0 de RB Bragantino vs 17.1 de Vitória" in ver

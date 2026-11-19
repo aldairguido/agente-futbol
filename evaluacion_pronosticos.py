@@ -213,6 +213,7 @@ class SnapshotPronostico:
     calidad_fuente_local: dict[str, Any] | None = None
     calidad_fuente_visitante: dict[str, Any] | None = None
     lambdas_plano: dict[str, Any] | None = None
+    lambdas_base_doble_adn: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -275,6 +276,8 @@ class SnapshotPronostico:
             out["zona_origen_hora_inicio"] = self.zona_origen_hora_inicio
         if self.lambdas_plano is not None:
             out["lambdas_plano"] = self.lambdas_plano
+        if self.lambdas_base_doble_adn is not None:
+            out["lambdas_base_doble_adn"] = self.lambdas_base_doble_adn
         return out
 
 
@@ -579,6 +582,35 @@ def _extraer_fuentes_y_firma_registro(
         "calidad_fuente_local": dict(cal_loc) if isinstance(cal_loc, dict) else None,
         "calidad_fuente_visitante": dict(cal_vis) if isinstance(cal_vis, dict) else None,
     }
+
+
+def extraer_lambdas_base_doble_adn_desde_analisis(
+    analisis: Any = None,
+    preparado: dict[str, Any] | None = None,
+    *,
+    doc: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """
+    Extrae las λ base tras Doble ADN (entrada a la Red Recursiva 45-DCN,
+    mostradas en el Súper-Cuadro como `λ base tras Doble ADN`).
+    """
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    if analisis is None:
+        analisis = prep.get("analisis")
+    for origen in (d, d.get("datos_corte")):
+        if isinstance(origen, dict) and isinstance(origen.get("lambdas_base_doble_adn"), dict):
+            lb = origen["lambdas_base_doble_adn"]
+            if lb.get("local_ft") is not None and lb.get("visitante_ft") is not None:
+                return dict(lb)
+    mot = getattr(analisis, "motor", None) if analisis is not None else None
+    rec = getattr(mot, "recursivo", None) if mot is not None else None
+    if isinstance(rec, dict) and rec.get("lambda_base_local") is not None and rec.get("lambda_base_visita") is not None:
+        return {
+            "local_ft": round(float(rec["lambda_base_local"]), 4),
+            "visitante_ft": round(float(rec["lambda_base_visita"]), 4),
+        }
+    return None
 
 
 def extraer_lambdas_plano_desde_analisis(
@@ -1041,6 +1073,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
 
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
     lam_plano_snap = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+    lam_base_adn_snap = extraer_lambdas_base_doble_adn_desde_analisis(analisis, preparado)
 
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
@@ -1080,6 +1113,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
             **({"lambdas_plano": lam_plano_snap} if lam_plano_snap is not None else {}),
+            **({"lambdas_base_doble_adn": lam_base_adn_snap} if lam_base_adn_snap is not None else {}),
         },
         selecciones=todas,
         selecciones_publicadas=publicadas,
@@ -1108,6 +1142,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         calidad_fuente_local=f_info_snap.get("calidad_fuente_local"),
         calidad_fuente_visitante=f_info_snap.get("calidad_fuente_visitante"),
         lambdas_plano=lam_plano_snap,
+        lambdas_base_doble_adn=lam_base_adn_snap,
     )
 
 
@@ -4893,6 +4928,7 @@ def construir_modo_sombra_desde_analisis(
         "banderas_candidatas": {str(k): bool(v) for k, v in (banderas_candidatas or {}).items()},
         "retroalimenta_modelo": False,
         "lambdas_base": _resumen_lambdas_analisis(analisis_base),
+        "lambdas_finales_soloA": _resumen_lambdas_analisis(analisis_base),
         "lambdas_sombra": _resumen_lambdas_analisis(analisis_sombra),
         "n_selecciones_comparables": sum(
             1 for c in comparaciones if c["prob_base"] is not None and c["prob_sombra"] is not None
@@ -10580,6 +10616,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "version_sombra": str(sombra.get("version_sombra") or "A+B"),
         "banderas_candidatas": dict(sombra.get("banderas_candidatas") or {}),
         "lambdas_base": dict(sombra.get("lambdas_base") or {}),
+        "lambdas_finales_soloA": dict(sombra.get("lambdas_finales_soloA") or sombra.get("lambdas_base") or {}),
         "lambdas_sombra": dict(sombra.get("lambdas_sombra") or {}),
         "n_selecciones_comparables": int(sombra.get("n_selecciones_comparables") or 0),
         "comparaciones": list(sombra.get("comparaciones") or []),
