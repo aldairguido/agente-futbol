@@ -544,13 +544,23 @@ def calcular_55_patrones_equipo(
     corners_1t = max(0.3, _val(m1, "corners", "corners_1t", default=_val(m, "corners_1t", default=corners * ratio_1t_ref)))
     corners_2t = max(0.3, _val(m2, "corners", "corners_2t", default=_val(m, "corners_2t", default=corners * ratio_2t_ref)))
 
-    # Proporción de goles en últimos 15' y primeros 15' desde el Cuadro C (si está disponible)
-    if "76_90" in tl and isinstance(tl["76_90"], dict):
-        tot_anot = max(1, sum(int(v.get("anotados", 0)) for v in tl.values() if isinstance(v, dict)))
-        tot_rec = max(1, sum(int(v.get("recibidos", 0)) for v in tl.values() if isinstance(v, dict)))
-        prop_ult_15 = float(tl["76_90"].get("anotados", 0)) / tot_anot
-        prop_rec_0_15 = float(tl.get("00_15", {}).get("recibidos", 0)) / tot_rec
-    elif "prop_anotados_76_90" in tl and tl.get("prop_anotados_76_90") is not None:
+    # Proporción de goles en últimos 15' y primeros 15' desde el Cuadro C (solo si hay cronología verificada)
+    _tl_meta = tl.get("_meta") if isinstance(tl.get("_meta"), dict) else None
+    try:
+        from decision_cobertura import cargar_umbrales_cobertura
+        _k_min_cron_p = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    except Exception:
+        _k_min_cron_p = 10
+    _tl_sin_cobertura = bool(
+        tl.get("sin_dato")
+        or (_tl_meta and (_tl_meta.get("sin_dato") or int(_tl_meta.get("n_partidos_con_eventos", 0) or 0) < _k_min_cron_p))
+    )
+    if not _tl_sin_cobertura and "76_90" in tl and isinstance(tl["76_90"], dict) and tl["76_90"].get("anotados") is not None:
+        tot_anot = max(1, sum(int(v.get("anotados") or 0) for v in tl.values() if isinstance(v, dict) and "anotados" in v))
+        tot_rec = max(1, sum(int(v.get("recibidos") or 0) for v in tl.values() if isinstance(v, dict) and "recibidos" in v))
+        prop_ult_15 = float(tl["76_90"].get("anotados") or 0) / tot_anot
+        prop_rec_0_15 = float((tl.get("00_15") or {}).get("recibidos") or 0) / tot_rec
+    elif not _tl_sin_cobertura and "prop_anotados_76_90" in tl and tl.get("prop_anotados_76_90") is not None:
         prop_ult_15 = float(tl["prop_anotados_76_90"])
         prop_rec_0_15 = float(tl.get("prop_recibidos_00_15", 0.12))
     else:

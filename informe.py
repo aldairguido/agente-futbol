@@ -1037,22 +1037,28 @@ def generar_bloque_narrativo_xai_desde_analisis(
 
         d_gen_L = _dict_bloque("local")
         d_gen_V = _dict_bloque("visitante")
-        d_loc_L = dict(d_gen_L)
-        d_vis_V = dict(d_gen_V)
-
         rec = getattr(motor, "recursivo", None) or {}
-        if isinstance(rec.get("mu_local_casa"), dict):
-            d_loc_L.update(rec["mu_local_casa"])
-        if isinstance(rec.get("mu_visita_fuera"), dict):
-            d_vis_V.update(rec["mu_visita_fuera"])
-
-        if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
-            P_L = dict(rec["patrones_55_local"])
-            P_V = dict(rec["patrones_55_visita"])
-        else:
-            P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
-            if isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict):
-                _etq_m = "Doble ADN pond."
+        try:
+            import cuadro_especialista as _ce_pat
+            P_L, P_V = _ce_pat.obtener_patrones_55_canonicos(
+                analisis,
+                res_red=rec,
+                doc_local=doc_local,
+                doc_visita=doc_visitante,
+            )
+        except Exception:
+            if isinstance(rec.get("patrones_55_local"), dict) and isinstance(rec.get("patrones_55_visita"), dict):
+                P_L = dict(rec["patrones_55_local"])
+                P_V = dict(rec["patrones_55_visita"])
+            else:
+                d_loc_L = dict(d_gen_L)
+                d_vis_V = dict(d_gen_V)
+                if isinstance(rec.get("mu_local_casa"), dict):
+                    d_loc_L.update(rec["mu_local_casa"])
+                if isinstance(rec.get("mu_visita_fuera"), dict):
+                    d_vis_V.update(rec["mu_visita_fuera"])
+                P_L, P_V = calcular_patrones_completos_partido(d_loc_L, d_vis_V)
+                _etq_m = "Doble ADN pond." if (isinstance(rec.get("mu_local_casa"), dict) or isinstance(rec.get("mu_visita_fuera"), dict)) else "15P general"
                 P_L["_muestra_etiqueta"] = _etq_m
                 P_V["_muestra_etiqueta"] = _etq_m
 
@@ -1087,10 +1093,14 @@ def generar_bloque_narrativo_xai_desde_analisis(
                 b_v_v = _ce.bloque_para_lado(motor, "visitante", peso_roja=_ce.PESO_PARTIDO_CON_ROJA)
                 ratings_L_v = _ce.construir_perfil_especialista_equipo(b_l_v).get("ratings_0_100")
                 ratings_V_v = _ce.construir_perfil_especialista_equipo(b_v_v).get("ratings_0_100")
-            from servicio_mercados import obtener_top5_y_seccion1_filtrados
-            top5_v, sec1_v, _ = obtener_top5_y_seccion1_filtrados(analisis)
+            from servicio_mercados import calcular_seccion1_unificada
+            res_u_xai = calcular_seccion1_unificada(analisis)
+            top5_v = res_u_xai["top5_podio"]
+            sec1_v = res_u_xai["mantiene_raw"]
+            sec2_v = res_u_xai["sensibles_raw"]
         except Exception:
             sec1_v = None
+            sec2_v = None
 
         return generar_informe_narrativo_xai(
             eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V,
@@ -1099,6 +1109,7 @@ def generar_bloque_narrativo_xai_desde_analisis(
             top5_podio=top5_v,
             selecciones_sec1=sec1_v,
             motor=motor,
+            selecciones_sec2=sec2_v,
         )
     except Exception:
         return ""

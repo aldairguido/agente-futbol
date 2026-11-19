@@ -1,0 +1,907 @@
+"""Tests de verificación Ronda 18 (fix/ronda-18-tickets)."""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import cuadro_especialista as ce
+import motor_inferencia as mi
+import motor_patrones as mp
+
+
+def _partido_flashscore_sin_minutos(idx: int, gf1: int = 1, gf2: int = 1, gc1: int = 0, gc2: int = 1, con_mitad: bool = True) -> dict:
+    periodos = {
+        "FT": {"filas": [{"clave": "xg", "equipo": 1.1, "rival": 0.9} for _ in range(12)]},
+    }
+    if con_mitad:
+        periodos["1T"] = {
+            "filas": [
+                {"clave": "xgot_enfrentado", "equipo": float(gc1), "rival": float(gf1)},
+                {"clave": "goles_evitados", "equipo": 0.0, "rival": 0.0},
+            ]
+        }
+        periodos["2T"] = {
+            "filas": [
+                {"clave": "xgot_enfrentado", "equipo": float(gc2), "rival": float(gf2)},
+                {"clave": "goles_evitados", "equipo": 0.0, "rival": 0.0},
+            ]
+        }
+    return {
+        "id_partido": f"fs_{idx}",
+        "fecha": f"2026-10-{min(28, 1 + idx):02d}",
+        "torneo": "BRAZIL: Serie A",
+        "rival": f"RivalFS{idx}",
+        "condicion": "casa" if idx % 2 == 0 else "fuera",
+        "marcador": {"equipo": gf1 + gf2, "rival": gc1 + gc2},
+        "goles_equipo": gf1 + gf2,
+        "goles_rival": gc1 + gc2,
+        "resumen_claves": 20,
+        "periodos": periodos,
+    }
+
+
+def _partido_fotmob_con_minutos(idx: int, minuto: int = 23) -> dict:
+    return {
+        "id_partido": f"fm_{idx}",
+        "fecha": f"2026-10-{min(28, 1 + idx):02d}",
+        "torneo": "Série A",
+        "rival": f"RivalFM{idx}",
+        "condicion": "fuera" if idx % 2 == 0 else "casa",
+        "marcador": {"equipo": 1, "rival": 0},
+        "goles_equipo": 1,
+        "goles_rival": 0,
+        "resumen_claves": 25,
+        "eventos_gol": [{"minuto": minuto, "minuto_str": f"{minuto}'", "lado": "equipo"}],
+        "periodos": {"FT": {"filas": [{"clave": "xg", "equipo": 1.3, "rival": 0.7} for _ in range(12)]}},
+    }
+
+
+def test_bloque_a_sin_minutos_franjas_none_y_suprime_patron35_alerta_veredicto() -> None:
+    partidos_coritiba = [_partido_flashscore_sin_minutos(i, 1, 0, 0, 1, con_mitad=(i < 11)) for i in range(15)]
+    partidos_botafogo = [_partido_fotmob_con_minutos(i, minuto=23 if i < 10 else 65) for i in range(15)]
+
+    cc_cor = mi.calcular_cuadro_c_timeline_15min(partidos_coritiba, "Coritiba")
+    assert cc_cor["sin_dato"] is True
+    assert cc_cor["_meta"]["sin_dato"] is True
+    assert cc_cor["_meta"]["n_partidos_con_eventos"] == 0
+    assert cc_cor["total_anotados"] is None
+    assert cc_cor["total_recibidos"] is None
+    for fr_lbl in ("00'-15'", "16'-30'", "31'-45'", "46'-60'", "61'-75'", "76'-90'"):
+        assert cc_cor["anotados"][fr_lbl] is None
+        assert cc_cor["recibidos"][fr_lbl] is None
+
+    cc_bot = mi.calcular_cuadro_c_timeline_15min(partidos_botafogo, "Botafogo")
+    assert cc_bot["sin_dato"] is False
+    assert cc_bot["_meta"]["n_partidos_con_eventos"] == 15
+    assert cc_bot["anotados"]["16'-30'"] == 10
+    assert cc_bot["anotados"]["61'-75'"] == 5
+    assert cc_bot["total_anotados"] == 15
+
+    pat_cor = mp.calcular_55_patrones_equipo({"xg": 1.1, "posesion_pct": 50.0, "faltas": 12.0}, timeline_goles=cc_cor)
+    pat_bot = mp.calcular_55_patrones_equipo({"xg": 1.2, "posesion_pct": 52.0, "faltas": 11.0}, timeline_goles=cc_bot)
+    assert pat_cor.get("P35_Peso_Goles_Tardios") is None
+
+    _, _, _, alertas = mi.aplicar_reglas_matchup_55(pat_cor, pat_bot, 0.35, 0.30, 0.35, "Coritiba", "Botafogo")
+    assert not any("Patrón #35" in a or "76'-90'" in a for a in alertas)
+
+    rep_tel = mi.generar_reporte_xai_telegram(
+        "Coritiba", "Botafogo", pat_cor, pat_bot, {"local": 0.35, "empate": 0.30, "visita": 0.35},
+        alertas, {}, {}, cc_cor, cc_bot,
+    )
+    assert "Patrón #35" not in rep_tel
+    assert "76'-90'" not in rep_tel
+
+    ver = mi.generar_veredicto_tactico_partido(
+        "Coritiba", "Botafogo", pat_cor, pat_bot, {"local": 0.35, "empate": 0.30, "visita": 0.35},
+        {}, {}, cc_cor, cc_bot,
+    )
+    assert "76'-90'" not in ver
+    assert "Cobertura de minutos insuficiente" in ver
+
+    doc_l = {"equipo": {"nombre": "Coritiba"}, "partidos": partidos_coritiba}
+    doc_v = {"equipo": {"nombre": "Botafogo"}, "partidos": partidos_botafogo}
+    analisis = MagicMock()
+    analisis.doc_local = doc_l
+    analisis.doc_visitante = doc_v
+    analisis.nombre_local = "Coritiba"
+    analisis.nombre_visitante = "Botafogo"
+    analisis.grupos = {}
+    analisis.selecciones = []
+    analisis.mercados = []
+    analisis.motor = None
+
+    textos = []
+    with patch("matplotlib.axes.Axes.text") as mock_text:
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=os.path.join(td, "aud.png"))
+            for c in mock_text.call_args_list:
+                if len(c[0]) >= 3 and isinstance(c[0][2], str):
+                    textos.append(c[0][2])
+
+    banner_cron = [t for t in textos if "CRONOLOGÍA" in t]
+    assert banner_cron
+    assert all("ALERTA CRONOLÓGICA" not in t for t in textos)
+    assert all("76'-90'" not in t for t in textos if t != "76'-90'" and "TIMELINE DE GOLES" not in t)
+    assert "sin cobertura de minutos" in banner_cron[0]
+    assert "—" in textos
+    assert "15" in textos and "10" in textos and "5" in textos
+
+
+def test_bloque_b_fuente_unica_verdad_doble_adn_en_telegram_supercuadro_y_auditoria_15p() -> None:
+    import informe as inf
+    import motor_mercados as mm
+
+    def _mk_doc(nombre: str, pos_c: float, pos_o: float, fal_c: float, fal_o: float, x1_c: float, x2_c: float, x1_o: float, x2_o: float) -> dict:
+        pts = []
+        for i in range(15):
+            cond = "casa" if i < 8 else "fuera"
+            is_c = (cond == "casa") if nombre == "Cruzeiro" else (cond == "fuera")
+            pos = pos_c if is_c else pos_o
+            fal = fal_c if is_c else fal_o
+            x1 = x1_c if is_c else x1_o
+            x2 = x2_c if is_c else x2_o
+            pts.append({
+                "id_partido": f"{nombre}_{i}",
+                "fecha": f"2026-10-{min(28, i + 1):02d}",
+                "torneo": "Série A",
+                "rival": f"R{i}",
+                "condicion": cond,
+                "marcador": {"equipo": 1, "rival": 1},
+                "goles_equipo": 1,
+                "goles_rival": 1,
+                "resumen_claves": 20,
+                "periodos": {
+                    "FT": {"filas": [
+                        {"clave": "xg", "equipo": x1 + x2, "rival": 1.1},
+                        {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos},
+                        {"clave": "faltas", "equipo": fal, "rival": 12.0},
+                        {"clave": "remates_totales", "equipo": 12.0, "rival": 10.0},
+                        {"clave": "remates_puerta", "equipo": 4.0, "rival": 3.0},
+                        {"clave": "corners", "equipo": 5.0, "rival": 4.0},
+                        {"clave": "tarjetas_amarillas", "equipo": 2.0, "rival": 2.0},
+                        {"clave": "goles_evitados", "equipo": 0.1, "rival": 0.0},
+                        {"clave": "despejes", "equipo": 15.0, "rival": 14.0},
+                        {"clave": "intercepciones", "equipo": 9.0, "rival": 8.0},
+                    ]},
+                    "1T": {"filas": [{"clave": "xg", "equipo": x1, "rival": 0.5}, {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos}]},
+                    "2T": {"filas": [{"clave": "xg", "equipo": x2, "rival": 0.6}, {"clave": "posesion_pct", "equipo": pos, "rival": 100.0 - pos}]},
+                },
+            })
+        return {"equipo": {"nombre": nombre, "id": nombre}, "partidos": pts}
+
+    doc_l = _mk_doc("Cruzeiro", 55.0, 48.0, 12.5, 14.2, 0.45, 0.72, 0.30, 0.65)
+    doc_v = _mk_doc("Palmeiras", 51.0, 46.0, 11.8, 13.5, 0.50, 0.55, 0.40, 0.60)
+    analisis = mm.analizar(doc_l, doc_v, "Cruzeiro", "Palmeiras")
+    rec = analisis.motor.recursivo
+    canon_l = rec["patrones_55_local"]
+    canon_v = rec["patrones_55_visita"]
+
+    with patch("motor_inferencia.generar_informe_narrativo_xai") as mxai:
+        mxai.return_value = "OK"
+        inf.generar_bloque_narrativo_xai_desde_analisis(analisis, doc_l, doc_v)
+        kw_tg = mxai.call_args
+        p_l_tg = kw_tg.kwargs.get("patrones_local") if (kw_tg.kwargs and "patrones_local" in kw_tg.kwargs) else kw_tg[0][2]
+        p_v_tg = kw_tg.kwargs.get("patrones_visita") if (kw_tg.kwargs and "patrones_visita" in kw_tg.kwargs) else kw_tg[0][3]
+
+    al4 = ce._construir_4_alertas_motor_55(
+        None, None, analisis, "Cruzeiro", "Palmeiras", 1.1, 1.0, 35.0, 30.0, 35.0, 45.0, 40.0,
+        res_red=rec, mitades_local=ce.perfil_mitades(doc_l, None), mitades_vis=ce.perfil_mitades(doc_v, None),
+    )
+
+    with patch("motor_inferencia.generar_veredicto_tactico_partido") as mver:
+        mver.return_value = "A\nB\n1. C1\n2. C2\n3. C3\n4. C4"
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis, doc_l, doc_v, destino=os.path.join(td, "aud_b.png"))
+        p_l_a15 = mver.call_args.kwargs["patrones_loc"]
+        p_v_a15 = mver.call_args.kwargs["patrones_vis"]
+
+    for clave in ("posesion_pct", "faltas", "P26_Poder_Cierre_2T", "_muestra_etiqueta"):
+        assert p_l_tg[clave] == canon_l[clave]
+        assert p_l_a15[clave] == canon_l[clave]
+        assert p_v_tg[clave] == canon_v[clave]
+        assert p_v_a15[clave] == canon_v[clave]
+
+    al_p26 = next(a["detalle"] for a in al4 if a["codigo"] == "Patrón #26")
+    assert f"{canon_l['P26_Poder_Cierre_2T']*100:.0f}%" in al_p26
+    assert f"{canon_v['P26_Poder_Cierre_2T']*100:.0f}%" in al_p26
+
+    # Caso sin Doble ADN pond. (solo 15P general): no debe etiquetar falsamente "Doble ADN pond."
+    analisis_sin_adn = MagicMock()
+    analisis_sin_adn.motor = MagicMock(recursivo={}, muestras={}, bloques={})
+    pl_15, pv_15 = ce.obtener_patrones_55_canonicos(analisis_sin_adn)
+    assert pl_15.get("_muestra_etiqueta") == "15P general"
+    assert pv_15.get("_muestra_etiqueta") == "15P general"
+
+
+def test_bloque_c_conclusion_4_no_cita_1t_y_sin_explosion_2t_en_1t() -> None:
+    import motor_mercados as mm
+
+    with open("motor_mercados.py", "r", encoding="utf-8") as f:
+        src_mm = f.read()
+    assert "Explosión en 2T" not in src_mm
+
+    #Caso 1: Top 5 trae 1T Menos de 1.5 Goles (sin mercado de 2T) y FT Menos de 3.5 Goles
+    top5_1t = [
+        {"rank": 1, "etiqueta": "1ra Mitad : Menos de 1.5 Goles (80.0%) (Duelo de estudio en 1T)", "periodo": "1T", "evento": "under_1.5", "probabilidad": 0.80},
+        {"rank": 2, "etiqueta": "Goles Totales (FT): -3.5 Goles", "periodo": "FT", "evento": "under_3.5", "probabilidad": 0.83},
+    ]
+    ver = mi.generar_veredicto_tactico_partido(
+        "Coritiba", "Santos",
+        {"xg": 1.0, "xg_2t": 0.55, "posesion_pct": 50.0, "faltas": 12.0, "P26_Poder_Cierre_2T": 0.54},
+        {"xg": 1.1, "xg_2t": 0.60, "posesion_pct": 50.0, "faltas": 11.0, "P26_Poder_Cierre_2T": 0.56},
+        {"local": 0.34, "empate": 0.30, "visita": 0.36},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 3}, "recibidos": {"76'-90'": 2}},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 4}, "recibidos": {"76'-90'": 2}},
+        top5_podio=top5_1t,
+    )
+    linea_4 = [ln for ln in ver.splitlines() if ln.strip().startswith("4.")][0]
+    assert "1ra Mitad" not in linea_4
+    assert "Duelo de estudio en 1T" not in linea_4
+    assert "La segunda mitad tendrá goles" not in linea_4
+    assert "Sin líneas de 2T validadas >= 70%" in linea_4
+    assert "Goles Totales (FT): -3.5 Goles" in linea_4
+
+    # Caso 2: Top 5 trae Under en 2T -> NO debe titular "La segunda mitad tendrá goles"
+    top5_u2t = [
+        {"rank": 1, "etiqueta": "Goles 2T: -1.5 Goles", "periodo": "2T", "evento": "under_1.5", "probabilidad": 0.78},
+    ]
+    ver_u2t = mi.generar_veredicto_tactico_partido(
+        "Coritiba", "Santos",
+        {"xg": 1.0, "xg_2t": 0.45, "posesion_pct": 50.0, "faltas": 12.0, "P26_Poder_Cierre_2T": 0.54},
+        {"xg": 1.1, "xg_2t": 0.50, "posesion_pct": 50.0, "faltas": 11.0, "P26_Poder_Cierre_2T": 0.56},
+        {"local": 0.34, "empate": 0.30, "visita": 0.36},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"victorias": 5, "sin_derrotas": 10, "n_partidos": 15},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 3}, "recibidos": {"76'-90'": 2}},
+        {"_meta": {"n_partidos_con_eventos": 15}, "anotados": {"76'-90'": 4}, "recibidos": {"76'-90'": 2}},
+        top5_podio=top5_u2t,
+    )
+    linea_4_u = [ln for ln in ver_u2t.splitlines() if ln.strip().startswith("4.")][0]
+    assert "La segunda mitad tendrá goles" not in linea_4_u
+    assert "Contención proyectada en la segunda mitad (2T)" in linea_4_u
+    assert "Goles 2T: -1.5 Goles" in linea_4_u
+
+
+def test_bloque_f_mensaje_cobertura_sin_variables_comparables_no_contradictorio() -> None:
+    from decision_cobertura import evaluar_decision_cobertura
+
+    doc_solo_a = {
+        "identidad_verificada": True,
+        "equipo": {"nombre": "Corinthians", "id": "cor1"},
+        "partidos": [
+            {
+                "id_partido": f"a_{i}",
+                "fecha": f"2026-10-{1 + i:02d}",
+                "torneo": "BRAZIL: Serie A",
+                "condicion": "casa",
+                "marcador": {"equipo": 1, "rival": 0},
+                "periodos": {"FT": {"filas": [{"clave": f"solo_a_{k}", "equipo": 1.0, "rival": 0.0} for k in range(6)]}},
+            }
+            for i in range(15)
+        ],
+    }
+    doc_solo_b = {
+        "identidad_verificada": True,
+        "equipo": {"nombre": "Botafogo", "id": "bot1"},
+        "partidos": [
+            {
+                "id_partido": f"b_{i}",
+                "fecha": f"2026-10-{1 + i:02d}",
+                "torneo": "Série A",
+                "condicion": "fuera",
+                "marcador": {"equipo": 1, "rival": 0},
+                "periodos": {"FT": {"filas": [{"clave": f"solo_b_{k}", "equipo": 1.0, "rival": 0.0} for k in range(6)]}},
+            }
+            for i in range(15)
+        ],
+    }
+    dec = evaluar_decision_cobertura(doc_solo_a, doc_solo_b)
+    assert dec.estado == "cobertura_insuficiente"
+    assert "sin variables comparables" in dec.alerta_descriptiva.lower()
+    assert "solo 0 de 3 partidos emparejados requeridos comparten al menos 5 claves métricas comunes en FT" in dec.alerta_descriptiva
+    assert "(mínimo requerido: 3)" not in dec.alerta_descriptiva
+
+
+def test_bloque_g_encabezado_partido_con_zona_o_sin_partido_programado() -> None:
+    import servicio_mercados as sm
+
+    res_fix = sm.resolver_fecha_encuentro_lima("2026-11-19T00:30:00Z", es_partido_programado=True)
+    assert res_fix["etiqueta_fecha"] == "Partido: 2026-11-18 19:30 America/Lima"
+    assert res_fix["hora_inicio_partido"] == "2026-11-19T00:30:00Z"
+    assert res_fix["fixture_confirmado"] is True
+    assert res_fix["fuente_fecha"] == "fixture"
+
+    res_no = sm.resolver_fecha_encuentro_lima(None, es_partido_programado=False)
+    assert res_no["etiqueta_fecha"] == "Sin partido programado encontrado"
+    assert res_no["fecha_partido"] is None
+    assert res_no["fixture_confirmado"] is False
+    assert res_no["fuente_fecha"] == "fallback"
+    assert "Análisis del" not in res_no["etiqueta_fecha"]
+
+    # Auditoría 15P PNG muestra la etiqueta completa con hora/zona o 'Sin partido programado encontrado'
+    analisis = MagicMock()
+    analisis.metadatos = dict(res_fix, equipo_local="Corinthians", equipo_visitante="Botafogo", competicion="Serie A")
+    analisis.motor = None
+    analisis.selecciones = []
+    analisis.mercados = []
+    doc_vacio = {"equipo": {"nombre": "X"}, "partidos": []}
+    captured = []
+    with patch("matplotlib.pyplot.Figure.text") as mock_ft:
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis, doc_vacio, doc_vacio, destino=os.path.join(td, "g.png"))
+            for c in mock_ft.call_args_list:
+                if len(c[0]) >= 3 and isinstance(c[0][2], str):
+                    captured.append(c[0][2])
+    assert any("Partido: 2026-11-18 19:30 America/Lima" in t for t in captured)
+
+    analisis_sin = MagicMock()
+    analisis_sin.metadatos = dict(res_no, equipo_local="Cruzeiro", equipo_visitante="Palmeiras", competicion="Serie A")
+    analisis_sin.motor = None
+    analisis_sin.selecciones = []
+    analisis_sin.mercados = []
+    captured_sin = []
+    with patch("matplotlib.pyplot.Figure.text") as mock_ft2:
+        with tempfile.TemporaryDirectory() as td:
+            ce.generar_cuadro_auditoria_15_partidos_png(analisis_sin, doc_vacio, doc_vacio, destino=os.path.join(td, "g2.png"))
+            for c in mock_ft2.call_args_list:
+                if len(c[0]) >= 3 and isinstance(c[0][2], str):
+                    captured_sin.append(c[0][2])
+    assert any("Sin partido programado encontrado" in t for t in captured_sin)
+    assert all("Análisis del" not in t for t in captured_sin)
+
+
+def test_bloque_i_repo_vacio_crea_main_placeholder_antes_de_produccion_datos_e_hidrata(tmp_path) -> None:
+    import shutil
+    import subprocess
+    from pathlib import Path
+    import persistencia_produccion as pp
+
+    def _git(cwd: Path, *args: str) -> str:
+        cp = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            check=True,
+        )
+        return cp.stdout.strip()
+
+    def _instalar_hook_github_vacio(rem_bare: Path) -> None:
+        # Simular comportamiento de GitHub en repo vacío: la primera rama recibida pasa a ser HEAD por defecto
+        hook_path = rem_bare / "hooks" / "post-receive"
+        hook_path.write_text(
+            "#!/bin/sh\n"
+            "while read oldrev newrev refname; do\n"
+            "  cur_head=$(git symbolic-ref HEAD 2>/dev/null || true)\n"
+            "  if [ -z \"$cur_head\" ] || ! git show-ref --verify --quiet \"$cur_head\"; then\n"
+            "    git symbolic-ref HEAD \"$refname\"\n"
+            "  fi\n"
+            "done\n",
+            encoding="utf-8",
+        )
+        os.chmod(hook_path, 0o755)
+
+    # Primero verificamos que la guarda SIGUE rechazando si la default remota fuera produccion-datos
+    with pytest.raises(ValueError, match="prohibida"):
+        pp.validar_rama_datos("produccion-datos", rama_defecto_remota="produccion-datos")
+
+    rem_pub = tmp_path / "publico.git"
+    rem_pub.mkdir(parents=True, exist_ok=True)
+    _git(rem_pub, "init", "--bare")
+
+    # Demostración de lo que fallaba antes: si en un repo vacío se sube primero `produccion-datos`,
+    # queda como rama por defecto (HEAD) y `hidratar_desde_remoto_datos` la rechaza.
+    rem_roto = tmp_path / "privado_sin_placeholder.git"
+    rem_roto.mkdir(parents=True, exist_ok=True)
+    _git(rem_roto, "init", "--bare")
+    _instalar_hook_github_vacio(rem_roto)
+    seed_roto = tmp_path / "seed_roto"
+    seed_roto.mkdir(parents=True, exist_ok=True)
+    _git(seed_roto, "init")
+    _git(seed_roto, "config", "user.name", "Bot CI")
+    _git(seed_roto, "config", "user.email", "bot@ci.local")
+    _git(seed_roto, "checkout", "--orphan", "produccion-datos")
+    (seed_roto / "README.md").write_text("directo\n", encoding="utf-8")
+    _git(seed_roto, "add", "README.md")
+    _git(seed_roto, "commit", "-m", "sin placeholder")
+    _git(seed_roto, "push", str(rem_roto), "HEAD:refs/heads/produccion-datos")
+    assert _git(rem_roto, "symbolic-ref", "HEAD") == "refs/heads/produccion-datos"
+
+    runner_roto = tmp_path / "runner_roto"
+    runner_roto.mkdir(parents=True, exist_ok=True)
+    _git(runner_roto, "init")
+    _git(runner_roto, "remote", "add", "origin", str(rem_pub))
+    res_fallo = pp.hidratar_desde_remoto_datos(
+        pp.ConfigPersistencia(
+            workspace_dir=runner_roto,
+            remote="datos",
+            rama_datos="produccion-datos",
+            remote_url=str(rem_roto),
+            habilitada=True,
+        )
+    )
+    assert res_fallo["ok"] is False
+    assert res_fallo["codigo_error"] == "rechazada_rama_prohibida"
+    assert "Acción requerida:" in str(res_fallo.get("error") or "")
+    assert "Default branch" in str(res_fallo.get("error") or "")
+
+    # Ahora caso corregido: repo vacío -> inicializar_produccion_limpia -> hidratar_desde_remoto_datos
+    rem_priv = tmp_path / "privado_vacio.git"
+    rem_priv.mkdir(parents=True, exist_ok=True)
+    _git(rem_priv, "init", "--bare")
+    _instalar_hook_github_vacio(rem_priv)
+
+    runner = tmp_path / "runner_ci"
+    runner.mkdir(parents=True, exist_ok=True)
+    _git(runner, "init")
+    _git(runner, "config", "user.name", "Bot CI")
+    _git(runner, "config", "user.email", "bot@ci.local")
+    (runner / "README.md").write_text("publico\n", encoding="utf-8")
+    _git(runner, "add", "README.md")
+    _git(runner, "commit", "-m", "init public")
+    _git(runner, "remote", "add", "origin", str(rem_pub))
+    (runner / "informes" / "evaluacion").mkdir(parents=True, exist_ok=True)
+    ledger_real = Path(__file__).resolve().parent.parent / "informes" / "evaluacion" / "ledger_oos.jsonl"
+    shutil.copy2(ledger_real, runner / "informes" / "evaluacion" / "ledger_oos.jsonl")
+
+    res_init = pp.inicializar_produccion_limpia(
+        runner,
+        remote="datos",
+        remote_url=str(rem_priv),
+        rama_datos="produccion-datos",
+    )
+    assert res_init["ok"] is True
+    assert res_init["creada"] is True
+    assert res_init["placeholder_creada"] is True
+    assert res_init["rama_placeholder"] == "main"
+
+    # HEAD del remoto privado quedó en main, NO en produccion-datos
+    assert _git(rem_priv, "symbolic-ref", "HEAD") == "refs/heads/main"
+    main_clone = tmp_path / "check_main"
+    _git(tmp_path, "clone", "-b", "main", str(rem_priv), str(main_clone))
+    assert (main_clone / "README.md").exists()
+
+    # Ahora hidratar en un runner recién clonado debe pasar la guarda con ok=True
+    runner2 = tmp_path / "runner_hidrata"
+    runner2.mkdir(parents=True, exist_ok=True)
+    _git(runner2, "init")
+    _git(runner2, "remote", "add", "origin", str(rem_pub))
+    cfg = pp.ConfigPersistencia(
+        workspace_dir=runner2,
+        remote="datos",
+        rama_datos="produccion-datos",
+        remote_url=str(rem_priv),
+        habilitada=True,
+    )
+    ok_hid = pp.hidratar_desde_remoto_datos(cfg)
+    assert ok_hid["ok"] is True
+    assert ok_hid["ledger"]["n_final"] == 3
+
+
+def test_bloque_j_misma_lista_y_conteo_validadas_entre_ticket_y_supercuadro_sin_truncar(tmp_path) -> None:
+    from types import SimpleNamespace
+    import servicio_mercados as sm
+
+    # Construir 6 selecciones 'mantiene' en la MISMA categoría GOLES PARTIDO (>4 píldoras para probar wrapping sin [:4]),
+    # más 1 selección 'sensible' (1X) que NO está en Top-5 #1 y debe quedar fuera de Sección 1 en AMBAS superficies.
+    sels = [
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_4.5", etiqueta="menos de 4.5 goles", periodo="FT", equipo=None, linea=4.5, probabilidad=0.87, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_3.5", etiqueta="menos de 3.5 goles", periodo="FT", equipo=None, linea=3.5, probabilidad=0.82, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="over_2.5", etiqueta="más de 2.5 goles", periodo="FT", equipo=None, linea=2.5, probabilidad=0.77, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="over_1.5", etiqueta="más de 1.5 goles", periodo="FT", equipo=None, linea=1.5, probabilidad=0.76, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="total_goles", mercado="Total de goles", evento="under_2.5", etiqueta="menos de 2.5 goles", periodo="FT", equipo=None, linea=2.5, probabilidad=0.73, estimable=True, estado="mantiene"),
+        SimpleNamespace(id_mercado="ambos_marcan", mercado="Ambos equipos anotan", evento="ambos_marcan_no", etiqueta="Ambos equipos no anotan", periodo="FT", equipo=None, linea=None, probabilidad=0.79, estimable=True, estado="mantiene"),
+        # Línea sensible en HÁNDICAP / 1X2 / DC con p_real < 0.70 (1X = 0.65): no debe colarse a Sección 1
+        SimpleNamespace(id_mercado="doble_oportunidad", mercado="Doble oportunidad", evento="1x", etiqueta="1X (Local o X)", periodo="FT", equipo="LocalFC", linea=None, probabilidad=0.71, estimable=True, estado="sensible"),
+    ]
+    # Matriz con P(1)+P(X) = 0.65 (< 0.70) para verificar que 1X sensible queda fuera en AMBAS imágenes
+    mat = [
+        [0.10, 0.12, 0.08, 0.03],
+        [0.18, 0.10, 0.08, 0.02],
+        [0.14, 0.06, 0.02, 0.01],
+        [0.04, 0.01, 0.01, 0.00],
+    ]
+    tasas = SimpleNamespace(lambda_local_ft=1.20, lambda_visitante_ft=0.95, lambda_local_1t=0.55, lambda_visitante_1t=0.42, lambda_local_2t=0.65, lambda_visitante_2t=0.53)
+    motor = SimpleNamespace(
+        matriz_ft=mat,
+        matriz_1t=mat,
+        matriz_2t=mat,
+        tasas=tasas,
+        muestras={},
+        doc_local={"partidos": []},
+        doc_visitante={"partidos": []},
+        recursivo={"aplicado": False},
+        xai_factores={},
+        hay_tension_asedio_tarjetas=False,
+        nombre_local="LocalFC",
+        nombre_visitante="VisitaFC",
+    )
+    analisis = SimpleNamespace(
+        motor=motor,
+        metadatos={
+            "equipo_local": "LocalFC",
+            "equipo_visitante": "VisitaFC",
+            "competicion": "Serie A",
+            "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        },
+        parametros=SimpleNamespace(umbral=0.70),
+        selecciones_filtradas=sels,
+        selecciones=sels,
+        abstenido=False,
+    )
+
+    uni = sm.calcular_seccion1_unificada(analisis)
+    top5, mantiene_raw, total_uni = sm.obtener_top5_y_seccion1_filtrados(analisis)
+    assert total_uni == 6
+    assert len(mantiene_raw) == 6
+    assert all("1X" not in str(getattr(s, "etiqueta", "")) for s in mantiene_raw)
+
+    sec1_cuadro = ce._organizar_sec1_para_cuadro(analisis, mantiene_raw, "LocalFC", "VisitaFC", mat, top5_podio=top5)
+    pills_cuadro = [
+        p["lbl"] for c in sec1_cuadro for p in c["pildoras"]
+        if not p.get("sin_lineas") and p.get("pct") != "-"
+    ]
+    pills_uni = [p["lbl"] for c in uni["sec1_por_categoria"] for p in c["pildoras"]]
+    assert pills_cuadro == pills_uni
+    assert len(pills_cuadro) == 6
+
+    # Verificar que ni Ticket PNG ni Súper-Cuadro truncan las 6 píldoras ni cuentan placeholders de TARJETAS
+    from PIL import ImageDraw
+    draw_texts_ticket: list[str] = []
+    orig_image_draw = ImageDraw.Draw
+    def _wrap_draw(im):
+        d = orig_image_draw(im)
+        orig_text = d.text
+        def _cap_text(xy, text, *a, **kw):
+            if isinstance(text, str):
+                draw_texts_ticket.append(text)
+            return orig_text(xy, text, *a, **kw)
+        d.text = _cap_text
+        return d
+
+    with patch.object(ImageDraw, "Draw", side_effect=_wrap_draw):
+        ruta_tkt = sm.renderizar_ticket_mercados_png(analisis, destino=str(tmp_path / "tkt_j.png"))
+    assert os.path.exists(ruta_tkt)
+    assert "6 opciones validadas" in draw_texts_ticket
+    assert all("1X" not in p["lbl"] for c in uni["sec1_por_categoria"] for p in c["pildoras"])
+    for lbl_esp in pills_uni:
+        assert any(lbl_esp in t for t in draw_texts_ticket), f"Faltó píldora {lbl_esp!r} en Ticket PNG"
+
+    # Verificar Súper-Cuadro PNG: debe renderizar '6 Validadas' y las 6 píldoras reales sin cortar en 4
+    ax_texts: list[str] = []
+    from matplotlib.axes import Axes
+    orig_ax_text = Axes.text
+    def _cap_ax_text(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            ax_texts.append(s)
+        return orig_ax_text(self, x, y, s, *a, **kw)
+
+    perfil_dum = {
+        "equipo": "LocalFC",
+        "ratings_0_100": {k: 50.0 for k in ("Overall_Hybrid_Rating", "Final_Attack_Strength", "Final_Defense_Strength", "Pressing_Intensity_Score", "Build_Up_Quality_Score", "Goalkeeper_Rating")},
+        "tempo_segundos": {
+            "Avg_Seconds_Between_Shots": 360.0,
+            "Avg_Seconds_Between_Goals": 3200.0,
+            "Avg_Seconds_Between_Shots_Conceded": 400.0,
+            "Avg_Seconds_Between_Goals_Conceded": 3400.0,
+            "Avg_Seconds_Between_Goals_Scored": 3200.0,
+        },
+        "mu_goles": 1.2,
+        "metricas_clave": {"xg_favor": 1.2, "xgot_favor": 1.1},
+    }
+    perfil_dum_v = {
+        **perfil_dum,
+        "equipo": "VisitaFC",
+        "ratings_0_100": dict(perfil_dum["ratings_0_100"]),
+        "tempo_segundos": dict(perfil_dum["tempo_segundos"]),
+        "metricas_clave": dict(perfil_dum["metricas_clave"]),
+    }
+    res_red_dum = {
+        "iteracion_convergencia": 1,
+        "ratings_finales_local": dict(perfil_dum["ratings_0_100"]),
+        "ratings_finales_visita": dict(perfil_dum_v["ratings_0_100"]),
+        "patrones_55_local": {},
+        "patrones_55_visita": {},
+        "lambdas": {"local": 1.20, "visitante": 0.95},
+    }
+    with patch.object(Axes, "text", new=_cap_ax_text):
+        ruta_sc = ce.generar_cuadro_visual_partido(
+            perfil_dum, perfil_dum_v, 1.20, 0.95, mat, str(tmp_path / "sc_j.png"),
+            res_red_precalculado=res_red_dum,
+            top5_podio=top5, sec1_data=mantiene_raw, analisis=analisis,
+        )
+    assert os.path.exists(ruta_sc)
+    assert "6 Validadas" in ax_texts
+    for lbl_esp in pills_uni:
+        assert any(lbl_esp in t for t in ax_texts), f"Faltó píldora {lbl_esp!r} en Súper-Cuadro"
+
+
+def test_bloque_k_aviso_liga_sin_falso_positivo_brazil_y_sin_desbordar_fecha(tmp_path) -> None:
+    import servicio_mercados as sm
+
+    # Normalización: mayúsculas, acentos, 'Brasil'/'BRAZIL' y ':' final son equivalentes
+    assert sm.son_ligas_equivalentes("serie A Brasil", "Serie A BRAZIL:") is True
+    assert sm.son_ligas_equivalentes("Série A Brasil", "Serie A BRAZIL:") is True
+    assert sm.son_ligas_equivalentes("Premier League", "LaLiga") is False
+
+    # 1) Si llega un falso positivo heredado "Declarada: serie A Brasil | Detectada: Serie A BRAZIL:", se suprime AVISO LIGA
+    analisis_fp = MagicMock()
+    analisis_fp.metadatos = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "competicion": "serie A Brasil",
+        "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        "advertencia_liga": "Declarada: serie A Brasil | Detectada: Serie A BRAZIL:",
+    }
+    analisis_fp.motor = None
+    analisis_fp.selecciones = []
+    analisis_fp.mercados = []
+    doc_vacio = {"equipo": {"nombre": "X"}, "partidos": []}
+    cap_fp: list[tuple[float, float, str, dict]] = []
+    from matplotlib.figure import Figure
+    orig_fig_text = Figure.text
+    def _cap_fig_text(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            cap_fp.append((float(x), float(y), s, dict(kw)))
+        return orig_fig_text(self, x, y, s, *a, **kw)
+
+    with patch.object(Figure, "text", new=_cap_fig_text):
+        ce.generar_cuadro_auditoria_15_partidos_png(analisis_fp, doc_vacio, doc_vacio, destino=str(tmp_path / "k_fp.png"))
+    assert all("AVISO LIGA:" not in s for _, _, s, _ in cap_fp)
+
+    # 2) Si hay discrepancia real larga, AVISO LIGA se envuelve debajo de la línea de fecha con va='top' sin solaparla
+    analisis_real = MagicMock()
+    analisis_real.metadatos = {
+        "equipo_local": "Equipo Alpha",
+        "equipo_visitante": "Equipo Beta",
+        "competicion": "Copa Inventada Internacional",
+        "etiqueta_fecha": "Partido: 2026-11-18 19:30 America/Lima",
+        "advertencia_liga": "Declarada: Copa Inventada Internacional Muy Larga De Prueba Para Wrapping | Detectada: Liga Totalmente Distinta Nacional",
+    }
+    analisis_real.motor = None
+    analisis_real.selecciones = []
+    analisis_real.mercados = []
+    cap_real: list[tuple[float, float, str, dict]] = []
+    def _cap_fig_text2(self, x, y, s, *a, **kw):
+        if isinstance(s, str):
+            cap_real.append((float(x), float(y), s, dict(kw)))
+        return orig_fig_text(self, x, y, s, *a, **kw)
+
+    with patch.object(Figure, "text", new=_cap_fig_text2):
+        ce.generar_cuadro_auditoria_15_partidos_png(analisis_real, doc_vacio, doc_vacio, destino=str(tmp_path / "k_real.png"))
+    av_items = [(x, y, s, kw) for x, y, s, kw in cap_real if "AVISO LIGA:" in s]
+    fecha_items = [(x, y, s, kw) for x, y, s, kw in cap_real if "Partido: 2026-11-18 19:30" in s]
+    assert len(av_items) == 1 and len(fecha_items) == 1
+    assert av_items[0][1] < fecha_items[0][1]  # debajo de la fecha
+    assert av_items[0][3].get("va") == "top"
+    assert "\n" in av_items[0][2]  # wrapped limpiamente sin desbordar a la derecha
+
+
+def test_bloque_l_snapshot_guarda_traza_etapa6_y_reglas_ataque_bajo_sin_alterar_lambdas(tmp_path) -> None:
+    import copy
+    import json
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+    import motor_patrones as mp
+
+    # 1) Verificar mecánica exacta Etapa 6 para Attack_L < 35:
+    #    - Si post_sinc lam_l > 1.10 y Def_V >= 30 y no hay piso >= 1.10 -> techo_lambda_ataque_bajo_local recorta a 1.10
+    #    - Si lam_red < lam_base y piso_doble_castigo_punto50_local (0.72*base) = 1.15 > 1.10 -> piso eleva a 1.15
+    #    - Si post_sinc lam_l = 0.99 <= 1.10 -> techo_lambda_ataque_bajo_local NO mueve λ (solo sinc/clamping)
+    tr_coritiba: list[dict] = []
+    l_cor, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.20, lam_base_visita=1.10,
+        lam_red_local=1.15, lam_red_visita=1.10,
+        ratings_local={"Final_Attack_Strength": 32.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 45.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=50.0, posesion_proyectada_visita=50.0,
+        traza_out=tr_coritiba, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_cor == 1.10
+    assert any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_coritiba)
+
+    tr_corinthians: list[dict] = []
+    l_corin, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.60, lam_base_visita=0.95,
+        lam_red_local=1.32, lam_red_visita=0.90,
+        ratings_local={"Final_Attack_Strength": 33.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 45.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=50.0, posesion_proyectada_visita=50.0,
+        traza_out=tr_corinthians, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_corin == 1.19 or l_corin >= 1.15
+    assert any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_corinthians)
+    assert any(r["regla"] == "piso_doble_castigo_punto50_local" for r in tr_corinthians)
+
+    tr_alianza: list[dict] = []
+    l_ali, _, _, _ = mp.aplicar_freno_de_mano_y_matchup_21_22(
+        lam_base_local=1.05, lam_base_visita=1.60,
+        lam_red_local=0.99, lam_red_visita=1.77,
+        ratings_local={"Final_Attack_Strength": 33.0, "Final_Defense_Strength": 50.0},
+        ratings_visita={"Final_Attack_Strength": 55.0, "Final_Defense_Strength": 50.0},
+        posesion_proyectada_local=45.0, posesion_proyectada_visita=55.0,
+        traza_out=tr_alianza, etapa_prefijo="post_sinc_mercados",
+    )
+    assert l_ali == 0.99
+    assert not any(r["regla"] == "techo_lambda_ataque_bajo_local" for r in tr_alianza)
+
+    # 2) Snapshot guardado desde análisis real persiste traza_etapa_6 y resumen_etapa_6 con deltas
+    from pathlib import Path as _Path_L
+    repo_root = _Path_L(__file__).resolve().parent.parent
+    r5 = json.loads((repo_root / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
+    an = mm.analizar(copy.deepcopy(r5["docs"]["turkey"]), copy.deepcopy(r5["docs"]["belgium"]), "Turkey", "Belgium")
+    if not getattr(an, "metadatos", None):
+        an.metadatos = {
+            "equipo_local": "Turkey",
+            "equipo_visitante": "Belgium",
+            "fecha_partido": "2026-11-12",
+            "competicion": "UEFA Nations League",
+            "generado_en": "2026-11-12 08:00:00",
+        }
+    snap = ep.snapshot_desde_analisis(
+        {
+            "id_trabajo": "test_l_tb",
+            "analisis": an,
+            "rutas": {"informe": "dummy.md"},
+        }
+    )
+    snap_dict = snap.a_dict()
+    assert isinstance(snap_dict.get("traza_etapa_6"), list)
+    assert len(snap_dict["traza_etapa_6"]) >= 1
+    assert all(st.get("etapa") == "post_sinc_mercados" for st in snap_dict["traza_etapa_6"])
+    assert "delta_l" in snap_dict["traza_etapa_6"][0]
+    res6 = snap_dict.get("resumen_etapa_6") or {}
+    assert res6.get("lam_l_final") == an.motor.tasas.lambda_local_ft
+    assert res6.get("lam_l_red") is not None
+    assert "techo_lambda_ataque_bajo_local_activo" in res6
+
+    # Compatibilidad con snapshots antiguos sin traza_etapa_6
+    antiguo = dict(snap_dict)
+    antiguo.pop("traza_etapa_6", None)
+    antiguo.pop("resumen_etapa_6", None)
+    assert antiguo.get("esquema") == "pronostico-v1"
+
+
+def test_bloque_m_contabilidad_oos_canonica_y_compatibilidad_ledger(tmp_path) -> None:
+    import copy
+    import json
+    import shutil
+    from pathlib import Path
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+
+    assert "regla operativa" in ep.REGLA_CONTABILIDAD_OOS.lower()
+    assert "sin validación" in ep.REGLA_CONTABILIDAD_OOS.lower()
+
+    repo_root = Path(__file__).resolve().parent.parent
+    r5 = json.loads((repo_root / "tests" / "fixtures" / "ronda5_real_fixtures.json").read_text(encoding="utf-8"))
+    an = mm.analizar(copy.deepcopy(r5["docs"]["turkey"]), copy.deepcopy(r5["docs"]["belgium"]), "Corinthians", "Botafogo")
+
+    # 1) Copiar ledger histórico real SIN modificar entradas previas (0..2)
+    ruta_led = tmp_path / "ledger_oos.jsonl"
+    shutil.copy2(repo_root / "informes" / "evaluacion" / "ledger_oos.jsonl", ruta_led)
+    hashes_viejos = [r["sha256"] for r in ep.cargar_ledger_oos(str(ruta_led))]
+    lineas_viejas = ruta_led.read_text(encoding="utf-8").splitlines()
+    assert ep.verificar_cadena_ledger_oos(str(ruta_led))["ok"] is True
+
+    # Inicio del partido: 2026-11-19T00:30:00Z (equivale epoch 1795048200)
+    hora_ini = "2026-11-19T00:30:00Z"
+    ts_pre_1 = 1794980369   # 2026-11-18T05:39:29Z (< hora_ini)
+    ts_pre_2 = 1794981000   # 2026-11-18T05:50:00Z (< hora_ini, segunda corrida misma fecha)
+    ts_post = 1795049000    # 2026-11-19T00:43:20Z (>= hora_ini, post-kickoff)
+
+    def _mk_prep(id_t: str, fx_ok: bool, fuente_f: str, h_ini: str | None, tg_ts: int):
+        an_c = copy.deepcopy(an)
+        an_c.metadatos = {
+            "equipo_local": "Corinthians",
+            "equipo_visitante": "Botafogo",
+            "fecha_partido": "2026-11-18",
+            "competicion": "serie A Brasil",
+            "generado_en": "2026-11-18 00:38:58",
+            "hora_inicio_partido": h_ini,
+            "fixture_confirmado": fx_ok,
+            "fuente_fecha": fuente_f,
+        }
+        return {
+            "id_trabajo": id_t,
+            "id_partido": "cor_bot_20261118",
+            "analisis": an_c,
+            "contexto": dict(an_c.metadatos),
+            "rutas": {"informe": "dummy.md"},
+            "telegram_meta": {"message_id": 100, "message_date": tg_ts},
+            "modo_sombra": {
+                "esquema": "sombra-v1",
+                "version_base": "soloA",
+                "version_sombra": "A+B",
+                "banderas_candidatas": {},
+                "lambdas_base": {"local_ft": 1.15, "visitante_ft": 0.90},
+                "lambdas_sombra": {"local_ft": 1.15, "visitante_ft": 0.90},
+                "n_selecciones_comparables": 0,
+                "comparaciones": [],
+            },
+        }
+
+    snap_dir = tmp_path / "pronosticos"
+
+    # A: Primera entrada válida pre-inicio -> es_oos_valido=True, es_canonica=True, estado_canonico='canonica'
+    prep_1 = _mk_prep("trab_1", True, "fixture", hora_ini, ts_pre_1)
+    s1 = ep.snapshot_desde_analisis(prep_1)
+    ruta_s1 = ep.guardar_snapshot(s1, directorio=str(snap_dir))
+    r1 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_1, ruta_snapshot=ruta_s1, ruta_ledger=str(ruta_led))
+    assert r1["registrado"] is True
+
+    # B: Segunda entrada válida pre-inicio para MISMO partido -> es_oos_valido=True, es_canonica=False, estado_canonico='no_canonica'
+    prep_2 = _mk_prep("trab_2", True, "fixture", hora_ini, ts_pre_2)
+    s2 = ep.snapshot_desde_analisis(prep_2)
+    ruta_s2 = ep.guardar_snapshot(s2, directorio=str(snap_dir))
+    r2 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_2, ruta_snapshot=ruta_s2, ruta_ledger=str(ruta_led))
+    assert r2["registrado"] is True
+
+    # C: Entrada sin fixture confirmado (fallback) -> es_oos_valido=False, es_canonica=False, estado_canonico='no_oos'
+    prep_nofx = _mk_prep("trab_nofx", False, "fallback", None, ts_pre_1)
+    s3 = ep.snapshot_desde_analisis(prep_nofx)
+    ruta_s3 = ep.guardar_snapshot(s3, directorio=str(snap_dir))
+    r3 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_nofx, ruta_snapshot=ruta_s3, ruta_ledger=str(ruta_led))
+    assert r3["registrado"] is True
+
+    # D: Entrada con fixture confirmado pero mensaje POSTERIOR al inicio -> no_oos
+    prep_post = _mk_prep("trab_post", True, "fixture", hora_ini, ts_post)
+    s4 = ep.snapshot_desde_analisis(prep_post)
+    ruta_s4 = ep.guardar_snapshot(s4, directorio=str(snap_dir))
+    r4 = ep.registrar_sombra_prepartido_en_ledger_oos(prep_post, ruta_snapshot=ruta_s4, ruta_ledger=str(ruta_led))
+    assert r4["registrado"] is True
+
+    # Verificar snapshots guardados en disco
+    j1 = json.loads(Path(ruta_s1).read_text(encoding="utf-8"))
+    j2 = json.loads(Path(ruta_s2).read_text(encoding="utf-8"))
+    j3 = json.loads(Path(ruta_s3).read_text(encoding="utf-8"))
+    j4 = json.loads(Path(ruta_s4).read_text(encoding="utf-8"))
+    assert j1["fixture_confirmado"] is True and j1["fuente_fecha"] == "fixture" and j1["es_oos_valido"] is True and j1["es_canonica"] is True and j1["estado_canonico"] == "canonica"
+    assert j2["fixture_confirmado"] is True and j2["es_oos_valido"] is True and j2["es_canonica"] is False and j2["estado_canonico"] == "no_canonica"
+    assert j3["fixture_confirmado"] is False and j3["fuente_fecha"] == "fallback" and j3["es_oos_valido"] is False and j3["estado_canonico"] == "no_oos"
+    assert j4["fixture_confirmado"] is True and j4["es_oos_valido"] is False and j4["estado_canonico"] == "no_oos"
+
+    # Verificar que verificar_cadena_ledger_oos acepta entradas antiguas + nuevas sin alterar hashes históricos
+    ver_mix = ep.verificar_cadena_ledger_oos(str(ruta_led))
+    assert ver_mix["ok"] is True
+    assert ver_mix["entradas"] == len(hashes_viejos) + 4
+    nuevas_lineas = ruta_led.read_text(encoding="utf-8").splitlines()
+    assert nuevas_lineas[:len(lineas_viejas)] == lineas_viejas
+    regs = ep.cargar_ledger_oos(str(ruta_led))
+    assert [r["sha256"] for r in regs[:len(hashes_viejos)]] == hashes_viejos
+    n0 = len(hashes_viejos)
+    assert regs[n0]["estado_canonico"] == "canonica" and regs[n0]["es_canonica"] is True
+    assert regs[n0 + 1]["estado_canonico"] == "no_canonica" and regs[n0 + 1]["es_canonica"] is False
+    assert regs[n0 + 2]["estado_canonico"] == "no_oos" and regs[n0 + 2]["es_oos_valido"] is False
+    assert regs[n0 + 3]["estado_canonico"] == "no_oos" and regs[n0 + 3]["es_oos_valido"] is False
+
+    # Contabilidad resumen_ledger_oos sobre liquidaciones: solo la canónica válida cuenta
+    ruta_led_liq = str(tmp_path / "ledger_liq.jsonl")
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P1", "partido": "A vs B", "fecha": "2026-11-18",
+        "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
+        "telegram_message_date": ts_pre_1, "resumen": {"aciertos": 4, "fallos": 0, "n_evaluables": 4, "brier": 0.1},
+    }, ruta_ledger=ruta_led_liq)
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P2", "partido": "A vs B", "fecha": "2026-11-18",
+        "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
+        "telegram_message_date": ts_pre_2, "resumen": {"aciertos": 1, "fallos": 3, "n_evaluables": 4, "brier": 0.5},
+    }, ruta_ledger=ruta_led_liq)
+    ep.registrar_en_ledger_oos({
+        "estado_registro": "liquidado", "id_partido": "P3", "partido": "C vs D", "fecha": "2026-11-18",
+        "fixture_confirmado": False, "fuente_fecha": "fallback", "hora_inicio_partido": None,
+        "telegram_message_date": ts_pre_1, "resumen": {"aciertos": 0, "fallos": 4, "n_evaluables": 4, "brier": 0.9},
+    }, ruta_ledger=ruta_led_liq)
+    res_liq = ep.resumen_ledger_oos(ruta_led_liq)
+    assert res_liq["cadena_sha256_ok"] is True
+    assert res_liq["n_incluidos_promedios_calibracion"] == 1
+    assert res_liq["n_excluidos_no_canonica"] == 1
+    assert res_liq["n_excluidos_no_oos"] == 1

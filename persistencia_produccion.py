@@ -104,11 +104,17 @@ def validar_rama_datos(
     if not rama:
         raise ValueError("Rama de datos vacía o inválida.")
     rl = rama.lower()
+    remediacion = (
+        "Acción requerida: crea o marca 'main' como rama por defecto (Default branch) "
+        "en el repositorio privado de datos o ejecuta `inicializar_produccion_limpia()` "
+        "para inicializar `main` antes de `produccion-datos`."
+    )
     if rl in RAMAS_DEFECTO_PROHIBIDAS:
-        raise ValueError(f"La rama por defecto {rama!r} está prohibida como rama de datos.")
+        raise ValueError(f"La rama por defecto {rama!r} está prohibida como rama de datos. {remediacion}")
     if rama_defecto_remota and rl == str(rama_defecto_remota).strip().lower():
         raise ValueError(
-            f"La rama {rama!r} coincide con la rama por defecto remota {rama_defecto_remota!r} y está prohibida."
+            f"La rama {rama!r} coincide con la rama por defecto remota {rama_defecto_remota!r} "
+            f"y está prohibida. {remediacion}"
         )
     return rama
 
@@ -1182,30 +1188,38 @@ def inicializar_produccion_limpia(
         return {"ok": False, "codigo_error": "error_remoto_auth_o_red", "error": err_head or "Fallo remoto"}
     validar_rama_datos(rama_norm, rama_defecto_remota=rama_def_rem)
 
-    cp_ls = _run_git_con_auth(
+    cp_ls_all = _run_git_con_auth(
         ws,
         cfg,
         "ls-remote",
         "--heads",
         cfg.remote_url,
-        f"refs/heads/{rama_norm}",
         target_url=cfg.remote_url,
         check=False,
     )
-    if cp_ls.returncode != 0:
+    if cp_ls_all.returncode != 0:
         return {
             "ok": False,
             "codigo_error": "error_remoto_auth_o_red",
-            "error": _censurar_secreto((cp_ls.stderr or cp_ls.stdout or "fallo ls-remote").strip(), cfg.remote_token, cfg.remote_url),
+            "error": _censurar_secreto(
+                (cp_ls_all.stderr or cp_ls_all.stdout or "fallo ls-remote").strip(),
+                cfg.remote_token,
+                cfg.remote_url,
+                cfg.remote_ssh_key,
+            ),
         }
-    rem_line = (cp_ls.stdout or "").strip()
-    if rem_line:
+    ramas_remotas: dict[str, str] = {}
+    for ln in (cp_ls_all.stdout or "").splitlines():
+        partes = ln.strip().split()
+        if len(partes) >= 2 and partes[1].startswith("refs/heads/"):
+            ramas_remotas[partes[1][len("refs/heads/"):]] = partes[0]
+    if rama_norm in ramas_remotas:
         return {
             "ok": True,
             "creada": False,
             "ya_existia": True,
             "rama": rama_norm,
-            "remoto_sha": rem_line.split()[0],
+            "remoto_sha": ramas_remotas[rama_norm],
         }
 
     loc_ledger = ws / RUTA_LEDGER_REL
@@ -1222,6 +1236,53 @@ def inicializar_produccion_limpia(
         return {"ok": False, "codigo_error": "ledger_limpio_vacio", "error": "El ledger limpio quedó vacío."}
 
     import evaluacion_pronosticos as ep
+
+    placeholder_creada = False
+    rama_placeholder = "main"
+    if not ramas_remotas:
+        # En un repo privado vacío, la primera rama subida queda como default en el remoto.
+        # Creamos primero `main` con README.md para que `produccion-datos` nunca sea default.
+        stage_main = Path(tempfile.mkdtemp(prefix=f"init_main_{os.getpid()}_"))
+        try:
+            _run_git(stage_main, "init")
+            _run_git(stage_main, "config", "user.name", cfg.author_name)
+            _run_git(stage_main, "config", "user.email", cfg.author_email)
+            _run_git(stage_main, "checkout", "--orphan", rama_placeholder)
+            _run_git(stage_main, "remote", "add", cfg.remote, cfg.remote_url)
+            escribir_atomico_texto(
+                stage_main / "README.md",
+                (
+                    "# Repositorio privado de datos de producción\n\n"
+                    "Rama placeholder por defecto (`main`). "
+                    f"Los datos de producción se almacenan exclusivamente en `{rama_norm}`.\n"
+                ),
+            )
+            _run_git(stage_main, "add", "README.md")
+            _run_git(stage_main, "commit", "-m", "docs(init): crear rama placeholder main con README")
+            cp_push_main = _run_git_con_auth(
+                stage_main,
+                cfg,
+                "push",
+                cfg.remote,
+                f"HEAD:refs/heads/{rama_placeholder}",
+                target_url=cfg.remote_url,
+                check=False,
+            )
+            if cp_push_main.returncode != 0:
+                return {
+                    "ok": False,
+                    "codigo_error": "error_push_placeholder_main",
+                    "error": _censurar_secreto(
+                        (cp_push_main.stderr or cp_push_main.stdout or "fallo push main").strip(),
+                        cfg.remote_token,
+                        cfg.remote_url,
+                        cfg.remote_ssh_key,
+                    ),
+                }
+            placeholder_creada = True
+        finally:
+            _rmtree_seguro(stage_main)
+
     stage_dir = Path(tempfile.mkdtemp(prefix=f"init_prod_{os.getpid()}_"))
     try:
         _run_git(stage_dir, "init")
@@ -1276,6 +1337,8 @@ def inicializar_produccion_limpia(
             "n_entradas": int(ver_clean.get("entradas") or 0),
             "ultimo_sha256": ver_clean.get("ultimo_sha256"),
             "partidos": [str(r.get("partido") or "") for r in limpias],
+            "placeholder_creada": placeholder_creada,
+            "rama_placeholder": rama_placeholder if placeholder_creada else None,
         }
     finally:
         _rmtree_seguro(stage_dir)

@@ -511,8 +511,9 @@ def evaluar_decision_cobertura(
             estado="cobertura_insuficiente",
             publicar_probabilidades=False,
             alerta_descriptiva=(
-                f"Cobertura insuficiente (sin variables comparables): solo {n_filas_comp} filas emparejadas "
-                f"comparten al menos {min_claves_req} claves comunes en FT (mínimo requerido: {min_filas_comp_req}). "
+                f"Cobertura insuficiente (sin variables comparables): solo {n_filas_comp} de "
+                f"{min_filas_comp_req} partidos emparejados requeridos comparten al menos {min_claves_req} "
+                "claves métricas comunes en FT. "
                 "Los historiales de ambos clubes carecen de métricas homogéneas suficientes."
             ),
             etiqueta_cobertura_a=etq_a,

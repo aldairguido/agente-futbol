@@ -82,6 +82,48 @@ def _clave_equipo(nombre: str) -> str:
 # RESOLUCIÓN DEL ENFRENTAMIENTO Y ZONA HORARIA OFICIAL AMERICA/LIMA (PUNTO 42)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def formatear_etiqueta_fecha_encabezado(meta: dict[str, Any] | None) -> str:
+    """
+    Bloque G (Ronda 18): Etiqueta única de fecha para encabezados de Ticket PNG,
+    Súper-Cuadro y Auditoría 15P:
+      - Con fixture confirmado: `"Partido: <fecha y hora de inicio con zona>"`
+      - Sin fixture confirmado: `"Sin partido programado encontrado"` (nunca la fecha de hoy)
+    """
+    m = meta if isinstance(meta, dict) else {}
+    etq = str(m.get("etiqueta_fecha") or "").strip()
+    if etq.startswith(("Partido:", "Sin partido programado")):
+        return etq
+    if bool(m.get("sin_partido_proximo")) or (m.get("es_fecha_analisis") is True and not bool(m.get("fixture_confirmado"))):
+        return "Sin partido programado encontrado"
+    h_loc = str(m.get("hora_inicio_local") or "").strip()
+    if h_loc:
+        return f"Partido: {h_loc}"
+    h_utc = str(m.get("hora_inicio_partido") or "").strip()
+    if h_utc:
+        try:
+            from datetime import timedelta
+            tz_lima = timezone(timedelta(hours=-5), name="America/Lima")
+            s_c = h_utc.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s_c)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return f"Partido: {dt.astimezone(tz_lima).strftime('%Y-%m-%d %H:%M')} America/Lima"
+        except Exception:
+            pass
+    f_raw = str(m.get("fecha_partido") or "").strip()
+    f_low = f_raw.lower()
+    if (
+        not f_raw
+        or f_low in ("none", "null", "no disponible", "s/f")
+        or f_low.startswith(("análisis del", "analisis del", "sin partido"))
+    ):
+        return "Sin partido programado encontrado"
+    if bool(m.get("fixture_confirmado")) or re.match(r"^\d{4}-\d{2}-\d{2}$", f_raw[:10]):
+        zona = str(m.get("zona_horaria") or "America/Lima")
+        return f"Partido: {f_raw[:10]} (hora s/d, {zona})"
+    return "Sin partido programado encontrado"
+
+
 def resolver_fecha_encuentro_lima(
     fecha_utc_o_iso: str | None = None,
     es_partido_programado: bool = True,
@@ -105,10 +147,14 @@ def resolver_fecha_encuentro_lima(
     raw = str(fecha_utc_o_iso or "").strip()
     est_txt = f"{estado_partido or ''} {raw}".lower()
     if any(k in est_txt for k in ("aplazado", "postponed", "cancelled", "cancelado", "suspendido", "abandoned")):
-        etiqueta_apl = f"Partido aplazado (Análisis del {hoy_lima})"
+        etiqueta_apl = "Sin partido programado encontrado (aplazado)"
         return {
-            "fecha_partido": etiqueta_apl,
+            "fecha_partido": None,
             "etiqueta_fecha": etiqueta_apl,
+            "hora_inicio_partido": None,
+            "hora_inicio_local": None,
+            "fixture_confirmado": False,
+            "fuente_fecha": "fallback",
             "zona_horaria": "America/Lima",
             "es_fecha_analisis": True,
             "partido_activo": False,
@@ -117,7 +163,7 @@ def resolver_fecha_encuentro_lima(
             "alcance_mercado": "90_minutos_reglamentarios",
         }
 
-    if raw and raw.lower() not in ("none", "null", "no disponible", "s/f") and not raw.lower().startswith("análisis del"):
+    if raw and raw.lower() not in ("none", "null", "no disponible", "s/f") and not raw.lower().startswith(("análisis del", "analisis del", "sin partido programado")):
         try:
             # 1) Timestamp con hora explícita -> convertir a America/Lima
             if "T" in raw or ":" in raw:
@@ -127,12 +173,18 @@ def resolver_fecha_encuentro_lima(
                 dt = datetime.fromisoformat(s_clean)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
+                dt_utc = dt.astimezone(timezone.utc)
                 dt_lima = dt.astimezone(tz_lima)
                 f_str = dt_lima.strftime("%Y-%m-%d")
+                h_loc = f"{dt_lima.strftime('%Y-%m-%d %H:%M')} America/Lima"
                 if es_partido_programado:
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {h_loc}",
+                        "hora_inicio_partido": dt_utc.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "hora_inicio_local": h_loc,
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -146,7 +198,11 @@ def resolver_fecha_encuentro_lima(
                 if es_partido_programado:
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {f_str} (hora s/d, America/Lima)",
+                        "hora_inicio_partido": None,
+                        "hora_inicio_local": f"{f_str} (hora s/d, America/Lima)",
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -162,7 +218,11 @@ def resolver_fecha_encuentro_lima(
                     f_str = f"{yyyy:04d}-{mm_n:02d}-{dd:02d}"
                     return {
                         "fecha_partido": f_str,
-                        "etiqueta_fecha": f_str,
+                        "etiqueta_fecha": f"Partido: {f_str} (hora s/d, America/Lima)",
+                        "hora_inicio_partido": None,
+                        "hora_inicio_local": f"{f_str} (hora s/d, America/Lima)",
+                        "fixture_confirmado": True,
+                        "fuente_fecha": "fixture",
                         "zona_horaria": "America/Lima",
                         "es_fecha_analisis": False,
                         "partido_activo": True,
@@ -173,13 +233,18 @@ def resolver_fecha_encuentro_lima(
         except Exception:
             pass
 
-    etiqueta = raw if raw.lower().startswith("análisis del") else f"Análisis del {hoy_lima}"
+    _ = hoy_lima
+    etiqueta_sin = "Sin partido programado encontrado"
     return {
-        "fecha_partido": etiqueta,
-        "etiqueta_fecha": etiqueta,
+        "fecha_partido": None,
+        "etiqueta_fecha": etiqueta_sin,
+        "hora_inicio_partido": None,
+        "hora_inicio_local": None,
+        "fixture_confirmado": False,
+        "fuente_fecha": "fallback",
         "zona_horaria": "America/Lima",
         "es_fecha_analisis": True,
-        "partido_activo": bool(es_partido_programado),
+        "partido_activo": False,
         "estado_encuentro": "analisis_sin_fecha_futura",
         "conversion_utc_aplicada": False,
         "alcance_mercado": "90_minutos_reglamentarios",
@@ -268,10 +333,14 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             continue
         vistos.add(clave)
         es_casa = es_directo
-        candidatos.append((fecha, {
+        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), {
             "id_partido": str(f.get("id_partido") or ""),
             "fecha_partido": fecha,
             "etiqueta_fecha": info_f["etiqueta_fecha"],
+            "hora_inicio_partido": info_f.get("hora_inicio_partido"),
+            "hora_inicio_local": info_f.get("hora_inicio_local"),
+            "fixture_confirmado": True,
+            "fuente_fecha": "fixture",
             "zona_horaria": "America/Lima",
             "es_fecha_analisis": False,
             "partido_activo": True,
@@ -365,8 +434,12 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                 "goles_local": g_l,
                 "goles_visitante": g_v,
                 "fecha_jugado": fecha_jug,
-                "fecha_partido": info_analisis["etiqueta_fecha"],
+                "fecha_partido": info_analisis["fecha_partido"],
                 "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+                "hora_inicio_partido": None,
+                "hora_inicio_local": None,
+                "fixture_confirmado": False,
+                "fuente_fecha": "fallback",
                 "fecha_ultimo_h2h": fecha_jug,
                 "zona_horaria": "America/Lima",
                 "es_fecha_analisis": True,
@@ -387,8 +460,12 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
     reciente_l, reciente_v = mas_reciente(doc_local), mas_reciente(doc_visitante)
     return {
         "id_partido": None,
-        "fecha_partido": info_analisis["etiqueta_fecha"],
+        "fecha_partido": info_analisis["fecha_partido"],
         "etiqueta_fecha": info_analisis["etiqueta_fecha"],
+        "hora_inicio_partido": None,
+        "hora_inicio_local": None,
+        "fixture_confirmado": False,
+        "fuente_fecha": "fallback",
         "zona_horaria": "America/Lima",
         "es_fecha_analisis": True,
         "partido_activo": False,
@@ -509,26 +586,49 @@ def construir_resumen_h2h_ticket(
     return "H2H Reciente (informativo): " + " · ".join(partes)
 
 
+_SINONIMOS_PAIS_LIGA = {
+    "brazil": "brasil",
+    "spain": "espana",
+    "italy": "italia",
+    "england": "inglaterra",
+    "uk": "inglaterra",
+    "germany": "alemania",
+    "france": "francia",
+    "netherlands": "holanda",
+    "belgium": "belgica",
+    "scotland": "escocia",
+    "switzerland": "suiza",
+    "turkey": "turquia",
+    "turkiye": "turquia",
+    "morocco": "marruecos",
+}
+
+
 def son_ligas_equivalentes(liga_decl: str, liga_det: str) -> bool:
     """
     Determina si la competición declarada y la detectada corresponden al mismo torneo
-    o a la misma familia continental de selecciones (Punto 50).
-    Por ejemplo, UEFA Nations League == Europe == Eurocopa == Eliminatorias UEFA.
+    o a la misma familia continental de selecciones (Punto 50), normalizando mayúsculas,
+    acentos, signos como ':' final y sinónimos de país ('Brasil'/'BRAZIL').
     """
     if not liga_decl or not liga_det:
         return True
     from fuentes_xg import _sin_acentos
-    s_decl = _sin_acentos(str(liga_decl)).lower().strip()
-    s_det = _sin_acentos(str(liga_det)).lower().strip()
+    s_decl = _sin_acentos(str(liga_decl)).lower().strip().rstrip(":").strip()
+    s_det = _sin_acentos(str(liga_det)).lower().strip().rstrip(":").strip()
     if s_decl == s_det:
         return True
 
     def _raiz(t: str) -> str:
-        s = _sin_acentos(str(t)).lower().strip()
-        s = re.sub(r'[^a-z0-9]', '', s)
-        s = s.replace("brasileirao", "brasileir").replace("brasileiro", "brasileir")
-        s = s.replace("campeonato", "")
-        return s
+        s = _sin_acentos(str(t)).lower().strip().rstrip(":").strip()
+        toks = [
+            _SINONIMOS_PAIS_LIGA.get(w, w)
+            for w in re.split(r"[^a-z0-9]+", s)
+            if w
+        ]
+        s_norm = "".join(toks)
+        s_norm = s_norm.replace("brasileirao", "brasileir").replace("brasileiro", "brasileir")
+        s_norm = s_norm.replace("campeonato", "")
+        return s_norm
 
     r1 = _raiz(s_decl)
     r2 = _raiz(s_det)
@@ -889,11 +989,12 @@ def resolver_enfrentamiento(
         contexto.get("competicion"),
     ]
     liga_det_raw = next(
-        (str(x).strip() for x in _cands_liga_det if str(x or "").strip() and not _es_region_geografica(str(x))),
+        (str(x).strip().rstrip(":").strip() for x in _cands_liga_det if str(x or "").strip() and not _es_region_geografica(str(x))),
         "",
     )
-    if liga_decl_raw and liga_det_raw and not son_ligas_equivalentes(liga_decl_raw, liga_det_raw):
-        adv_liga = f"Declarada: {liga_decl_raw} | Detectada: {liga_det_raw}"
+    liga_decl_limpia = liga_decl_raw.rstrip(":").strip()
+    if liga_decl_limpia and liga_det_raw and not son_ligas_equivalentes(liga_decl_limpia, liga_det_raw):
+        adv_liga = f"Declarada: {liga_decl_limpia} | Detectada: {liga_det_raw}"
         avisar(f"⚠️ Advertencia de Liga: {adv_liga}")
         contexto["advertencia_liga"] = adv_liga
 
@@ -970,6 +1071,61 @@ def resolver_enfrentamiento(
 FIRMA_MOTOR = "red-neuronal-recursiva-45"
 
 
+def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[str, Any] | None) -> str:
+    """Calcula la firma determinista SHA-256 corta (12 hex) sobre los historiales cargados."""
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    return hashlib.sha256(
+        json.dumps(
+            [
+                len(dl.get("partidos", []) or []),
+                len(dv.get("partidos", []) or []),
+                dl.get("generado_en"),
+                dv.get("generado_en"),
+            ],
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+
+
+def extraer_fuentes_y_firma_datos(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`) y `firma_datos`."""
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    f_loc = str(dl.get("fuente") or "").strip() or None
+    f_vis = str(dv.get("fuente") or "").strip() or None
+    return {
+        "fuente_local": f_loc,
+        "fuente_visitante": f_vis,
+        "firma_datos": calcular_firma_datos(dl, dv),
+    }
+
+
+def formatear_fuentes_clubes_encabezado(
+    metadatos: dict[str, Any] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    *,
+    equipo_local: str | None = None,
+    equipo_visitante: str | None = None,
+) -> str:
+    """Devuelve el texto de fuente por club para encabezados (Telegram, Ticket, Cuadros)."""
+    meta = metadatos if isinstance(metadatos, dict) else {}
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    eq_l = str(equipo_local or meta.get("equipo_local") or (dl.get("equipo") or {}).get("nombre") or "Local").strip()
+    eq_v = str(equipo_visitante or meta.get("equipo_visitante") or (dv.get("equipo") or {}).get("nombre") or "Visitante").strip()
+    f_l = str(meta.get("fuente_local") or dl.get("fuente") or "").strip()
+    f_v = str(meta.get("fuente_visitante") or dv.get("fuente") or "").strip()
+    if not f_l and not f_v:
+        return ""
+    return f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}"
+
+
 def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str, Any],
                         doc_visitante: dict[str, Any]) -> str:
     """
@@ -977,11 +1133,7 @@ def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str,
     del modelo + firma del motor. Sirve para no repetir envíos ya confirmados y
     para distinguir un reintento técnico de una nueva solicitud explícita.
     """
-    firma_datos = hashlib.sha256(
-        json.dumps([len(doc_local.get("partidos", [])), len(doc_visitante.get("partidos", [])),
-                    doc_local.get("generado_en"), doc_visitante.get("generado_en")],
-                   ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()[:12]
+    firma_datos = calcular_firma_datos(doc_local, doc_visitante)
     base = "|".join([
         str(analisis_metadatos.get("equipo_local", "")).lower(),
         str(analisis_metadatos.get("equipo_visitante", "")).lower(),
@@ -1093,42 +1245,225 @@ def _sanear_para_canvas(texto: str) -> str:
     return t.strip()
 
 
-def obtener_top5_y_seccion1_filtrados(
-    analisis,
-    metadatos = None,
-    umbral = None,
-):
-    """
-    Extrae el Top-5 Podio y la lista filtrada de Sección 1 (Gatekeeper)
-    garantizando que las líneas triviales como -6.5 Goles o -5.5 Goles sean eliminadas
-    y que las selecciones correspondan al subconjunto competitivo de 15-20 opciones.
-    Devuelve (top5_podio, mantiene_raw, total_validadas).
-    """
-    def _val(obj, clave, defecto=None):
-        if isinstance(obj, dict):
-            return obj.get(clave, defecto)
-        return getattr(obj, clave, defecto)
+ORDEN_CATEGORIAS_SECCION1 = [
+    "GOLES PARTIDO",
+    "GOLES POR EQUIPO",
+    "CÓRNERES",
+    "TARJETAS",
+    "HÁNDICAP / 1X2 / DC",
+]
 
-    meta = metadatos or _val(analisis, "metadatos", {}) or {}
-    params = _val(analisis, "parametros", None)
-    umbral_val = (umbral if umbral is not None else _val(params, "umbral", 0.70))
+
+def _val_sel(obj: Any, clave: str, defecto: Any = None) -> Any:
+    if isinstance(obj, dict):
+        return obj.get(clave, defecto)
+    return getattr(obj, clave, defecto)
+
+
+def clasificar_categoria_ambito_seccion1(s: Any) -> tuple[str, str]:
+    m_l = str(_val_sel(s, "mercado") or "").lower()
+    e_l = str(_val_sel(s, "evento") or "").lower()
+    eq_raw = _val_sel(s, "equipo", None)
+    eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
+    per = str(_val_sel(s, "periodo") or "FT").strip().upper()
+    if per not in ("FT", "1T", "2T"):
+        per = "FT"
+    per_nombre = "Tiempo Completo (FT)" if per == "FT" else ("1er Tiempo (1T)" if per == "1T" else "2º Tiempo (2T)")
+
+    if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
+        cat = "CÓRNERES"
+        amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
+        return cat, amb
+
+    if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
+        cat = "TARJETAS"
+        amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
+        return cat, amb
+
+    if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
+        cat = "HÁNDICAP / 1X2 / DC"
+        amb = per_nombre
+        return cat, amb
+
+    if eq:
+        cat = "GOLES POR EQUIPO"
+        amb = f"{eq} · Total ({per})" if per == "FT" else f"{eq} · {per}"
+        return cat, amb
+
+    return "GOLES PARTIDO", per_nombre
+
+
+def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[str, str, float]:
+    ev = str(_val_sel(s, "evento") or "").lower()
+    et = str(_val_sel(s, "etiqueta") or "")
+    lin = _val_sel(s, "linea", None)
+    prob = float(_val_sel(s, "probabilidad", 0.0) or 0.0)
+    pct = f"{prob:.0%}"
+
+    try:
+        from decision_cobertura import bandera_activa as _ba_cal_s1
+        if _ba_cal_s1("usar_calibracion_y_veto_conciencia"):
+            p_cal_att = _val_sel(s, "prob_calibrada", None)
+            vig_att = bool(_val_sel(s, "bajo_vigilancia", False) or _val_sel(s, "veto_top5", False))
+            if p_cal_att is None:
+                from agente_consciente import evaluar_familia_conciencia_cached
+                info_c = evaluar_familia_conciencia_cached(str(_val_sel(s, "mercado") or ""), equipo=_val_sel(s, "equipo", None), prob_bruta=prob)
+                p_cal_att = info_c.get("prob_calibrada")
+                vig_att = bool(info_c.get("bajo_vigilancia") or info_c.get("veto_top5"))
+            if vig_att and p_cal_att is not None:
+                pct = f"{prob:.0%} (cal {float(p_cal_att):.0%})"
+    except Exception:
+        pass
+
+    eq_raw_p = _val_sel(s, "equipo", None)
+    eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
+    per_p = str(_val_sel(s, "periodo") or "FT").strip().upper()
+    if per_p not in ("FT", "1T", "2T"):
+        per_p = "FT"
+
+    if cat == "GOLES POR EQUIPO":
+        if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+            return "", "", 0.0
+        eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
+        if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+        elif "under_" in ev or "menos de" in et.lower():
+            lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+        elif "al_menos_" in ev or "al menos" in et.lower():
+            if lin is not None and isinstance(lin, (int, float)):
+                lbl = f"{eq_corto} +{float(lin) - 0.5:g} Goles ({per_p})"
+            else:
+                lbl = f"{eq_corto} {et}"
+        elif "primer_gol" in ev:
+            lbl = f"1er Gol: {eq_corto}"
+        else:
+            lbl = f"{eq_corto} {et}"
+        return lbl, pct, prob
+
+    if "GOL" in cat:
+        if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
+            return "", "", 0.0
+        suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
+        if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
+            lbl = "+0.5 Goles (1T)"
+        elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
+            lbl = "+0.5 Goles (2T)"
+        elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
+            lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
+        elif "under_" in ev or "menos de" in et.lower():
+            lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
+        elif "al_menos_" in ev or "al menos" in et.lower():
+            if lin is not None and isinstance(lin, (int, float)):
+                lbl = f"+{float(lin) - 0.5:g} Goles{suf_p}"
+            else:
+                lbl = et
+        elif "primer_gol" in ev:
+            lbl = f"1er Gol: {eq_p or eq_l}"
+        elif "ambos_marcan" in ev or "btts" in ev:
+            lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
+        else:
+            lbl = et
+    elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
+        if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
+            return "", "", 0.0
+        pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
+        if "over_" in ev or "mas de" in et.lower() or "más" in et.lower():
+            lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
+        elif "under_" in ev or "menos" in et.lower():
+            lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
+        else:
+            lbl = et
+        return lbl, pct, prob
+    elif "TARJETA" in cat:
+        if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
+            return "", "", 0.0
+        if "roja" in ev or "roja" in et.lower():
+            lbl = f"+{lin:g} Roja" if lin is not None else "Tarjeta Roja"
+        elif "over_" in ev or "mas de" in et.lower() or "mas" in et.lower():
+            lbl = f"+{lin:g} Tarj." if lin is not None else et
+        elif "under_" in ev or "menos" in et.lower():
+            lbl = f"-{lin:g} Tarj." if lin is not None else et
+        else:
+            lbl = et
+    else:
+        if ev in ("1", "local_gana"):
+            lbl = f"{eq_l} Gana"
+        elif ev in ("2", "visitante_gana"):
+            lbl = f"{eq_v} Gana"
+        elif ev in ("x", "empate"):
+            lbl = "Empate"
+        elif ev == "1x":
+            lbl = f"1X ({eq_l} o X)"
+        elif ev == "x2":
+            lbl = f"X2 (X o {eq_v})"
+        elif ev == "12":
+            lbl = "12 (Sin Empate)"
+        elif "dnb" in ev:
+            lbl = f"{_val_sel(s, 'equipo') or eq_l} DNB"
+        elif "h0_" in ev:
+            lbl = f"H0 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h1_" in ev:
+            lbl = f"H+1 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h2_" in ev:
+            lbl = f"H+2 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h3_" in ev:
+            lbl = f"H+3 {_val_sel(s, 'equipo') or eq_l}"
+        elif "h_minus1_" in ev or "h-1_" in ev:
+            lbl = f"H-1 {_val_sel(s, 'equipo') or eq_l}"
+        else:
+            lbl = et
+
+    for eq_nom in (eq_l, eq_v):
+        if lbl.startswith(eq_nom + ":"):
+            lbl = lbl[len(eq_nom) + 1:].strip()
+        elif lbl.startswith(eq_nom + " - "):
+            lbl = lbl[len(eq_nom) + 3:].strip()
+    return lbl, pct, prob
+
+
+def calcular_seccion1_unificada(
+    analisis: Any,
+    metadatos: dict[str, Any] | None = None,
+    umbral: float | None = None,
+    *,
+    sec1_data: list[Any] | None = None,
+    eq_l: str | None = None,
+    eq_v: str | None = None,
+    matriz_prob: list[list[float]] | None = None,
+    top5_podio: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Fuente única de verdad compartida entre Telegram/Ticket y Súper-Cuadro para:
+      - Top 5 Podio
+      - Sección 1 (`estado == 'mantiene'` + Punto 27 + verificación `p_1x2`)
+      - Sección 2 (`estado != 'mantiene'`)
+      - Conteo exacto `total_validadas` (sin truncar píldoras ni contar placeholders).
+    """
+    meta = metadatos or _val_sel(analisis, "metadatos", {}) or {}
+    params = _val_sel(analisis, "parametros", None)
+    umbral_val = umbral if umbral is not None else _val_sel(params, "umbral", 0.70)
     if isinstance(umbral_val, (int, float)) and umbral_val > 1.0:
         umbral_val = umbral_val / 100.0
+    umbral_val = float(umbral_val or 0.70)
 
-    eq_l_raw = meta.get("equipo_local") or "Local"
-    eq_l = str(eq_l_raw.get("nombre") or eq_l_raw.get("nombre_oficial") or "Local") if isinstance(eq_l_raw, dict) else str(eq_l_raw)
-    eq_v_raw = meta.get("equipo_visitante") or "Visitante"
-    eq_v = str(eq_v_raw.get("nombre") or eq_v_raw.get("nombre_oficial") or "Visitante") if isinstance(eq_v_raw, dict) else str(eq_v_raw)
+    if not eq_l:
+        eq_l_raw = meta.get("equipo_local") or "Local"
+        eq_l = str(eq_l_raw.get("nombre") or eq_l_raw.get("nombre_oficial") or "Local") if isinstance(eq_l_raw, dict) else str(eq_l_raw)
+    if not eq_v:
+        eq_v_raw = meta.get("equipo_visitante") or "Visitante"
+        eq_v = str(eq_v_raw.get("nombre") or eq_v_raw.get("nombre_oficial") or "Visitante") if isinstance(eq_v_raw, dict) else str(eq_v_raw)
 
-    sels_raw = _val(analisis, "selecciones_filtradas", []) or []
-    if not sels_raw and hasattr(analisis, "grupos"):
-        g = getattr(analisis, "grupos", {})
-        sels_raw = (g.get("mantiene", []) + g.get("sensible", []))
-    if not sels_raw and hasattr(analisis, "selecciones_validadas"):
-        sels_raw = getattr(analisis, "selecciones_validadas", []) or []
+    if sec1_data is not None:
+        sels_raw = list(sec1_data)
+    else:
+        sels_raw = list(_val_sel(analisis, "selecciones_filtradas", []) or [])
+        if not sels_raw and analisis is not None and hasattr(analisis, "grupos"):
+            g = getattr(analisis, "grupos", {}) or {}
+            sels_raw = list(g.get("mantiene", []) or []) + list(g.get("sensible", []) or [])
+        if not sels_raw and analisis is not None and hasattr(analisis, "selecciones_validadas"):
+            sels_raw = list(getattr(analisis, "selecciones_validadas", []) or [])
 
-    motor = getattr(analisis, "motor", None)
-
+    motor = getattr(analisis, "motor", None) if analisis is not None else None
     bloquear_corners = False
     bloquear_tarjetas = False
     if motor and hasattr(motor, "_mu_corners"):
@@ -1157,82 +1492,140 @@ def obtener_top5_y_seccion1_filtrados(
 
     from motor_mercados import (
         es_seleccion_competitiva_ticket,
+        es_seleccion_vetada_por_micropatrones,
         filtrar_top_opciones_ticket,
         seleccionar_top_5_jugadas_recomendadas,
     )
 
+    mat_ref = matriz_prob or (getattr(motor, "matriz_ft", None) if motor is not None else None) or (getattr(analisis, "matriz_ft", None) if analisis is not None else None)
     p_1x2 = None
-    if motor and getattr(motor, "matriz_ft", None):
-        mat = motor.matriz_ft
-        R = len(mat)
-        C = len(mat[0]) if R else 0
-        p1 = sum(mat[i][j] for i in range(R) for j in range(C) if i > j)
-        px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
-        p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
-        p_1x2 = (p1, px, p2)
+    if mat_ref:
+        try:
+            R = len(mat_ref)
+            C = len(mat_ref[0]) if R else 0
+            p1 = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i > j)
+            px = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i == j)
+            p2 = sum(float(mat_ref[i][j]) for i in range(R) for j in range(C) if i < j)
+            p_1x2 = (p1, px, p2)
+        except Exception:
+            p_1x2 = None
 
-    def _clasificar_cat(s):
-        m_l = str(_val(s, "mercado") or "").lower()
-        e_l = str(_val(s, "evento") or "").lower()
-        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
-            return "CÓRNERES"
-        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
-            return "TARJETAS"
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
-            return "HÁNDICAP / 1X2 / DC"
-        eq_raw = _val(s, "equipo", None)
-        if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", ""):
-            return "GOLES POR EQUIPO"
-        return "GOLES PARTIDO"
-
-    def _permitida_sel(s):
-        cat_s = _clasificar_cat(s)
+    def _permitida_sel(s: Any) -> bool:
+        cat_s, _ = clasificar_categoria_ambito_seccion1(s)
         if bloquear_corners and cat_s == "CÓRNERES":
             return False
         if bloquear_tarjetas and cat_s == "TARJETAS":
             return False
-        if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
-            ev_s = str(_val(s, "evento") or "").lower()
-            et_s = str(_val(s, "etiqueta") or "").lower()
-            if "under" in ev_s or "menos" in et_s or "-" in et_s:
+        if sec1_data is None:
+            if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
+                ev_s = str(_val_sel(s, "evento") or "").lower()
+                et_s = str(_val_sel(s, "etiqueta") or "").lower()
+                if "under" in ev_s or "menos" in et_s or "-" in et_s:
+                    return False
+            if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
                 return False
-        from motor_mercados import es_seleccion_vetada_por_micropatrones
-        if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
-            return False
         return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
     sels_validas = [
         s for s in sels_raw
-        if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
+        if float(_val_sel(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
     ]
-    if not sels_validas and sels_raw:
-        sels_validas = [
-            s for s in sels_raw
-            if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6)
-            and not (bloquear_corners and _clasificar_cat(s) == "CÓRNERES")
-            and not (bloquear_tarjetas and _clasificar_cat(s) == "TARJETAS")
-        ]
 
-    top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-    sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
-    if not sels_top_tabla and sels_validas:
-        sels_top_tabla = sels_validas[:18]
+    if top5_podio is None:
+        top5_podio_out = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
+    else:
+        top5_podio_out = list(top5_podio)
 
-    mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
-    if not mantiene_raw and sels_top_tabla:
-        mantiene_raw = sels_top_tabla
+    if sec1_data is not None and len(sels_validas) <= 20:
+        sels_top_tabla = list(sels_validas)
+    else:
+        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
 
-    # Punto 27: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
-    tiene_res_sec1 = any(_clasificar_cat(s) == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
-    if not tiene_res_sec1 and top5_podio:
-        for item_t5 in top5_podio:
+    def _es_mantiene(s: Any) -> bool:
+        est = _val_sel(s, "estado", None)
+        if est is None and sec1_data is not None:
+            return True
+        return str(est or "").strip().lower() == "mantiene"
+
+    def _sinc_dc_con_p1x2(lista_sels_in: list[Any]) -> list[Any]:
+        if p_1x2 is None:
+            return list(lista_sels_in)
+        p1_m, px_m, p2_m = p_1x2
+        out_s: list[Any] = []
+        for s_m in lista_sels_in:
+            ev_m = str(_val_sel(s_m, "evento") or "").lower().strip()
+            per_m = str(_val_sel(s_m, "periodo") or "FT").strip().upper()
+            if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
+                p_real_1x = round(p1_m + px_m, 6)
+                if p_real_1x < umbral_val:
+                    continue
+                if isinstance(s_m, dict):
+                    s_m["probabilidad"] = p_real_1x
+                else:
+                    try:
+                        s_m.probabilidad = p_real_1x
+                    except Exception:
+                        pass
+            elif per_m == "FT" and (ev_m in ("x2", "dc_x2") or ev_m.endswith("_x2")):
+                p_real_x2 = round(px_m + p2_m, 6)
+                if p_real_x2 < umbral_val:
+                    continue
+                if isinstance(s_m, dict):
+                    s_m["probabilidad"] = p_real_x2
+                else:
+                    try:
+                        s_m.probabilidad = p_real_x2
+                    except Exception:
+                        pass
+            out_s.append(s_m)
+        return out_s
+
+    mantiene_raw = _sinc_dc_con_p1x2([s for s in sels_top_tabla if _es_mantiene(s)])
+    _claves_mantiene = {
+        (
+            str(_val_sel(s, "id_mercado") or ""),
+            str(_val_sel(s, "evento") or "").lower(),
+            str(_val_sel(s, "periodo") or "FT").upper(),
+            str(_val_sel(s, "equipo") or ""),
+            _val_sel(s, "linea"),
+        )
+        for s in mantiene_raw
+    }
+    sensibles_cand = [
+        s for s in sels_validas
+        if not _es_mantiene(s)
+        and (
+            str(_val_sel(s, "id_mercado") or ""),
+            str(_val_sel(s, "evento") or "").lower(),
+            str(_val_sel(s, "periodo") or "FT").upper(),
+            str(_val_sel(s, "equipo") or ""),
+            _val_sel(s, "linea"),
+        ) not in _claves_mantiene
+    ]
+    sensibles_raw = _sinc_dc_con_p1x2(sensibles_cand)
+
+    tiene_res_sec1 = any(clasificar_categoria_ambito_seccion1(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
+    if not tiene_res_sec1 and top5_podio_out:
+        for item_t5 in top5_podio_out:
+            prob_t5 = float(item_t5.get("probabilidad", 0.0) or 0.0)
             if (
                 int(item_t5.get("slot", 0) or 0) == 1
-                and float(item_t5.get("probabilidad", 0.0) or 0.0) >= 0.70
+                and prob_t5 >= umbral_val
                 and str(item_t5.get("categoria_podio") or "") == "RESULTADO / DOBLE OPORTUNIDAD"
             ):
                 et_t5 = str(item_t5.get("etiqueta") or "")
                 ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
+                if p_1x2 is not None:
+                    if ev_t5 == "1x":
+                        prob_t5 = round(p_1x2[0] + p_1x2[1], 6)
+                    elif ev_t5 == "x2":
+                        prob_t5 = round(p_1x2[1] + p_1x2[2], 6)
+                    elif ev_t5 == "1":
+                        prob_t5 = round(p_1x2[0], 6)
+                    elif ev_t5 == "2":
+                        prob_t5 = round(p_1x2[2], 6)
+                if prob_t5 < umbral_val:
+                    continue
                 mantiene_raw.append({
                     "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
                     "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
@@ -1241,13 +1634,107 @@ def obtener_top5_y_seccion1_filtrados(
                     "periodo": "FT",
                     "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
                     "linea": None,
-                    "probabilidad": _safe_float(item_t5.get("probabilidad"), 0.72),
+                    "probabilidad": prob_t5,
                     "estado": "mantiene",
                 })
                 break
 
-    total_validadas = len(mantiene_raw)
-    return top5_podio, mantiene_raw, total_validadas
+    # Deduplicación canónica de píldoras (sin truncar a 4 ni omitir líneas válidas)
+    def _orden_amb(amb: str) -> int:
+        if amb == "Tiempo Completo (FT)":
+            return 0
+        if amb == "1er Tiempo (1T)":
+            return 1
+        if amb == "2º Tiempo (2T)":
+            return 2
+        if eq_l in amb:
+            return 11 if "1T" in amb else (12 if "2T" in amb else 10)
+        if eq_v in amb:
+            return 21 if "1T" in amb else (22 if "2T" in amb else 20)
+        return 30
+
+    agrupado: dict[str, dict[str, list[dict[str, Any]]]] = {c: {} for c in ORDEN_CATEGORIAS_SECCION1}
+    mantiene_filtrada: list[Any] = []
+    vistos_global_cat: dict[str, set[str]] = {c: set() for c in ORDEN_CATEGORIAS_SECCION1}
+
+    candidatos_fmt: list[tuple[str, str, str, str, float, Any]] = []
+    for s in mantiene_raw:
+        cat_s, amb_s = clasificar_categoria_ambito_seccion1(s)
+        lbl_s, pct_s, prob_s = formatear_pildora_seccion1(s, cat_s, eq_l, eq_v)
+        if not lbl_s:
+            continue
+        candidatos_fmt.append((cat_s, amb_s, lbl_s, pct_s, prob_s, s))
+
+    # Ordenar por probabilidad descendente antes de deduplicar por etiqueta dentro de cada categoría
+    candidatos_fmt.sort(key=lambda x: -x[4])
+    for cat_s, amb_s, lbl_s, pct_s, prob_s, s in candidatos_fmt:
+        if lbl_s in vistos_global_cat.setdefault(cat_s, set()):
+            continue
+        vistos_global_cat[cat_s].add(lbl_s)
+        mantiene_filtrada.append(s)
+        agrupado.setdefault(cat_s, {}).setdefault(amb_s, []).append({
+            "lbl": lbl_s,
+            "pct": pct_s,
+            "prob": prob_s,
+            "ambito": amb_s,
+        })
+
+    _orden_canon_amb = ("Tiempo Completo (FT)", "1er Tiempo (1T)", "2º Tiempo (2T)")
+    sec1_por_categoria: list[dict[str, Any]] = []
+    total_validadas = 0
+    for cat_s in ORDEN_CATEGORIAS_SECCION1:
+        ambs_d = agrupado.get(cat_s, {})
+        filas_cat: list[dict[str, Any]] = []
+        pildoras_cat: list[dict[str, Any]] = []
+        for amb_s in sorted(ambs_d.keys(), key=_orden_amb):
+            pills_amb = sorted(ambs_d[amb_s], key=lambda x: -x["prob"])
+            filas_cat.append({"ambito": amb_s, "pildoras": pills_amb})
+            pildoras_cat.extend(pills_amb)
+        pildoras_cat.sort(key=lambda x: -x["prob"])
+        total_validadas += len(pildoras_cat)
+
+        ambs_presentes = []
+        for ac in _orden_canon_amb:
+            if any(p.get("ambito") == ac for p in pildoras_cat):
+                ambs_presentes.append(ac)
+        for p in pildoras_cat:
+            ao = p.get("ambito")
+            if ao and ao not in ambs_presentes:
+                ambs_presentes.append(ao)
+        amb_str = " · ".join(ambs_presentes) if ambs_presentes else "Tiempo Completo (FT)"
+        sec1_por_categoria.append({
+            "categoria": cat_s,
+            "ambito": amb_str,
+            "filas": filas_cat,
+            "pildoras": pildoras_cat,
+        })
+
+    return {
+        "top5_podio": top5_podio_out,
+        "mantiene_raw": mantiene_raw,
+        "sensibles_raw": sensibles_raw,
+        "sec1_por_categoria": sec1_por_categoria,
+        "total_validadas": total_validadas,
+        "eq_l": eq_l,
+        "eq_v": eq_v,
+        "umbral": umbral_val,
+        "bloquear_corners": bloquear_corners,
+        "bloquear_tarjetas": bloquear_tarjetas,
+    }
+
+
+def obtener_top5_y_seccion1_filtrados(
+    analisis,
+    metadatos = None,
+    umbral = None,
+):
+    """
+    Extrae el Top-5 Podio, las selecciones exactas de Sección 1 y su conteo canónico
+    usando `calcular_seccion1_unificada` (misma fuente que Ticket PNG y Súper-Cuadro).
+    Devuelve (top5_podio, mantiene_raw, total_validadas).
+    """
+    res = calcular_seccion1_unificada(analisis, metadatos=metadatos, umbral=umbral)
+    return res["top5_podio"], res["mantiene_raw"], res["total_validadas"]
 
 
 def renderizar_ticket_mercados_png(
@@ -1285,8 +1772,7 @@ def renderizar_ticket_mercados_png(
     eq_v = str(meta.get("equipo_visitante") or "Visitante")
     partido_titulo = f"{eq_l} vs {eq_v}"
     competicion = str(meta.get("competicion") or "Competición oficial")
-    fecha_raw_t = str(meta.get("etiqueta_fecha") or meta.get("fecha_partido") or meta.get("generado_en") or _ahora()).strip()
-    fecha = fecha_raw_t if fecha_raw_t.lower().startswith("análisis del") else (fecha_raw_t[:19] if len(fecha_raw_t) > 19 else fecha_raw_t)
+    fecha = formatear_etiqueta_fecha_encabezado(meta)
 
     sels_raw = _val(analisis, "selecciones_filtradas", []) or []
     if not sels_raw and hasattr(analisis, "grupos"):
@@ -1329,7 +1815,17 @@ def renderizar_ticket_mercados_png(
         # Header
         draw.rectangle([0, 0, w_img, 95], fill="#131D31")
         draw.text((30, 20), partido_titulo, font=f_title, fill="#FFFFFF")
-        draw.text((30, 60), f"{competicion} · {fecha}", font=f_meta, fill="#94A3B8")
+        _mot_abs = getattr(analisis, "motor", None)
+        _fuentes_abs = _sanear_para_canvas(formatear_fuentes_clubes_encabezado(
+            meta,
+            getattr(_mot_abs, "doc_local", None),
+            getattr(_mot_abs, "doc_visitante", None),
+            equipo_local=eq_l,
+            equipo_visitante=eq_v,
+        ))
+        draw.text((30, 54 if _fuentes_abs else 60), f"{competicion} · {fecha}", font=f_meta, fill="#94A3B8")
+        if _fuentes_abs:
+            draw.text((30, 74), _fuentes_abs, font=f_meta, fill="#CBD5E1")
 
         # Badge AUDITORÍA en esquina superior derecha
         w_b = _get_w("AUDITORÍA DE COBERTURA D.1", f_badge_hdr) + 24
@@ -1395,165 +1891,9 @@ def renderizar_ticket_mercados_png(
         im.save(ruta_salida, format="PNG")
         return ruta_salida
 
-    def _formatear_pildora(s: Any, cat: str) -> tuple[str, str, float]:
-        ev = str(_val(s, "evento") or "").lower()
-        et = str(_val(s, "etiqueta") or "")
-        lin = _val(s, "linea", None)
-        prob = float(_val(s, "probabilidad", 0.0) or 0.0)
-        pct = f"{prob:.0%}"
-
-        eq_raw_p = _val(s, "equipo", None)
-        eq_p = str(eq_raw_p).strip() if eq_raw_p and str(eq_raw_p).strip() not in ("None", "Total", "null", "") else None
-        per_p = str(_val(s, "periodo") or "FT").strip().upper()
-        if per_p not in ("FT", "1T", "2T"):
-            per_p = "FT"
-
-        if cat == "GOLES POR EQUIPO":
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"{eq_corto} +{lin - 0.5:g} Goles ({per_p})"
-                else:
-                    lbl = f"{eq_corto} {et}"
-            elif "primer_gol" in ev:
-                lbl = f"1er Gol: {eq_corto}"
-            else:
-                lbl = f"{eq_corto} {et}"
-            return lbl, pct, prob
-
-        if "GOL" in cat:
-            if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
-                return "", "", 0.0
-            suf_p = f" ({per_p})" if per_p in ("1T", "2T") else ""
-            if ev == "gol_1t" or "al menos un gol en el 1t" in et.lower():
-                lbl = "+0.5 Goles (1T)"
-            elif ev == "gol_2t" or "al menos un gol en el 2t" in et.lower():
-                lbl = "+0.5 Goles (2T)"
-            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Goles{suf_p}" if lin is not None else et
-            elif "al_menos_" in ev or "al menos" in et.lower():
-                if lin is not None and isinstance(lin, (int, float)):
-                    lbl = f"+{lin - 0.5:g} Goles{suf_p}"
-                else:
-                    lbl = et
-            elif "primer_gol" in ev:
-                eq_anota = eq_p or eq_l
-                lbl = f"1er Gol: {eq_anota}"
-            elif "ambos_marcan" in ev or "btts" in ev:
-                lbl = "Marcan Ambos" if ("si" in ev or "yes" in ev) else "No Marcan Ambos"
-            else:
-                lbl = et
-        elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
-            # Prohibido imprimir líneas negativas o imposibles como -0.5 Córn. 100%
-            if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
-                return "", "", 0.0
-            pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
-            if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"{pref_c} -{lin:g} Córn." if lin is not None else et
-            else:
-                lbl = et
-            return lbl, pct, prob
-        elif "TARJETA" in cat:
-            # Prohibido imprimir líneas negativas o imposibles como -0.5 Tarj. 100%
-            if lin is not None and lin <= 0.5 and ("under_" in ev or "menos" in et.lower()):
-                return "", "", 0.0
-            if "roja" in ev or "roja" in et.lower():
-                lbl = f"+{lin:g} Roja" if lin is not None else "Tarjeta Roja"
-            elif "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-                lbl = f"+{lin:g} Tarj." if lin is not None else et
-            elif "under_" in ev or "menos de" in et.lower():
-                lbl = f"-{lin:g} Tarj." if lin is not None else et
-            else:
-                lbl = et
-        else: # Hándicap / 1X2 / DC
-            if ev in ("1", "local_gana"):
-                lbl = f"{eq_l} Gana"
-            elif ev in ("2", "visitante_gana"):
-                lbl = f"{eq_v} Gana"
-            elif ev in ("x", "empate"):
-                lbl = "Empate"
-            elif ev == "1x":
-                lbl = f"1X ({eq_l} o X)"
-            elif ev == "x2":
-                lbl = f"X2 (X o {eq_v})"
-            elif ev == "12":
-                lbl = "12 (Sin Empate)"
-            elif "dnb" in ev:
-                eq_dnb = _val(s, "equipo") or eq_l
-                lbl = f"{eq_dnb} DNB"
-            elif "h0_" in ev:
-                lbl = f"H0 {_val(s, 'equipo') or eq_l}"
-            elif "h1_" in ev:
-                lbl = f"H+1 {_val(s, 'equipo') or eq_l}"
-            elif "h2_" in ev:
-                lbl = f"H+2 {_val(s, 'equipo') or eq_l}"
-            elif "h3_" in ev:
-                lbl = f"H+3 {_val(s, 'equipo') or eq_l}"
-            elif "h_minus1_" in ev or "h-1_" in ev:
-                lbl = f"H-1 {_val(s, 'equipo') or eq_l}"
-            else:
-                lbl = et
-
-        for eq_nom in (eq_l, eq_v):
-            if lbl.startswith(eq_nom + ":"):
-                lbl = lbl[len(eq_nom) + 1:].strip()
-            elif lbl.startswith(eq_nom + " - "):
-                lbl = lbl[len(eq_nom) + 3:].strip()
-
-        return lbl, pct, prob
-
-    def _clasificar_categoria_ambito(s: Any) -> tuple[str, str]:
-        m_l = str(_val(s, "mercado") or "").lower()
-        e_l = str(_val(s, "evento") or "").lower()
-        eq_raw = _val(s, "equipo", None)
-        eq = str(eq_raw).strip() if eq_raw and str(eq_raw).strip() not in ("None", "Total", "null", "") else None
-        per = str(_val(s, "periodo") or "FT").strip().upper()
-        if per not in ("FT", "1T", "2T"):
-            per = "FT"
-
-        per_nombre = "Tiempo Completo (FT)" if per == "FT" else ("1er Tiempo (1T)" if per == "1T" else "2º Tiempo (2T)")
-
-        if any(k in m_l for k in ("corner", "córner", "crner", "esquina")) or "corner" in e_l:
-            cat = "CÓRNERES"
-            amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
-            return cat, amb
-
-        if any(k in m_l for k in ("tarjeta", "amarilla", "roja")) or any(k in e_l for k in ("tarjeta", "amarilla", "roja")):
-            cat = "TARJETAS"
-            amb = f"{eq} · Total ({per})" if (eq and per == "FT") else (f"{eq} · {per}" if eq else per_nombre)
-            return cat, amb
-
-        if any(k in m_l for k in ("hándicap", "handicap", "doble oportunidad", "sin empate", "ganador", "1x2", "1t/ft", "descanso / final")) or any(k in e_l for k in ("1x", "x2", "12", "dnb", "local_gana", "visitante_gana", "empate")):
-            cat = "HÁNDICAP / 1X2 / DC"
-            amb = per_nombre
-            return cat, amb
-
-        if eq:
-            cat = "GOLES POR EQUIPO"
-            amb = f"{eq} · Total ({per})" if per == "FT" else f"{eq} · {per}"
-            return cat, amb
-
-        cat = "GOLES PARTIDO"
-        amb = per_nombre
-        return cat, amb
-
-    ORDEN_CATEGORIAS = [
-        "GOLES PARTIDO",
-        "GOLES POR EQUIPO",
-        "CÓRNERES",
-        "TARJETAS",
-        "HÁNDICAP / 1X2 / DC",
-    ]
+    _formatear_pildora = lambda s, cat: formatear_pildora_seccion1(s, cat, eq_l, eq_v)
+    _clasificar_categoria_ambito = clasificar_categoria_ambito_seccion1
+    ORDEN_CATEGORIAS = ORDEN_CATEGORIAS_SECCION1
 
     def _orden_ambito(amb: str) -> int:
         if amb == "Tiempo Completo (FT)":
@@ -1682,156 +2022,88 @@ def renderizar_ticket_mercados_png(
         return res_cats
 
     motor = getattr(analisis, "motor", None)
+    if True:
+        from motor_mercados import clusters_marcador
 
-    # Bloqueo estricto de categorías sin cobertura oficial (cero líneas negativas o imposibles)
-    bloquear_corners = False
-    bloquear_tarjetas = False
-    if motor and hasattr(motor, "_mu_corners"):
-        try:
-            mu_cl = motor._mu_corners("local")
-            mu_cv = motor._mu_corners("visitante")
-            ml_g = motor.muestras.get("local_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
-            mv_g = motor.muestras.get("visitante_general").metricas.get("corners_favor") if getattr(motor, "muestras", None) else None
-            p_ceros_l = ml_g.pct_ceros if (ml_g and hasattr(ml_g, "pct_ceros")) else 0.0
-            p_ceros_v = mv_g.pct_ceros if (mv_g and hasattr(mv_g, "pct_ceros")) else 0.0
-            if mu_cl is None or mu_cv is None or (mu_cl + mu_cv) < 1.5 or p_ceros_l > 0.30 or p_ceros_v > 0.30:
-                bloquear_corners = True
-        except Exception:
-            pass
-    if motor and hasattr(motor, "_mu_tarjetas"):
-        try:
-            mu_am = motor._mu_tarjetas("amarillas")
-            ml_am = motor.muestras.get("local_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
-            mv_am = motor.muestras.get("visitante_general").metricas.get("amarillas_favor") if getattr(motor, "muestras", None) else None
-            p_c_l = ml_am.pct_ceros if (ml_am and hasattr(ml_am, "pct_ceros")) else 0.0
-            p_c_v = mv_am.pct_ceros if (mv_am and hasattr(mv_am, "pct_ceros")) else 0.0
-            if mu_am is None or mu_am < 0.5 or p_c_l > 0.30 or p_c_v > 0.30:
-                bloquear_tarjetas = True
-        except Exception:
-            pass
-
-        from motor_mercados import (
-            clusters_marcador,
-            es_seleccion_competitiva_ticket,
-            filtrar_top_opciones_ticket,
-            seleccionar_top_5_jugadas_recomendadas,
+        res_sec1_uni = calcular_seccion1_unificada(
+            analisis,
+            metadatos=meta,
+            umbral=umbral_val,
+            eq_l=eq_l,
+            eq_v=eq_v,
         )
+        top5_podio = res_sec1_uni["top5_podio"]
+        mantiene_raw = res_sec1_uni["mantiene_raw"]
+        sensibles_raw = res_sec1_uni["sensibles_raw"]
 
-        p_1x2 = None
-        if motor and getattr(motor, "matriz_ft", None):
-            mat = motor.matriz_ft
-            R = len(mat)
-            C = len(mat[0]) if R else 0
-            p1 = sum(mat[i][j] for i in range(R) for j in range(C) if i > j)
-            px = sum(mat[i][j] for i in range(R) for j in range(C) if i == j)
-            p2 = sum(mat[i][j] for i in range(R) for j in range(C) if i < j)
-            p_1x2 = (p1, px, p2)
-
-        def _permitida_sel(s: Any) -> bool:
-            cat_s, _ = _clasificar_categoria_ambito(s)
-            if bloquear_corners and cat_s == "CÓRNERES":
-                return False
-            if bloquear_tarjetas and cat_s == "TARJETAS":
-                return False
-            if cat_s == "TARJETAS" and getattr(motor, "hay_tension_asedio_tarjetas", False):
-                ev_s = str(_val(s, "evento") or "").lower()
-                et_s = str(_val(s, "etiqueta") or "").lower()
-                if "under" in ev_s or "menos" in et_s or "-" in et_s:
-                    return False
-            from motor_mercados import es_seleccion_vetada_por_micropatrones
-            if es_seleccion_vetada_por_micropatrones(s, motor=motor, eq_l=eq_l, eq_v=eq_v)[0]:
-                return False
-            return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
-
-        sels_validas = [
-            s for s in sels_raw
-            if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
-        ]
-        # Si el filtro competitivo deja vacía una muestra sintética mínima, usar las permitidas por cobertura
-        if not sels_validas and sels_raw:
-            sels_validas = [
-                s for s in sels_raw
-                if (_val(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6)
-                and not (bloquear_corners and _clasificar_categoria_ambito(s)[0] == "CÓRNERES")
-                and not (bloquear_tarjetas and _clasificar_categoria_ambito(s)[0] == "TARJETAS")
-            ]
-
-        top5_podio = seleccionar_top_5_jugadas_recomendadas(sels_validas, motor=motor, eq_l=eq_l, eq_v=eq_v)
-
-        # Limitar el total de opciones en la tabla inferior a las 15-20 opciones más competitivas
-        sels_top_tabla = filtrar_top_opciones_ticket(sels_validas, eq_l=eq_l, eq_v=eq_v, p_1x2=p_1x2, max_opciones=18, motor=motor)
-        if not sels_top_tabla and sels_validas:
-            sels_top_tabla = sels_validas[:18]
-
-        mantiene_raw = [s for s in sels_top_tabla if _val(s, "estado") == "mantiene"]
-        sensibles_raw = [s for s in sels_top_tabla if _val(s, "estado") != "mantiene"]
-
-        # Punto 27 y Punto 40: Sincronizar la fila HÁNDICAP / 1X2 / DC de SECCIÓN 1 con el Puesto #1 del Top 5
-        # únicamente cuando su probabilidad real en la matriz final sea >= 70.0% (si se veta 1X y X2 < 70%, dejar sin jugada forzada)
-        if p_1x2 is not None:
-            p1_m, px_m, p2_m = p_1x2
-            mantiene_sinc: list[Any] = []
-            for s_m in mantiene_raw:
-                ev_m = str(_val(s_m, "evento") or "").lower().strip()
-                per_m = str(_val(s_m, "periodo") or "FT").strip().upper()
-                if per_m == "FT" and (ev_m in ("1x", "dc_1x") or ev_m.endswith("_1x")):
-                    p_real_1x = round(p1_m + px_m, 6)
-                    if p_real_1x < 0.70:
+        def _construir_sec1_desde_canonico(sec1_cats: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            res_c: list[dict[str, Any]] = []
+            for cat_b in sec1_cats:
+                cat = cat_b["categoria"]
+                filas_src = cat_b.get("filas") or []
+                if not filas_src:
+                    if cat == "TARJETAS":
+                        lbl_sin = "Sin líneas validadas >= 70%"
+                        w_lbl = _get_w(lbl_sin, f_pill_lbl)
+                        pildora_sin = {
+                            "lbl": lbl_sin, "pct": "", "prob": 0.0,
+                            "w": 8 + w_lbl + 8, "w_lbl": w_lbl, "w_pct": 0, "sin_lineas": True,
+                        }
+                        res_c.append({
+                            "categoria": cat,
+                            "filas": [{
+                                "ambito": "Tiempo Completo (FT)",
+                                "pildoras": [pildora_sin],
+                                "lineas_pills": [[pildora_sin]],
+                                "alto": 38,
+                            }],
+                            "alto_total": 38,
+                        })
+                    continue
+                filas_out: list[dict[str, Any]] = []
+                for fl in filas_src:
+                    pills_medidas: list[dict[str, Any]] = []
+                    for p_it in (fl.get("pildoras") or []):
+                        lbl_p = p_it["lbl"]
+                        pct_p = p_it["pct"]
+                        w_lbl = _get_w(lbl_p, f_pill_lbl)
+                        w_pct = _get_w(pct_p, f_pill_pct)
+                        pills_medidas.append({
+                            "lbl": lbl_p,
+                            "pct": pct_p,
+                            "prob": p_it["prob"],
+                            "w": 8 + w_lbl + 5 + w_pct + 8,
+                            "w_lbl": w_lbl,
+                            "w_pct": w_pct,
+                        })
+                    if not pills_medidas:
                         continue
-                    if isinstance(s_m, dict):
-                        s_m["probabilidad"] = p_real_1x
-                    else:
-                        try:
-                            s_m.probabilidad = p_real_1x
-                        except Exception:
-                            pass
-                elif per_m == "FT" and (ev_m in ("x2", "dc_x2") or ev_m.endswith("_x2")):
-                    p_real_x2 = round(px_m + p2_m, 6)
-                    if p_real_x2 < 0.70:
-                        continue
-                    if isinstance(s_m, dict):
-                        s_m["probabilidad"] = p_real_x2
-                    else:
-                        try:
-                            s_m.probabilidad = p_real_x2
-                        except Exception:
-                            pass
-                mantiene_sinc.append(s_m)
-            mantiene_raw = mantiene_sinc
-
-        tiene_res_sec1 = any(_clasificar_categoria_ambito(s)[0] == "HÁNDICAP / 1X2 / DC" for s in mantiene_raw)
-        if not tiene_res_sec1 and top5_podio:
-            for item_t5 in top5_podio:
-                prob_t5 = float(item_t5.get("probabilidad", 0.0) or 0.0)
-                if int(item_t5.get("slot", 0) or 0) == 1 and prob_t5 >= 0.70:
-                    et_t5 = str(item_t5.get("etiqueta") or "")
-                    ev_t5 = "1x" if "1x" in et_t5.lower() else ("x2" if "x2" in et_t5.lower() else ("1" if eq_l.lower() in et_t5.lower() else "2"))
-                    if p_1x2 is not None:
-                        if ev_t5 == "1x":
-                            prob_t5 = round(p_1x2[0] + p_1x2[1], 6)
-                        elif ev_t5 == "x2":
-                            prob_t5 = round(p_1x2[1] + p_1x2[2], 6)
-                        elif ev_t5 == "1":
-                            prob_t5 = round(p_1x2[0], 6)
-                        elif ev_t5 == "2":
-                            prob_t5 = round(p_1x2[2], 6)
-                    if prob_t5 < 0.70:
-                        continue
-                    mantiene_raw.append({
-                        "id_mercado": "doble_oportunidad" if ev_t5 in ("1x", "x2") else "ganador_partido",
-                        "mercado": "Doble oportunidad" if ev_t5 in ("1x", "x2") else "Ganador del partido",
-                        "evento": ev_t5,
-                        "etiqueta": et_t5,
-                        "periodo": "FT",
-                        "equipo": eq_l if ev_t5 in ("1", "1x") else eq_v,
-                        "linea": None,
-                        "probabilidad": prob_t5,
-                        "estado": "mantiene",
+                    cur_x = X_COL3 + 10
+                    lineas_pills: list[list[dict[str, Any]]] = [[]]
+                    for p_m in pills_medidas:
+                        if cur_x + p_m["w"] > X_LIMIT_PILLS and lineas_pills[-1]:
+                            lineas_pills.append([])
+                            cur_x = X_COL3 + 10
+                        lineas_pills[-1].append(p_m)
+                        cur_x += p_m["w"] + 6
+                    n_lin = max(1, len(lineas_pills))
+                    filas_out.append({
+                        "ambito": fl["ambito"],
+                        "pildoras": pills_medidas,
+                        "lineas_pills": lineas_pills,
+                        "alto": max(38, 8 + n_lin * 24 + (n_lin - 1) * 6 + 8),
                     })
-                    break
+                if filas_out:
+                    res_c.append({
+                        "categoria": cat,
+                        "filas": filas_out,
+                        "alto_total": sum(f["alto"] for f in filas_out),
+                    })
+            return res_c
 
-        sec1_data = _organizar_bloque(mantiene_raw, es_seccion_1=True)
+        sec1_data = _construir_sec1_desde_canonico(res_sec1_uni["sec1_por_categoria"])
         sec2_data = _organizar_bloque(sensibles_raw, es_seccion_1=False)
+        total_validadas_canonico = int(res_sec1_uni["total_validadas"])
 
         clusters_info = getattr(motor, "clusters", None)
         if not clusters_info and hasattr(analisis, "matriz_ft"):
@@ -1864,7 +2136,19 @@ def renderizar_ticket_mercados_png(
             if not son_ligas_equivalentes(p_decl, p_det):
                 meta_parts_pre.append(f"⚠️ {meta['advertencia_liga']}")
         if fecha:
-            meta_parts_pre.append(f"Fecha: {fecha}")
+            if fecha.startswith(("Partido:", "Sin partido programado")):
+                meta_parts_pre.append(fecha)
+            else:
+                meta_parts_pre.append(f"Fecha: {fecha}")
+        _fuentes_hdr_tkt = formatear_fuentes_clubes_encabezado(
+            meta,
+            getattr(motor, "doc_local", None),
+            getattr(motor, "doc_visitante", None),
+            equipo_local=eq_l,
+            equipo_visitante=eq_v,
+        )
+        if _fuentes_hdr_tkt:
+            meta_parts_pre.append(_fuentes_hdr_tkt)
         meta_parts_pre.append("Modelo: Poisson bivariado con contracción bayesiana")
         _rec_ticket = (getattr(getattr(analisis, "motor", None), "recursivo", None) or {})
         if _rec_ticket.get("aplicado"):
@@ -2074,6 +2358,7 @@ def renderizar_ticket_mercados_png(
             c_pill_border: tuple[int, int, int],
             c_pill_pct: tuple[int, int, int],
             accent_cat_color: tuple[int, int, int],
+            titulo_col3: str = "LÍNEAS Y PROBABILIDADES VALIDADAS",
         ) -> int:
             y = y_inicio
 
@@ -2095,7 +2380,7 @@ def renderizar_ticket_mercados_png(
             d.rectangle([PAD_X, y, PAD_X + ANCHO_TABLA, y + alto_tbl_hdr], fill=C_NAVY_HDR)
             d.text((PAD_X + 14, y + 8), "CATEGORÍA", font=f_tbl_hdr, fill=C_TXT_WHITE)
             d.text((X_COL2 + 14, y + 8), "ÁMBITO / PERIODO", font=f_tbl_hdr, fill=C_TXT_WHITE)
-            d.text((X_COL3 + 14, y + 8), "LÍNEAS Y PROBABILIDADES VALIDADAS", font=f_tbl_hdr, fill=C_TXT_WHITE)
+            d.text((X_COL3 + 14, y + 8), titulo_col3, font=f_tbl_hdr, fill=C_TXT_WHITE)
             y += alto_tbl_hdr
 
             if not datos_sec:
@@ -2166,8 +2451,11 @@ def renderizar_ticket_mercados_png(
 
             return y
 
-        # 2. Sección 1: Alta Probabilidad
-        total_pills_sec1 = sum(len(f.get("pildoras", [])) for cat in sec1_data for f in cat.get("filas", []))
+        # 2. Sección 1: Alta Probabilidad (excluye placeholders sin_lineas)
+        total_pills_sec1 = sum(
+            1 for cat in sec1_data for f in cat.get("filas", [])
+            for p in f.get("pildoras", []) if not p.get("sin_lineas")
+        )
         cnt1_txt = f"{total_pills_sec1} opciones validadas"
         y_c = _dibujar_seccion(
             y_inicio=y_c,
@@ -2191,8 +2479,8 @@ def renderizar_ticket_mercados_png(
             cnt2_txt = f"{total_pills_sec2} opciones sensibles"
             y_c = _dibujar_seccion(
                 y_inicio=y_c,
-                titulo_sec="SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (70% - 75%)",
-                subtitulo_sec="Superan el umbral central (>=70%), pero su probabilidad varía bajo escenarios de estrés.",
+                titulo_sec=f"SECCIÓN 2: SENSIBLES A LOS SUPUESTOS (>= {umbral_val:.0%})",
+                subtitulo_sec="Superan el umbral central (>=70%), pero su probabilidad varía bajo escenarios de estrés o desvío empírico.",
                 conteo_txt=cnt2_txt,
                 datos_sec=sec2_data,
                 c_banner_bg=C_SEC2_BANNER_BG,
@@ -2202,6 +2490,7 @@ def renderizar_ticket_mercados_png(
                 c_pill_border=C_SEC2_PILL_BORDER,
                 c_pill_pct=C_SEC2_PILL_PCT,
                 accent_cat_color=C_SEC2_BANNER_BORDER,
+                titulo_col3="LÍNEAS Y PROBABILIDADES SENSIBLES",
             )
 
         # 4. Pie de ticket
@@ -2485,6 +2774,12 @@ def preparar_analisis(
             "ruta_imagen": None,
         }
 
+    # ── Metadatos de fuente por club y firma de datos (Ronda 19 Bloque 1) ──
+    _info_f_datos = extraer_fuentes_y_firma_datos(contexto.get("doc_local"), contexto.get("doc_visitante"))
+    contexto["fuente_local"] = _info_f_datos["fuente_local"]
+    contexto["fuente_visitante"] = _info_f_datos["fuente_visitante"]
+    contexto["firma_datos"] = _info_f_datos["firma_datos"]
+
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
     from decision_cobertura import evaluar_decision_cobertura
     doc_l_eval = dict(contexto["doc_local"])
@@ -2515,6 +2810,11 @@ def preparar_analisis(
             "equipo_visitante": contexto["equipo_visitante"],
             "competicion": ctx.get("competicion", "Competición oficial"),
             "fecha_partido": ctx.get("fecha_partido"),
+            "etiqueta_fecha": ctx.get("etiqueta_fecha") or formatear_etiqueta_fecha_encabezado(ctx),
+            "hora_inicio_partido": ctx.get("hora_inicio_partido"),
+            "hora_inicio_local": ctx.get("hora_inicio_local"),
+            "fixture_confirmado": bool(ctx.get("fixture_confirmado", False)),
+            "fuente_fecha": ctx.get("fuente_fecha") or ("fixture" if ctx.get("fixture_confirmado") else "fallback"),
             "generado_en": _ahora(),
             "abstenido": True,
             "bloqueado_por_cobertura": True,
@@ -2524,6 +2824,9 @@ def preparar_analisis(
             "etiqueta_cobertura_local": decision_cob.etiqueta_cobertura_a,
             "etiqueta_cobertura_visitante": decision_cob.etiqueta_cobertura_b,
             "fuente": "Auditoría Cobertura D.1",
+            "fuente_local": _info_f_datos["fuente_local"],
+            "fuente_visitante": _info_f_datos["fuente_visitante"],
+            "firma_datos": _info_f_datos["firma_datos"],
             "red_neuronal": {"aplicado": False, "motivo": f"Abstenido por cobertura ({decision_cob.estado})"},
         }
 
@@ -2642,8 +2945,17 @@ def preparar_analisis(
 
     analisis.doc_local = contexto.get("doc_local")
     analisis.doc_visitante = contexto.get("doc_visitante")
+    analisis.metadatos["fuente_local"] = _info_f_datos["fuente_local"]
+    analisis.metadatos["fuente_visitante"] = _info_f_datos["fuente_visitante"]
+    analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
+        if _k_fec in ctx:
+            analisis.metadatos[_k_fec] = ctx.get(_k_fec)
+    analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
+    analisis.metadatos.setdefault("fuente_fecha", "fixture" if analisis.metadatos.get("fixture_confirmado") else "fallback")
+    analisis.metadatos.setdefault("etiqueta_fecha", formatear_etiqueta_fecha_encabezado(analisis.metadatos))
 
     analisis.metadatos["decision_cobertura"] = decision_cob.a_dict()
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build

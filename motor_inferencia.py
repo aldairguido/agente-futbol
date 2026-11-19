@@ -481,6 +481,8 @@ def calcular_cuadro_c_timeline(
 
     lista = list(partidos_o_df) if isinstance(partidos_o_df, (list, tuple)) else []
     n_con_eventos = 0
+    n_con_minutos_con_gol = 0
+    n_con_goles_sin_minuto = 0
 
     def _parsear_minuto_reglamentario(ev: dict[str, Any]) -> tuple[str | None, bool]:
         """
@@ -569,8 +571,12 @@ def calcular_cuadro_c_timeline(
             rec_sum = sum(int((fr_item.get(fr) or {}).get("recibidos", 0) or 0) for fr in franjas if isinstance(fr_item.get(fr), dict))
             # Exigir cronología completa si el marcador FT está presente
             if gf_i is not None and gc_i is not None and (anot_sum != int(gf_i) or rec_sum != int(gc_i)):
+                if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                    n_con_goles_sin_minuto += 1
                 continue
             n_con_eventos += 1
+            if (anot_sum + rec_sum) > 0:
+                n_con_minutos_con_gol += 1
             for fr in franjas:
                 nodo = fr_item.get(fr)
                 if isinstance(nodo, dict):
@@ -607,13 +613,19 @@ def calcular_cuadro_c_timeline(
                     rec_ev += 1
 
             if evento_invalido:
+                if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                    n_con_goles_sin_minuto += 1
                 continue
             # Exigir cronología completa de goles en 90 minutos reglamentarios:
             # Si el partido terminó 2-1 pero solo hay 2 goles con minuto documentado, queda excluido.
             if gf_i is not None and gc_i is not None:
                 if (anot_ev + rec_ev) != (int(gf_i) + int(gc_i)) or anot_ev != int(gf_i) or rec_ev != int(gc_i):
+                    if (int(gf_i or 0) + int(gc_i or 0)) > 0:
+                        n_con_goles_sin_minuto += 1
                     continue
             n_con_eventos += 1
+            if (anot_ev + rec_ev) > 0:
+                n_con_minutos_con_gol += 1
             for fr in franjas:
                 conteo[fr]["anotados"] += temp_fr[fr]["anotados"]
                 conteo[fr]["recibidos"] += temp_fr[fr]["recibidos"]
@@ -622,8 +634,12 @@ def calcular_cuadro_c_timeline(
         # 3) Si el partido terminó 0-0 confirmado, sabemos con certeza que hubo 0 goles en todas las franjas
         if gf_i == 0 and gc_i == 0:
             n_con_eventos += 1
+        elif gf_i is not None and gc_i is not None and (int(gf_i) + int(gc_i)) > 0:
+            n_con_goles_sin_minuto += 1
 
     n_con_eventos_raw = n_con_eventos
+    if n_con_minutos_con_gol == 0 and n_con_goles_sin_minuto > 0:
+        n_con_eventos = 0
     n_con_mitades = n_con_eventos
     n_con_eventos_y_mitades = n_con_eventos
     gf_1t_mit = sum(conteo[fr]["anotados"] for fr in ("00_15", "16_30", "31_45"))
@@ -642,6 +658,7 @@ def calcular_cuadro_c_timeline(
             conteo_mit: Dict[str, Dict[str, int]] = {fr: {"anotados": 0, "recibidos": 0} for fr in franjas}
             n_mit_ok = 0
             n_ev_mit_ok = 0
+            n_ev_mit_con_gol = 0
             gf1_m, gf2_m, gc1_m, gc2_m = 0, 0, 0, 0
             hubo_descarte_mit = False
             for it in lista:
@@ -681,6 +698,8 @@ def calcular_cuadro_c_timeline(
                             r_it += 1
                     if not inv_it and a_it == int((ge_1t or 0) + (ge_2t or 0)) and r_it == int((gr_1t or 0) + (gr_2t or 0)):
                         n_ev_mit_ok += 1
+                        if (a_it + r_it) > 0:
+                            n_ev_mit_con_gol += 1
                         for fr in franjas:
                             conteo_mit[fr]["anotados"] += tmp_it[fr]["anotados"]
                             conteo_mit[fr]["recibidos"] += tmp_it[fr]["recibidos"]
@@ -696,7 +715,7 @@ def calcular_cuadro_c_timeline(
             n_con_mitades = n_mit_ok
             n_con_eventos_y_mitades = n_ev_mit_ok
             gf_1t_mit, gf_2t_mit, gc_1t_mit, gc_2t_mit = gf1_m, gf2_m, gc1_m, gc2_m
-            if hubo_descarte_mit and n_mit_ok > 0:
+            if hubo_descarte_mit and n_mit_ok > 0 and n_con_minutos_con_gol > 0 and n_ev_mit_con_gol > 0:
                 for fr in franjas:
                     conteo[fr]["anotados"] = conteo_mit[fr]["anotados"]
                     conteo[fr]["recibidos"] = conteo_mit[fr]["recibidos"]
@@ -704,10 +723,17 @@ def calcular_cuadro_c_timeline(
         except Exception:
             pass
 
+    sin_datos_minuto = bool(
+        len(lista) > 0
+        and n_con_minutos_con_gol == 0
+        and n_con_goles_sin_minuto > 0
+    )
     conteo["_meta"] = {
         "n_partidos_con_mitades": n_con_mitades,
         "n_partidos_con_eventos_y_mitades": n_con_eventos_y_mitades,
         "n_partidos_con_eventos_raw": n_con_eventos_raw,
+        "n_partidos_con_minutos_reales": n_con_minutos_con_gol,
+        "sin_dato": sin_datos_minuto,
         "goles_1t_favor_mitades": gf_1t_mit,
         "goles_2t_favor_mitades": gf_2t_mit,
         "goles_favor_mitades": gf_1t_mit + gf_2t_mit,
@@ -716,7 +742,7 @@ def calcular_cuadro_c_timeline(
         "goles_contra_mitades": gc_1t_mit + gc_2t_mit,
         "n_partidos_totales": len(lista),
         "n_partidos_con_eventos": n_con_eventos,
-        "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista)),
+        "cobertura_completa": (len(lista) > 0 and n_con_eventos == len(lista) and not sin_datos_minuto),
     }
     return conteo
 
@@ -995,6 +1021,7 @@ def generar_reporte_xai_telegram(
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -1007,13 +1034,37 @@ def generar_reporte_xai_telegram(
     p_x2 = p_emp + p_vis
 
     if p_loc >= 0.58:
-        veredicto = f"Gana {nombre_local} (1x2 Directo) | Probabilidad Ajustada: {p_loc*100:.1f}%"
+        _ev_pred = "1"
+        _pick_pred = f"Gana {nombre_local} (1x2 Directo)"
+        _prob_pred = p_loc * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     elif p_vis >= 0.58:
-        veredicto = f"Gana {nombre_visita} (2 Directo) | Probabilidad Ajustada: {p_vis*100:.1f}%"
+        _ev_pred = "2"
+        _pick_pred = f"Gana {nombre_visita} (2 Directo)"
+        _prob_pred = p_vis * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     elif p_x2 > p_1x:
-        veredicto = f"{nombre_visita} gana o empata (Doble Oportunidad X2) | Probabilidad Ajustada: {p_x2*100:.1f}%"
+        _ev_pred = "x2"
+        _pick_pred = f"{nombre_visita} gana o empata (Doble Oportunidad X2)"
+        _prob_pred = p_x2 * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
     else:
-        veredicto = f"{nombre_local} gana o empata (Doble Oportunidad 1X) | Probabilidad Ajustada: {p_1x*100:.1f}%"
+        _ev_pred = "1x"
+        _pick_pred = f"{nombre_local} gana o empata (Doble Oportunidad 1X)"
+        _prob_pred = p_1x * 100.0
+        _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
+
+    _est_pred = _inferir_estado_pick_dc(
+        _ev_pred,
+        top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
+        selecciones_sec2=selecciones_sec2,
+        motor=motor,
+    )
+    if _est_pred == "sensible":
+        veredicto = formatear_pick_segun_estado(_pick_pred, _prob_pred, "sensible")
+    else:
+        veredicto = _ver_mantiene
 
     def _cnt_b(d: Dict[str, Any], *claves: str) -> int:
         for k in claves:
@@ -1038,11 +1089,15 @@ def generar_reporte_xai_telegram(
         return "0/0" 
 
     def _cnt_c(d: Dict[str, Any], fr1: str, fr2: str, campo: str) -> int:
+        if not isinstance(d, dict):
+            return 0
         for fr in (fr1, fr2):
             if fr in d and isinstance(d[fr], dict):
-                return int(d[fr].get(campo, 0))
+                v = d[fr].get(campo)
+                return int(v) if v is not None else 0
             if campo in d and isinstance(d[campo], dict) and fr in d[campo]:
-                return int(d[campo][fr])
+                v = d[campo].get(fr)
+                return int(v) if v is not None else 0
         return 0
 
     rem_por_gol_loc = float(patrones_loc.get("remates_totales") or 0.0) / max(0.3, float(patrones_loc.get("goles_favor") or 0.0))
@@ -1052,20 +1107,23 @@ def generar_reporte_xai_telegram(
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
 
+    _sd_l_tel = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
+    _sd_v_tel = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l_tel = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_l_tel = 0 if _sd_l_tel else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_l_tel = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+        n_ev_l_tel = 0 if _sd_l_tel else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v_tel = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_v_tel = 0 if _sd_v_tel else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_v_tel = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+        n_ev_v_tel = 0 if _sd_v_tel else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
     k_eval_cron_tel = min(n_ev_l_tel, n_ev_v_tel)
     from decision_cobertura import cargar_umbrales_cobertura
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
     k_min_cron_tel = int(cargar_umbrales_cobertura().get("min_partidos_cronologia_verificada", 10))
+    suprimir_p35_tel = bool(_sd_l_tel or _sd_v_tel or k_eval_cron_tel == 0)
 
     if k_eval_cron_tel < k_min_cron_tel:
         txt_p35_tel = f"sin dato (cobertura de minutos insuficiente en Cuadro C: {k_eval_cron_tel}/15 partidos)"
@@ -1110,7 +1168,7 @@ def generar_reporte_xai_telegram(
         "",
         "*3. El Factor Tiempo: Fatiga y Punch (1T vs 2T y Timeline 15 min)*",
         f"• *Patrón #26 - Poder de Cierre en 2T:* {nombre_local} genera el {_fmt_p(patrones_loc, 'P26_Poder_Cierre_2T', 100.0, 1, '%')} de su xG en la 2da mitad, mientras {nombre_visita} genera el {_fmt_p(patrones_vis, 'P26_Poder_Cierre_2T', 100.0, 1, '%')}.",
-        f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}",
+        *([f"• *Patrón #35 - Franja Crítica (76'-90'):* {txt_p35_tel}"] if not suprimir_p35_tel else []),
         f"• *Patrón #27/#31 - Precisión bajo Fatiga:* Ratio de retención de pase en 2T de {_fmt_p(patrones_loc, 'P31_Precision_Bajo_Fatiga')} ({nombre_local}) vs {_fmt_p(patrones_vis, 'P31_Precision_Bajo_Fatiga')} ({nombre_visita}).",
         "",
         "*4. El Cruce Táctico Letal (Matchup y Tendencias 15P)*",
@@ -1121,7 +1179,8 @@ def generar_reporte_xai_telegram(
         "",
         "*5. Alertas Activadas del Motor de 55 Patrones*",
     ]
-    for al in alertas[:5]:
+    alertas_filtradas = [al for al in (alertas or []) if not (k_eval_cron_tel < k_min_cron_tel and ("patrón #35" in str(al).lower() or "76'-90'" in str(al)))]
+    for al in alertas_filtradas[:5]:
         lineas.append(f"• {al}")
 
     veredicto_4 = generar_veredicto_tactico_partido(
@@ -1139,12 +1198,90 @@ def generar_reporte_xai_telegram(
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
         motor=motor,
+        selecciones_sec2=selecciones_sec2,
     )
     if veredicto_4:
         lineas.append("")
         lineas.append(veredicto_4)
 
     return "\n".join(lineas)
+
+
+def formatear_pick_segun_estado(
+    pick_texto: str,
+    prob_pct: Optional[float],
+    estado: str,
+    *,
+    sufijo_extra: str = "",
+) -> str:
+    """Redacción unificada: para picks sensibles evita 'Validada' y remite a Sección 2."""
+    est = str(estado or "mantiene").strip().lower()
+    prob_str = f" ({prob_pct:.1f}%)" if prob_pct is not None else ""
+    has_pct = (
+        prob_pct is not None
+        and (f"{prob_pct:.1f}%" in pick_texto or f"{prob_pct:.0f}%" in pick_texto or "%" in pick_texto)
+    )
+    pick_con_pct = pick_texto if (has_pct or not prob_str) else f"{pick_texto}{prob_str}"
+    if est == "sensible":
+        return f"Inclinación estadística (sensible): {pick_con_pct} — ver Sección 2{sufijo_extra}"
+    return f"{pick_con_pct}{sufijo_extra}"
+
+
+def _inferir_estado_pick_dc(
+    codigo_ev: str,
+    *,
+    top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec1: Optional[List[Any]] = None,
+    selecciones_sec2: Optional[List[Any]] = None,
+    motor: Any = None,
+) -> str:
+    ev_obj = str(codigo_ev or "").strip().lower()
+    aliases = {
+        "1": {"1", "local_gana"},
+        "2": {"2", "visitante_gana"},
+        "1x": {"1x", "dc_1x"},
+        "x2": {"x2", "dc_x2"},
+    }.get(ev_obj, {ev_obj})
+
+    def _ev_de(item: Any) -> str:
+        return str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").strip().lower()
+
+    def _per_de(item: Any) -> str:
+        return str((item.get("periodo") if isinstance(item, dict) else getattr(item, "periodo", "FT")) or "FT").strip().upper()
+
+    def _est_de(item: Any) -> str:
+        return str((item.get("estado") if isinstance(item, dict) else getattr(item, "estado", "")) or "").strip().lower()
+
+    for it in (selecciones_sec1 or []):
+        if _per_de(it) == "FT" and (_ev_de(it) in aliases or any(_ev_de(it).endswith(f"_{a}") for a in aliases)):
+            if _est_de(it) in ("", "mantiene"):
+                return "mantiene"
+
+    grupos_ref = getattr(motor, "_grupos_resumen", None) if motor is not None else None
+    if isinstance(grupos_ref, dict):
+        for s in (grupos_ref.get("mantiene") or []):
+            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+                return "mantiene"
+        for s in (grupos_ref.get("sensible") or []):
+            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+                return "sensible"
+
+    for s in (selecciones_sec2 or []):
+        if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+            return "sensible"
+
+    for it in (top5_podio or []):
+        ev_t = _ev_de(it)
+        et_t = str((it.get("etiqueta") if isinstance(it, dict) else getattr(it, "etiqueta", "")) or "").lower()
+        cat_t = str((it.get("categoria_podio") if isinstance(it, dict) else "") or "").upper()
+        if ev_t in aliases or (ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}") or (
+            ev_obj in ("1", "2") and "1x2" in et_t and "gana" in et_t and cat_t == "RESULTADO / DOBLE OPORTUNIDAD"
+        ):
+            if _est_de(it) == "sensible":
+                return "sensible"
+            if _est_de(it) == "mantiene":
+                return "mantiene"
+    return "mantiene"
 
 
 def generar_veredicto_tactico_partido(
@@ -1164,6 +1301,7 @@ def generar_veredicto_tactico_partido(
     para_canvas: bool = False,
     motor: Any = None,
     micropatrones_combinatorios: Optional[Dict[str, Any]] = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """
     Genera dinámicamente el bloque '🧠 VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?'
@@ -1218,11 +1356,25 @@ def generar_veredicto_tactico_partido(
     p_dc_base = (p_loc + p_emp) * 100.0 if es_fav_local else (p_emp + p_vis) * 100.0
     jugada_1_nombre = f"Doble Oportunidad {dc_code}: Empate o {eq_fav}" if not es_fav_local else f"Doble Oportunidad {dc_code}: {eq_fav} o Empate"
     jugada_1_prob = p_dc_base
+    estado_j1 = _inferir_estado_pick_dc(
+        dc_code.lower(),
+        top5_podio=top5_podio,
+        selecciones_sec1=selecciones_sec1,
+        selecciones_sec2=selecciones_sec2,
+        motor=motor,
+    )
     if top5_podio and len(top5_podio) > 0:
         j1 = top5_podio[0]
         jugada_1_nombre = str(j1.get("etiqueta") or jugada_1_nombre)
         jugada_1_prob = _safe_float(j1.get("probabilidad"), jugada_1_prob / 100.0) * 100.0
         p_dc_base = _safe_float(j1.get("prob_base_poisson"), jugada_1_prob)
+        estado_j1 = str(j1.get("estado") or "").strip().lower() or _inferir_estado_pick_dc(
+            str(j1.get("evento") or ""),
+            top5_podio=top5_podio,
+            selecciones_sec1=selecciones_sec1,
+            selecciones_sec2=selecciones_sec2,
+            motor=motor,
+        )
 
     # 2. Franja crítica en Cuadro C (Timeline de 15 min)
     pares_franjas = [
@@ -1238,12 +1390,15 @@ def generar_veredicto_tactico_partido(
         if not isinstance(cc, dict):
             return 0
         if campo in cc and isinstance(cc[campo], dict) and k_lbl in cc[campo]:
-            return int(cc[campo][k_lbl])
+            v = cc[campo].get(k_lbl)
+            return int(v) if v is not None else 0
         for k in (k_u, k_lbl):
             if k in cc and isinstance(cc[k], dict):
-                return int(cc[k].get(campo, 0))
+                v = cc[k].get(campo)
+                return int(v) if v is not None else 0
             if "franjas" in cc and isinstance(cc["franjas"], dict) and k in cc["franjas"]:
-                return int(cc["franjas"][k].get(campo, 0))
+                v = cc["franjas"][k].get(campo)
+                return int(v) if v is not None else 0
         return 0
 
     mejor_tramo_lbl = "76'-90'"
@@ -1304,15 +1459,17 @@ def generar_veredicto_tactico_partido(
     fal_l = float(patrones_loc.get("faltas") or 11.0)
     fal_v = float(patrones_vis.get("faltas") or 11.5)
     am_tot = float(patrones_loc.get("amarillas", patrones_loc.get("tarjetas_amarillas", 1.8)) or 1.8) + float(patrones_vis.get("amarillas", patrones_vis.get("tarjetas_amarillas", 1.9)) or 1.9)
-    # 3. Ritmo y Tarjetas: exclusivamente desde mercado validado en Top 5 / Sección 1
+    # 3. Ritmo y Tarjetas: exclusivamente desde mercado en Top 5 / Sección 1
     mkt_tarjetas = None
     prob_tarjetas = 0.0
+    estado_tarjetas = "mantiene"
     if top5_podio:
         for item in top5_podio:
             et_i = str(item.get("etiqueta") or "")
             if "tarj" in et_i.lower() or "amarill" in et_i.lower():
                 mkt_tarjetas = et_i
                 prob_tarjetas = float(item.get("probabilidad", 0.80)) * 100.0
+                estado_tarjetas = str(item.get("estado") or "mantiene").strip().lower()
                 break
     if mkt_tarjetas is None and selecciones_sec1:
         for item in selecciones_sec1:
@@ -1353,15 +1510,61 @@ def generar_veredicto_tactico_partido(
     else:
         xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
         etq_vol_2t = "xG 2T histórico"
+    def _clasificar_mkt_2t_o_ft(item: Any) -> tuple[str | None, float]:
+        import re as _re_2t
+        et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
+        per_i = str((item.get("periodo") if isinstance(item, dict) else getattr(item, "periodo", "")) or "").strip().upper()
+        ev_i = str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").lower()
+        mk_i = str((item.get("mercado") if isinstance(item, dict) else getattr(item, "mercado", "")) or "").lower()
+        et_low = et_i.lower()
+        if not et_i or "sin líneas" in et_low:
+            return None, 0.0
+        if any(k in et_low or k in mk_i for k in ("córn", "corn", "esquina", "tarj", "amarill", "roja")):
+            return None, 0.0
+        raw_p = item.get("probabilidad") if isinstance(item, dict) else getattr(item, "probabilidad", 0.72)
+        p_val = float(raw_p or 0.0)
+        prob_pct = p_val * 100.0 if p_val <= 1.0 else p_val
+        es_1t_expl = (per_i == "1T") or any(k in et_low for k in ("1ra mitad", "1er tiempo", "primer tiempo", "1t", "1º", "estudio en 1t"))
+        es_2t_expl = (not es_1t_expl) and ((per_i == "2T") or ("2t" in et_low) or ("2º" in et_low) or ("segunda mitad" in et_low) or ("2da mitad" in et_low))
+        if es_2t_expl:
+            es_under_2t = ("menos" in et_low) or ("under" in ev_i) or bool(_re_2t.search(r"(?:^|[\s:])-\d+(?:\.\d+)?", et_low))
+            return ("2t_under" if es_under_2t else "2t_over"), prob_pct
+        if (not es_1t_expl) and (per_i in ("", "FT")) and ("goles" in et_low or "total de goles" in mk_i):
+            return "ft_goles", prob_pct
+        return None, 0.0
+
     mkt_2t = None
+    mkt_2t_tipo = None
     prob_2t = 0.0
+    estado_2t = "mantiene"
+    mkt_ft_coh = None
+    prob_ft_coh = 0.0
     if top5_podio:
+        cand_under_2t = None
+        prob_under_2t = 0.0
+        est_under_2t = "mantiene"
         for item in top5_podio:
-            et_i = str(item.get("etiqueta") or "")
-            if "2t" in et_i.lower() or "2º" in et_i.lower():
+            et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
+            est_i = str((item.get("estado") if isinstance(item, dict) else getattr(item, "estado", "mantiene")) or "mantiene").strip().lower()
+            tipo_c, prob_c = _clasificar_mkt_2t_o_ft(item)
+            if tipo_c == "2t_over":
                 mkt_2t = et_i
-                prob_2t = float(item.get("probabilidad", 0.72)) * 100.0
+                mkt_2t_tipo = "2t_over"
+                prob_2t = prob_c
+                estado_2t = est_i
                 break
+            if tipo_c == "2t_under" and cand_under_2t is None:
+                cand_under_2t = et_i
+                prob_under_2t = prob_c
+                est_under_2t = est_i
+            elif tipo_c == "ft_goles" and mkt_ft_coh is None:
+                mkt_ft_coh = et_i
+                prob_ft_coh = prob_c
+        if mkt_2t is None and cand_under_2t is not None:
+            mkt_2t = cand_under_2t
+            mkt_2t_tipo = "2t_under"
+            prob_2t = prob_under_2t
+            estado_2t = est_under_2t
 
     encabezado = (
         "VEREDICTO TÁCTICO: ¿Qué va a pasar en este partido?"
@@ -1388,37 +1591,42 @@ def generar_veredicto_tactico_partido(
         c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
+    if estado_j1 == "sensible":
+        accion_ticket = formatear_pick_segun_estado(
+            jugada_1_nombre,
+            jugada_1_prob,
+            "sensible",
+            sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
+        )
+    elif es_under or (es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))):
+        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+    else:
+        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+
     if es_under:
         c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
-        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
         c1 = (
             f"{c1_tit} Las métricas ofensivas proyectan contención (Attack {atk_fav:.1f} vs {atk_riv:.1f} de {eq_riv}), "
             f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
         )
-    elif es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap")):
-        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
-        c1 = (
-            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
-            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
-            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
-        )
     else:
-        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
         c1 = (
             f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
             f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
             f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
         )
 
+    _sd_l_ver = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
+    _sd_v_ver = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l = int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_l = 0 if _sd_l_ver else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_l = 15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0
+        n_ev_l = 0 if _sd_l_ver else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v = int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0))
+        n_ev_v = 0 if _sd_v_ver else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
     else:
-        n_ev_v = 15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0
+        n_ev_v = 0 if _sd_v_ver else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
     k_eval_ver = min(n_ev_l, n_ev_v)
     from decision_cobertura import cargar_umbrales_cobertura
@@ -1463,8 +1671,13 @@ def generar_veredicto_tactico_partido(
             if (hay_asedio_verif or not ("-" in mkt_tarjetas or "menos" in mkt_tarjetas.lower()))
             else "Partido limpio (Pocas tarjetas)"
         )
+        _txt_tarj_pick = (
+            formatear_pick_segun_estado(mkt_tarjetas, prob_tarjetas, "sensible")
+            if estado_tarjetas == "sensible"
+            else f"El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%)"
+        )
         c3 = (
-            f"3. {titulo_ritmo}: El agente valida '{mkt_tarjetas}' ({prob_tarjetas:.0f}%). Es coherente con el guion: "
+            f"3. {titulo_ritmo}: {_txt_tarj_pick}. Es coherente con el guion: "
             f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}) y "
             f"fricción de {txt_faltas_eq}."
         )
@@ -1473,15 +1686,31 @@ def generar_veredicto_tactico_partido(
     txt_cron_obs = " (cronología por minuto no concluyente)" if k_eval_ver < k_min_cron else ""
     n_top_filas = len(top5_podio) if top5_podio else 5
     if mkt_2t is None:
+        _txt_ft_coh = f", como '{mkt_ft_coh}' al {prob_ft_coh:.0f}%" if mkt_ft_coh else ""
         c4 = (
             f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
             f"Estimación de volumen de 2T: {xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}"
-            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT)."
+            f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT{_txt_ft_coh})."
+        )
+    elif mkt_2t_tipo == "2t_under":
+        _txt_2t_u = (
+            formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+            if estado_2t == "sensible"
+            else f"El modelo valida '{mkt_2t}' al {prob_2t:.0f}%"
+        )
+        c4 = (
+            f"4. Contención proyectada en la segunda mitad (2T): {_txt_2t_u} "
+            f"({xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}){txt_cron_obs}."
         )
     else:
         if k_eval_ver < k_min_cron:
+            _txt_2t_nc = (
+                formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+                if estado_2t == "sensible"
+                else f"{mkt_2t} al {prob_2t:.0f}%"
+            )
             c4 = (
-                f"4. Dinámica de la segunda mitad: {mkt_2t} al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"4. Dinámica de la segunda mitad: {_txt_2t_nc} ({xg_2t_comb:.2f} "
                 f"{etq_vol_2t} y {txt_p26}) [reparto mitades no validado en Sección 1/Top 5 por "
                 f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
@@ -1490,8 +1719,13 @@ def generar_veredicto_tactico_partido(
                 f"Sumado al flujo del tramo 76'-90' ({flujo_76_90} goles combinados)"
                 if flujo_76_90 > 0 else "Flujo 76'-90': 0 goles combinados"
             )
+            _txt_2t_ok = (
+                formatear_pick_segun_estado(mkt_2t, prob_2t, "sensible")
+                if estado_2t == "sensible"
+                else f"El modelo valida '{mkt_2t}' al {prob_2t:.0f}%"
+            )
             c4 = (
-                f"4. La segunda mitad tendrá goles: El modelo valida '{mkt_2t}' al {prob_2t:.0f}% ({xg_2t_comb:.2f} "
+                f"4. La segunda mitad tendrá goles: {_txt_2t_ok} ({xg_2t_comb:.2f} "
                 f"{etq_vol_2t} y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
             )
     from decision_cobertura import bandera_activa as _ba_mi_mp
@@ -1602,16 +1836,51 @@ def calcular_cuadro_c_timeline_15min(
         ("61_75", "61'-75'"),
         ("76_90", "76'-90'"),
     ]
-    anotados_map: Dict[str, int] = {}
-    recibidos_map: Dict[str, int] = {}
+    meta_raw = dict(raw.get("_meta") or {})
+    n_ev_raw = int(meta_raw.get("n_partidos_con_eventos", 0) or 0)
+    n_tot_raw = int(meta_raw.get("n_partidos_totales", 0) or 0)
+    es_sin_dato = bool(meta_raw.get("sin_dato")) or (n_ev_raw == 0 and (n_tot_raw >= 0))
+
+    anotados_map: Dict[str, Optional[int]] = {}
+    recibidos_map: Dict[str, Optional[int]] = {}
     out_f: Dict[str, Any] = {}
-    tot_a = max(1, sum(int((raw.get(k_u) or {}).get("anotados", 0)) for k_u, _ in pares_franjas))
-    tot_r = max(1, sum(int((raw.get(k_u) or {}).get("recibidos", 0)) for k_u, _ in pares_franjas))
+    if es_sin_dato:
+        for k_u, k_lbl in pares_franjas:
+            anotados_map[k_lbl] = None
+            recibidos_map[k_lbl] = None
+            nodo = {
+                "anotados": None,
+                "recibidos": None,
+                "pct_anotados": None,
+                "pct_recibidos": None,
+                "texto_anotados": "sin_dato",
+                "texto_recibidos": "sin_dato",
+                "sin_dato": True,
+            }
+            out_f[k_lbl] = nodo
+            out_f[k_u] = nodo
+        meta_raw["sin_dato"] = True
+        res: Dict[str, Any] = {
+            **raw,
+            "_meta": meta_raw,
+            "sin_dato": True,
+            "franjas": out_f,
+            "anotados": anotados_map,
+            "recibidos": recibidos_map,
+            "total_anotados": None,
+            "total_recibidos": None,
+        }
+        return res
+
+    tot_a_real = sum(int((raw.get(k_u) or {}).get("anotados", 0) or 0) for k_u, _ in pares_franjas)
+    tot_r_real = sum(int((raw.get(k_u) or {}).get("recibidos", 0) or 0) for k_u, _ in pares_franjas)
+    div_a = max(1, tot_a_real)
+    div_r = max(1, tot_r_real)
     for k_u, k_lbl in pares_franjas:
-        a = int((raw.get(k_u) or {}).get("anotados", 0))
-        r = int((raw.get(k_u) or {}).get("recibidos", 0))
-        pa = round((a / tot_a) * 100.0, 1)
-        pr = round((r / tot_r) * 100.0, 1)
+        a = int((raw.get(k_u) or {}).get("anotados", 0) or 0)
+        r = int((raw.get(k_u) or {}).get("recibidos", 0) or 0)
+        pa = round((a / div_a) * 100.0, 1)
+        pr = round((r / div_r) * 100.0, 1)
         anotados_map[k_lbl] = a
         recibidos_map[k_lbl] = r
         nodo = {
@@ -1621,16 +1890,19 @@ def calcular_cuadro_c_timeline_15min(
             "pct_recibidos": pr,
             "texto_anotados": f"{a} ({pa:.0f}%)",
             "texto_recibidos": f"{r} ({pr:.0f}%)",
+            "sin_dato": False,
         }
         out_f[k_lbl] = nodo
         out_f[k_u] = nodo
-    res: Dict[str, Any] = {
+    res = {
         **raw,
+        "_meta": meta_raw,
+        "sin_dato": False,
         "franjas": out_f,
         "anotados": anotados_map,
         "recibidos": recibidos_map,
-        "total_anotados": tot_a,
-        "total_recibidos": tot_r,
+        "total_anotados": tot_a_real,
+        "total_recibidos": tot_r_real,
     }
     return res
 
@@ -1653,6 +1925,7 @@ def generar_informe_narrativo_xai(
     top5_podio: Optional[List[Dict[str, Any]]] = None,
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
+    selecciones_sec2: Optional[List[Any]] = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -1675,6 +1948,7 @@ def generar_informe_narrativo_xai(
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
         motor=motor,
+        selecciones_sec2=selecciones_sec2,
     )
 
 

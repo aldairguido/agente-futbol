@@ -195,6 +195,20 @@ class SnapshotPronostico:
     telegram_message_date: int | None = None
     telegram_origen: dict[str, Any] | None = None
     telegram_envio: dict[str, Any] | None = None
+    traza_etapa_6: list[dict[str, Any]] | None = None
+    resumen_etapa_6: dict[str, Any] | None = None
+    fixture_confirmado: bool | None = None
+    fuente_fecha: str | None = None
+    hora_inicio_partido: str | None = None
+    hora_mensaje_utc: str | None = None
+    es_oos_valido: bool | None = None
+    es_canonica: bool | None = None
+    estado_canonico: str | None = None
+    regla_contabilidad_oos: str | None = None
+    fuente_local: str | None = None
+    fuente_visitante: str | None = None
+    firma_datos: str | None = None
+    lambdas_plano: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -227,7 +241,473 @@ class SnapshotPronostico:
             out["telegram_origen"] = self.telegram_origen
         if self.telegram_envio is not None:
             out["telegram_envio"] = self.telegram_envio
+        if self.traza_etapa_6 is not None:
+            out["traza_etapa_6"] = self.traza_etapa_6
+        if self.resumen_etapa_6 is not None:
+            out["resumen_etapa_6"] = self.resumen_etapa_6
+        if self.fixture_confirmado is not None:
+            out["fixture_confirmado"] = bool(self.fixture_confirmado)
+            out["fuente_fecha"] = self.fuente_fecha
+            out["hora_inicio_partido"] = self.hora_inicio_partido
+            out["telegram_message_date"] = self.telegram_message_date
+            out["hora_mensaje_utc"] = self.hora_mensaje_utc
+            out["es_oos_valido"] = self.es_oos_valido
+            out["es_canonica"] = self.es_canonica
+            out["estado_canonico"] = self.estado_canonico
+            out["regla_contabilidad_oos"] = self.regla_contabilidad_oos or REGLA_CONTABILIDAD_OOS
+        if self.fuente_local is not None:
+            out["fuente_local"] = self.fuente_local
+        if self.fuente_visitante is not None:
+            out["fuente_visitante"] = self.fuente_visitante
+        if self.firma_datos is not None:
+            out["firma_datos"] = self.firma_datos
+        if self.lambdas_plano is not None:
+            out["lambdas_plano"] = self.lambdas_plano
         return out
+
+
+REGLA_CONTABILIDAD_OOS = (
+    "Regla operativa sin validación empírica: una entrada solo cuenta como OOS si "
+    "fixture_confirmado=True y telegram_message_date < hora_inicio_partido; ante "
+    "múltiples entradas válidas del mismo partido, solo la primera anterior al inicio "
+    "se marca como canonica (es_canonica=True) y el resto como no_canonica "
+    "(es_canonica=False); las que incumplen se marcan como no_oos."
+)
+
+
+def _norm_txt_oos(val: Any) -> str:
+    import unicodedata
+    s = unicodedata.normalize("NFKD", str(val or "").strip().lower())
+    return " ".join("".join(c for c in s if not unicodedata.combining(c)).split())
+
+
+def _parsear_instante_con_zona_oos(valor: Any) -> tuple[datetime | None, str | None]:
+    """
+    Interpreta un instante SOLO si trae época numérica o zona horaria explícita
+    (`Z`, `+HH:MM`, `-HH:MM`). Fechas sueltas sin hora/zona devuelven `(None, None)`.
+    """
+    if valor is None or isinstance(valor, bool):
+        return None, None
+    if isinstance(valor, (int, float)):
+        dt = datetime.fromtimestamp(float(valor), tz=timezone.utc)
+        return dt, dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    s = str(valor).strip()
+    if not s:
+        return None, None
+    if re.fullmatch(r"\d+(?:\.\d+)?", s):
+        dt = datetime.fromtimestamp(float(s), tz=timezone.utc)
+        return dt, dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    has_tz = s.endswith(("Z", "z")) or bool(re.search(r"[+-]\d{2}:?\d{2}$", s))
+    if not has_tz or len(s) <= 10:
+        return None, None
+    try:
+        iso_in = s[:-1] + "+00:00" if s.endswith(("Z", "z")) else s
+        dt = datetime.fromisoformat(iso_in)
+        if dt.tzinfo is None:
+            return None, None
+        return dt.astimezone(timezone.utc), s
+    except Exception:
+        return None, None
+
+
+def _extraer_identidad_doc_oos(doc: dict[str, Any]) -> tuple[str, str, str]:
+    raw_part = doc.get("partido")
+    id_p = str(doc.get("id_partido") or (raw_part.get("id_partido") if isinstance(raw_part, dict) else "") or "").strip()
+    eqs = doc.get("equipos")
+    if isinstance(eqs, dict) and (eqs.get("local") or eqs.get("visitante")):
+        part_str = f"{eqs.get('local') or ''} vs {eqs.get('visitante') or ''}"
+    else:
+        part_str = str(raw_part if not isinstance(raw_part, dict) else "")
+    f_raw = raw_part.get("fecha") if isinstance(raw_part, dict) else doc.get("fecha")
+    if not f_raw and doc.get("hora_inicio_partido"):
+        f_raw = doc.get("hora_inicio_partido")
+    m_f = re.search(r"\d{4}-\d{2}-\d{2}", str(f_raw or ""))
+    fecha_10 = m_f.group(0) if m_f else ""
+    return id_p, _norm_txt_oos(part_str), fecha_10
+
+
+def _mismo_partido_oos(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    id_a, p_a, f_a = _extraer_identidad_doc_oos(a)
+    id_b, p_b, f_b = _extraer_identidad_doc_oos(b)
+    if id_a and id_b and id_a == id_b:
+        return True
+    if p_a and p_b and p_a == p_b:
+        if f_a and f_b:
+            return f_a == f_b
+        return True
+    return False
+
+
+def evaluar_contabilidad_oos_registro(
+    *,
+    fixture_confirmado: Any,
+    fuente_fecha: Any,
+    hora_inicio_partido: Any,
+    telegram_message_date: Any,
+    hora_mensaje_utc: Any = None,
+    partido: Any = "",
+    fecha: Any = "",
+    id_partido: Any = "",
+    estado_registro: str = "pre_partido",
+    id_trabajo: str = "",
+    registros_existentes: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """
+    Aplica `REGLA_CONTABILIDAD_OOS`:
+      - `es_oos_valido = True` ssi `fixture_confirmado is True` y
+        `telegram_message_date < hora_inicio_partido` (ambos con zona horaria explícita).
+      - Primera entrada OOS válida del mismo partido -> `canonica` (`es_canonica=True`).
+      - Posteriores entradas válidas del mismo partido -> `no_canonica` (`es_canonica=False`).
+      - Inválidas / fallback sin fixture / post-inicio -> `no_oos` (`es_canonica=False`).
+    """
+    fx_conf = bool(fixture_confirmado is True)
+    f_fec = str(fuente_fecha or ("fixture" if fx_conf else "fallback")).strip() or ("fixture" if fx_conf else "fallback")
+    dt_ini, hora_ini_str = _parsear_instante_con_zona_oos(hora_inicio_partido)
+    dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(
+        hora_mensaje_utc if hora_mensaje_utc is not None else telegram_message_date
+    )
+    if dt_msg is None and telegram_message_date is not None:
+        dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(telegram_message_date)
+
+    es_oos_valido = bool(fx_conf and dt_ini is not None and dt_msg is not None and dt_msg < dt_ini)
+    if not es_oos_valido:
+        es_canonica = False
+        estado_canonico = "no_oos"
+    else:
+        actual = {
+            "id_partido": str(id_partido or ""),
+            "partido": str(partido or ""),
+            "fecha": str(fecha or ""),
+            "hora_inicio_partido": hora_ini_str,
+        }
+        ya_hay_canonica = False
+        for ex in (registros_existentes or []):
+            if not isinstance(ex, dict):
+                continue
+            if id_trabajo and str(ex.get("id_trabajo") or "") == str(id_trabajo):
+                continue
+            if estado_registro and ex.get("estado_registro") is not None:
+                if str(ex.get("estado_registro") or "liquidado").strip().lower() != str(estado_registro).strip().lower():
+                    continue
+            if not _mismo_partido_oos(ex, actual):
+                continue
+            if ex.get("es_canonica") is True or ex.get("es_oos_valido") is True:
+                ya_hay_canonica = True
+                break
+        es_canonica = not ya_hay_canonica
+        estado_canonico = "canonica" if es_canonica else "no_canonica"
+
+    return {
+        "fixture_confirmado": fx_conf,
+        "fuente_fecha": f_fec,
+        "hora_inicio_partido": hora_ini_str,
+        "telegram_message_date": telegram_message_date,
+        "hora_mensaje_utc": hora_msg_str,
+        "es_oos_valido": es_oos_valido,
+        "es_canonica": es_canonica,
+        "estado_canonico": estado_canonico,
+        "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
+    }
+
+
+def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
+    """
+    Clasifica cualquier entrada del ledger (incluido historial previo a Regla M sin reescribir hashes):
+      - Con campos explícitos de Regla M -> `canonica` | `no_canonica` | `no_oos` | `legacy_sin_fixture`.
+      - Sin `es_oos_valido` y sin `(fixture_confirmado=True y hora_inicio_partido)` -> `legacy_sin_fixture` (no-OOS).
+    """
+    if not isinstance(reg, dict):
+        return {
+            "clasificacion_oos": "legacy_sin_fixture",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": True,
+        }
+    if "es_oos_valido" in reg:
+        est_c = str(reg.get("estado_canonico") or "").strip().lower()
+        if est_c == "legacy_sin_fixture":
+            return {
+                "clasificacion_oos": "legacy_sin_fixture",
+                "es_oos_valido": False,
+                "es_canonica": False,
+                "es_legacy_sin_fixture": True,
+            }
+        es_v = bool(reg.get("es_oos_valido") is True)
+        es_c = bool(es_v and reg.get("es_canonica") is True)
+        cls = est_c or ("canonica" if es_c else ("no_canonica" if es_v else "no_oos"))
+        return {
+            "clasificacion_oos": cls,
+            "es_oos_valido": es_v,
+            "es_canonica": es_c,
+            "es_legacy_sin_fixture": False,
+        }
+
+    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(reg.get("hora_inicio_partido"))
+    if not tiene_fx:
+        return {
+            "clasificacion_oos": "legacy_sin_fixture",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": True,
+        }
+
+    ev = evaluar_contabilidad_oos_registro(
+        fixture_confirmado=reg.get("fixture_confirmado"),
+        fuente_fecha=reg.get("fuente_fecha"),
+        hora_inicio_partido=reg.get("hora_inicio_partido"),
+        telegram_message_date=reg.get("telegram_message_date"),
+        hora_mensaje_utc=reg.get("hora_mensaje_utc"),
+        partido=reg.get("partido"),
+        fecha=reg.get("fecha"),
+        id_partido=reg.get("id_partido"),
+        estado_registro=str(reg.get("estado_registro") or "liquidado"),
+        id_trabajo=str(reg.get("id_trabajo") or ""),
+    )
+    return {
+        "clasificacion_oos": str(ev["estado_canonico"]),
+        "es_oos_valido": bool(ev["es_oos_valido"]),
+        "es_canonica": bool(ev["es_canonica"]),
+        "es_legacy_sin_fixture": False,
+    }
+
+
+def _extraer_fuentes_y_firma_registro(
+    *,
+    preparado: dict[str, Any] | None = None,
+    doc: dict[str, Any] | None = None,
+    metadatos: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    """Extrae `fuente_local`, `fuente_visitante` y `firma_datos` de análisis, documento o pre_partido."""
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    an = prep.get("analisis")
+    meta = (
+        metadatos
+        if isinstance(metadatos, dict)
+        else (getattr(an, "metadatos", None) if an is not None else None)
+        or d.get("metadatos")
+        or {}
+    )
+    ctx = prep.get("contexto") if isinstance(prep.get("contexto"), dict) else {}
+    mot = getattr(an, "motor", None) if an is not None else None
+    dl = ctx.get("doc_local") or (getattr(mot, "doc_local", None) if mot is not None else None)
+    dv = ctx.get("doc_visitante") or (getattr(mot, "doc_visitante", None) if mot is not None else None)
+    dc = d.get("datos_corte") if isinstance(d.get("datos_corte"), dict) else {}
+    pr = pre_ref if isinstance(pre_ref, dict) else {}
+
+    f_loc = (
+        meta.get("fuente_local")
+        or ctx.get("fuente_local")
+        or (dl.get("fuente") if isinstance(dl, dict) else None)
+        or d.get("fuente_local")
+        or dc.get("fuente_local")
+        or pr.get("fuente_local")
+    )
+    f_vis = (
+        meta.get("fuente_visitante")
+        or ctx.get("fuente_visitante")
+        or (dv.get("fuente") if isinstance(dv, dict) else None)
+        or d.get("fuente_visitante")
+        or dc.get("fuente_visitante")
+        or pr.get("fuente_visitante")
+    )
+    firma = (
+        meta.get("firma_datos")
+        or ctx.get("firma_datos")
+        or d.get("firma_datos")
+        or dc.get("firma_datos")
+        or pr.get("firma_datos")
+    )
+    if not firma and (isinstance(dl, dict) or isinstance(dv, dict)):
+        dl_d = dl if isinstance(dl, dict) else {}
+        dv_d = dv if isinstance(dv, dict) else {}
+        firma = hashlib.sha256(
+            json.dumps(
+                [
+                    len(dl_d.get("partidos", []) or []),
+                    len(dv_d.get("partidos", []) or []),
+                    dl_d.get("generado_en"),
+                    dv_d.get("generado_en"),
+                ],
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+    return {
+        "fuente_local": str(f_loc).strip() if f_loc else None,
+        "fuente_visitante": str(f_vis).strip() if f_vis else None,
+        "firma_datos": str(firma).strip() if firma else None,
+    }
+
+
+def extraer_lambdas_plano_desde_analisis(
+    analisis: Any = None,
+    preparado: dict[str, Any] | None = None,
+    *,
+    doc: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """
+    Calcula o extrae `lambdas_plano` (Etapa 1 sin moduladores, sin λ_efectivo,
+    sin red 45-DCN ni reglas de Etapa 6) para guardarlo en snapshot y ledger sin alterar el ticket.
+    """
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    pr = pre_ref if isinstance(pre_ref, dict) else {}
+    if analisis is None:
+        analisis = prep.get("analisis")
+
+    for origen in (
+        prep.get("modo_sombra"),
+        d.get("modo_sombra"),
+        d,
+        d.get("datos_corte"),
+        pr,
+    ):
+        if isinstance(origen, dict) and isinstance(origen.get("lambdas_plano"), dict):
+            lp_raw = origen["lambdas_plano"]
+            if lp_raw.get("local_ft") is not None and lp_raw.get("visitante_ft") is not None:
+                return dict(lp_raw)
+
+    mot = getattr(analisis, "motor", None) if analisis is not None else None
+    if mot is None:
+        return None
+    mu = getattr(mot, "muestras", None)
+    params_m = getattr(mot, "p", None)
+    if not isinstance(mu, dict):
+        return None
+
+    try:
+        from decision_cobertura import banderas_comportamiento
+        import motor_mercados as mm
+
+        det_g = getattr(mot, "detalle_goles", None) or {}
+        mods = det_g.get("_moduladores") if isinstance(det_g, dict) else None
+        lam_ft_l = None
+        lam_ft_v = None
+        if isinstance(mods, dict):
+            lam_ft_l = mods.get("lambda_local_sin_modular")
+            lam_ft_v = mods.get("lambda_visitante_sin_modular")
+        if lam_ft_l is None or lam_ft_v is None:
+            if isinstance(det_g, dict) and det_g.get("lambda_local") is not None and not det_g.get("_lambda_efectivo"):
+                lam_ft_l = det_g.get("lambda_local")
+                lam_ft_v = det_g.get("lambda_visitante")
+        if lam_ft_l is None or lam_ft_v is None:
+            mlg = mu.get("local_general")
+            mvg = mu.get("visitante_general")
+            mlc = mu.get("local_cond")
+            mvc = mu.get("visitante_cond")
+            if mlg is None or mvg is None or mlc is None or mvc is None:
+                return None
+            p_ref = params_m or mm.Parametros()
+            lam_ft_l, lam_ft_v, _ = mm.tasas_goles(
+                mlg,
+                mvg,
+                mlc,
+                mvc,
+                float(getattr(p_ref, "w_condicion", mm.W_CONDICION_DEFECTO)),
+                float(getattr(p_ref, "w_xg", mm.W_XG_DEFECTO)),
+                getattr(p_ref, "k_credibilidad", mm.K_CREDIBILIDAD_DEFECTO),
+            )
+        if lam_ft_l is None or lam_ft_v is None:
+            return None
+
+        dl = getattr(mot, "doc_local", None)
+        dv = getattr(mot, "doc_visitante", None)
+        lam_1t_l = lam_1t_v = lam_2t_l = lam_2t_v = None
+        if isinstance(dl, dict) and isinstance(dv, dict):
+            with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
+                lam_1t_l, lam_1t_v, lam_2t_l, lam_2t_v, _, _ = mm.repartir_lambdas_por_tiempos(
+                    dl,
+                    dv,
+                    float(lam_ft_l),
+                    float(lam_ft_v),
+                    getattr(mot, "cond_local", "casa"),
+                    getattr(mot, "cond_visitante", "fuera"),
+                )
+        return {
+            "local_ft": round(float(lam_ft_l), 6),
+            "visitante_ft": round(float(lam_ft_v), 6),
+            "local_1t": round(float(lam_1t_l), 6) if lam_1t_l is not None else None,
+            "visitante_1t": round(float(lam_1t_v), 6) if lam_1t_v is not None else None,
+            "local_2t": round(float(lam_2t_l), 6) if lam_2t_l is not None else None,
+            "visitante_2t": round(float(lam_2t_v), 6) if lam_2t_v is not None else None,
+        }
+    except Exception:
+        return None
+
+
+def _extraer_traza_etapa_6_snapshot(motor: Any) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
+    """Extrae la traza inmutable de la Etapa 6 (`post_sinc_mercados`) y cuánto movió cada regla."""
+    if motor is None:
+        return None, None
+    rec = getattr(motor, "recursivo", None)
+    traza_full = list(
+        getattr(motor, "traza_lambda", None)
+        or (rec.get("traza_lambda") if isinstance(rec, dict) else None)
+        or []
+    )
+    if not traza_full:
+        return None, None
+
+    etapa6_raw = [st for st in traza_full if isinstance(st, dict) and st.get("etapa") == "post_sinc_mercados"]
+    pre6 = [st for st in traza_full if isinstance(st, dict) and st.get("etapa") != "post_sinc_mercados"]
+    traza_6: list[dict[str, Any]] = []
+    for st in etapa6_raw:
+        al = st.get("lam_l_antes")
+        dl = st.get("lam_l_despues")
+        av = st.get("lam_v_antes")
+        dv = st.get("lam_v_despues")
+        traza_6.append({
+            "paso": st.get("paso"),
+            "etapa": st.get("etapa"),
+            "regla": st.get("regla"),
+            "lam_l_antes": al,
+            "lam_l_despues": dl,
+            "delta_l": round(float(dl) - float(al), 4) if (al is not None and dl is not None) else None,
+            "lam_v_antes": av,
+            "lam_v_despues": dv,
+            "delta_v": round(float(dv) - float(av), 4) if (av is not None and dv is not None) else None,
+            "motivo": st.get("motivo"),
+        })
+
+    lam_l_red = None
+    lam_v_red = None
+    if etapa6_raw:
+        lam_l_red = etapa6_raw[0].get("lam_l_antes")
+        lam_v_red = etapa6_raw[0].get("lam_v_antes")
+    elif pre6:
+        lam_l_red = pre6[-1].get("lam_l_despues")
+        lam_v_red = pre6[-1].get("lam_v_despues")
+
+    tasas = getattr(motor, "tasas", None)
+    lam_l_final = getattr(tasas, "lambda_local_ft", None) if tasas is not None else (etapa6_raw[-1].get("lam_l_despues") if etapa6_raw else lam_l_red)
+    lam_v_final = getattr(tasas, "lambda_visitante_ft", None) if tasas is not None else (etapa6_raw[-1].get("lam_v_despues") if etapa6_raw else lam_v_red)
+
+    delta_pct_l = None
+    if lam_l_red is not None and lam_l_final is not None and float(lam_l_red) > 0:
+        delta_pct_l = round(((float(lam_l_final) - float(lam_l_red)) / float(lam_l_red)) * 100.0, 1)
+    delta_pct_v = None
+    if lam_v_red is not None and lam_v_final is not None and float(lam_v_red) > 0:
+        delta_pct_v = round(((float(lam_v_final) - float(lam_v_red)) / float(lam_v_red)) * 100.0, 1)
+
+    resumen_6 = {
+        "lam_l_red": lam_l_red,
+        "lam_l_final": lam_l_final,
+        "delta_l_pct_vs_red": delta_pct_l,
+        "lam_v_red": lam_v_red,
+        "lam_v_final": lam_v_final,
+        "delta_v_pct_vs_red": delta_pct_v,
+        "techo_lambda_ataque_bajo_local_activo": any(s.get("regla") == "techo_lambda_ataque_bajo_local" for s in traza_6),
+        "techo_lambda_ataque_bajo_visita_activo": any(s.get("regla") == "techo_lambda_ataque_bajo_visita" for s in traza_6),
+        "reglas_activadas": [
+            str(s.get("regla") or "")
+            for s in traza_6
+            if (abs(float(s.get("delta_l") or 0.0)) > 1e-6 or abs(float(s.get("delta_v") or 0.0)) > 1e-6)
+        ],
+    }
+    return traza_6, resumen_6
 
 
 def ruta_snapshot(id_trabajo: str, directorio: str | None = None) -> str:
@@ -247,6 +727,36 @@ def guardar_snapshot(snapshot: SnapshotPronostico | dict[str, Any],
     os.makedirs(parent_dir, exist_ok=True)
     if os.path.exists(destino):
         return destino
+    if isinstance(datos, dict) and datos.get("es_oos_valido") is True and datos.get("es_canonica") is True:
+        try:
+            existentes_snaps: list[dict[str, Any]] = []
+            for p_f in os.listdir(parent_dir):
+                if not p_f.endswith(".json") or p_f.startswith("."):
+                    continue
+                try:
+                    with open(os.path.join(parent_dir, p_f), "r", encoding="utf-8") as fh_ex:
+                        existentes_snaps.append(json.load(fh_ex))
+                except Exception:
+                    continue
+            eq_d = datos.get("equipos") or {}
+            pt_d = datos.get("partido") or {}
+            contab_snap = evaluar_contabilidad_oos_registro(
+                fixture_confirmado=datos.get("fixture_confirmado"),
+                fuente_fecha=datos.get("fuente_fecha"),
+                hora_inicio_partido=datos.get("hora_inicio_partido"),
+                telegram_message_date=datos.get("telegram_message_date"),
+                hora_mensaje_utc=datos.get("hora_mensaje_utc"),
+                partido=f"{eq_d.get('local') or ''} vs {eq_d.get('visitante') or ''}",
+                fecha=pt_d.get("fecha"),
+                id_partido=pt_d.get("id_partido") or datos.get("id_partido") or "",
+                estado_registro="",
+                id_trabajo=str(datos.get("id_trabajo") or ""),
+                registros_existentes=existentes_snaps,
+            )
+            datos["es_canonica"] = contab_snap["es_canonica"]
+            datos["estado_canonico"] = contab_snap["estado_canonico"]
+        except Exception:
+            pass
     fd, tmp_ruta = _tmp_snap.mkstemp(prefix=".snap_", suffix=".json", dir=parent_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
@@ -304,10 +814,42 @@ def adjuntar_acuse_telegram_snapshot(
         doc["telegram_message_id"] = env_doc.get("message_id")
     if env_doc.get("message_date") is not None:
         doc["telegram_message_date"] = env_doc.get("message_date")
+        doc["hora_mensaje_utc"] = env_doc.get("message_date_utc") or datetime.fromtimestamp(
+            int(env_doc["message_date"]), tz=timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ")
     if doc.get("publicado_en") is None and env_doc.get("message_date_utc") is not None:
         doc["publicado_en"] = env_doc.get("message_date_utc")
 
     parent_dir = os.path.dirname(ruta_snapshot)
+    if "es_oos_valido" in doc or "fixture_confirmado" in doc:
+        try:
+            existentes_adj: list[dict[str, Any]] = []
+            for p_f in os.listdir(parent_dir or "."):
+                if not p_f.endswith(".json") or p_f.startswith("."):
+                    continue
+                try:
+                    with open(os.path.join(parent_dir or ".", p_f), "r", encoding="utf-8") as fh_ex:
+                        existentes_adj.append(json.load(fh_ex))
+                except Exception:
+                    continue
+            eq_d = doc.get("equipos") or {}
+            pt_d = doc.get("partido") or {}
+            contab_adj = evaluar_contabilidad_oos_registro(
+                fixture_confirmado=doc.get("fixture_confirmado"),
+                fuente_fecha=doc.get("fuente_fecha"),
+                hora_inicio_partido=doc.get("hora_inicio_partido"),
+                telegram_message_date=doc.get("telegram_message_date"),
+                hora_mensaje_utc=doc.get("hora_mensaje_utc"),
+                partido=f"{eq_d.get('local') or ''} vs {eq_d.get('visitante') or ''}",
+                fecha=pt_d.get("fecha"),
+                id_partido=pt_d.get("id_partido") or doc.get("id_partido") or "",
+                estado_registro="",
+                id_trabajo=str(doc.get("id_trabajo") or ""),
+                registros_existentes=existentes_adj,
+            )
+            doc.update(contab_adj)
+        except Exception:
+            pass
     fd, tmp_ruta = _tmp_tg.mkstemp(prefix=".snap_tg_", suffix=".json", dir=parent_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as f:
@@ -332,7 +874,8 @@ def adjuntar_acuse_telegram_snapshot(
 def snapshot_desde_analisis(preparado: dict[str, Any],
                             publicado_en: str | None = None,
                             modo_sombra: dict[str, Any] | None = None,
-                            telegram_meta: dict[str, Any] | None = None) -> SnapshotPronostico:
+                            telegram_meta: dict[str, Any] | None = None,
+                            existentes_snapshots: list[dict[str, Any]] | None = None) -> SnapshotPronostico:
     """
     Construye el snapshot a partir del resultado de `preparar_analisis`.
     Guarda TODAS las selecciones estimables (incluidas las inferiores al umbral)
@@ -340,21 +883,61 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     """
     analisis = preparado["analisis"]
     metadatos = getattr(analisis, "metadatos", {}) or {}
+    ctx_p = preparado.get("contexto") or {}
     tg_m = telegram_meta if telegram_meta is not None else preparado.get("telegram_meta")
     tg_org = dict(tg_m) if isinstance(tg_m, dict) else None
     tg_mid = tg_org.get("message_id") if isinstance(tg_org, dict) else None
     tg_mdt = tg_org.get("message_date") if isinstance(tg_org, dict) else None
+    tg_mutc = tg_org.get("message_date_utc") if isinstance(tg_org, dict) else metadatos.get("hora_mensaje_utc")
+    fx_conf = bool(
+        metadatos.get("fixture_confirmado")
+        if "fixture_confirmado" in metadatos
+        else ctx_p.get("fixture_confirmado", False)
+    )
+    f_fec = str(metadatos.get("fuente_fecha") or ctx_p.get("fuente_fecha") or ("fixture" if fx_conf else "fallback"))
+    h_ini = metadatos.get("hora_inicio_partido") or ctx_p.get("hora_inicio_partido")
+    id_part_snap = str(
+        preparado.get("id_partido")
+        or metadatos.get("id_partido")
+        or metadatos.get("match_id_fotmob")
+        or ctx_p.get("id_partido")
+        or ""
+    )
+    contab_snap = evaluar_contabilidad_oos_registro(
+        fixture_confirmado=fx_conf,
+        fuente_fecha=f_fec,
+        hora_inicio_partido=h_ini,
+        telegram_message_date=tg_mdt,
+        hora_mensaje_utc=tg_mutc,
+        partido=f"{metadatos.get('equipo_local') or ''} vs {metadatos.get('equipo_visitante') or ''}",
+        fecha=metadatos.get("fecha_partido") or h_ini,
+        id_partido=id_part_snap,
+        estado_registro="",
+        id_trabajo=str(preparado.get("id_trabajo") or ""),
+        registros_existentes=existentes_snapshots,
+    )
+    f_info_snap = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=metadatos)
     abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
     if abstenido:
         dec_cob = metadatos.get("decision_cobertura") or {}
         est_cob = str(dec_cob.get("estado") or metadatos.get("estado_cobertura") or "abstenido")
         mot_abs = str(dec_cob.get("alerta_descriptiva") or metadatos.get("motivo_abstencion") or "")
         umbral_val = float(getattr(analisis.parametros, "umbral", 0.70) if hasattr(analisis, "parametros") and analisis.parametros else 0.70)
+        dc_abs = {"abstenido": True, "estado_cobertura": est_cob, "motivo_abstencion": mot_abs, "fuente": metadatos.get("fuente")}
+        if f_info_snap["fuente_local"] is not None:
+            dc_abs["fuente_local"] = f_info_snap["fuente_local"]
+        if f_info_snap["fuente_visitante"] is not None:
+            dc_abs["fuente_visitante"] = f_info_snap["fuente_visitante"]
+        if f_info_snap["firma_datos"] is not None:
+            dc_abs["firma_datos"] = f_info_snap["firma_datos"]
         return SnapshotPronostico(
             id_trabajo=preparado.get("id_trabajo") or "abstenido",
             equipos={"local": metadatos.get("equipo_local"), "visitante": metadatos.get("equipo_visitante")},
             partido={
                 "fecha": metadatos.get("fecha_partido"),
+                "hora_inicio_partido": contab_snap["hora_inicio_partido"],
+                "fixture_confirmado": contab_snap["fixture_confirmado"],
+                "fuente_fecha": contab_snap["fuente_fecha"],
                 "competicion": metadatos.get("competicion"),
                 "sede": metadatos.get("sede"),
                 "condicion_local": metadatos.get("condicion_local"),
@@ -365,7 +948,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             publicado_en=publicado_en,
             modelo={"nombre": NOMBRE_MODELO, "version": VERSION_MODELO, "umbral": umbral_val,
                     "w_condicion": 0.0, "w_xg": 0.0, "distribucion_conteos": "poisson"},
-            datos_corte={"abstenido": True, "estado_cobertura": est_cob, "motivo_abstencion": mot_abs, "fuente": metadatos.get("fuente")},
+            datos_corte=dc_abs,
             selecciones=[],
             selecciones_publicadas=[],
             umbral_publicado=umbral_val,
@@ -377,6 +960,17 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             telegram_message_id=tg_mid,
             telegram_message_date=tg_mdt,
             telegram_origen=tg_org,
+            fixture_confirmado=contab_snap["fixture_confirmado"],
+            fuente_fecha=contab_snap["fuente_fecha"],
+            hora_inicio_partido=contab_snap["hora_inicio_partido"],
+            hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
+            es_oos_valido=contab_snap["es_oos_valido"],
+            es_canonica=contab_snap["es_canonica"],
+            estado_canonico=contab_snap["estado_canonico"],
+            regla_contabilidad_oos=contab_snap["regla_contabilidad_oos"],
+            fuente_local=f_info_snap["fuente_local"],
+            fuente_visitante=f_info_snap["fuente_visitante"],
+            firma_datos=f_info_snap["firma_datos"],
         )
     motor = analisis.motor
     umbral = float(analisis.parametros.umbral)
@@ -399,12 +993,18 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             if s.probabilidad > umbral:
                 publicadas.append(dict(entrada))
 
+    traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
+    lam_plano_snap = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
         equipos={"local": metadatos.get("equipo_local"),
                  "visitante": metadatos.get("equipo_visitante")},
         partido={
             "fecha": metadatos.get("fecha_partido"),
+            "hora_inicio_partido": contab_snap["hora_inicio_partido"],
+            "fixture_confirmado": contab_snap["fixture_confirmado"],
+            "fuente_fecha": contab_snap["fuente_fecha"],
             "competicion": metadatos.get("competicion"),
             "sede": metadatos.get("sede"),
             "condicion_local": metadatos.get("condicion_local"),
@@ -424,8 +1024,12 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             "partidos_local_condicion": motor.muestras["local_cond"].partidos_condicion,
             "partidos_visitante_condicion": motor.muestras["visitante_cond"].partidos_condicion,
             "fuente": metadatos.get("fuente"),
+            **({"fuente_local": f_info_snap["fuente_local"]} if f_info_snap["fuente_local"] is not None else {}),
+            **({"fuente_visitante": f_info_snap["fuente_visitante"]} if f_info_snap["fuente_visitante"] is not None else {}),
+            **({"firma_datos": f_info_snap["firma_datos"]} if f_info_snap["firma_datos"] is not None else {}),
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
+            **({"lambdas_plano": lam_plano_snap} if lam_plano_snap is not None else {}),
         },
         selecciones=todas,
         selecciones_publicadas=publicadas,
@@ -436,6 +1040,20 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         telegram_message_id=tg_mid,
         telegram_message_date=tg_mdt,
         telegram_origen=tg_org,
+        traza_etapa_6=traza_6,
+        resumen_etapa_6=resumen_6,
+        fixture_confirmado=contab_snap["fixture_confirmado"],
+        fuente_fecha=contab_snap["fuente_fecha"],
+        hora_inicio_partido=contab_snap["hora_inicio_partido"],
+        hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
+        es_oos_valido=contab_snap["es_oos_valido"],
+        es_canonica=contab_snap["es_canonica"],
+        estado_canonico=contab_snap["estado_canonico"],
+        regla_contabilidad_oos=contab_snap["regla_contabilidad_oos"],
+        fuente_local=f_info_snap["fuente_local"],
+        fuente_visitante=f_info_snap["fuente_visitante"],
+        firma_datos=f_info_snap["firma_datos"],
+        lambdas_plano=lam_plano_snap,
     )
 
 
@@ -4039,18 +4657,17 @@ def registrar_en_ledger_oos(
         estado_ex = str(ex.get("estado_registro") or "liquidado").strip().lower()
         if estado_ex != estado_reg_nuevo:
             continue
-        if (
-            estado_reg_nuevo == "pre_partido"
-            and id_trab_nuevo
-            and str(ex.get("id_trabajo") or "") == id_trab_nuevo
-        ):
-            return {
-                "registrado": False,
-                "ya_existia": True,
-                "indice": ex.get("indice"),
-                "sha256": ex.get("sha256"),
-                "ruta": ruta,
-            }
+        if estado_reg_nuevo == "pre_partido" and id_trab_nuevo:
+            if str(ex.get("id_trabajo") or "") == id_trab_nuevo:
+                return {
+                    "registrado": False,
+                    "ya_existia": True,
+                    "indice": ex.get("indice"),
+                    "sha256": ex.get("sha256"),
+                    "ruta": ruta,
+                }
+            # Otro id_trabajo distinto para el mismo partido SI se registra como no_canonica / no_oos
+            continue
         if id_part and str(ex.get("id_partido") or "") == id_part and str(ex.get("fecha") or "") == fecha:
             return {
                 "registrado": False,
@@ -4077,6 +4694,29 @@ def registrar_en_ledger_oos(
         "retroalimenta_modelo": False,
         "prev_sha256": prev_hash,
     }
+    _claves_oos = ("fixture_confirmado", "fuente_fecha", "hora_inicio_partido", "telegram_message_date", "hora_mensaje_utc")
+    if estado_reg_nuevo == "pre_partido" or any(k in registro for k in _claves_oos):
+        contab = evaluar_contabilidad_oos_registro(
+            fixture_confirmado=registro.get("fixture_confirmado", False),
+            fuente_fecha=registro.get("fuente_fecha"),
+            hora_inicio_partido=registro.get("hora_inicio_partido"),
+            telegram_message_date=registro.get("telegram_message_date"),
+            hora_mensaje_utc=registro.get("hora_mensaje_utc"),
+            partido=partido,
+            fecha=fecha,
+            id_partido=id_part,
+            estado_registro=estado_reg_nuevo,
+            id_trabajo=id_trab_nuevo,
+            registros_existentes=existentes,
+        )
+        nuevo.update(contab)
+    for _k_f_ord in ("fuente_local", "fuente_visitante", "firma_datos", "lambdas_plano"):
+        if nuevo.get(_k_f_ord) is None:
+            _v_dc = (registro.get("datos_corte") or {}).get(_k_f_ord) if isinstance(registro.get("datos_corte"), dict) else None
+            _v_mt = (registro.get("metadatos") or {}).get(_k_f_ord) if isinstance(registro.get("metadatos"), dict) else None
+            _v_f_ord = _v_dc or _v_mt
+            if _v_f_ord is not None:
+                nuevo[_k_f_ord] = _v_f_ord
     comp_low = str(nuevo.get("competicion") or "").strip().lower()
     tipo_low = str(nuevo.get("tipo_partido") or "").strip().lower()
     if tipo_low == "amistoso" or any(tok in comp_low for tok in ("friendly", "friendlies", "amistoso")):
@@ -8305,19 +8945,64 @@ def resumen_ledger_oos(
     ruta_ledger: str | None = None,
     *,
     incluir_amistosos: bool = False,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
     """
     Calcula promedios por partido y agregados de calibración desde `ledger_oos.jsonl`,
     excluyendo estrictamente registros etiquetados como `amistoso` o con
     `entra_promedios=False` / `entra_calibracion=False` por defecto.
+    Las entradas previas a Regla M sin fixture confirmado ni hora de inicio se
+    clasifican lógicamente como no-OOS (`legacy_sin_fixture`) sin reescribir hashes.
     """
     ruta = ruta_ledger or LEDGER_OOS_PATH
     verif = verificar_cadena_ledger_oos(ruta)
     registros = cargar_ledger_oos(ruta)
     excluidos: list[dict[str, Any]] = []
+    excluidos_no_oos = 0
+    excluidos_no_canonica = 0
+    excluidos_legacy_sin_fixture = 0
+    clasificacion_entradas: list[dict[str, Any]] = []
+    n_legacy_pre = 0
+    n_legacy_liq = 0
+    n_oos_validos_confirmados = 0
     incluidos: list[dict[str, Any]] = []
     for r in registros:
-        if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
+        est_reg = str(r.get("estado_registro") or "liquidado").strip().lower()
+        cls_r = clasificar_oos_entrada_ledger(r)
+        es_leg = bool(cls_r["es_legacy_sin_fixture"])
+        if es_leg:
+            if est_reg == "pre_partido":
+                n_legacy_pre += 1
+            else:
+                n_legacy_liq += 1
+        elif est_reg != "pre_partido" and cls_r["es_oos_valido"] and cls_r["es_canonica"]:
+            if incluir_amistosos or not es_registro_amistoso_excluido(r):
+                n_oos_validos_confirmados += 1
+        clasificacion_entradas.append({
+            "indice": r.get("indice"),
+            "id_trabajo": r.get("id_trabajo"),
+            "id_partido": r.get("id_partido"),
+            "partido": r.get("partido"),
+            "fecha": r.get("fecha"),
+            "estado_registro": est_reg,
+            "clasificacion_oos": cls_r["clasificacion_oos"],
+            "es_oos_valido": cls_r["es_oos_valido"],
+            "es_legacy_sin_fixture": es_leg,
+        })
+        if est_reg == "pre_partido":
+            continue
+        if "es_oos_valido" in r:
+            if r.get("es_oos_valido") is not True:
+                excluidos_no_oos += 1
+                if es_leg:
+                    excluidos_legacy_sin_fixture += 1
+                continue
+            if r.get("es_canonica") is not True:
+                excluidos_no_canonica += 1
+                continue
+        elif es_leg and excluir_legacy_sin_fixture:
+            excluidos_no_oos += 1
+            excluidos_legacy_sin_fixture += 1
             continue
         if (not incluir_amistosos) and es_registro_amistoso_excluido(r):
             excluidos.append({
@@ -8363,12 +9048,30 @@ def resumen_ledger_oos(
         if b_p is not None:
             briers_partido.append(float(b_p))
 
+    res_oos_estricto = _metricas_subconjunto_ledger(
+        registros,
+        incluir_amistosos=incluir_amistosos,
+        excluir_contaminados_diseno=False,
+        umbral_excl_prob_alta=None,
+        excluir_legacy_sin_fixture=True,
+    )
     return {
         "ruta_ledger": ruta,
         "cadena_sha256_ok": bool(verif.get("ok")),
         "n_registros_totales": len(registros),
         "n_incluidos_promedios_calibracion": len(incluidos),
         "n_excluidos_amistosos": len(excluidos),
+        "n_excluidos_no_oos": excluidos_no_oos,
+        "n_excluidos_no_canonica": excluidos_no_canonica,
+        "n_excluidos_legacy_sin_fixture": excluidos_legacy_sin_fixture,
+        "n_legacy_sin_fixture": n_legacy_pre + n_legacy_liq,
+        "n_legacy_sin_fixture_pre_partido": n_legacy_pre,
+        "n_legacy_sin_fixture_liquidados": n_legacy_liq,
+        "n_oos_validos_confirmados": n_oos_validos_confirmados,
+        "politica_legacy_oos": "legacy_sin_fixture",
+        "clasificacion_oos_entradas": clasificacion_entradas,
+        "resumen_oos_estricto": res_oos_estricto,
+        "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
         "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
         "amistosos_excluidos": excluidos,
         "n_lineas_evaluables": total_ev,
@@ -9821,6 +10524,18 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "comparaciones": payload_sombra["comparaciones"],
     })
     sha_comp = _hash_sombra_comparaciones_tribrazo(payload_sombra, sombra, comp_sha)
+    m_fec_pre = re.search(r"\d{4}-\d{2}-\d{2}", str(meta.get("fecha_partido") or ctx.get("fecha_partido") or ""))
+    fecha = m_fec_pre.group(0) if m_fec_pre else ""
+    fx_conf_pre = bool(
+        meta.get("fixture_confirmado")
+        if "fixture_confirmado" in meta
+        else ctx.get("fixture_confirmado", False)
+    )
+    f_fec_pre = str(meta.get("fuente_fecha") or ctx.get("fuente_fecha") or ("fixture" if fx_conf_pre else "fallback"))
+    h_ini_pre = meta.get("hora_inicio_partido") or ctx.get("hora_inicio_partido")
+    tg_m = preparado.get("telegram_meta")
+    tg_mdt_pre = tg_m.get("message_date") if isinstance(tg_m, dict) else meta.get("telegram_message_date")
+    tg_mutc_pre = tg_m.get("message_date_utc") if isinstance(tg_m, dict) else meta.get("hora_mensaje_utc")
     registro = {
         "estado_registro": "pre_partido",
         "corte_temporal": "pre_partido",
@@ -9831,16 +10546,24 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "competicion": comp,
         "tipo_partido": str(meta.get("tipo_partido") or ctx.get("tipo_partido") or ""),
         "generado_en": str(meta.get("generado_en") or ""),
+        "fixture_confirmado": fx_conf_pre,
+        "fuente_fecha": f_fec_pre,
+        "hora_inicio_partido": h_ini_pre,
+        "telegram_message_date": tg_mdt_pre,
+        "hora_mensaje_utc": tg_mutc_pre,
         "snapshot_sha256": snapshot_sha,
         "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
-    tg_m = preparado.get("telegram_meta")
-    if isinstance(tg_m, dict):
-        if tg_m.get("message_id") is not None:
-            registro["telegram_message_id"] = tg_m.get("message_id")
-        if tg_m.get("message_date") is not None:
-            registro["telegram_message_date"] = tg_m.get("message_date")
+    _f_pre = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=meta)
+    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos"):
+        if _f_pre.get(_k_f) is not None:
+            registro[_k_f] = _f_pre[_k_f]
+    _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+    if _lp_pre is not None:
+        registro["lambdas_plano"] = _lp_pre
+    if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
+        registro["telegram_message_id"] = tg_m.get("message_id")
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
     res["estado_registro"] = "pre_partido"
     res["snapshot_sha256"] = snapshot_sha
@@ -9967,6 +10690,16 @@ def liquidar_sombras_en_ledger_oos(
         ll_base = round(ll_base_sum / n_ev, 6)
         ll_somb = round(ll_somb_sum / n_ev, 6)
 
+        _meta_doc = doc.get("metadatos") or {}
+        _part_doc = doc.get("partido") if isinstance(doc.get("partido"), dict) else {}
+        _fx_liq = doc.get("fixture_confirmado") if "fixture_confirmado" in doc else _part_doc.get("fixture_confirmado")
+        if _fx_liq is None and pre_ref and "fixture_confirmado" in pre_ref:
+            _fx_liq = pre_ref.get("fixture_confirmado")
+        _ff_liq = doc.get("fuente_fecha") or _part_doc.get("fuente_fecha") or (pre_ref.get("fuente_fecha") if pre_ref else None)
+        _hi_liq = doc.get("hora_inicio_partido") or _part_doc.get("hora_inicio_partido") or (pre_ref.get("hora_inicio_partido") if pre_ref else None)
+        _tg_dt_liq = doc.get("telegram_message_date") if doc.get("telegram_message_date") is not None else ((doc.get("telegram_origen") or {}).get("message_date") or (pre_ref.get("telegram_message_date") if pre_ref else None))
+        _hm_liq = doc.get("hora_mensaje_utc") or (doc.get("telegram_origen") or {}).get("message_date_utc") or (pre_ref.get("hora_mensaje_utc") if pre_ref else None)
+
         registro = {
             "estado_registro": "liquidado",
             "id_trabajo": id_trab,
@@ -9974,6 +10707,21 @@ def liquidar_sombras_en_ledger_oos(
             "partido": partido,
             "fecha": fecha,
             "competicion": comp,
+            **({
+                "fixture_confirmado": bool(_fx_liq) if _fx_liq is not None else False,
+                "fuente_fecha": _ff_liq,
+                "hora_inicio_partido": _hi_liq,
+                "telegram_message_date": _tg_dt_liq,
+                "hora_mensaje_utc": _hm_liq,
+            } if (_fx_liq is not None or _hi_liq is not None or _tg_dt_liq is not None) else {}),
+            **{
+                k_f: v_f
+                for k_f, v_f in _extraer_fuentes_y_firma_registro(doc=doc, pre_ref=pre_ref).items()
+                if v_f is not None
+            },
+            **({
+                "lambdas_plano": _lp_liq
+            } if (_lp_liq := extraer_lambdas_plano_desde_analisis(doc=doc, pre_ref=pre_ref)) is not None else {}),
             "tipo_partido": str(doc.get("tipo_partido") or (doc.get("metadatos") or {}).get("tipo_partido") or ""),
             "pre_partido_sha256": (pre_ref or {}).get("sha256"),
             "marcador_real": {
@@ -10034,6 +10782,7 @@ def extraer_observaciones_sombra_desde_ledger(
     excluir_diseno: bool = True,
     excluir_amistosos: bool = True,
     brazo_regla: str | None = None,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
     """
     Extrae desde `ledger_oos` las observaciones duales (`base` vs `sombra`, o un brazo de
@@ -10049,6 +10798,7 @@ def extraer_observaciones_sombra_desde_ledger(
     partidos_validos: set[str] = set()
     pre_pendientes: list[str] = []
     liquidados_con_obs_ids: set[str] = set()
+    n_legacy_sin_fixture_excl = 0
 
     for r in registros:
         est = str(r.get("estado_registro") or "liquidado").strip().lower()
@@ -10068,6 +10818,14 @@ def extraer_observaciones_sombra_desde_ledger(
             if excluir_amistosos and es_registro_amistoso_excluido(r):
                 continue
             if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
+                continue
+            cls_obs = clasificar_oos_entrada_ledger(r)
+            if r.get("estado_canonico") == "no_canonica":
+                continue
+            if r.get("telegram_message_date") is not None and r.get("es_oos_valido") is False:
+                continue
+            if excluir_legacy_sin_fixture and cls_obs["es_legacy_sin_fixture"]:
+                n_legacy_sin_fixture_excl += 1
                 continue
             obs_r = ms.get("observaciones") or []
             if clave_regla is not None:
@@ -10101,6 +10859,7 @@ def extraer_observaciones_sombra_desde_ledger(
     return {
         "n_partidos_sombra_validos": len(partidos_validos),
         "n_observaciones": len(obs),
+        "n_excluidos_legacy_sin_fixture": n_legacy_sin_fixture_excl,
         "partidos_sombra_validos": sorted(partidos_validos),
         "pre_partido_pendientes_liquidacion": pre_pendientes,
         "observaciones": obs,
@@ -10245,14 +11004,30 @@ def _metricas_subconjunto_ledger(
     incluir_amistosos: bool = False,
     excluir_contaminados_diseno: bool = False,
     umbral_excl_prob_alta: float | None = None,
+    excluir_legacy_sin_fixture: bool = False,
 ) -> dict[str, Any]:
-    """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral."""
+    """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral y legacy sin fixture."""
     incluidos: list[dict[str, Any]] = []
     excluidos_amistosos: list[dict[str, Any]] = []
     excluidos_diseno: list[dict[str, Any]] = []
+    n_excluidos_no_oos = 0
+    n_excluidos_legacy = 0
 
     for r in registros:
         if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
+            continue
+        cls_m = clasificar_oos_entrada_ledger(r)
+        if "es_oos_valido" in r:
+            if r.get("es_oos_valido") is not True:
+                n_excluidos_no_oos += 1
+                if cls_m["es_legacy_sin_fixture"]:
+                    n_excluidos_legacy += 1
+                continue
+            if r.get("es_canonica") is not True:
+                continue
+        elif excluir_legacy_sin_fixture and cls_m["es_legacy_sin_fixture"]:
+            n_excluidos_no_oos += 1
+            n_excluidos_legacy += 1
             continue
         es_amis = es_registro_amistoso_excluido(r)
         es_dis = es_registro_contaminado_por_diseno(r)
@@ -10393,6 +11168,8 @@ def _metricas_subconjunto_ledger(
         "n_incluidos": len(incluidos),
         "n_excluidos_amistosos": len(excluidos_amistosos),
         "n_excluidos_diseno": len(excluidos_diseno),
+        "n_excluidos_no_oos": n_excluidos_no_oos,
+        "n_excluidos_legacy_sin_fixture": n_excluidos_legacy,
         "partidos_incluidos": [f"{r.get('partido')} ({r.get('fecha')})" for r in incluidos],
         "amistosos_excluidos": excluidos_amistosos,
         "diseno_excluidos": excluidos_diseno,

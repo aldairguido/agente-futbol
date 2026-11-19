@@ -2118,17 +2118,6 @@ class MotorMercados:
             if isinstance(pat_v, dict):
                 pat_v["_muestra_etiqueta"] = _etq_adn
                 pat_v["_n_muestra_adn"] = _nv_adn
-            _nl_c_doc = sum(1 for _p in (self.doc_local.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("casa", "local", "h", "home"))
-            _nl_adn = int(resultado.get("n_cond_local") or (resultado.get("meta_condicion_local") or {}).get("n_en_condicion") or _nl_c_doc or len([p for p in (self.doc_local.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _nv_c_doc = sum(1 for _p in (self.doc_visitante.get("partidos") or [])[:15] if isinstance(_p, dict) and str((_p.get("_partido") if isinstance(_p.get("_partido"), dict) else _p).get("condicion") or _p.get("condicion") or "").lower() in ("fuera", "visita", "visitante", "a", "away"))
-            _nv_adn = int(resultado.get("n_cond_visita") or (resultado.get("meta_condicion_visita") or {}).get("n_en_condicion") or _nv_c_doc or len([p for p in (self.doc_visitante.get("partidos") or []) if isinstance(p, dict)]) or 15)
-            _etq_adn = f"Doble ADN pond. ({_nl_adn}C/{_nv_adn}V)"
-            if isinstance(pat_l, dict):
-                pat_l["_muestra_etiqueta"] = _etq_adn
-                pat_l["_n_muestra_adn"] = _nl_adn
-            if isinstance(pat_v, dict):
-                pat_v["_muestra_etiqueta"] = _etq_adn
-                pat_v["_n_muestra_adn"] = _nv_adn
             resultado["patrones_55_local"] = pat_l
             resultado["patrones_55_visita"] = pat_v
             resultado["alertas_55"] = alertas_55
@@ -3601,6 +3590,13 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
              f"Competición: {metadatos.get('competicion') or 'no disponible'} | "
              f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'} | "
              f"{_obtener_sello_build()}")
+    _f_l_msg = str(metadatos.get("fuente_local") or (motor.doc_local or {}).get("fuente") or "").strip()
+    _f_v_msg = str(metadatos.get("fuente_visitante") or (motor.doc_visitante or {}).get("fuente") or "").strip()
+    if _f_l_msg or _f_v_msg:
+        L.append(
+            f"Fuentes: {metadatos.get('equipo_local') or 'Local'}: {_f_l_msg or 'sin_dato'} · "
+            f"{metadatos.get('equipo_visitante') or 'Visitante'}: {_f_v_msg or 'sin_dato'}"
+        )
     L.extend(_resumen_muestra(motor))
     L.append(f"Condición usada: local={motor.cond_local}, visitante={motor.cond_visitante} "
              f"(muestra de condición: {motor.muestras['local_cond'].partidos_condicion}/"
@@ -5745,14 +5741,20 @@ def seleccionar_top_5_jugadas_recomendadas(
     def _prop_goles_2t_cc(cc_d: dict[str, Any]) -> float:
         if not isinstance(cc_d, dict):
             return 0.50
+        if bool(cc_d.get("sin_dato")) or bool((cc_d.get("_meta") or {}).get("sin_dato")):
+            return 0.50
         g1 = 0
         g2 = 0
         for fr in ("00_15", "16_30", "31_45", "00'-15'", "16'-30'", "31'-45'"):
             if isinstance(cc_d.get(fr), dict):
-                g1 += int(cc_d[fr].get("anotados", 0))
+                v_an = cc_d[fr].get("anotados")
+                if v_an is not None:
+                    g1 += int(v_an)
         for fr in ("46_60", "61_75", "76_90", "46'-60'", "61'-75'", "76'-90'"):
             if isinstance(cc_d.get(fr), dict):
-                g2 += int(cc_d[fr].get("anotados", 0))
+                v_an = cc_d[fr].get("anotados")
+                if v_an is not None:
+                    g2 += int(v_an)
         tot = g1 + g2
         return (g2 / tot) if tot > 0 else 0.50
 
@@ -5986,7 +5988,7 @@ def seleccionar_top_5_jugadas_recomendadas(
             return f"Tarjetas Totales ({per}): {signo}{float(lin):g} Tarj." if lin is not None else f"Tarjetas ({per}): {et}"
         if slot == 3:
             if patron_diesel_1t and per == "1T" and lin is not None and abs(float(lin) - 1.5) < 1e-6 and ("under" in ev or "menos" in ev or "u_" in ev):
-                return f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t_val}%) (Duelo de estudio en 1T / Explosión en 2T)"
+                return f"1ra Mitad : Menos de 1.5 Goles ({p_u15_1t_val}%) (Duelo de estudio en 1T)"
             if eq:
                 signo = "+" if ("over_" in ev or "mas" in et.lower() or "más" in et.lower() or "al_menos" in ev) else "-"
                 return f"Goles {eq} ({per}): {signo}{float(lin):g} Goles" if lin is not None else f"Goles {eq} ({per}): {et}"
@@ -7554,6 +7556,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
         "origen_condicion": origen_cond,
         "generado_en": datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
         "fuente": dl.get("fuente") or dv.get("fuente"),
+        "fuente_local": dl.get("fuente"),
+        "fuente_visitante": dv.get("fuente"),
         "modelo": f"{NOMBRE_MODELO} v{VERSION_MODELO}",
     }
 
@@ -7636,6 +7640,10 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
     grupos = {ESTADO_MANTIENE: [], ESTADO_SENSIBLE: [], ESTADO_INCOMPLETA: []}
     for s in selecciones:
         grupos.setdefault(s.estado, []).append(s)
+    motor._grupos_resumen = {
+        ESTADO_MANTIENE: list(grupos.get(ESTADO_MANTIENE) or []),
+        ESTADO_SENSIBLE: list(grupos.get(ESTADO_SENSIBLE) or []),
+    }
     avisar(f"{len(selecciones)} selecciones superan el {params.umbral:.0%} central "
            f"({len(grupos[ESTADO_MANTIENE])} mantienen, "
            f"{len(grupos[ESTADO_SENSIBLE])} sensibles, "

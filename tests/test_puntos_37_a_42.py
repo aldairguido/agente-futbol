@@ -494,12 +494,17 @@ def test_punto_42_fecha_encuentro_vs_fecha_analisis_america_lima() -> None:
     """
     res_prog = sm.resolver_fecha_encuentro_lima("2026-11-11T02:30:00Z", es_partido_programado=True)
     assert res_prog["fecha_partido"] == "2026-11-10"
+    assert res_prog["etiqueta_fecha"] == "Partido: 2026-11-10 21:30 America/Lima"
+    assert res_prog["hora_inicio_partido"] == "2026-11-11T02:30:00Z"
+    assert res_prog["fixture_confirmado"] is True
     assert res_prog["zona_horaria"] == "America/Lima"
     assert res_prog["es_fecha_analisis"] is False
 
     ahora_fijo = datetime(2026, 11, 10, 6, 15, 0, tzinfo=timezone.utc)  # 01:15 AM en Lima (2026-11-10)
     res_sin_cal = sm.resolver_fecha_encuentro_lima(None, es_partido_programado=False, ahora_utc=ahora_fijo)
-    assert res_sin_cal["etiqueta_fecha"] == "Análisis del 2026-11-10"
+    assert res_sin_cal["etiqueta_fecha"] == "Sin partido programado encontrado"
+    assert res_sin_cal["fecha_partido"] is None
+    assert res_sin_cal["fixture_confirmado"] is False
     assert res_sin_cal["es_fecha_analisis"] is True
 
     # Si ambos equipos tienen un partido pasado común en `partidos` (ej. 2025-11-28) pero ningún partido futuro:
@@ -514,7 +519,9 @@ def test_punto_42_fecha_encuentro_vs_fecha_analisis_america_lima() -> None:
         "partidos_futuros": [],
     }
     meta_enc = sm._metadatos_del_encuentro(doc_l, doc_v, "Aurora", "Universitario de Vinto")
-    assert str(meta_enc["fecha_partido"]).startswith("Análisis del "), f"No debía usar fecha pasada 2025-11-28: {meta_enc}"
+    assert meta_enc["etiqueta_fecha"] == "Sin partido programado encontrado"
+    assert meta_enc["fecha_partido"] is None
+    assert meta_enc["fixture_confirmado"] is False
     assert meta_enc["fecha_ultimo_h2h"] == "2025-11-28"
 
 
