@@ -116,7 +116,7 @@ def test_4_1b_stake_cero_en_familias_bajo_vigilancia_top5_y_ticket_valor():
         analisis,
         cuotas_flashscore={"local": 4.20, "empate": 3.70, "visitante": 1.95},
     )
-    assert len(filas) == 6
+    assert len(filas) == 5  # 1, X, 2, 1X, X2 (12 excluido por es_seleccion_competitiva_ticket, Ronda 23)
     for fila in filas:
         assert "ev_bruto_pct" in fila and fila["ev_bruto_pct"] is not None
         assert "ev_calibrado_pct" in fila and fila["ev_calibrado_pct"] is not None

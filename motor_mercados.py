@@ -4991,6 +4991,10 @@ def tiene_desvio_excesivo_calibracion(
         or ev_dc in ("1x", "x2", "12")
         or any(et_dc.startswith(k) for k in ("1x", "x2", "12"))
     )
+    # Nota de diseño (Ronda 23, Punto 6 — documentación sin cambio de lógica):
+    # Doble Oportunidad (1X, X2, 12) degrada solo cuando el modelo sobreestima lo observado
+    # (brecha con signo > 10 pp), mientras que el resto de mercados (goles, córneres, tarjetas,
+    # etc.) degrada en ambos sentidos (valor absoluto |modelo - observado| > 10 pp).
     if es_doble_op:
         # VETO 1X/DC con brecha con signo: solo se veta si el modelo supera lo observado en > max_desvio (10.0 pp)
         brecha_modelo_sobre_obs = round((p_modelo - f_obs) * 100.0, 2)
@@ -6984,32 +6988,48 @@ def clusters_marcador(
     # 1. Determinar la mejor jugada validada (sincronizada con regla de calibración y Doble ADN)
     # Punto 1.6: En duelos parejos o con recorte alto donde 1X se degrada por baja frecuencia observada,
     # se priorizan las líneas de goles con respaldo cuantitativo
+    jugada_optima_prob = 0.0
     if p_fav_val >= 62.0 and p_00_pct < 8.5 and diff_lam_est >= 0.40:
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
+        jugada_optima_prob = float(p_fav_val)
     elif is_11_or_00_top3 and p_u25_pct >= 55.0:
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
+        jugada_optima_prob = float(p_u25_pct)
     elif p_u35_pct >= 75.0 and (p_fav_val < 55.0):
         jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
+        jugada_optima_prob = float(p_u35_pct)
     elif p_dc_val >= 66.0:
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
+        jugada_optima_prob = float(p_dc_val)
     elif p_btts_no_pct >= 55.0:
         jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
+        jugada_optima_prob = float(p_btts_no_pct)
     elif p_u25_pct >= 62.0 and p_cerrados_pct >= 50.0:
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
+        jugada_optima_prob = float(p_u25_pct)
     else:
-        jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
+        jugada_optima_txt = ""
+        jugada_optima_prob = 0.0
 
-    # 2. Mitades 1T: solo anexar si hay validación y lam_1t_comb bajo, sin forzar si 1T carece de calibración
-    # En Londrina vs Nautico las mitades no fueron validadas cronológicamente
-    if patron_diesel_1t and p_u15_1t >= 75.0 and lam_1t_comb <= 0.95:
+    # 2. Mitades 1T: solo anexar si hay jugada base validada y lam_1t_comb bajo
+    if jugada_optima_txt and patron_diesel_1t and p_u15_1t >= 75.0 and lam_1t_comb <= 0.95:
         jugada_optima_txt += f" | 1ra Mitad : Menos de 1.5 Goles ({p_u15_1t:.1f}%)"
 
-    if asedio_bandas:
+    if jugada_optima_txt and asedio_bandas:
         jugada_optima_txt += " | Córneres : Más de 8.5"
+
+    if not jugada_optima_txt:
+        jugada_optima_txt = "No hay jugada óptima para este partido"
+        linea_jugada_pie = "ℹ️ No hay jugada óptima para este partido"
+    elif jugada_optima_prob < 70.0 - 1e-6:
+        jugada_optima_txt = f"{jugada_optima_txt} — por debajo del umbral, no validado"
+        linea_jugada_pie = f"ℹ️ Referencia estadística (por debajo del umbral, no validado): {jugada_optima_txt}"
+    else:
+        linea_jugada_pie = f"🎯 JUGADA ÓPTIMA TE APUESTO: {jugada_optima_txt}"
 
     linea_pie = (
         f"Dominante [{top4_txt}]: {top4_pct:.1f}%  ·  {comp_favorito_txt}\n"
-        f"🎯 JUGADA ÓPTIMA TE APUESTO: {jugada_optima_txt}"
+        f"{linea_jugada_pie}"
     )
 
     return {

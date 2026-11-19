@@ -1690,14 +1690,42 @@ def generar_veredicto_tactico_partido(
             return "ft_goles", prob_pct
         return None, 0.0
 
+    def _lado_equipo_seleccion(item_s: Any, etq_s: str) -> str | None:
+        eq_item = str((item_s.get("equipo") if isinstance(item_s, dict) else getattr(item_s, "equipo", "")) or "").strip().lower()
+        ev_item = str((item_s.get("evento") if isinstance(item_s, dict) else getattr(item_s, "evento", "")) or "").strip().lower()
+        mk_item = str((item_s.get("mercado") if isinstance(item_s, dict) else getattr(item_s, "mercado", "")) or "").strip().lower()
+        txt_busq = f"{eq_item} {etq_s.lower()} {mk_item}"
+        if "visitante" in ev_item or "visita" in ev_item:
+            return "visita"
+        if "local" in ev_item:
+            return "local"
+        def _tokens_club(nom: str) -> list[str]:
+            import unicodedata as _ud
+            s = "".join(c for c in _ud.normalize("NFD", nom.lower()) if _ud.category(c) != "Mn")
+            toks = [t for t in re.split(r"[^a-z0-9]+", s) if len(t) >= 4 and t not in ("club", "real", "city", "sport", "futbol", "football", "united", "atletico", "deportivo")]
+            return toks or ([s.strip()] if s.strip() else [])
+        import unicodedata as _ud2
+        txt_norm = "".join(c for c in _ud2.normalize("NFD", txt_busq) if _ud2.category(c) != "Mn")
+        nl_norm = "".join(c for c in _ud2.normalize("NFD", nombre_local.lower()) if _ud2.category(c) != "Mn").strip()
+        nv_norm = "".join(c for c in _ud2.normalize("NFD", nombre_visita.lower()) if _ud2.category(c) != "Mn").strip()
+        en_loc = bool(nl_norm and nl_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_local))
+        en_vis = bool(nv_norm and nv_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_visita))
+        if en_vis and not en_loc:
+            return "visita"
+        if en_loc and not en_vis:
+            return "local"
+        return None
+
     mkt_2t = None
     mkt_2t_tipo = None
+    mkt_2t_lado = None
     prob_2t = 0.0
     estado_2t = "mantiene"
     mkt_ft_coh = None
     prob_ft_coh = 0.0
     if top5_podio:
         cand_under_2t = None
+        cand_under_2t_lado = None
         prob_under_2t = 0.0
         est_under_2t = "mantiene"
         for item in top5_podio:
@@ -1707,11 +1735,13 @@ def generar_veredicto_tactico_partido(
             if tipo_c == "2t_over":
                 mkt_2t = et_i
                 mkt_2t_tipo = "2t_over"
+                mkt_2t_lado = _lado_equipo_seleccion(item, et_i)
                 prob_2t = prob_c
                 estado_2t = est_i
                 break
             if tipo_c == "2t_under" and cand_under_2t is None:
                 cand_under_2t = et_i
+                cand_under_2t_lado = _lado_equipo_seleccion(item, et_i)
                 prob_under_2t = prob_c
                 est_under_2t = est_i
             elif tipo_c == "ft_goles" and mkt_ft_coh is None:
@@ -1720,6 +1750,7 @@ def generar_veredicto_tactico_partido(
         if mkt_2t is None and cand_under_2t is not None:
             mkt_2t = cand_under_2t
             mkt_2t_tipo = "2t_under"
+            mkt_2t_lado = cand_under_2t_lado
             prob_2t = prob_under_2t
             estado_2t = est_under_2t
 
@@ -1746,8 +1777,27 @@ def generar_veredicto_tactico_partido(
         c1_tit = f"1. Ligera ventaja para {eq_fav} (o empate):"
     else:
         c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
-    es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
-    es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
+    _tasas_m_v = getattr(motor, "tasas", None) if motor is not None else None
+    _lam_l_ver = _safe_float(
+        probs.get("lambda_local") if probs.get("lambda_local") is not None
+        else getattr(_tasas_m_v, "lambda_local_ft", None),
+        0.0,
+    )
+    _lam_v_ver = _safe_float(
+        probs.get("lambda_visita") if probs.get("lambda_visita") is not None
+        else getattr(_tasas_m_v, "lambda_visitante_ft", None),
+        0.0,
+    )
+    _lam_tot_ver = _lam_l_ver + _lam_v_ver
+
+    _j1_low_act = jugada_1_nombre.lower()
+    _es_res_act = any(k in _j1_low_act for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap", "handicap"))
+    es_under = any(k in _j1_low_act for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not _es_res_act
+    es_over_o_abierto = (
+        not es_under
+        and not _es_res_act
+        and any(k in _j1_low_act for k in ("más", "mas de", "over", "+0.5", "+1.5", "+2.5", "+3.5", "ambos tiempos", "ambos equipos marcan", "btts", "al menos", "gol en"))
+    )
     if jugada_1_prob < 70.0 - 1e-6 or estado_j1 in ("bajo_umbral", "no_validado"):
         accion_ticket = formatear_pick_segun_estado(
             jugada_1_nombre,
@@ -1763,23 +1813,16 @@ def generar_veredicto_tactico_partido(
             "sensible",
             sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
         )
-    elif es_under or (es_mercado_goles and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))):
-        accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+    elif es_under:
+        if _lam_tot_ver >= 2.2:
+            accion_ticket = f"El Ticket acota el techo de goles ({_lam_tot_ver:.2f} esperados) con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        else:
+            accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+    elif es_over_o_abierto:
+        _txt_lam_ab = f" ({_lam_tot_ver:.2f} goles esperados)" if _lam_tot_ver > 0 else ""
+        accion_ticket = f"El Ticket proyecta partido abierto{_txt_lam_ab} con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
     else:
         accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
-
-    _tasas_m_v = getattr(motor, "tasas", None) if motor is not None else None
-    _lam_l_ver = _safe_float(
-        probs.get("lambda_local") if probs.get("lambda_local") is not None
-        else getattr(_tasas_m_v, "lambda_local_ft", None),
-        0.0,
-    )
-    _lam_v_ver = _safe_float(
-        probs.get("lambda_visita") if probs.get("lambda_visita") is not None
-        else getattr(_tasas_m_v, "lambda_visitante_ft", None),
-        0.0,
-    )
-    _lam_tot_ver = _lam_l_ver + _lam_v_ver
     _j1_low = jugada_1_nombre.lower()
     _es_techo_alto = (_lam_tot_ver >= 2.2) or (
         any(k in _j1_low for k in ("-3.5", "-4.5", "3.5", "4.5")) and jugada_1_prob < 80.0
@@ -1874,7 +1917,21 @@ def generar_veredicto_tactico_partido(
             f"fricción de {txt_faltas_eq}."
         )
 
-    txt_p26 = f"{p26_fav*100:.0f}% de poder de cierre P26" if p26_fav is not None else "P26 sin dato 1T/2T"
+    if mkt_2t_lado == "local":
+        _p26_sel_raw = patrones_loc.get("P26_Poder_Cierre_2T")
+        _eq_p26_lbl = nombre_local
+    elif mkt_2t_lado == "visita":
+        _p26_sel_raw = patrones_vis.get("P26_Poder_Cierre_2T")
+        _eq_p26_lbl = nombre_visita
+    else:
+        _p26_sel_raw = p26_raw
+        _eq_p26_lbl = ""
+    _p26_sel = float(_p26_sel_raw) if _p26_sel_raw is not None else None
+    txt_p26 = (
+        f"{_p26_sel*100:.0f}% de poder de cierre P26{f' ({_eq_p26_lbl})' if _eq_p26_lbl else ''}"
+        if _p26_sel is not None
+        else "P26 sin dato 1T/2T"
+    )
     txt_cron_obs = " (cronología por minuto no concluyente)" if k_eval_ver < k_min_cron else ""
     n_top_filas = len(top5_podio) if top5_podio else 5
     if mkt_2t is None:
