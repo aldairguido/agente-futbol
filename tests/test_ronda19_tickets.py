@@ -876,3 +876,172 @@ def test_bloque_6_legacy_sin_fixture_clasificacion_oos_y_resumen() -> None:
         assert obs_est["n_partidos_sombra_validos"] == 1
         assert obs_est["n_excluidos_legacy_sin_fixture"] == 1
         assert obs_est["partidos_sombra_validos"] == ["8880001"]
+
+
+def test_bloque_7_compatibilidad_ab30550_verificar_cadena_ledger_oos() -> None:
+    import hashlib
+    import subprocess
+    from pathlib import Path
+
+    # Código exacto de _hash_canonico_oos / verificar_cadena_ledger_oos en main ab30550
+    def _hash_ab30550(payload_sin_hash: dict) -> str:
+        crudo = json.dumps(payload_sin_hash, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(crudo.encode("utf-8")).hexdigest()
+
+    def _verificar_ab30550(ruta_ledger: str) -> dict:
+        if not os.path.exists(ruta_ledger):
+            registros = []
+        else:
+            registros = [
+                json.loads(s)
+                for s in Path(ruta_ledger).read_text(encoding="utf-8").splitlines()
+                if s.strip()
+            ]
+        errores: list[str] = []
+        prev_esperado = "0" * 64
+        for idx_esp, reg in enumerate(registros):
+            if reg.get("indice") != idx_esp:
+                errores.append(f"Índice esperado {idx_esp}, encontrado {reg.get('indice')}")
+            if reg.get("prev_sha256") != prev_esperado:
+                errores.append(f"Entrada {idx_esp}: prev_sha256={reg.get('prev_sha256')} != esperado={prev_esperado}")
+            hash_reg = reg.get("sha256")
+            sin_hash = {k: v for k, v in reg.items() if k != "sha256"}
+            recomp = _hash_ab30550(sin_hash)
+            if hash_reg != recomp:
+                errores.append(f"Entrada {idx_esp}: sha256 adulterado ({hash_reg} != {recomp})")
+            if reg.get("retroalimenta_modelo") is not False:
+                errores.append(f"Entrada {idx_esp}: retroalimenta_modelo debe ser False")
+            prev_esperado = str(hash_reg or "")
+        return {
+            "ok": len(errores) == 0,
+            "ruta": ruta_ledger,
+            "entradas": len(registros),
+            "ultimo_sha256": prev_esperado if registros else None,
+            "errores": errores,
+        }
+
+    # Si main ab30550 está disponible en git local, verificar también la función cargada directo de ab30550
+    raiz_repo = Path(__file__).resolve().parents[1]
+    fn_git_ab30550 = None
+    proc = subprocess.run(
+        ["git", "-C", str(raiz_repo), "show", "ab30550:evaluacion_pronosticos.py"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    if proc.returncode == 0 and "def verificar_cadena_ledger_oos" in proc.stdout:
+        src_lines = proc.stdout.splitlines()
+        # Extraer exactamente _hash_canonico_oos, cargar_ledger_oos y verificar_cadena_ledger_oos
+        i0 = next(i for i, ln in enumerate(src_lines) if ln.startswith("def _hash_canonico_oos("))
+        i1 = next(i for i, ln in enumerate(src_lines) if ln.startswith("def registrar_en_ledger_oos("))
+        snippet = "\n".join(src_lines[i0:i1])
+        ns = {
+            "Any": object,
+            "json": json,
+            "hashlib": hashlib,
+            "os": os,
+            "LEDGER_OOS_PATH": "",
+        }
+        exec(compile(snippet, "ab30550:evaluacion_pronosticos.py", "exec"), ns)
+        fn_git_ab30550 = ns["verificar_cadena_ledger_oos"]
+
+    dl = _doc_equipo_sintetico("Corinthians", fuente="flashscore", con_minutos=True)
+    dv = _doc_equipo_sintetico("Botafogo", fuente="fotmob", con_minutos=True)
+    res_fake = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": dl,
+        "doc_visitante": dv,
+        "meta_local": None,
+        "meta_visitante": None,
+        "contexto": {
+            "fecha_partido": "2026-11-23",
+            "hora_inicio_partido": "2026-11-23T22:00:00Z",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fotmob_fixture",
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "origen_condicion": "fixture_real",
+            "sede": "Neo Química Arena",
+            "id_partido_objetivo": "5109966",
+        },
+        "liga_solicitada": {"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+        "estado_identidad": "verificada",
+        "motivo_identidad": "test",
+        "identidad_verificada": True,
+        "criterio_desempate": None,
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ruta_led = os.path.join(tmpdir, "ledger_retro_ab30550.jsonl")
+        ruta_snaps = os.path.join(tmpdir, "snaps_b7")
+
+        # 0: Entrada legacy previa a R18/R19 (sin campos nuevos)
+        r_leg = ep.registrar_en_ledger_oos(
+            {
+                "id_partido": "5181796",
+                "partido": "Turkiye vs Belgium",
+                "fecha": "2026-11-12",
+                "resumen": {"aciertos": 52, "fallos": 6, "n_evaluables": 58, "brier": 0.0967},
+            },
+            ruta_ledger=ruta_led,
+        )
+        assert r_leg["registrado"] is True
+
+        # 1 y 2: Entradas formato nuevo R18+R19 (pre_partido y liquidado con fuente_local/visitante/firma/lambdas_plano/fixture)
+        with patch.object(sm, "resolver_enfrentamiento", return_value=res_fake):
+            prep = sm.preparar_analisis(
+                "Corinthians",
+                "Botafogo",
+                umbral=0.70,
+                directorio_salida=tmpdir,
+                liga={"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+            )
+        ep.adjuntar_modo_sombra_preparado(prep)
+        tg_meta = {"message_id": 707, "message_date": 1795066740, "message_date_utc": "2026-11-18T05:39:00Z"}
+        prep["telegram_meta"] = tg_meta
+        snap = ep.snapshot_desde_analisis(
+            prep,
+            publicado_en="2026-11-18T05:39:00Z",
+            modo_sombra=prep.get("modo_sombra"),
+            telegram_meta=tg_meta,
+        )
+        ruta_snap = ep.guardar_snapshot(snap, directorio=ruta_snaps)
+        guardado = json.loads(Path(ruta_snap).read_text(encoding="utf-8"))
+        assert ep.registrar_sombra_prepartido_en_ledger_oos(prep, ruta_snapshot=ruta_snap, ruta_ledger=ruta_led)["registrado"] is True
+        res_obj = ep.ResultadoPartido(
+            id_partido="5109966",
+            estado="finalizado",
+            local="Corinthians",
+            visitante="Botafogo",
+            inicio_utc="2026-11-23T22:00:00Z",
+            goles_local=2,
+            goles_visitante=1,
+            goles_local_1t=1,
+            goles_visitante_1t=0,
+            corners_local={"FT": 6},
+            corners_visitante={"FT": 3},
+            amarillas_local={"FT": 2},
+            amarillas_visitante={"FT": 2},
+        )
+        assert ep.liquidar_sombras_en_ledger_oos([guardado], {"Corinthians vs Botafogo": res_obj}, ruta_ledger=ruta_led)["n_liquidados_nuevos"] == 1
+
+        filas = ep.cargar_ledger_oos(ruta_led)
+        assert len(filas) == 3
+        for idx_n in (1, 2):
+            for campo in ("fuente_local", "fuente_visitante", "firma_datos", "lambdas_plano", "fixture_confirmado", "es_oos_valido"):
+                assert campo in filas[idx_n] and filas[idx_n][campo] is not None
+
+        ver_act = ep.verificar_cadena_ledger_oos(ruta_led)
+        ver_ab = _verificar_ab30550(ruta_led)
+        assert ver_act["ok"] is True and ver_act["errores"] == [] and ver_act["entradas"] == 3
+        assert ver_ab["ok"] is True and ver_ab["errores"] == [] and ver_ab["entradas"] == 3
+        assert ver_ab["ultimo_sha256"] == ver_act["ultimo_sha256"]
+        if fn_git_ab30550 is not None:
+            ver_git = fn_git_ab30550(ruta_led)
+            assert ver_git["ok"] is True and ver_git["errores"] == [] and ver_git["entradas"] == 3
+            assert ver_git["ultimo_sha256"] == ver_act["ultimo_sha256"]
