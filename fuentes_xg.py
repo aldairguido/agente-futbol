@@ -256,14 +256,16 @@ def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
     con los IDs de equipo, para poder cruzar dos equipos POR ID (y no por nombre,
     donde «Roma» contra «AS Roma» fallaba).
 
-    Solo incluye lo que la fuente publica con fecha: nada inventado.
+    Preserva `utcTime` completo (ISO-8601 UTC) cuando la fuente lo publica para
+    conservar la hora exacta de inicio y su zona horaria de origen (`UTC`).
     """
     salida: list[dict[str, Any]] = []
     for f in fixtures or []:
         estado = f.get("status") or {}
         if estado.get("finished"):
             continue
-        fecha = str(estado.get("utcTime") or "")[:10]
+        raw_utc = str(estado.get("utcTime") or "").strip()
+        fecha = raw_utc[:10]
         if not fecha:
             continue
         home = f.get("home") or {}
@@ -271,7 +273,7 @@ def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not home.get("id") or not away.get("id"):
             continue
         t = f.get("tournament") or {}
-        salida.append({
+        item: dict[str, Any] = {
             "id_partido": str(f.get("id") or ""),
             "fecha": fecha,
             "competicion": str(t.get("name") or ""),
@@ -279,8 +281,13 @@ def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "away_id": str(away.get("id")),
             "home_nombre": str(home.get("name") or ""),
             "away_nombre": str(away.get("name") or ""),
-        })
-    salida.sort(key=lambda x: x["fecha"])
+        }
+        if raw_utc and ("T" in raw_utc or ":" in raw_utc):
+            item["utcTime"] = raw_utc
+            item["zona_origen"] = "UTC"
+            item["fuente_hora"] = "fotmob_fixture"
+        salida.append(item)
+    salida.sort(key=lambda x: str(x.get("utcTime") or x["fecha"]))
     return salida
 
 

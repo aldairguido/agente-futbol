@@ -976,14 +976,31 @@ def redactar_analisis_3_parrafos(
                 "cuya cuota real supere la Cuota Justa calculada por la Red Neuronal."
             )
 
+    _hdr_tg_lines: list[str] = []
+    try:
+        from servicio_mercados import formatear_encabezado_partido_y_fuentes_telegram as _fmt_hdr_3p
+        _meta_3p = getattr(analisis, "metadatos", {}) or {}
+        _mot_3p = getattr(analisis, "motor", None)
+        _p_lbl_3p, _f_lbl_3p = _fmt_hdr_3p(
+            _meta_3p,
+            doc_local or getattr(_mot_3p, "doc_local", None),
+            doc_visitante or getattr(_mot_3p, "doc_visitante", None),
+            equipo_local=eq_l,
+            equipo_visitante=eq_v,
+        )
+        _hdr_tg_lines = [f"📅 {_p_lbl_3p}", f"📡 {_f_lbl_3p}"]
+    except Exception:
+        _hdr_tg_lines = []
+    _cab_3p = ("\n".join(_hdr_tg_lines) + "\n\n") if _hdr_tg_lines else ""
+
     bloque_xai = generar_bloque_narrativo_xai_desde_analisis(
         analisis,
         doc_local=doc_local,
         doc_visitante=doc_visitante,
     )
     if bloque_xai:
-        return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
-    return f"{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
+        return f"{_cab_3p}{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n{bloque_xai}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
+    return f"{_cab_3p}{parrafo_1}\n\n{parrafo_2}\n\n{parrafo_3}\n\n🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
 
 
 def generar_bloque_narrativo_xai_desde_analisis(
@@ -1102,6 +1119,19 @@ def generar_bloque_narrativo_xai_desde_analisis(
             sec1_v = None
             sec2_v = None
 
+        _p_lbl_xai = None
+        _f_lbl_xai = None
+        try:
+            from servicio_mercados import formatear_encabezado_partido_y_fuentes_telegram as _fmt_hdr_xai
+            _p_lbl_xai, _f_lbl_xai = _fmt_hdr_xai(
+                meta,
+                doc_local,
+                doc_visitante,
+                equipo_local=eq_l,
+                equipo_visitante=eq_v,
+            )
+        except Exception:
+            pass
         return generar_informe_narrativo_xai(
             eq_l, eq_v, P_L, P_V, p_loc_adj, p_emp_adj, p_vis_adj, alertas, cb_L, cb_V, cc_L, cc_V,
             ratings_local=ratings_L_v,
@@ -1110,6 +1140,8 @@ def generar_bloque_narrativo_xai_desde_analisis(
             selecciones_sec1=sec1_v,
             motor=motor,
             selecciones_sec2=sec2_v,
+            partido_label=_p_lbl_xai,
+            fuentes_label=_f_lbl_xai,
         )
     except Exception:
         return ""

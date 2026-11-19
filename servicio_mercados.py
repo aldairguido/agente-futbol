@@ -333,7 +333,7 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             continue
         vistos.add(clave)
         es_casa = es_directo
-        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), {
+        cand_meta: dict[str, Any] = {
             "id_partido": str(f.get("id_partido") or ""),
             "fecha_partido": fecha,
             "etiqueta_fecha": info_f["etiqueta_fecha"],
@@ -351,11 +351,153 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             "local_es": "local" if es_casa else "visitante",
             "evidencia_condicion": ("próximo enfrentamiento cruzado por ID numérico "
                                     "y nombre en el calendario de la fuente (America/Lima)"),
-        }))
+        }
+        if info_f.get("hora_inicio_partido"):
+            cand_meta["fuente_hora_inicio"] = str(f.get("fuente_hora") or "fotmob_fixture")
+            cand_meta["zona_origen_hora_inicio"] = str(f.get("zona_origen") or "UTC")
+        if f.get("id_flashscore"):
+            cand_meta["id_flashscore_partido"] = str(f.get("id_flashscore"))
+        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), cand_meta))
     if not candidatos:
         return None
     candidatos.sort(key=lambda x: x[0])          # el más próximo primero
     return candidatos[0][1]
+
+
+def obtener_hora_inicio_fotmob_match_details(id_partido: str, timeout: int = 5) -> str | None:
+    """Consulta `/api/data/matchDetails?matchId={id_partido}` en FotMob y devuelve `utcTime` ISO UTC."""
+    pid = str(id_partido or "").strip()
+    if not pid or not pid.isdigit():
+        return None
+    try:
+        import urllib.request
+        url = f"https://www.fotmob.com/api/data/matchDetails?matchId={pid}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            datos = json.loads(resp.read().decode("utf-8"))
+        cand = (
+            (datos.get("general") or {}).get("matchTimeUTCDate")
+            or ((datos.get("header") or {}).get("status") or {}).get("utcTime")
+        )
+        s = str(cand or "").strip()
+        if s and ("T" in s or ":" in s):
+            return s
+    except Exception:
+        return None
+    return None
+
+
+def _fecha_utc_compatible_fixture(utc_iso: str, fecha_esperada: str | None) -> bool:
+    """Permite ±2 días por desfase UTC/America_Lima frente a la fecha del fixture si existe."""
+    if not fecha_esperada:
+        return True
+    try:
+        from datetime import date
+        d_esp = date.fromisoformat(str(fecha_esperada)[:10])
+        d_enc = date.fromisoformat(str(utc_iso)[:10])
+        return abs((d_esp - d_enc).days) <= 2
+    except Exception:
+        return True
+
+
+def resolver_hora_inicio_encuentro(
+    contexto: dict[str, Any],
+    *,
+    equipo_local: str = "",
+    equipo_visitante: str = "",
+    id_flashscore: str | None = None,
+    cliente_fs: Any = None,
+    fetcher_fotmob: Any = None,
+) -> dict[str, Any]:
+    """
+    Completa `hora_inicio_partido` (ISO UTC), `hora_inicio_local` (`America/Lima`) y
+    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore o
+    FotMob antes de emitir el ticket, snapshot y registro en ledger OOS.
+    Si no se obtiene hora real con zona, mantiene `hora_inicio_partido=None` (no-OOS).
+    """
+    if not isinstance(contexto, dict):
+        return contexto
+    if contexto.get("hora_inicio_partido"):
+        contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
+        contexto.setdefault("zona_origen_hora_inicio", "UTC")
+        contexto.setdefault("zona_horaria", "America/Lima")
+        return contexto
+    if contexto.get("partido_ya_jugado") or contexto.get("omitir_busqueda_hora_red"):
+        contexto.setdefault("fuente_hora_inicio", "no_disponible")
+        return contexto
+
+    fecha_esp = str(contexto.get("fecha_partido") or "").strip() or None
+    if fecha_esp and not re.match(r"^\d{4}-\d{2}-\d{2}", fecha_esp):
+        fecha_esp = None
+
+    utc_resuelta: str | None = None
+    fuente_resuelta: str | None = None
+    zona_resuelta = "UTC"
+    id_fs_resuelto = str(id_flashscore or contexto.get("id_flashscore_partido") or "").strip() or None
+
+    # 1) Flashscore: ID próximo explícito o feed diario f_1_0_{dia} (AD/DC en epoch UTC)
+    if (equipo_local and equipo_visitante) or id_fs_resuelto:
+        try:
+            fs_cli = cliente_fs
+            if fs_cli is None:
+                from fuente_flashscore import ClienteFlashscore
+                fs_cli = ClienteFlashscore(timeout=5)
+            if id_fs_resuelto:
+                utc_id = fs_cli.hora_inicio_desde_id(id_fs_resuelto)
+                if utc_id and _fecha_utc_compatible_fixture(utc_id, fecha_esp):
+                    utc_resuelta = utc_id
+                    fuente_resuelta = "flashscore_dc"
+            if not utc_resuelta and equipo_local and equipo_visitante:
+                fx_fs = fs_cli.buscar_fixture_programado(
+                    equipo_local,
+                    equipo_visitante,
+                    fecha_objetivo=fecha_esp,
+                )
+                if fx_fs and fx_fs.get("utcTime") and _fecha_utc_compatible_fixture(fx_fs["utcTime"], fecha_esp):
+                    utc_resuelta = str(fx_fs["utcTime"])
+                    fuente_resuelta = str(fx_fs.get("fuente") or "flashscore")
+                    zona_resuelta = str(fx_fs.get("zona_origen") or "UTC")
+                    if fx_fs.get("id_flashscore"):
+                        id_fs_resuelto = str(fx_fs["id_flashscore"])
+        except Exception:
+            pass
+
+    # 2) FotMob matchDetails cuando partimos de fixture cacheado sin `utcTime`
+    id_p = str(contexto.get("id_partido") or "").strip()
+    if not utc_resuelta and id_p and id_p.isdigit():
+        try:
+            fn_fm = fetcher_fotmob or obtener_hora_inicio_fotmob_match_details
+            utc_fm = fn_fm(id_p)
+            if utc_fm and _fecha_utc_compatible_fixture(utc_fm, fecha_esp):
+                utc_resuelta = str(utc_fm)
+                fuente_resuelta = "fotmob_match_details"
+                zona_resuelta = "UTC"
+        except Exception:
+            pass
+
+    if utc_resuelta:
+        info = resolver_fecha_encuentro_lima(utc_resuelta, es_partido_programado=True)
+        if info.get("hora_inicio_partido"):
+            contexto["fecha_partido"] = info["fecha_partido"]
+            contexto["etiqueta_fecha"] = info["etiqueta_fecha"]
+            contexto["hora_inicio_partido"] = info["hora_inicio_partido"]
+            contexto["hora_inicio_local"] = info["hora_inicio_local"]
+            contexto["fixture_confirmado"] = True
+            contexto["fuente_fecha"] = "fixture"
+            contexto["zona_horaria"] = "America/Lima"
+            contexto["es_fecha_analisis"] = False
+            contexto["partido_activo"] = True
+            contexto["sin_partido_proximo"] = False
+            contexto["fuente_hora_inicio"] = fuente_resuelta or "fixture"
+            contexto["zona_origen_hora_inicio"] = zona_resuelta
+            if id_fs_resuelto:
+                contexto["id_flashscore_partido"] = id_fs_resuelto
+            return contexto
+
+    if id_fs_resuelto:
+        contexto["id_flashscore_partido"] = id_fs_resuelto
+    contexto.setdefault("fuente_hora_inicio", "no_disponible")
+    return contexto
 
 
 def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
@@ -942,6 +1084,12 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
+    if contexto.get("hora_inicio_partido") is None and not contexto.get("partido_ya_jugado"):
+        resolver_hora_inicio_encuentro(
+            contexto,
+            equipo_local=nombre_a,
+            equipo_visitante=nombre_b,
+        )
     # Blindaje anti-fuga temporal sobre doc_a y doc_b antes de calcular patrones o cuotas
     eff_corte = cutoff_timestamp if cutoff_timestamp is not None else fecha_corte
     eff_excl = exclude_match_ids if exclude_match_ids is not None else id_partido_excluir
@@ -1124,6 +1272,33 @@ def formatear_fuentes_clubes_encabezado(
     if not f_l and not f_v:
         return ""
     return f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}"
+
+
+def formatear_encabezado_partido_y_fuentes_telegram(
+    metadatos: dict[str, Any] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    *,
+    equipo_local: str | None = None,
+    equipo_visitante: str | None = None,
+) -> tuple[str, str]:
+    """Devuelve `(linea_partido, linea_fuentes)` consistentes para textos de Telegram."""
+    meta = metadatos if isinstance(metadatos, dict) else {}
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    partido_etq = formatear_etiqueta_fecha_encabezado(meta)
+    if not partido_etq.startswith("Partido:"):
+        partido_etq = f"Partido: {partido_etq}"
+    fuentes_etq = formatear_fuentes_clubes_encabezado(
+        meta, dl, dv, equipo_local=equipo_local, equipo_visitante=equipo_visitante
+    )
+    if not fuentes_etq:
+        eq_l = str(equipo_local or meta.get("equipo_local") or (dl.get("equipo") or {}).get("nombre") or "Local").strip()
+        eq_v = str(equipo_visitante or meta.get("equipo_visitante") or (dv.get("equipo") or {}).get("nombre") or "Visitante").strip()
+        f_gen = str(meta.get("fuente") or "").strip()
+        val_def = f_gen if f_gen else "sin_dato"
+        fuentes_etq = f"Fuentes: {eq_l}: {val_def} · {eq_v}: {val_def}"
+    return partido_etq, fuentes_etq
 
 
 def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str, Any],
@@ -1324,20 +1499,20 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     if cat == "GOLES POR EQUIPO":
         if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
             return "", "", 0.0
-        eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
+        eq_nombre = eq_p if eq_p else eq_l
         if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-            lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_nombre} {et}"
         elif "under_" in ev or "menos de" in et.lower():
-            lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_nombre} {et}"
         elif "al_menos_" in ev or "al menos" in et.lower():
             if lin is not None and isinstance(lin, (int, float)):
-                lbl = f"{eq_corto} +{float(lin) - 0.5:g} Goles ({per_p})"
+                lbl = f"{eq_nombre} +{float(lin) - 0.5:g} Goles ({per_p})"
             else:
-                lbl = f"{eq_corto} {et}"
+                lbl = f"{eq_nombre} {et}"
         elif "primer_gol" in ev:
-            lbl = f"1er Gol: {eq_corto}"
+            lbl = f"1er Gol: {eq_nombre}"
         else:
-            lbl = f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} {et}"
         return lbl, pct, prob
 
     if "GOL" in cat:
@@ -1366,7 +1541,7 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
         if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
             return "", "", 0.0
-        pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
+        pref_c = eq_p if eq_p else "Total"
         if "over_" in ev or "mas de" in et.lower() or "más" in et.lower():
             lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
         elif "under_" in ev or "menos" in et.lower():
@@ -2406,11 +2581,17 @@ def renderizar_ticket_mercados_png(
 
                     d.rectangle([X_COL2, y_curr_fila, PAD_X + ANCHO_TABLA, y_curr_fila + f_h], fill=color_bg)
 
-                    # Texto Ámbito / Periodo (Col 2)
+                    # Texto Ámbito / Periodo (Col 2): partir en 2 líneas si supera el ancho de columna
                     amb_txt = f_data["ambito"]
-                    h_amb = 14
-                    y_amb = y_curr_fila + (f_h - h_amb) // 2
-                    d.text((X_COL2 + 12, y_amb), amb_txt, font=f_amb, fill=C_TITLE)
+                    if _get_w(amb_txt, f_amb) > (W_COL2 - 18) and " · " in amb_txt:
+                        amb_l1, amb_l2 = amb_txt.split(" · ", 1)
+                        y_amb = y_curr_fila + max(4, (f_h - 30) // 2)
+                        d.text((X_COL2 + 12, y_amb), amb_l1, font=f_amb, fill=C_TITLE)
+                        d.text((X_COL2 + 12, y_amb + 15), f"· {amb_l2}", font=f_amb, fill=C_TXT_MUTED)
+                    else:
+                        h_amb = 14
+                        y_amb = y_curr_fila + (f_h - h_amb) // 2
+                        d.text((X_COL2 + 12, y_amb), amb_txt, font=f_amb, fill=C_TITLE)
 
                     # Píldoras redondeadas ordenadas (Col 3)
                     lineas_pills = f_data["lineas_pills"]
@@ -2692,6 +2873,18 @@ def preparar_analisis(
         params.distribucion_conteos = "poisson"   # la central usa Poisson (documentado)
 
     ctx = contexto["contexto"]
+    if (
+        isinstance(ctx, dict)
+        and ctx.get("hora_inicio_partido") is None
+        and not ctx.get("partido_ya_jugado")
+        and (ctx.get("fixture_confirmado") or ctx.get("id_partido") or ctx.get("id_flashscore_partido"))
+    ):
+        resolver_hora_inicio_encuentro(
+            ctx,
+            equipo_local=str(contexto.get("equipo_local") or ""),
+            equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+            id_flashscore=ctx.get("id_flashscore_partido"),
+        )
 
     # ── Bloque A2: Si el partido objetivo ya se jugó o su hora de inicio ya pasó,
     # /mercados NO genera pronóstico prepartido: responde "partido ya jugado, usa /evaluar" y muestra el resultado.
@@ -2813,6 +3006,8 @@ def preparar_analisis(
             "etiqueta_fecha": ctx.get("etiqueta_fecha") or formatear_etiqueta_fecha_encabezado(ctx),
             "hora_inicio_partido": ctx.get("hora_inicio_partido"),
             "hora_inicio_local": ctx.get("hora_inicio_local"),
+            **({"fuente_hora_inicio": ctx.get("fuente_hora_inicio")} if ctx.get("fuente_hora_inicio") else {}),
+            **({"zona_origen_hora_inicio": ctx.get("zona_origen_hora_inicio")} if ctx.get("zona_origen_hora_inicio") else {}),
             "fixture_confirmado": bool(ctx.get("fixture_confirmado", False)),
             "fuente_fecha": ctx.get("fuente_fecha") or ("fixture" if ctx.get("fixture_confirmado") else "fallback"),
             "generado_en": _ahora(),
@@ -2908,8 +3103,17 @@ def preparar_analisis(
             print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el ticket PNG de abstención: {e_img}")
             ruta_imagen = None
 
+        _p_abs_tg, _f_abs_tg = formatear_encabezado_partido_y_fuentes_telegram(
+            meta_abs,
+            contexto.get("doc_local"),
+            contexto.get("doc_visitante"),
+            equipo_local=contexto["equipo_local"],
+            equipo_visitante=contexto["equipo_visitante"],
+        )
         texto_alerta = (
             f"🚨 PRONÓSTICO ABSTENIDO POR COBERTURA INSUFICIENTE\n"
+            f"📅 {_p_abs_tg}\n"
+            f"📡 {_f_abs_tg}\n"
             f"Estado Oficial: {decision_cob.estado.upper()}\n\n"
             f"• {contexto['equipo_local']}: {decision_cob.etiqueta_cobertura_a}\n"
             f"• {contexto['equipo_visitante']}: {decision_cob.etiqueta_cobertura_b}\n\n"
@@ -2950,7 +3154,7 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
     analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
@@ -3160,13 +3364,17 @@ def preparar_analisis(
         import informe as informe_mod
 
         cliente_fs = ClienteFlashscore()
-        # 1) Buscar id_flashscore directo del cruce o desde el feed H2H de un partido conocido
-        for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
-            sec = p_cand.get("fuente_secundaria") or {}
-            mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
-            if mid_cand and mid_cand not in ("N/D", "None", ""):
-                id_fs_partido = mid_cand
-                break
+        # 1) Priorizar id_flashscore del encuentro programado; luego duelos o historial conocido
+        id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
+        if id_fs_prog and id_fs_prog not in ("N/D", "None", ""):
+            id_fs_partido = id_fs_prog
+        if not id_fs_partido:
+            for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
+                sec = p_cand.get("fuente_secundaria") or {}
+                mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
+                if mid_cand and mid_cand not in ("N/D", "None", ""):
+                    id_fs_partido = mid_cand
+                    break
 
         if id_fs_partido:
             # Intentar extraer cuotas del partido o de los candidatos H2H
