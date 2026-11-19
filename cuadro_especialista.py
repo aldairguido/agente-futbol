@@ -1799,10 +1799,28 @@ def generar_cuadro_visual_partido(
         hspace=0.18, left=0.05, right=0.95, top=0.925, bottom=0.025
     )
 
+    _fuentes_sc = ""
+    try:
+        from servicio_mercados import formatear_fuentes_clubes_encabezado as _fmt_fc_sc
+        _meta_sc = getattr(analisis, "metadatos", None) if analisis is not None else None
+        _mot_sc = getattr(analisis, "motor", None) if analisis is not None else None
+        _fuentes_sc = _fmt_fc_sc(
+            _meta_sc,
+            getattr(_mot_sc, "doc_local", None),
+            getattr(_mot_sc, "doc_visitante", None),
+            equipo_local=eq_L,
+            equipo_visitante=eq_V,
+        )
+    except Exception:
+        _fuentes_sc = ""
+    _tit_sc_top = _sanear_para_canvas(
+        f"{competicion.upper()}   ·   SÚPER-CUADRO ESPECIALISTA TODO-EN-UNO & TICKET CUANTITATIVO"
+        + (f"   ·   {_fuentes_sc}" if _fuentes_sc else "")
+    )
     fig.text(
         0.05, 0.982,
-        f"{competicion.upper()}   ·   SÚPER-CUADRO ESPECIALISTA TODO-EN-UNO & TICKET CUANTITATIVO",
-        fontsize=9.2, fontweight="bold", color="#64748B", family="sans-serif"
+        _tit_sc_top,
+        fontsize=8.6 if _fuentes_sc else 9.2, fontweight="bold", color="#64748B", family="sans-serif"
     )
     fig.text(
         0.05, 0.960,
@@ -2694,8 +2712,13 @@ def generar_cuadro_auditoria_15_partidos_png(
         return getattr(obj, clave, defecto)
 
     meta = _val(analisis, "metadatos", {}) or {}
-    eq_L = str(meta.get("equipo_local") or (doc_local.get("equipo") or {}).get("nombre") if doc_local else "Local")
-    eq_V = str(meta.get("equipo_visitante") or (doc_visita.get("equipo") or {}).get("nombre") if doc_visita else "Visitante")
+    _mot_aud = _val(analisis, "motor", None)
+    if not isinstance(doc_local, dict) and _mot_aud is not None:
+        doc_local = getattr(_mot_aud, "doc_local", None)
+    if not isinstance(doc_visita, dict) and _mot_aud is not None:
+        doc_visita = getattr(_mot_aud, "doc_visitante", None)
+    eq_L = str(meta.get("equipo_local") or ((doc_local.get("equipo") or {}).get("nombre") if isinstance(doc_local, dict) else None) or "Local")
+    eq_V = str(meta.get("equipo_visitante") or ((doc_visita.get("equipo") or {}).get("nombre") if isinstance(doc_visita, dict) else None) or "Visitante")
     competicion = str(meta.get("competicion") or "Competición oficial")
     try:
         from servicio_mercados import formatear_etiqueta_fecha_encabezado
@@ -2761,8 +2784,22 @@ def generar_cuadro_auditoria_15_partidos_png(
     fig.text(0.04, 0.955, f"{eq_L} vs {eq_V}",
              fontsize=20.0, fontweight="bold", color="#0F172A")
     _etq_f_aud = fecha if fecha.startswith(("Partido:", "Sin partido programado")) else f"Fecha: {fecha}"
-    fig.text(0.04, 0.936, f"{_etq_f_aud}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)",
-             fontsize=8.5, color="#64748B")
+    _fuentes_aud = ""
+    try:
+        from servicio_mercados import formatear_fuentes_clubes_encabezado as _fmt_fc_aud
+        _fuentes_aud = _fmt_fc_aud(meta, doc_local, doc_visita, equipo_local=eq_L, equipo_visitante=eq_V)
+    except Exception:
+        _fuentes_aud = ""
+    fig.text(
+        0.04,
+        0.936,
+        _sanear_para_canvas(
+            f"{_etq_f_aud}  ·  Muestra oficial: 15 partidos únicos por equipo (0 amistosos)"
+            + (f"  ·  {_fuentes_aud}" if _fuentes_aud else "")
+        ),
+        fontsize=8.3 if _fuentes_aud else 8.5,
+        color="#64748B",
+    )
     if mostrar_adv and adv_lineas:
         fig.text(
             0.04,

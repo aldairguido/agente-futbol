@@ -441,3 +441,163 @@ def test_bloque_3_seccion2_siempre_visible_y_redaccion_unificada_sensible() -> N
     assert "Probabilidad Ajustada: 71.4%" in txt_xai_ok
     assert "El agente valida 'Tarjetas Totales (FT): -6.5 Tarj.'" in txt_xai_ok
     assert "El modelo valida 'Goles 2T: +0.5 Goles'" in txt_xai_ok
+
+
+def test_bloque_4_serie_ab_sin_pais_pide_brasil_o_italia_y_fuentes_en_encabezados() -> None:
+    from types import SimpleNamespace
+    from PIL import ImageDraw
+    import fuentes_xg as fx
+    import bot_interactivo as bi
+    import cuadro_especialista as ce
+
+    # 1. Ambigüedad "serie a/b" sin país vs con país
+    assert fx.detectar_liga_ambigua_serie_ab("/mercados serie A Corinthians vs Botafogo") == "Serie A"
+    assert fx.detectar_liga_ambigua_serie_ab("/mercados serie B Remo vs Chapecoense") == "Serie B"
+    assert fx.detectar_liga_ambigua_serie_ab("Remo vs Chapecoense (serie b)") == "Serie B"
+    assert fx.detectar_liga_ambigua_serie_ab("/mercados serie A Brasil Corinthians vs Botafogo") is None
+    assert fx.detectar_liga_ambigua_serie_ab("/mercados serie A Italia Inter vs Milan") is None
+    assert fx.detectar_liga_ambigua_serie_ab("/mercados serie b brasil Remo vs Chapecoense") is None
+
+    # 2. cmd_mercados con "serie A" sin país responde en texto plano (sin botones, sin inferir, sin analizar)
+    enviados: list[tuple[str, dict]] = []
+
+    def _fake_enviar(bot_obj, chat_o_msg, texto, **kwargs):
+        enviados.append((str(texto), dict(kwargs)))
+
+    for cmd_amb in (
+        "/mercados serie A Corinthians vs Botafogo",
+        "/mercados serie B Remo vs Chapecoense",
+    ):
+        enviados.clear()
+        msg = SimpleNamespace(chat=SimpleNamespace(id="99999"), text=cmd_amb)
+        with patch.object(bi, "CHAT_ID_AUTORIZADO", "99999"), \
+             patch.object(bi, "enviar_seguro", side_effect=_fake_enviar), \
+             patch.object(bi, "_lanzar_mercados") as m_lanzar:
+            bi.cmd_mercados(msg)
+        assert not m_lanzar.called
+        assert len(enviados) == 1
+        txt_rep, kw_rep = enviados[0]
+        assert "Brasil" in txt_rep and "Italia" in txt_rep
+        assert "reply_markup" not in kw_rep
+
+    # Con país explícito sí ejecuta _lanzar_mercados
+    enviados.clear()
+    msg_bra = SimpleNamespace(chat=SimpleNamespace(id="99999"), text="/mercados serie A Brasil Corinthians vs Botafogo")
+    with patch.object(bi, "CHAT_ID_AUTORIZADO", "99999"), \
+         patch.object(bi, "enviar_seguro", side_effect=_fake_enviar), \
+         patch.object(bi, "_lanzar_mercados") as m_lanzar_ok, \
+         patch.object(bi, "_extraer_telegram_meta_mensaje", return_value={}):
+        bi.cmd_mercados(msg_bra)
+    assert m_lanzar_ok.called
+    assert len(enviados) == 0
+
+    # 3. Encabezados muestran la fuente de cada club (Telegram, Ticket PNG, Súper-Cuadro, Auditoría 15P)
+    dl = _doc_equipo_sintetico("Corinthians", fuente="flashscore", con_minutos=False)
+    dv = _doc_equipo_sintetico("Botafogo", fuente="fotmob", con_minutos=True)
+    res_fake = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": dl,
+        "doc_visitante": dv,
+        "meta_local": None,
+        "meta_visitante": None,
+        "contexto": {
+            "fecha_partido": "2026-11-20",
+            "hora_inicio_partido": "2026-11-20T22:00:00Z",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fotmob_fixture",
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "origen_condicion": "fixture_real",
+            "sede": "Neo Química Arena",
+            "id_partido_objetivo": "5109998",
+        },
+        "liga_solicitada": {"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+        "estado_identidad": "verificada",
+        "motivo_identidad": "test",
+        "identidad_verificada": True,
+        "criterio_desempate": None,
+    }
+    draw_texts: list[str] = []
+    orig_draw_fn = ImageDraw.Draw
+
+    def _cap_draw(im, *args, **kwargs):
+        d = orig_draw_fn(im, *args, **kwargs)
+        orig_txt = d.text
+
+        def _cap_text(xy, text, *a, **kw):
+            draw_texts.append(str(text))
+            return orig_txt(xy, text, *a, **kw)
+
+        d.text = _cap_text
+        return d
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with patch.object(sm, "resolver_enfrentamiento", return_value=res_fake), \
+             patch("PIL.ImageDraw.Draw", side_effect=_cap_draw):
+            prep = sm.preparar_analisis(
+                "Corinthians",
+                "Botafogo",
+                umbral=0.70,
+                directorio_salida=tmpdir,
+                liga={"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+            )
+        msg_tel = prep["analisis"].mensaje
+        esp_fuentes = "Fuentes: Corinthians: flashscore · Botafogo: fotmob"
+        assert esp_fuentes in msg_tel
+        assert any(esp_fuentes in t for t in draw_texts), draw_texts
+
+        # Verificar Súper-Cuadro PNG y Auditoría 15P PNG (textos fig.text capturados vía matplotlib Figure.text)
+        fig_texts: list[str] = []
+        import matplotlib.figure as mfig
+        orig_fig_text = mfig.Figure.text
+
+        def _cap_fig_text(self_fig, x, y, s, *args, **kwargs):
+            fig_texts.append(str(s))
+            return orig_fig_text(self_fig, x, y, s, *args, **kwargs)
+
+        with patch.object(mfig.Figure, "text", new=_cap_fig_text):
+            ruta_sc = os.path.join(tmpdir, "super_cuadro_b4.png")
+            ce.generar_cuadro_desde_analisis(prep["analisis"], destino=ruta_sc)
+            ruta_aud = os.path.join(tmpdir, "auditoria_15p_b4.png")
+            ce.generar_cuadro_auditoria_15_partidos_png(prep["analisis"], destino=ruta_aud)
+
+        assert os.path.exists(ruta_sc) and os.path.exists(ruta_aud)
+        ocurs = [t for t in fig_texts if esp_fuentes in t]
+        assert len(ocurs) >= 2, fig_texts
+
+    # Ticket abstenido también muestra las fuentes por club en encabezado
+    draw_abs: list[str] = []
+
+    def _cap_draw_abs(im, *args, **kwargs):
+        d = orig_draw_fn(im, *args, **kwargs)
+        orig_txt = d.text
+
+        def _cap_text(xy, text, *a, **kw):
+            draw_abs.append(str(text))
+            return orig_txt(xy, text, *a, **kw)
+
+        d.text = _cap_text
+        return d
+
+    an_abs = SimpleNamespace(
+        metadatos={
+            "equipo_local": "Corinthians",
+            "equipo_visitante": "Botafogo",
+            "competicion": "Serie A",
+            "fecha_partido": "2026-11-20",
+            "abstenido": True,
+            "estado_cobertura": "cobertura_insuficiente",
+            "fuente_local": "flashscore",
+            "fuente_visitante": "fotmob",
+        },
+        abstenido=True,
+        motor=SimpleNamespace(doc_local=dl, doc_visitante=dv),
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        out_abs = os.path.join(tmpdir, "ticket_abs_b4.png")
+        with patch("PIL.ImageDraw.Draw", side_effect=_cap_draw_abs):
+            sm.renderizar_ticket_mercados_png(an_abs, destino=out_abs)
+        assert any("Fuentes: Corinthians: flashscore · Botafogo: fotmob" in t for t in draw_abs), draw_abs

@@ -1924,6 +1924,53 @@ def extraer_liga_de_texto(texto: str) -> tuple[dict[str, Any] | None, str]:
     return None, original
 
 
+_QUALIFICADORES_SERIE_AB = (
+    "brasil",
+    "brazil",
+    "brasileir",
+    "brasileirao",
+    "bra",
+    "italia",
+    "italian",
+    "italy",
+    "ita",
+    "calcio",
+    "ecuador",
+    "ecuatorian",
+    "ecu",
+    "ecuabet",
+    "femenin",
+    "fem",
+    "women",
+)
+
+
+def detectar_liga_ambigua_serie_ab(texto: str) -> str | None:
+    """Si `texto` menciona 'serie a' o 'serie b' sin país/calificador, devuelve 'Serie A'/'Serie B'."""
+    if not texto:
+        return None
+    sin_cmd = re.sub(r"^/(?:mercados|h2h|auditar)(?:@[A-Za-z0-9_]+)?\s*", "", str(texto).strip(), flags=re.I)
+    norm = _sin_acentos(sin_cmd).lower()
+    m = re.search(r"\bserie\s+([ab])\b", norm)
+    if not m:
+        return None
+    if any(re.search(rf"\b{re.escape(q)}", norm) for q in _QUALIFICADORES_SERIE_AB):
+        return None
+    return f"Serie {m.group(1).upper()}"
+
+
+def mensaje_desambiguacion_serie_ab(liga_ambigua: str) -> str:
+    """Mensaje en texto plano pidiendo especificar Brasil o Italia (sin botones ni inferencia)."""
+    lbl = str(liga_ambigua or "Serie A").strip()
+    return (
+        f"⚠️ Indicaste *{lbl}* sin especificar el país.\n"
+        "Indica si se trata de *Brasil* o *Italia* "
+        f"(ej.: `/mercados {lbl} Brasil Equipo A vs Equipo B` o "
+        f"`/mercados {lbl} Italia Equipo A vs Equipo B`).\n"
+        "No se ejecutó el análisis ni se infirió por los equipos."
+    )
+
+
 _EXONIMOS_TOKEN_MAP: dict[str, str] = {
     "francfort": "frankfurt",
     "munich": "munchen",

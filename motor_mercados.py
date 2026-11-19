@@ -3590,6 +3590,13 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
              f"Competición: {metadatos.get('competicion') or 'no disponible'} | "
              f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'} | "
              f"{_obtener_sello_build()}")
+    _f_l_msg = str(metadatos.get("fuente_local") or (motor.doc_local or {}).get("fuente") or "").strip()
+    _f_v_msg = str(metadatos.get("fuente_visitante") or (motor.doc_visitante or {}).get("fuente") or "").strip()
+    if _f_l_msg or _f_v_msg:
+        L.append(
+            f"Fuentes: {metadatos.get('equipo_local') or 'Local'}: {_f_l_msg or 'sin_dato'} · "
+            f"{metadatos.get('equipo_visitante') or 'Visitante'}: {_f_v_msg or 'sin_dato'}"
+        )
     L.extend(_resumen_muestra(motor))
     L.append(f"Condición usada: local={motor.cond_local}, visitante={motor.cond_visitante} "
              f"(muestra de condición: {motor.muestras['local_cond'].partidos_condicion}/"

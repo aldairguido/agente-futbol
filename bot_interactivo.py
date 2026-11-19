@@ -1825,6 +1825,11 @@ def _parsear_argumentos_mercados(texto: str) -> tuple[str, str, float, int, bool
 def cmd_mercados(message):
     """Analiza el catálogo de mercados y envía solo las selecciones > umbral."""
     texto_msg = getattr(message, "text", "") or ""
+    from fuentes_xg import detectar_liga_ambigua_serie_ab, mensaje_desambiguacion_serie_ab
+    liga_amb = detectar_liga_ambigua_serie_ab(texto_msg)
+    if liga_amb:
+        enviar_seguro(bot, message, mensaje_desambiguacion_serie_ab(liga_amb), es_reply=True)
+        return
     liga_info = _extraer_liga_de_comando_raw(texto_msg)
     a, b, umbral, limite, borrador = _parsear_argumentos_mercados(texto_msg)
     if not a or not b:

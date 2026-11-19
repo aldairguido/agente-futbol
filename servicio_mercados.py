@@ -1105,6 +1105,27 @@ def extraer_fuentes_y_firma_datos(
     }
 
 
+def formatear_fuentes_clubes_encabezado(
+    metadatos: dict[str, Any] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    *,
+    equipo_local: str | None = None,
+    equipo_visitante: str | None = None,
+) -> str:
+    """Devuelve el texto de fuente por club para encabezados (Telegram, Ticket, Cuadros)."""
+    meta = metadatos if isinstance(metadatos, dict) else {}
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    eq_l = str(equipo_local or meta.get("equipo_local") or (dl.get("equipo") or {}).get("nombre") or "Local").strip()
+    eq_v = str(equipo_visitante or meta.get("equipo_visitante") or (dv.get("equipo") or {}).get("nombre") or "Visitante").strip()
+    f_l = str(meta.get("fuente_local") or dl.get("fuente") or "").strip()
+    f_v = str(meta.get("fuente_visitante") or dv.get("fuente") or "").strip()
+    if not f_l and not f_v:
+        return ""
+    return f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}"
+
+
 def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str, Any],
                         doc_visitante: dict[str, Any]) -> str:
     """
@@ -1794,7 +1815,17 @@ def renderizar_ticket_mercados_png(
         # Header
         draw.rectangle([0, 0, w_img, 95], fill="#131D31")
         draw.text((30, 20), partido_titulo, font=f_title, fill="#FFFFFF")
-        draw.text((30, 60), f"{competicion} · {fecha}", font=f_meta, fill="#94A3B8")
+        _mot_abs = getattr(analisis, "motor", None)
+        _fuentes_abs = _sanear_para_canvas(formatear_fuentes_clubes_encabezado(
+            meta,
+            getattr(_mot_abs, "doc_local", None),
+            getattr(_mot_abs, "doc_visitante", None),
+            equipo_local=eq_l,
+            equipo_visitante=eq_v,
+        ))
+        draw.text((30, 54 if _fuentes_abs else 60), f"{competicion} · {fecha}", font=f_meta, fill="#94A3B8")
+        if _fuentes_abs:
+            draw.text((30, 74), _fuentes_abs, font=f_meta, fill="#CBD5E1")
 
         # Badge AUDITORÍA en esquina superior derecha
         w_b = _get_w("AUDITORÍA DE COBERTURA D.1", f_badge_hdr) + 24
@@ -2109,6 +2140,15 @@ def renderizar_ticket_mercados_png(
                 meta_parts_pre.append(fecha)
             else:
                 meta_parts_pre.append(f"Fecha: {fecha}")
+        _fuentes_hdr_tkt = formatear_fuentes_clubes_encabezado(
+            meta,
+            getattr(motor, "doc_local", None),
+            getattr(motor, "doc_visitante", None),
+            equipo_local=eq_l,
+            equipo_visitante=eq_v,
+        )
+        if _fuentes_hdr_tkt:
+            meta_parts_pre.append(_fuentes_hdr_tkt)
         meta_parts_pre.append("Modelo: Poisson bivariado con contracción bayesiana")
         _rec_ticket = (getattr(getattr(analisis, "motor", None), "recursivo", None) or {})
         if _rec_ticket.get("aplicado"):
