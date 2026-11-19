@@ -3582,21 +3582,20 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
     L: list[str] = []
     L.append(f"ANÁLISIS: {metadatos['equipo_local']} (local) vs "
              f"{metadatos['equipo_visitante']} (visitante)")
-    fecha_val = metadatos.get('fecha_partido')
-    fecha_display = (str(fecha_val) if fecha_val and str(fecha_val).lower() not in ('no disponible', 'none', '')
-                     else "Sin partido próximo en calendario (localía por orden de consulta)")
+    from servicio_mercados import formatear_encabezado_partido_y_fuentes_telegram as _fmt_tg_msg
     from utilidades_seguridad import obtener_sello_build as _obtener_sello_build
-    L.append(f"Fecha: {fecha_display} | "
+    _partido_hdr, _fuentes_hdr = _fmt_tg_msg(
+        metadatos,
+        getattr(motor, "doc_local", None),
+        getattr(motor, "doc_visitante", None),
+        equipo_local=metadatos.get("equipo_local"),
+        equipo_visitante=metadatos.get("equipo_visitante"),
+    )
+    L.append(f"{_partido_hdr} | "
              f"Competición: {metadatos.get('competicion') or 'no disponible'} | "
              f"Análisis generado: {metadatos.get('generado_en') or 'no disponible'} | "
              f"{_obtener_sello_build()}")
-    _f_l_msg = str(metadatos.get("fuente_local") or (motor.doc_local or {}).get("fuente") or "").strip()
-    _f_v_msg = str(metadatos.get("fuente_visitante") or (motor.doc_visitante or {}).get("fuente") or "").strip()
-    if _f_l_msg or _f_v_msg:
-        L.append(
-            f"Fuentes: {metadatos.get('equipo_local') or 'Local'}: {_f_l_msg or 'sin_dato'} · "
-            f"{metadatos.get('equipo_visitante') or 'Visitante'}: {_f_v_msg or 'sin_dato'}"
-        )
+    L.append(_fuentes_hdr)
     L.extend(_resumen_muestra(motor))
     L.append(f"Condición usada: local={motor.cond_local}, visitante={motor.cond_visitante} "
              f"(muestra de condición: {motor.muestras['local_cond'].partidos_condicion}/"

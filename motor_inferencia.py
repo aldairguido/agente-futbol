@@ -1022,6 +1022,8 @@ def generar_reporte_xai_telegram(
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
     selecciones_sec2: Optional[List[Any]] = None,
+    partido_label: Optional[str] = None,
+    fuentes_label: Optional[str] = None,
 ) -> str:
     """
     Genera el Informe Narrativo XAI completo en Markdown para Telegram con los 5 bloques
@@ -1183,6 +1185,8 @@ def generar_reporte_xai_telegram(
 
     lineas = [
         f"📊 *TICKET DE ANÁLISIS PROFUNDO: {nombre_local.upper()} VS {nombre_visita.upper()}*",
+        *([f"📅 {partido_label}"] if partido_label else []),
+        *([f"📡 {fuentes_label}"] if fuentes_label else []),
         f"🎯 *Predicción Final:* {veredicto}",
         *([f"ℹ️ _{_nota_coherencia_veredicto}_"] if _nota_coherencia_veredicto else []),
         f"🏷️ _{_obtener_sello_build()}_",
@@ -2087,6 +2091,8 @@ def generar_informe_narrativo_xai(
     selecciones_sec1: Optional[List[Any]] = None,
     motor: Any = None,
     selecciones_sec2: Optional[List[Any]] = None,
+    partido_label: Optional[str] = None,
+    fuentes_label: Optional[str] = None,
 ) -> str:
     """Wrapper directo hacia generar_reporte_xai_telegram."""
     cb_l = cuadro_b_local or calcular_cuadro_b_tendencias([], nombre_local, patrones_local)
@@ -2110,6 +2116,8 @@ def generar_informe_narrativo_xai(
         selecciones_sec1=selecciones_sec1,
         motor=motor,
         selecciones_sec2=selecciones_sec2,
+        partido_label=partido_label,
+        fuentes_label=fuentes_label,
     )
 
 

@@ -2274,7 +2274,7 @@ def generar_cuadro_visual_partido(
             if not es_placeholder:
                 total_validadas_cnt += 1
             p_txt_c = pill_c["lbl"] if es_placeholder else f"{pill_c['lbl']}  {pill_c['pct']}"
-            p_w_c = min(0.46, max(0.095, len(p_txt_c) * 0.0063 + 0.022))
+            p_w_c = min(0.48, max(0.095, len(p_txt_c) * 0.0066 + 0.024))
             if lineas_p[-1] and (x_cur + p_w_c > 0.985):
                 lineas_p.append([])
                 x_cur = 0.50

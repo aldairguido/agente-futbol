@@ -273,3 +273,81 @@ def test_punto6_prediccion_final_distingue_bajo_umbral_sensible_sec2_y_explica_v
     assert "sensible" not in linea_pred.lower()
     assert "Diferencia con el Veredicto" in txt_vasco
     assert "Doble Oportunidad 1X: Vasco da Gama o Empate" in txt_vasco
+
+
+def test_punto7_partido_fuentes_en_telegram_y_chips_sin_truncado(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    import motor_mercados as mm
+    import servicio_mercados as sm
+    import informe as inf
+
+    # 1. Chips con nombres largos completos (sin recorte [:10] / [:11])
+    s_gol = SimpleNamespace(
+        id_mercado="goles_equipo", mercado="Goles del equipo",
+        evento="over_0.5", etiqueta="más de 0.5 goles", periodo="FT",
+        equipo="Vasco da Gama", linea=0.5, probabilidad=0.84, estado="mantiene",
+    )
+    lbl_g, pct_g, _ = sm.formatear_pildora_seccion1(s_gol, "GOLES POR EQUIPO", "Vasco da Gama", "Internacional")
+    assert lbl_g == "Vasco da Gama +0.5 Goles (FT)", lbl_g
+    assert pct_g == "84%"
+
+    s_cor = SimpleNamespace(
+        id_mercado="corners", mercado="Córneres del equipo",
+        evento="over_3.5", etiqueta="más de 3.5 córners", periodo="FT",
+        equipo="Atlético Paranaense", linea=3.5, probabilidad=0.79, estado="mantiene",
+    )
+    lbl_c, _, _ = sm.formatear_pildora_seccion1(s_cor, "CÓRNERES", "Atlético Paranaense", "Internacional")
+    assert lbl_c == "Atlético Paranaense +3.5 Córn.", lbl_c
+
+    # Renderizar Ticket PNG con nombre largo y validar que no falla ni recorta
+    doc_l = {
+        "fuente": "fotmob",
+        "equipo": {"id": "10276", "nombre": "Vasco da Gama", "pais_iso": "BRA", "liga": "Serie A"},
+        "partidos": _dummy_partidos("Vasco da Gama", "Rival"),
+        "partidos_futuros": [],
+    }
+    doc_v = {
+        "fuente": "flashscore",
+        "equipo": {"id": "8702", "nombre": "Internacional", "pais_iso": "BRA", "liga": "Serie A"},
+        "partidos": _dummy_partidos("Internacional", "Otro"),
+        "partidos_futuros": [],
+    }
+    an = mm.analizar(doc_l, doc_v, "Vasco da Gama", "Internacional", competicion="Série A")
+    an.metadatos["hora_inicio_partido"] = "2026-11-19T22:30:00Z"
+    an.metadatos["hora_inicio_local"] = "2026-11-19 17:30 America/Lima"
+    an.metadatos["etiqueta_fecha"] = "Partido: 2026-11-19 17:30 America/Lima"
+    an.metadatos["fixture_confirmado"] = True
+    an.metadatos["fuente_local"] = "fotmob"
+    an.metadatos["fuente_visitante"] = "flashscore"
+    an.doc_local = doc_l
+    an.doc_visitante = doc_v
+
+    # Ticket PNG renderiza completo con píldoras de ancho dinámico sin recortar nombres
+    from PIL import ImageDraw
+    draw_texts: list[str] = []
+    orig_draw_text = ImageDraw.ImageDraw.text
+
+    def spy_text(self, xy, text, *args, **kwargs):
+        draw_texts.append(str(text))
+        return orig_draw_text(self, xy, text, *args, **kwargs)
+
+    ruta_png = str(tmp_path / "ticket_p7.png")
+    with patch.object(ImageDraw.ImageDraw, "text", spy_text):
+        sm.renderizar_ticket_mercados_png(an, metadatos=an.metadatos, destino=ruta_png)
+    assert os.path.exists(ruta_png) and os.path.getsize(ruta_png) > 5000
+    assert any("Vasco da Gama" in t for t in draw_texts), draw_texts
+    assert not any("Vasco da G " in t for t in draw_texts), draw_texts
+
+    # 2. Textos de Telegram incluyen "Partido: …" y "Fuentes: …"
+    msg_corto = mm.construir_mensaje(an.metadatos, an.grupos, mm.Parametros(), an.motor, an.mercados)
+    assert "Partido: 2026-11-19 17:30 America/Lima" in msg_corto
+    assert "Fuentes: Vasco da Gama: fotmob · Internacional: flashscore" in msg_corto
+
+    txt_3p = inf.redactar_analisis_3_parrafos(
+        an,
+        doc_local=doc_l,
+        doc_visitante=doc_v,
+    )
+    assert "📅 Partido: 2026-11-19 17:30 America/Lima" in txt_3p
+    assert "📡 Fuentes: Vasco da Gama: fotmob · Internacional: flashscore" in txt_3p
+    assert "📊 *TICKET DE ANÁLISIS PROFUNDO: VASCO DA GAMA VS INTERNACIONAL*\n📅 Partido: 2026-11-19 17:30 America/Lima\n📡 Fuentes: Vasco da Gama: fotmob · Internacional: flashscore" in txt_3p

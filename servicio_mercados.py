@@ -1274,6 +1274,33 @@ def formatear_fuentes_clubes_encabezado(
     return f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}"
 
 
+def formatear_encabezado_partido_y_fuentes_telegram(
+    metadatos: dict[str, Any] | None = None,
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    *,
+    equipo_local: str | None = None,
+    equipo_visitante: str | None = None,
+) -> tuple[str, str]:
+    """Devuelve `(linea_partido, linea_fuentes)` consistentes para textos de Telegram."""
+    meta = metadatos if isinstance(metadatos, dict) else {}
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    partido_etq = formatear_etiqueta_fecha_encabezado(meta)
+    if not partido_etq.startswith("Partido:"):
+        partido_etq = f"Partido: {partido_etq}"
+    fuentes_etq = formatear_fuentes_clubes_encabezado(
+        meta, dl, dv, equipo_local=equipo_local, equipo_visitante=equipo_visitante
+    )
+    if not fuentes_etq:
+        eq_l = str(equipo_local or meta.get("equipo_local") or (dl.get("equipo") or {}).get("nombre") or "Local").strip()
+        eq_v = str(equipo_visitante or meta.get("equipo_visitante") or (dv.get("equipo") or {}).get("nombre") or "Visitante").strip()
+        f_gen = str(meta.get("fuente") or "").strip()
+        val_def = f_gen if f_gen else "sin_dato"
+        fuentes_etq = f"Fuentes: {eq_l}: {val_def} · {eq_v}: {val_def}"
+    return partido_etq, fuentes_etq
+
+
 def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str, Any],
                         doc_visitante: dict[str, Any]) -> str:
     """
@@ -1472,20 +1499,20 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     if cat == "GOLES POR EQUIPO":
         if lin is not None and abs(float(lin) - 0.5) < 1e-6 and ("under_" in ev or "menos de" in et.lower()):
             return "", "", 0.0
-        eq_corto = (eq_p[:10] if len(eq_p) > 10 else eq_p) if eq_p else eq_l[:10]
+        eq_nombre = eq_p if eq_p else eq_l
         if "over_" in ev or "mas de" in et.lower() or "más de" in et.lower():
-            lbl = f"{eq_corto} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} +{lin:g} Goles ({per_p})" if lin is not None else f"{eq_nombre} {et}"
         elif "under_" in ev or "menos de" in et.lower():
-            lbl = f"{eq_corto} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} -{lin:g} Goles ({per_p})" if lin is not None else f"{eq_nombre} {et}"
         elif "al_menos_" in ev or "al menos" in et.lower():
             if lin is not None and isinstance(lin, (int, float)):
-                lbl = f"{eq_corto} +{float(lin) - 0.5:g} Goles ({per_p})"
+                lbl = f"{eq_nombre} +{float(lin) - 0.5:g} Goles ({per_p})"
             else:
-                lbl = f"{eq_corto} {et}"
+                lbl = f"{eq_nombre} {et}"
         elif "primer_gol" in ev:
-            lbl = f"1er Gol: {eq_corto}"
+            lbl = f"1er Gol: {eq_nombre}"
         else:
-            lbl = f"{eq_corto} {et}"
+            lbl = f"{eq_nombre} {et}"
         return lbl, pct, prob
 
     if "GOL" in cat:
@@ -1514,7 +1541,7 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     elif "CORNER" in cat or "CRNER" in cat or "CÓRNER" in cat:
         if lin is not None and float(lin) <= 0.5 and ("under_" in ev or "menos" in et.lower()):
             return "", "", 0.0
-        pref_c = (eq_p[:11] if len(eq_p) > 11 else eq_p) if eq_p else "Total"
+        pref_c = eq_p if eq_p else "Total"
         if "over_" in ev or "mas de" in et.lower() or "más" in et.lower():
             lbl = f"{pref_c} +{lin:g} Córn." if lin is not None else et
         elif "under_" in ev or "menos" in et.lower():
@@ -2554,11 +2581,17 @@ def renderizar_ticket_mercados_png(
 
                     d.rectangle([X_COL2, y_curr_fila, PAD_X + ANCHO_TABLA, y_curr_fila + f_h], fill=color_bg)
 
-                    # Texto Ámbito / Periodo (Col 2)
+                    # Texto Ámbito / Periodo (Col 2): partir en 2 líneas si supera el ancho de columna
                     amb_txt = f_data["ambito"]
-                    h_amb = 14
-                    y_amb = y_curr_fila + (f_h - h_amb) // 2
-                    d.text((X_COL2 + 12, y_amb), amb_txt, font=f_amb, fill=C_TITLE)
+                    if _get_w(amb_txt, f_amb) > (W_COL2 - 18) and " · " in amb_txt:
+                        amb_l1, amb_l2 = amb_txt.split(" · ", 1)
+                        y_amb = y_curr_fila + max(4, (f_h - 30) // 2)
+                        d.text((X_COL2 + 12, y_amb), amb_l1, font=f_amb, fill=C_TITLE)
+                        d.text((X_COL2 + 12, y_amb + 15), f"· {amb_l2}", font=f_amb, fill=C_TXT_MUTED)
+                    else:
+                        h_amb = 14
+                        y_amb = y_curr_fila + (f_h - h_amb) // 2
+                        d.text((X_COL2 + 12, y_amb), amb_txt, font=f_amb, fill=C_TITLE)
 
                     # Píldoras redondeadas ordenadas (Col 3)
                     lineas_pills = f_data["lineas_pills"]
@@ -3070,8 +3103,17 @@ def preparar_analisis(
             print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el ticket PNG de abstención: {e_img}")
             ruta_imagen = None
 
+        _p_abs_tg, _f_abs_tg = formatear_encabezado_partido_y_fuentes_telegram(
+            meta_abs,
+            contexto.get("doc_local"),
+            contexto.get("doc_visitante"),
+            equipo_local=contexto["equipo_local"],
+            equipo_visitante=contexto["equipo_visitante"],
+        )
         texto_alerta = (
             f"🚨 PRONÓSTICO ABSTENIDO POR COBERTURA INSUFICIENTE\n"
+            f"📅 {_p_abs_tg}\n"
+            f"📡 {_f_abs_tg}\n"
             f"Estado Oficial: {decision_cob.estado.upper()}\n\n"
             f"• {contexto['equipo_local']}: {decision_cob.etiqueta_cobertura_a}\n"
             f"• {contexto['equipo_visitante']}: {decision_cob.etiqueta_cobertura_b}\n\n"
