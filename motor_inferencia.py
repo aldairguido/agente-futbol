@@ -1781,7 +1781,9 @@ def generar_veredicto_tactico_partido(
     )
     _lam_tot_ver = _lam_l_ver + _lam_v_ver
     _j1_low = jugada_1_nombre.lower()
-    _es_techo_alto = any(k in _j1_low for k in ("-3.5", "-4.5", "3.5", "4.5")) or _lam_tot_ver >= 2.5
+    _es_techo_alto = (_lam_tot_ver >= 2.2) or (
+        any(k in _j1_low for k in ("-3.5", "-4.5", "3.5", "4.5")) and jugada_1_prob < 80.0
+    )
 
     if es_under:
         if _es_techo_alto:

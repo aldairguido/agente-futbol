@@ -1464,8 +1464,10 @@ def evaluar_antiguedad_datos(
     dias_l = (ref_date - _date.fromisoformat(f_l)).days if f_l else None
     dias_v = (ref_date - _date.fromisoformat(f_v)).days if f_v else None
 
-    eq_l = str(((doc_local or {}).get("equipo") or {}).get("nombre") or "Local")
-    eq_v = str(((doc_visitante or {}).get("equipo") or {}).get("nombre") or "Visitante")
+    _eq_l_raw = (doc_local or {}).get("equipo") if isinstance(doc_local, dict) else None
+    eq_l = str(_eq_l_raw.get("nombre") if isinstance(_eq_l_raw, dict) else (_eq_l_raw or "Local"))
+    _eq_v_raw = (doc_visitante or {}).get("equipo") if isinstance(doc_visitante, dict) else None
+    eq_v = str(_eq_v_raw.get("nombre") if isinstance(_eq_v_raw, dict) else (_eq_v_raw or "Visitante"))
     motivos: list[str] = []
     if dias_l is not None and dias_l > max_dias:
         motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad > {max_dias} días)")
