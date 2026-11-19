@@ -3455,7 +3455,11 @@ def _linea_seleccion(seleccion: "Seleccion", umbral: float,
     if "reparto 50/50 sin validar" in mot:
         extras.append("reparto 50/50 sin validar")
     if "sin calibración validada" in mot:
-        linea = f"{linea} — sin calibración validada"
+        if sufijo:
+            _mot_det = formatear_motivo_degradacion_seccion2(seleccion, umbral=umbral, corto=False)
+            linea = f"{linea} — sin calibración validada ({_mot_det})"
+        else:
+            linea = f"{linea} — sin calibración validada"
     elif sufijo:
         linea = linea + sufijo
     if extras:
@@ -3682,7 +3686,11 @@ def construir_mensaje(metadatos: dict[str, Any], grupos: dict[str, list[Seleccio
             L.append("")
             L.append(f"{emoji_de_mercado(nombre_mercado)} {nombre_mercado}")
             for s in sels_mercado:
-                sufijo = " — sensible" if estado == ESTADO_SENSIBLE else ""
+                if estado == ESTADO_SENSIBLE:
+                    mot_s2 = formatear_motivo_degradacion_seccion2(s, umbral=umbral, corto=False)
+                    sufijo = f" — sensible ({mot_s2})"
+                else:
+                    sufijo = ""
                 L.append(_linea_seleccion(s, umbral, sufijo))
     return "\n".join(L)
 
@@ -4888,6 +4896,59 @@ def calcular_frecuencia_observada(
         return (sum(1 for t in valid if t < lin) / len(valid)) if es_under else (sum(1 for t in valid if t > lin) / len(valid))
 
     return None
+
+
+def formatear_motivo_degradacion_seccion2(
+    sel: Any,
+    *,
+    umbral: float = 0.70,
+    corto: bool = False,
+) -> str:
+    """
+    Devuelve el motivo explícito de degradación de una línea de Sección 2:
+    distingue entre desvío de frecuencia observada (p. ej. "modelo 71.4% frente a observado 5/15 = 33%")
+    y sensibilidad bajo escenarios de estrés.
+    """
+    def _v(obj: Any, k: str, d: Any = None) -> Any:
+        if isinstance(obj, dict):
+            return obj.get(k, d)
+        return getattr(obj, k, d)
+
+    motivo = str(_v(sel, "motivo") or _v(sel, "motivo_degradacion") or "").strip()
+    prob = float(_v(sel, "probabilidad") or 0.0)
+    esc = _v(sel, "escenarios") or {}
+    esc_vals = [float(v) for v in esc.values() if isinstance(v, (int, float))] if isinstance(esc, dict) else []
+
+    m_frec = re.search(r"frec_emp:\s*([0-9]+(?:\.[0-9]+)?)%\s*vs\s*mod:\s*([0-9]+(?:\.[0-9]+)?)%", motivo)
+    if m_frec:
+        f_obs_pct = float(m_frec.group(1))
+        p_mod_pct = float(m_frec.group(2))
+        k_15 = int(round((f_obs_pct / 100.0) * 15))
+        obs_int = int(round(f_obs_pct))
+        if corto:
+            return f"desvío obs. {k_15}/15={obs_int}%"
+        return f"desvío observado: modelo {p_mod_pct:.1f}% frente a observado {k_15}/15 = {obs_int}%"
+
+    mot_l = motivo.lower()
+    if "sin calibración" in mot_l or "sin calibracion" in mot_l or "desvío" in mot_l or "desvio" in mot_l:
+        if corto:
+            return "desvío obs. (>10 pp)"
+        return f"desvío de frecuencia observada (modelo {prob*100:.1f}%, >10 pp vs observado)"
+
+    if esc_vals:
+        min_esc = min(esc_vals)
+        if min_esc < (umbral - 1e-9):
+            if corto:
+                return f"estrés (mín {min_esc*100:.0f}%)"
+            return f"estrés: cae hasta {min_esc*100:.1f}% bajo perturbación de supuestos"
+        # Si todos los escenarios de estrés se mantuvieron >= umbral, la degradación provino de desvío empírico
+        if corto:
+            return "desvío obs. (>10 pp)"
+        return f"desvío de frecuencia observada (modelo {prob*100:.1f}%, >10 pp vs observado)"
+
+    if corto:
+        return "estrés"
+    return f"estrés ({motivo})" if motivo else "estrés (baja bajo escenarios de estrés)"
 
 
 def tiene_desvio_excesivo_calibracion(

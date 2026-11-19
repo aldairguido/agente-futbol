@@ -202,6 +202,10 @@ class SnapshotPronostico:
     hora_inicio_partido: str | None = None
     fuente_hora_inicio: str | None = None
     zona_origen_hora_inicio: str | None = None
+    hora_inicio_fotmob: str | None = None
+    hora_inicio_flashscore: str | None = None
+    diferencia_hora_inicio_min: float | None = None
+    hora_inicio_discrepante: bool | None = None
     hora_mensaje_utc: str | None = None
     es_oos_valido: bool | None = None
     es_canonica: bool | None = None
@@ -210,7 +214,10 @@ class SnapshotPronostico:
     fuente_local: str | None = None
     fuente_visitante: str | None = None
     firma_datos: str | None = None
+    calidad_fuente_local: dict[str, Any] | None = None
+    calidad_fuente_visitante: dict[str, Any] | None = None
     lambdas_plano: dict[str, Any] | None = None
+    lambdas_base_doble_adn: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -263,12 +270,26 @@ class SnapshotPronostico:
             out["fuente_visitante"] = self.fuente_visitante
         if self.firma_datos is not None:
             out["firma_datos"] = self.firma_datos
+        if self.calidad_fuente_local is not None:
+            out["calidad_fuente_local"] = self.calidad_fuente_local
+        if self.calidad_fuente_visitante is not None:
+            out["calidad_fuente_visitante"] = self.calidad_fuente_visitante
         if self.fuente_hora_inicio is not None:
             out["fuente_hora_inicio"] = self.fuente_hora_inicio
         if self.zona_origen_hora_inicio is not None:
             out["zona_origen_hora_inicio"] = self.zona_origen_hora_inicio
+        if self.hora_inicio_fotmob is not None:
+            out["hora_inicio_fotmob"] = self.hora_inicio_fotmob
+        if self.hora_inicio_flashscore is not None:
+            out["hora_inicio_flashscore"] = self.hora_inicio_flashscore
+        if self.diferencia_hora_inicio_min is not None:
+            out["diferencia_hora_inicio_min"] = self.diferencia_hora_inicio_min
+        if self.hora_inicio_discrepante is not None:
+            out["hora_inicio_discrepante"] = bool(self.hora_inicio_discrepante)
         if self.lambdas_plano is not None:
             out["lambdas_plano"] = self.lambdas_plano
+        if self.lambdas_base_doble_adn is not None:
+            out["lambdas_base_doble_adn"] = self.lambdas_base_doble_adn
         return out
 
 
@@ -351,6 +372,10 @@ def evaluar_contabilidad_oos_registro(
     hora_inicio_partido: Any,
     telegram_message_date: Any,
     hora_mensaje_utc: Any = None,
+    hora_inicio_fotmob: Any = None,
+    hora_inicio_flashscore: Any = None,
+    diferencia_hora_inicio_min: float | None = None,
+    hora_inicio_discrepante: bool | None = None,
     partido: Any = "",
     fecha: Any = "",
     id_partido: Any = "",
@@ -375,7 +400,21 @@ def evaluar_contabilidad_oos_registro(
     if dt_msg is None and telegram_message_date is not None:
         dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(telegram_message_date)
 
-    es_oos_valido = bool(fx_conf and dt_ini is not None and dt_msg is not None and dt_msg < dt_ini)
+    dt_fm, h_fm_str = _parsear_instante_con_zona_oos(hora_inicio_fotmob)
+    dt_fs, h_fs_str = _parsear_instante_con_zona_oos(hora_inicio_flashscore)
+    diff_h_min = float(diferencia_hora_inicio_min) if diferencia_hora_inicio_min is not None else None
+    if diff_h_min is None and dt_fm is not None and dt_fs is not None:
+        diff_h_min = round(abs((dt_fm - dt_fs).total_seconds()) / 60.0, 2)
+    h_discrepante = bool(hora_inicio_discrepante) or (diff_h_min is not None and diff_h_min > 0.0)
+    discrepancia_excede_15m = bool(diff_h_min is not None and diff_h_min > 15.0)
+
+    es_oos_valido = bool(
+        fx_conf
+        and dt_ini is not None
+        and dt_msg is not None
+        and dt_msg < dt_ini
+        and not discrepancia_excede_15m
+    )
     if not es_oos_valido:
         es_canonica = False
         estado_canonico = "no_oos"
@@ -403,7 +442,7 @@ def evaluar_contabilidad_oos_registro(
         es_canonica = not ya_hay_canonica
         estado_canonico = "canonica" if es_canonica else "no_canonica"
 
-    return {
+    res_oos = {
         "fixture_confirmado": fx_conf,
         "fuente_fecha": f_fec,
         "hora_inicio_partido": hora_ini_str,
@@ -414,6 +453,15 @@ def evaluar_contabilidad_oos_registro(
         "estado_canonico": estado_canonico,
         "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
     }
+    if h_fm_str is not None:
+        res_oos["hora_inicio_fotmob"] = h_fm_str
+    if h_fs_str is not None:
+        res_oos["hora_inicio_flashscore"] = h_fs_str
+    if diff_h_min is not None:
+        res_oos["diferencia_hora_inicio_min"] = diff_h_min
+    if h_discrepante:
+        res_oos["hora_inicio_discrepante"] = True
+    return res_oos
 
 
 def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
@@ -540,11 +588,68 @@ def _extraer_fuentes_y_firma_registro(
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()[:12]
+    cal_loc = (
+        meta.get("calidad_fuente_local")
+        or ctx.get("calidad_fuente_local")
+        or d.get("calidad_fuente_local")
+        or dc.get("calidad_fuente_local")
+        or pr.get("calidad_fuente_local")
+    )
+    cal_vis = (
+        meta.get("calidad_fuente_visitante")
+        or ctx.get("calidad_fuente_visitante")
+        or d.get("calidad_fuente_visitante")
+        or dc.get("calidad_fuente_visitante")
+        or pr.get("calidad_fuente_visitante")
+    )
+    if cal_loc is None and isinstance(dl, dict) and dl.get("partidos"):
+        try:
+            from servicio_mercados import calcular_calidad_fuente_club as _calc_cf
+            cal_loc = _calc_cf(dl)
+        except Exception:
+            cal_loc = None
+    if cal_vis is None and isinstance(dv, dict) and dv.get("partidos"):
+        try:
+            from servicio_mercados import calcular_calidad_fuente_club as _calc_cf
+            cal_vis = _calc_cf(dv)
+        except Exception:
+            cal_vis = None
     return {
         "fuente_local": str(f_loc).strip() if f_loc else None,
         "fuente_visitante": str(f_vis).strip() if f_vis else None,
         "firma_datos": str(firma).strip() if firma else None,
+        "calidad_fuente_local": dict(cal_loc) if isinstance(cal_loc, dict) else None,
+        "calidad_fuente_visitante": dict(cal_vis) if isinstance(cal_vis, dict) else None,
     }
+
+
+def extraer_lambdas_base_doble_adn_desde_analisis(
+    analisis: Any = None,
+    preparado: dict[str, Any] | None = None,
+    *,
+    doc: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """
+    Extrae las λ base tras Doble ADN (entrada a la Red Recursiva 45-DCN,
+    mostradas en el Súper-Cuadro como `λ base tras Doble ADN`).
+    """
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    if analisis is None:
+        analisis = prep.get("analisis")
+    for origen in (d, d.get("datos_corte")):
+        if isinstance(origen, dict) and isinstance(origen.get("lambdas_base_doble_adn"), dict):
+            lb = origen["lambdas_base_doble_adn"]
+            if lb.get("local_ft") is not None and lb.get("visitante_ft") is not None:
+                return dict(lb)
+    mot = getattr(analisis, "motor", None) if analisis is not None else None
+    rec = getattr(mot, "recursivo", None) if mot is not None else None
+    if isinstance(rec, dict) and rec.get("lambda_base_local") is not None and rec.get("lambda_base_visita") is not None:
+        return {
+            "local_ft": round(float(rec["lambda_base_local"]), 4),
+            "visitante_ft": round(float(rec["lambda_base_visita"]), 4),
+        }
+    return None
 
 
 def extraer_lambdas_plano_desde_analisis(
@@ -911,12 +1016,24 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         or ctx_p.get("id_partido")
         or ""
     )
+    h_fm_snap = metadatos.get("hora_inicio_fotmob") or ctx_p.get("hora_inicio_fotmob")
+    h_fs_snap = metadatos.get("hora_inicio_flashscore") or ctx_p.get("hora_inicio_flashscore")
+    diff_h_snap = metadatos.get("diferencia_hora_inicio_min")
+    if diff_h_snap is None:
+        diff_h_snap = ctx_p.get("diferencia_hora_inicio_min")
+    h_disc_snap = metadatos.get("hora_inicio_discrepante")
+    if h_disc_snap is None:
+        h_disc_snap = ctx_p.get("hora_inicio_discrepante")
     contab_snap = evaluar_contabilidad_oos_registro(
         fixture_confirmado=fx_conf,
         fuente_fecha=f_fec,
         hora_inicio_partido=h_ini,
         telegram_message_date=tg_mdt,
         hora_mensaje_utc=tg_mutc,
+        hora_inicio_fotmob=h_fm_snap,
+        hora_inicio_flashscore=h_fs_snap,
+        diferencia_hora_inicio_min=diff_h_snap,
+        hora_inicio_discrepante=h_disc_snap,
         partido=f"{metadatos.get('equipo_local') or ''} vs {metadatos.get('equipo_visitante') or ''}",
         fecha=metadatos.get("fecha_partido") or h_ini,
         id_partido=id_part_snap,
@@ -1007,6 +1124,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
 
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
     lam_plano_snap = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+    lam_base_adn_snap = extraer_lambdas_base_doble_adn_desde_analisis(analisis, preparado)
 
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
@@ -1041,9 +1159,12 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             **({"fuente_local": f_info_snap["fuente_local"]} if f_info_snap["fuente_local"] is not None else {}),
             **({"fuente_visitante": f_info_snap["fuente_visitante"]} if f_info_snap["fuente_visitante"] is not None else {}),
             **({"firma_datos": f_info_snap["firma_datos"]} if f_info_snap["firma_datos"] is not None else {}),
+            **({"calidad_fuente_local": f_info_snap["calidad_fuente_local"]} if f_info_snap.get("calidad_fuente_local") is not None else {}),
+            **({"calidad_fuente_visitante": f_info_snap["calidad_fuente_visitante"]} if f_info_snap.get("calidad_fuente_visitante") is not None else {}),
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
             **({"lambdas_plano": lam_plano_snap} if lam_plano_snap is not None else {}),
+            **({"lambdas_base_doble_adn": lam_base_adn_snap} if lam_base_adn_snap is not None else {}),
         },
         selecciones=todas,
         selecciones_publicadas=publicadas,
@@ -1061,6 +1182,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         hora_inicio_partido=contab_snap["hora_inicio_partido"],
         fuente_hora_inicio=f_hini,
         zona_origen_hora_inicio=z_hini,
+        hora_inicio_fotmob=contab_snap.get("hora_inicio_fotmob"),
+        hora_inicio_flashscore=contab_snap.get("hora_inicio_flashscore"),
+        diferencia_hora_inicio_min=contab_snap.get("diferencia_hora_inicio_min"),
+        hora_inicio_discrepante=contab_snap.get("hora_inicio_discrepante"),
         hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
         es_oos_valido=contab_snap["es_oos_valido"],
         es_canonica=contab_snap["es_canonica"],
@@ -1069,7 +1194,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         fuente_local=f_info_snap["fuente_local"],
         fuente_visitante=f_info_snap["fuente_visitante"],
         firma_datos=f_info_snap["firma_datos"],
+        calidad_fuente_local=f_info_snap.get("calidad_fuente_local"),
+        calidad_fuente_visitante=f_info_snap.get("calidad_fuente_visitante"),
         lambdas_plano=lam_plano_snap,
+        lambdas_base_doble_adn=lam_base_adn_snap,
     )
 
 
@@ -1536,13 +1664,26 @@ def extraer_resultado(detalle: dict[str, Any], consultado_en: str | None = None,
 
     header = detalle.get("header") or {}
     equipos = header.get("teams") or []
+    status = header.get("status") or {}
     if len(equipos) >= 2:
         res.local = str(equipos[0].get("name") or "")
         res.visitante = str(equipos[1].get("name") or "")
-        res.goles_local = equipos[0].get("score")
-        res.goles_visitante = equipos[1].get("score")
-
-    status = header.get("status") or {}
+        gl_raw = equipos[0].get("score")
+        gv_raw = equipos[1].get("score")
+        try:
+            from fuentes_xg import resolver_marcador_reglamentario_fotmob
+            gl_90, gv_90, _razon_fin, marcador_desemp = resolver_marcador_reglamentario_fotmob(
+                status, gl_raw, gv_raw, detalle=detalle
+            )
+            res.goles_local = gl_90
+            res.goles_visitante = gv_90
+            if marcador_desemp:
+                res.notas.append(
+                    f"Liquidación 90' reglamentarios ({gl_90}-{gv_90}); marcador desempate: {marcador_desemp}"
+                )
+        except Exception:
+            res.goles_local = gl_raw
+            res.goles_visitante = gv_raw
     # Hora PROGRAMADA del partido: es la que debe usarse para comprobar que el
     # pronóstico es anterior. El nombre del partido la trae en UTC.
     nombre = str((detalle.get("general") or {}).get("matchName") or "")
@@ -4718,6 +4859,10 @@ def registrar_en_ledger_oos(
             hora_inicio_partido=registro.get("hora_inicio_partido"),
             telegram_message_date=registro.get("telegram_message_date"),
             hora_mensaje_utc=registro.get("hora_mensaje_utc"),
+            hora_inicio_fotmob=registro.get("hora_inicio_fotmob"),
+            hora_inicio_flashscore=registro.get("hora_inicio_flashscore"),
+            diferencia_hora_inicio_min=registro.get("diferencia_hora_inicio_min"),
+            hora_inicio_discrepante=registro.get("hora_inicio_discrepante"),
             partido=partido,
             fecha=fecha,
             id_partido=id_part,
@@ -4842,6 +4987,7 @@ def construir_modo_sombra_desde_analisis(
         "banderas_candidatas": {str(k): bool(v) for k, v in (banderas_candidatas or {}).items()},
         "retroalimenta_modelo": False,
         "lambdas_base": _resumen_lambdas_analisis(analisis_base),
+        "lambdas_finales_soloA": _resumen_lambdas_analisis(analisis_base),
         "lambdas_sombra": _resumen_lambdas_analisis(analisis_sombra),
         "n_selecciones_comparables": sum(
             1 for c in comparaciones if c["prob_base"] is not None and c["prob_sombra"] is not None
@@ -10529,6 +10675,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "version_sombra": str(sombra.get("version_sombra") or "A+B"),
         "banderas_candidatas": dict(sombra.get("banderas_candidatas") or {}),
         "lambdas_base": dict(sombra.get("lambdas_base") or {}),
+        "lambdas_finales_soloA": dict(sombra.get("lambdas_finales_soloA") or sombra.get("lambdas_base") or {}),
         "lambdas_sombra": dict(sombra.get("lambdas_sombra") or {}),
         "n_selecciones_comparables": int(sombra.get("n_selecciones_comparables") or 0),
         "comparaciones": list(sombra.get("comparaciones") or []),
@@ -10575,8 +10722,16 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
+    for _k_hd in ("hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante"):
+        _v_hd = meta.get(_k_hd)
+        if _v_hd is None and isinstance(preparado.get("contexto"), dict):
+            _v_hd = (preparado["contexto"].get("contexto") or {}).get(_k_hd)
+            if _v_hd is None:
+                _v_hd = preparado["contexto"].get(_k_hd)
+        if _v_hd is not None:
+            registro[_k_hd] = _v_hd
     _f_pre = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=meta)
-    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos"):
+    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos", "calidad_fuente_local", "calidad_fuente_visitante"):
         if _f_pre.get(_k_f) is not None:
             registro[_k_f] = _f_pre[_k_f]
     _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)

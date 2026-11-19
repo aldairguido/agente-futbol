@@ -1768,15 +1768,42 @@ def generar_veredicto_tactico_partido(
     else:
         accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
 
+    _tasas_m_v = getattr(motor, "tasas", None) if motor is not None else None
+    _lam_l_ver = _safe_float(
+        probs.get("lambda_local") if probs.get("lambda_local") is not None
+        else getattr(_tasas_m_v, "lambda_local_ft", None),
+        0.0,
+    )
+    _lam_v_ver = _safe_float(
+        probs.get("lambda_visita") if probs.get("lambda_visita") is not None
+        else getattr(_tasas_m_v, "lambda_visitante_ft", None),
+        0.0,
+    )
+    _lam_tot_ver = _lam_l_ver + _lam_v_ver
+    _j1_low = jugada_1_nombre.lower()
+    _es_techo_alto = (_lam_tot_ver >= 2.2) or (
+        any(k in _j1_low for k in ("-3.5", "-4.5", "3.5", "4.5")) and jugada_1_prob < 80.0
+    )
+
     if es_under:
-        c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
-        c1 = (
-            f"{c1_tit} Las métricas ofensivas proyectan contención (Attack {atk_fav:.1f} vs {atk_riv:.1f} de {eq_riv}), "
-            f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
-        )
+        if _es_techo_alto:
+            c1_tit = f"1. Control de techo de goles ('{jugada_1_nombre}'):"
+            _txt_lam = f" ({_lam_tot_ver:.2f} goles esperados)" if _lam_tot_ver > 0 else ""
+            c1 = (
+                f"{c1_tit} El modelo acota el techo anotador{_txt_lam} "
+                f"(Attack {atk_fav:.1f} de {eq_fav} vs {atk_riv:.1f} de {eq_riv}), "
+                f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+            )
+        else:
+            c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
+            c1 = (
+                f"{c1_tit} Las métricas ofensivas proyectan contención "
+                f"(Attack {atk_fav:.1f} de {eq_fav} vs {atk_riv:.1f} de {eq_riv}), "
+                f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+            )
     else:
         c1 = (
-            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack frente a "
+            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack a {eq_fav} frente a "
             f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
             f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
         )

@@ -1555,8 +1555,13 @@ class ListadoEquipoFlashscore:
                         mid = m.group(1)
                 if not mid:
                     continue
+                goles_90_conf: tuple[int, int] | None = None
+                if estado_extra and estado_extra.lower() in _ESTADOS_DESEMPATE_90:
+                    gl_s, gv_s, _ = obtener_marcador_90_flashscore_sui(mid)
+                    if gl_s is not None and gv_s is not None:
+                        goles_90_conf = (gl_s, gv_s)
                 goles_l_90, goles_v_90, marcador_desemp = resolver_marcador_reglamentario_flashscore(
-                    lineas[3:], estado_extra=estado_extra
+                    lineas[3:], estado_extra=estado_extra, goles_90_confirmados=goles_90_conf
                 )
                 if goles_l_90 is None or goles_v_90 is None:
                     continue
@@ -1687,9 +1692,73 @@ _ESTADOS_DESEMPATE_90 = {
 }
 
 
+def parsear_marcador_90_desde_sui_flashscore(
+    texto_sui: str,
+) -> tuple[int | None, int | None, bool]:
+    """
+    Extrae el marcador reglamentario 90' (suma estricta de 1er Tiempo + 2º Tiempo)
+    desde el feed de incidencias `df_sui_1_{mid}` de Flashscore, excluyendo
+    explícitamente Prórroga (Extra Time) y Penales.
+
+    Devuelve `(goles_local_90, goles_visitante_90, tuvo_prorroga)`.
+    Si no aparecen ambos tiempos reglamentarios (1T y 2T), devuelve `(None, None, False)`
+    — nunca `0` — para que el partido se descarte como no usable.
+    """
+    if not texto_sui or "AC÷" not in texto_sui:
+        return None, None, False
+    g1: tuple[int, int] | None = None
+    g2: tuple[int, int] | None = None
+    tuvo_prorroga = False
+    for blk in str(texto_sui).split("~"):
+        if "AC÷" not in blk:
+            continue
+        items: dict[str, str] = {}
+        for part in blk.split("¬"):
+            if "÷" in part:
+                k, v = part.split("÷", 1)
+                items[k] = v
+        ac = str(items.get("AC") or "").strip().lower()
+        if not ac:
+            continue
+        if any(tok in ac for tok in ("prórroga", "prorroga", "extra time", "tiempo extra", "aet", "et")):
+            tuvo_prorroga = True
+            continue
+        if any(tok in ac for tok in ("penal", "shootout", "tanda")):
+            continue
+        ig = items.get("IG", "").strip()
+        ih = items.get("IH", "").strip()
+        if not (ig.isdigit() and ih.isdigit()):
+            continue
+        if any(tok in ac for tok in ("1er tiempo", "1st half", "1. tiempo", "1º tiempo", "1o tiempo", "primer tiempo")):
+            g1 = (int(ig), int(ih))
+        elif any(tok in ac for tok in ("2º tiempo", "2o tiempo", "2nd half", "2. tiempo", "2do tiempo", "segundo tiempo")):
+            g2 = (int(ig), int(ih))
+    if g1 is None or g2 is None:
+        return None, None, tuvo_prorroga
+    return g1[0] + g2[0], g1[1] + g2[1], tuvo_prorroga
+
+
+def obtener_marcador_90_flashscore_sui(
+    mid: str,
+    cliente: "ClienteFlashscore | None" = None,
+) -> tuple[int | None, int | None, bool]:
+    """Consulta `df_sui_1_{mid}` para confirmar el marcador exacto de 90' reglamentarios."""
+    mid_s = str(mid or "").strip()
+    if not mid_s:
+        return None, None, False
+    try:
+        cli = cliente or ClienteFlashscore(timeout=5)
+        r = cli._get(f"{FLASHSCORE_FEED}/df_sui_1_{mid_s}")
+        return parsear_marcador_90_desde_sui_flashscore(getattr(r, "text", "") or "")
+    except Exception:
+        return None, None, False
+
+
 def resolver_marcador_reglamentario_flashscore(
     lineas_score: list[str],
     estado_extra: str = "",
+    *,
+    goles_90_confirmados: tuple[int, int] | None = None,
 ) -> tuple[int | None, int | None, str | None]:
     """
     Extrae el marcador reglamentario 90'-FT de un bloque de Flashscore.
@@ -1713,16 +1782,23 @@ def resolver_marcador_reglamentario_flashscore(
             continue
         tokens_filtrados.append(tok)
 
-    numeros_planos = [int(tok) for tok in tokens_filtrados if tok.isdigit()]
-    numeros_parentesis: list[int] = []
-    for tok in tokens_filtrados:
+    pos_planos: list[tuple[int, int]] = []
+    pos_parentesis: list[tuple[int, int]] = []
+    for idx_tok, tok in enumerate(tokens_filtrados):
+        if tok.isdigit():
+            pos_planos.append((idx_tok, int(tok)))
+            continue
         m_par = re.fullmatch(r"\((\d+)\)", tok)
         if m_par:
-            numeros_parentesis.append(int(m_par.group(1)))
+            pos_parentesis.append((idx_tok, int(m_par.group(1))))
             continue
         m_par_duo = re.fullmatch(r"\((\d+)\s*[-:]\s*(\d+)\)", tok)
         if m_par_duo:
-            numeros_parentesis.extend([int(m_par_duo.group(1)), int(m_par_duo.group(2))])
+            pos_parentesis.append((idx_tok, int(m_par_duo.group(1))))
+            pos_parentesis.append((idx_tok, int(m_par_duo.group(2))))
+
+    numeros_planos = [v for _, v in pos_planos]
+    numeros_parentesis = [v for _, v in pos_parentesis]
 
     if len(numeros_planos) < 2 and len(numeros_parentesis) < 2:
         for tok in tokens_filtrados:
@@ -1732,11 +1808,40 @@ def resolver_marcador_reglamentario_flashscore(
                 break
 
     if hay_estado_desemp and len(numeros_parentesis) >= 2:
+        es_prorroga = est_norm in ("aet", "et", "after et", "prórroga", "prorroga")
+        es_intercalado = (
+            len(pos_planos) >= 2
+            and len(pos_parentesis) >= 2
+            and pos_planos[0][0] < pos_parentesis[0][0] < pos_planos[1][0]
+        )
+        # En el DOM real de Flashscore para tandas de penaltis ("Pen"), el formato
+        # intercalado [goles_pre_pen_L, (pen_L), goles_pre_pen_V, (pen_V)] NO distingue
+        # por sí solo 90'+Pen de 120'(Prórroga)+Pen. Solo se acepta si `goles_90_confirmados`
+        # (1er Tiempo + 2º Tiempo desde `df_sui_1_{mid}`) garantiza 90' reglamentarios;
+        # si no se puede garantizar 90', devuelve (None, None, desemp) para tratar el
+        # partido como no usable (nunca 0 ni goles de prórroga).
+        if es_intercalado and not es_prorroga:
+            desemp = f"{numeros_parentesis[0]}-{numeros_parentesis[1]} ({estado_extra or 'Pen'})"
+            if (
+                isinstance(goles_90_confirmados, (tuple, list))
+                and len(goles_90_confirmados) == 2
+                and isinstance(goles_90_confirmados[0], int)
+                and isinstance(goles_90_confirmados[1], int)
+            ):
+                return int(goles_90_confirmados[0]), int(goles_90_confirmados[1]), desemp
+            return None, None, desemp
         desemp = (
             f"{numeros_planos[0]}-{numeros_planos[1]} ({estado_extra or 'Pen/AET'})"
             if len(numeros_planos) >= 2
             else str(estado_extra or "Pen/AET")
         )
+        if (
+            isinstance(goles_90_confirmados, (tuple, list))
+            and len(goles_90_confirmados) == 2
+            and isinstance(goles_90_confirmados[0], int)
+            and isinstance(goles_90_confirmados[1], int)
+        ):
+            return int(goles_90_confirmados[0]), int(goles_90_confirmados[1]), desemp
         return numeros_parentesis[0], numeros_parentesis[1], desemp
 
     if len(numeros_planos) >= 2:

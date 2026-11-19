@@ -1854,7 +1854,7 @@ def generar_cuadro_visual_partido(
     fig.text(
         0.05, 0.938,
         f"Goles Esperados Red Recursiva (λ): {lam_local:.2f} – {lam_vis:.2f}   ·   "
-        f"(antes λ plano: {lam_plano_L:.2f} – {lam_plano_V:.2f})   ·   "
+        f"(λ base tras Doble ADN: {lam_plano_L:.2f} – {lam_plano_V:.2f})   ·   "
         f"{txt_muestra_cabecera}"
         f"{f'   ·   {fecha_str}' if fecha_str else ''}",
         fontsize=10.2, fontweight="bold", color="#1E293B", family="sans-serif"

@@ -400,6 +400,52 @@ def _fecha_utc_compatible_fixture(utc_iso: str, fecha_esperada: str | None) -> b
         return True
 
 
+def comparar_horas_inicio_fuentes(
+    hora_fotmob: str | None,
+    hora_flashscore: str | None,
+    *,
+    tolerancia_min: float = 15.0,
+) -> dict[str, Any]:
+    """
+    Compara las horas de inicio UTC reportadas por FotMob y Flashscore.
+    Si difieren, marca `hora_inicio_discrepante=True` y calcula `diferencia_hora_inicio_min`.
+    Si la diferencia supera `tolerancia_min` (15 min), marca `excede_tolerancia_oos=True`.
+    """
+    def _parse_utc(v: str | None):
+        if not v:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                return None
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    dt_fm = _parse_utc(hora_fotmob)
+    dt_fs = _parse_utc(hora_flashscore)
+    h_fm = dt_fm.strftime("%Y-%m-%dT%H:%M:%SZ") if dt_fm else (str(hora_fotmob).strip() if hora_fotmob else None)
+    h_fs = dt_fs.strftime("%Y-%m-%dT%H:%M:%SZ") if dt_fs else (str(hora_flashscore).strip() if hora_flashscore else None)
+
+    diff_min: float | None = None
+    discrepante = False
+    excede_oos = False
+    if dt_fm is not None and dt_fs is not None:
+        diff_min = round(abs((dt_fm - dt_fs).total_seconds()) / 60.0, 2)
+        discrepante = diff_min > 0.0
+        excede_oos = diff_min > float(tolerancia_min)
+    return {
+        "hora_inicio_fotmob": h_fm,
+        "hora_inicio_flashscore": h_fs,
+        "diferencia_hora_inicio_min": diff_min,
+        "hora_inicio_discrepante": discrepante,
+        "excede_tolerancia_oos": excede_oos,
+    }
+
+
 def resolver_hora_inicio_encuentro(
     contexto: dict[str, Any],
     *,
@@ -411,32 +457,56 @@ def resolver_hora_inicio_encuentro(
 ) -> dict[str, Any]:
     """
     Completa `hora_inicio_partido` (ISO UTC), `hora_inicio_local` (`America/Lima`) y
-    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore o
+    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore y
     FotMob antes de emitir el ticket, snapshot y registro en ledger OOS.
+    Cuando ambas fuentes devuelven hora, guarda ambas (`hora_inicio_fotmob`,
+    `hora_inicio_flashscore`, `diferencia_hora_inicio_min`, `hora_inicio_discrepante`).
     Si no se obtiene hora real con zona, mantiene `hora_inicio_partido=None` (no-OOS).
     """
     if not isinstance(contexto, dict):
         return contexto
-    if contexto.get("hora_inicio_partido"):
-        contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
-        contexto.setdefault("zona_origen_hora_inicio", "UTC")
-        contexto.setdefault("zona_horaria", "America/Lima")
-        return contexto
     if contexto.get("partido_ya_jugado") or contexto.get("omitir_busqueda_hora_red"):
-        contexto.setdefault("fuente_hora_inicio", "no_disponible")
+        if contexto.get("hora_inicio_partido"):
+            contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
+            contexto.setdefault("zona_origen_hora_inicio", "UTC")
+            contexto.setdefault("zona_horaria", "America/Lima")
+        else:
+            contexto.setdefault("fuente_hora_inicio", "no_disponible")
         return contexto
 
     fecha_esp = str(contexto.get("fecha_partido") or "").strip() or None
     if fecha_esp and not re.match(r"^\d{4}-\d{2}-\d{2}", fecha_esp):
         fecha_esp = None
 
-    utc_resuelta: str | None = None
-    fuente_resuelta: str | None = None
-    zona_resuelta = "UTC"
+    utc_fotmob: str | None = None
+    fuente_fotmob: str | None = None
+    utc_flashscore: str | None = None
+    fuente_flashscore: str | None = None
+    zona_flashscore = "UTC"
     id_fs_resuelto = str(id_flashscore or contexto.get("id_flashscore_partido") or "").strip() or None
 
+    # Si contexto ya trae hora_inicio_partido (p. ej. FotMob fixture), registrarla como FotMob
+    if contexto.get("hora_inicio_partido"):
+        f_prev = str(contexto.get("fuente_hora_inicio") or "fotmob_fixture").strip()
+        if "flashscore" in f_prev.lower():
+            utc_flashscore = str(contexto["hora_inicio_partido"])
+            fuente_flashscore = f_prev
+        else:
+            utc_fotmob = str(contexto["hora_inicio_partido"])
+            fuente_fotmob = f_prev
+        contexto.setdefault("fuente_hora_inicio", f_prev)
+        contexto.setdefault("zona_origen_hora_inicio", "UTC")
+        contexto.setdefault("zona_horaria", "America/Lima")
+
+    if contexto.get("hora_inicio_fotmob") and not utc_fotmob:
+        utc_fotmob = str(contexto["hora_inicio_fotmob"])
+        fuente_fotmob = "fotmob"
+    if contexto.get("hora_inicio_flashscore") and not utc_flashscore:
+        utc_flashscore = str(contexto["hora_inicio_flashscore"])
+        fuente_flashscore = "flashscore"
+
     # 1) Flashscore: ID próximo explícito o feed diario f_1_0_{dia} (AD/DC en epoch UTC)
-    if (equipo_local and equipo_visitante) or id_fs_resuelto:
+    if not utc_flashscore and ((equipo_local and equipo_visitante) or id_fs_resuelto):
         try:
             fs_cli = cliente_fs
             if fs_cli is None:
@@ -445,35 +515,54 @@ def resolver_hora_inicio_encuentro(
             if id_fs_resuelto:
                 utc_id = fs_cli.hora_inicio_desde_id(id_fs_resuelto)
                 if utc_id and _fecha_utc_compatible_fixture(utc_id, fecha_esp):
-                    utc_resuelta = utc_id
-                    fuente_resuelta = "flashscore_dc"
-            if not utc_resuelta and equipo_local and equipo_visitante:
+                    utc_flashscore = utc_id
+                    fuente_flashscore = "flashscore_dc"
+            if not utc_flashscore and equipo_local and equipo_visitante:
                 fx_fs = fs_cli.buscar_fixture_programado(
                     equipo_local,
                     equipo_visitante,
                     fecha_objetivo=fecha_esp,
                 )
                 if fx_fs and fx_fs.get("utcTime") and _fecha_utc_compatible_fixture(fx_fs["utcTime"], fecha_esp):
-                    utc_resuelta = str(fx_fs["utcTime"])
-                    fuente_resuelta = str(fx_fs.get("fuente") or "flashscore")
-                    zona_resuelta = str(fx_fs.get("zona_origen") or "UTC")
+                    utc_flashscore = str(fx_fs["utcTime"])
+                    fuente_flashscore = str(fx_fs.get("fuente") or "flashscore")
+                    zona_flashscore = str(fx_fs.get("zona_origen") or "UTC")
                     if fx_fs.get("id_flashscore"):
                         id_fs_resuelto = str(fx_fs["id_flashscore"])
         except Exception:
             pass
 
-    # 2) FotMob matchDetails cuando partimos de fixture cacheado sin `utcTime`
+    # 2) FotMob matchDetails cuando no tenemos hora FotMob y hay id_partido numérico
     id_p = str(contexto.get("id_partido") or "").strip()
-    if not utc_resuelta and id_p and id_p.isdigit():
+    if not utc_fotmob and id_p and id_p.isdigit():
         try:
             fn_fm = fetcher_fotmob or obtener_hora_inicio_fotmob_match_details
             utc_fm = fn_fm(id_p)
             if utc_fm and _fecha_utc_compatible_fixture(utc_fm, fecha_esp):
-                utc_resuelta = str(utc_fm)
-                fuente_resuelta = "fotmob_match_details"
-                zona_resuelta = "UTC"
+                utc_fotmob = str(utc_fm)
+                fuente_fotmob = "fotmob_match_details"
         except Exception:
             pass
+
+    # Comparar ambas fuentes si están presentes (Bloque 6 Ronda 22)
+    comp_h = comparar_horas_inicio_fuentes(utc_fotmob, utc_flashscore, tolerancia_min=15.0)
+    if comp_h["hora_inicio_fotmob"] is not None:
+        contexto["hora_inicio_fotmob"] = comp_h["hora_inicio_fotmob"]
+    if comp_h["hora_inicio_flashscore"] is not None:
+        contexto["hora_inicio_flashscore"] = comp_h["hora_inicio_flashscore"]
+    if comp_h["diferencia_hora_inicio_min"] is not None:
+        contexto["diferencia_hora_inicio_min"] = comp_h["diferencia_hora_inicio_min"]
+    if comp_h["hora_inicio_discrepante"]:
+        contexto["hora_inicio_discrepante"] = True
+
+    if contexto.get("hora_inicio_partido"):
+        if id_fs_resuelto:
+            contexto["id_flashscore_partido"] = id_fs_resuelto
+        return contexto
+
+    utc_resuelta = utc_flashscore or utc_fotmob
+    fuente_resuelta = fuente_flashscore if utc_flashscore else fuente_fotmob
+    zona_resuelta = zona_flashscore if utc_flashscore else "UTC"
 
     if utc_resuelta:
         info = resolver_fecha_encuentro_lima(utc_resuelta, es_partido_programado=True)
@@ -1070,6 +1159,11 @@ def resolver_enfrentamiento(
             doc_a, meta_a = ejecutar_sync_seguro(
                 cargar_o_crear_auditoria, nom_reintento_a, rival=ctx_reintento_a, **kwargs_reintento
             )
+        # Re-evaluar coherencia tras el reintento: si persiste FALSO HOMÓNIMO EXTRANJERO,
+        # se propaga en el contexto para abstener en preparar_analisis_mercados.
+        coherencia = validar_coherencia_competitiva_local_visita(
+            doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_final
+        )
 
     nombre_a = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
     nombre_b = (doc_b.get("equipo") or {}).get("nombre") or equipo_visitante
@@ -1084,7 +1178,8 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
-    if contexto.get("hora_inicio_partido") is None and not contexto.get("partido_ya_jugado"):
+    contexto["coherencia_competitiva"] = dict(coherencia) if isinstance(coherencia, dict) else {}
+    if not contexto.get("partido_ya_jugado"):
         resolver_hora_inicio_encuentro(
             contexto,
             equipo_local=nombre_a,
@@ -1216,7 +1311,7 @@ def resolver_enfrentamiento(
 # el snapshot de pronóstico— de una predicción hecha con el motor anterior. Sin
 # esto, el snapshot nuevo se descartaba por "ya existe" y la evaluación seguía
 # midiendo las probabilidades viejas.
-FIRMA_MOTOR = "red-neuronal-recursiva-45"
+FIRMA_MOTOR = "red-neuronal-recursiva-45-r22"
 
 
 def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[str, Any] | None) -> str:
@@ -1237,11 +1332,45 @@ def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[s
     ).hexdigest()[:12]
 
 
+def calcular_calidad_fuente_club(doc: dict[str, Any] | None) -> dict[str, int]:
+    """
+    Calcula métricas de calidad de fuente para un club sobre sus 15 partidos:
+    - `n_claves_no_nulas`: número de claves estadísticas distintas con al menos un valor no nulo.
+    - `n_eventos_gol`: número total de eventos de gol (con minuto/cronología) registrados.
+    """
+    if not isinstance(doc, dict):
+        return {"n_claves_no_nulas": 0, "n_eventos_gol": 0}
+    claves_no_nulas: set[str] = set()
+    n_eventos_gol = 0
+    for p in (doc.get("partidos") or [])[:15]:
+        if not isinstance(p, dict):
+            continue
+        periodos = p.get("periodos") or {}
+        if isinstance(periodos, dict):
+            for per_val in periodos.values():
+                filas = (per_val.get("filas") or []) if isinstance(per_val, dict) else []
+                for fila in filas:
+                    if not isinstance(fila, dict):
+                        continue
+                    cl = str(fila.get("clave") or "").strip()
+                    if cl and (fila.get("equipo") is not None or fila.get("rival") is not None):
+                        claves_no_nulas.add(cl)
+        for k_ev in ("goles_eventos", "eventos_gol", "goles", "minutos_gol"):
+            evs = p.get(k_ev)
+            if isinstance(evs, list) and evs:
+                n_eventos_gol += len(evs)
+                break
+    return {
+        "n_claves_no_nulas": len(claves_no_nulas),
+        "n_eventos_gol": int(n_eventos_gol),
+    }
+
+
 def extraer_fuentes_y_firma_datos(
     doc_local: dict[str, Any] | None,
     doc_visitante: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`) y `firma_datos`."""
+    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`), `firma_datos` y calidad por club."""
     dl = doc_local if isinstance(doc_local, dict) else {}
     dv = doc_visitante if isinstance(doc_visitante, dict) else {}
     f_loc = str(dl.get("fuente") or "").strip() or None
@@ -1250,6 +1379,120 @@ def extraer_fuentes_y_firma_datos(
         "fuente_local": f_loc,
         "fuente_visitante": f_vis,
         "firma_datos": calcular_firma_datos(dl, dv),
+        "calidad_fuente_local": calcular_calidad_fuente_club(dl),
+        "calidad_fuente_visitante": calcular_calidad_fuente_club(dv),
+    }
+
+
+# Regla operativa sin validación empírica (Ronda 22, Bloque 2):
+# Si el partido más reciente de los 15 de cualquiera de los clubes supera N=60 días
+# de antigüedad respecto a la fecha de referencia, el sistema se abstiene por
+# "datos_desactualizados" en lugar de proyectar con muestras obsoletas.
+MAX_DIAS_ANTIGUEDAD_ULTIMO_PARTIDO = 60
+ETIQUETA_REGLA_ANTIGUEDAD = "regla operativa sin validación"
+
+
+def _ultima_fecha_iso_partidos(doc: dict[str, Any] | None) -> str | None:
+    """Extrae la fecha ISO YYYY-MM-DD más reciente de los 15 partidos de un documento."""
+    if not isinstance(doc, dict):
+        return None
+    fechas: list[str] = []
+    for p in (doc.get("partidos") or [])[:15]:
+        if not isinstance(p, dict):
+            continue
+        f_raw = str(p.get("fecha") or "").strip()[:10]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_raw):
+            fechas.append(f_raw)
+    return max(fechas) if fechas else None
+
+
+def extraer_fechas_datos_hasta(
+    doc_local: dict[str, Any] | None = None,
+    doc_visitante: dict[str, Any] | None = None,
+    metadatos: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    """Devuelve última fecha de partido por club y etiqueta consolidada `datos_hasta`."""
+    meta = metadatos if isinstance(metadatos, dict) else {}
+    f_l = str(meta.get("datos_hasta_local") or "").strip()[:10] or _ultima_fecha_iso_partidos(doc_local)
+    f_v = str(meta.get("datos_hasta_visitante") or "").strip()[:10] or _ultima_fecha_iso_partidos(doc_visitante)
+    if f_l and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_l):
+        f_l = None
+    if f_v and not re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_v):
+        f_v = None
+    if f_l and f_v:
+        etq = f_l if f_l == f_v else f"{f_l} / {f_v}"
+    elif f_l or f_v:
+        etq = f_l or f_v
+    else:
+        etq_m = str(meta.get("datos_hasta") or "").strip()
+        etq = etq_m or None
+    return {
+        "datos_hasta_local": f_l,
+        "datos_hasta_visitante": f_v,
+        "datos_hasta": etq,
+    }
+
+
+def evaluar_antiguedad_datos(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+    *,
+    fecha_referencia: str | None = None,
+    max_dias: int = MAX_DIAS_ANTIGUEDAD_ULTIMO_PARTIDO,
+) -> dict[str, Any]:
+    """
+    Guarda de antigüedad (regla operativa sin validación):
+    si el último partido de los 15 de algún club es más viejo que `max_dias` días
+    respecto a `fecha_referencia` (YYYY-MM-DD), devuelve `desactualizado=True` con
+    estado `datos_desactualizados`.
+    """
+    from datetime import date as _date
+
+    ref_date: _date
+    f_ref_s = str(fecha_referencia or "").strip()[:10]
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", f_ref_s):
+        try:
+            ref_date = _date.fromisoformat(f_ref_s)
+        except Exception:
+            ref_date = datetime.now(timezone.utc).date()
+    else:
+        ref_date = datetime.now(timezone.utc).date()
+
+    fechas = extraer_fechas_datos_hasta(doc_local, doc_visitante)
+    f_l = fechas["datos_hasta_local"]
+    f_v = fechas["datos_hasta_visitante"]
+    dias_l = (ref_date - _date.fromisoformat(f_l)).days if f_l else None
+    dias_v = (ref_date - _date.fromisoformat(f_v)).days if f_v else None
+
+    _eq_l_raw = (doc_local or {}).get("equipo") if isinstance(doc_local, dict) else None
+    eq_l = str(_eq_l_raw.get("nombre") if isinstance(_eq_l_raw, dict) else (_eq_l_raw or "Local"))
+    _eq_v_raw = (doc_visitante or {}).get("equipo") if isinstance(doc_visitante, dict) else None
+    eq_v = str(_eq_v_raw.get("nombre") if isinstance(_eq_v_raw, dict) else (_eq_v_raw or "Visitante"))
+    motivos: list[str] = []
+    if dias_l is not None and dias_l > max_dias:
+        motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad > {max_dias} días)")
+    if dias_v is not None and dias_v > max_dias:
+        motivos.append(f"{eq_v}: último partido {f_v} ({dias_v} días de antigüedad > {max_dias} días)")
+
+    desact = bool(motivos)
+    motivo = (
+        f"Datos desactualizados ({ETIQUETA_REGLA_ANTIGUEDAD}, umbral N={max_dias} días): "
+        + "; ".join(motivos)
+        if desact
+        else ""
+    )
+    return {
+        "desactualizado": desact,
+        "estado": "datos_desactualizados" if desact else "ok",
+        "motivo": motivo,
+        "max_dias": int(max_dias),
+        "etiqueta_regla": ETIQUETA_REGLA_ANTIGUEDAD,
+        "fecha_referencia": ref_date.isoformat(),
+        "datos_hasta_local": f_l,
+        "datos_hasta_visitante": f_v,
+        "datos_hasta": fechas["datos_hasta"],
+        "dias_local": dias_l,
+        "dias_visitante": dias_v,
     }
 
 
@@ -1261,7 +1504,7 @@ def formatear_fuentes_clubes_encabezado(
     equipo_local: str | None = None,
     equipo_visitante: str | None = None,
 ) -> str:
-    """Devuelve el texto de fuente por club para encabezados (Telegram, Ticket, Cuadros)."""
+    """Devuelve el texto de fuente por club y fecha 'Datos hasta' para encabezados."""
     meta = metadatos if isinstance(metadatos, dict) else {}
     dl = doc_local if isinstance(doc_local, dict) else {}
     dv = doc_visitante if isinstance(doc_visitante, dict) else {}
@@ -1269,9 +1512,15 @@ def formatear_fuentes_clubes_encabezado(
     eq_v = str(equipo_visitante or meta.get("equipo_visitante") or (dv.get("equipo") or {}).get("nombre") or "Visitante").strip()
     f_l = str(meta.get("fuente_local") or dl.get("fuente") or "").strip()
     f_v = str(meta.get("fuente_visitante") or dv.get("fuente") or "").strip()
-    if not f_l and not f_v:
-        return ""
-    return f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}"
+    partes: list[str] = []
+    if f_l or f_v:
+        partes.append(f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}")
+        if f_l.lower() == "flashscore" or f_v.lower() == "flashscore":
+            partes.append("datos reducidos")
+    fechas_dh = extraer_fechas_datos_hasta(dl, dv, meta)
+    if fechas_dh.get("datos_hasta"):
+        partes.append(f"Datos hasta: {fechas_dh['datos_hasta']}")
+    return " · ".join(partes)
 
 
 def formatear_encabezado_partido_y_fuentes_telegram(
@@ -2141,7 +2390,17 @@ def renderizar_ticket_mercados_png(
             filas_cat: list[dict[str, Any]] = []
             for amb in sorted(ambs_dict.keys(), key=_orden_ambito):
                 items = ambs_dict[amb]
-                pildoras_raw = [_formatear_pildora(s, cat) for s in items]
+                if es_seccion_1:
+                    pildoras_raw = [_formatear_pildora(s, cat) for s in items]
+                else:
+                    from motor_mercados import formatear_motivo_degradacion_seccion2 as _fmt_mot_s2
+                    pildoras_raw = []
+                    for _s_it in items:
+                        _lbl_s2, _pct_s2, _prob_s2 = _formatear_pildora(_s_it, cat)
+                        if _lbl_s2:
+                            _mot_s2 = _fmt_mot_s2(_s_it, umbral=umbral_val, corto=True)
+                            _lbl_s2 = f"{_lbl_s2} [{_mot_s2}]"
+                        pildoras_raw.append((_lbl_s2, _pct_s2, _prob_s2))
                 pildoras_raw.sort(key=lambda x: -x[2])
 
                 vistas_et = set()
@@ -2972,6 +3231,141 @@ def preparar_analisis(
     contexto["fuente_local"] = _info_f_datos["fuente_local"]
     contexto["fuente_visitante"] = _info_f_datos["fuente_visitante"]
     contexto["firma_datos"] = _info_f_datos["firma_datos"]
+    contexto["calidad_fuente_local"] = _info_f_datos["calidad_fuente_local"]
+    contexto["calidad_fuente_visitante"] = _info_f_datos["calidad_fuente_visitante"]
+    _fechas_dh = extraer_fechas_datos_hasta(contexto.get("doc_local"), contexto.get("doc_visitante"), ctx)
+    contexto["datos_hasta_local"] = _fechas_dh["datos_hasta_local"]
+    contexto["datos_hasta_visitante"] = _fechas_dh["datos_hasta_visitante"]
+    contexto["datos_hasta"] = _fechas_dh["datos_hasta"]
+
+    # ── Ronda 22 Bloque 2: Abstención por FALSO HOMÓNIMO EXTRANJERO y datos_desactualizados ──
+    _abstencion_calidad_estado: str | None = None
+    _abstencion_calidad_motivo: str = ""
+    _abstencion_calidad_detalle: dict[str, Any] = {}
+
+    _coh_ctx = ctx.get("coherencia_competitiva")
+    if not isinstance(_coh_ctx, dict) or not _coh_ctx:
+        _pais_coh = str(
+            ctx.get("pais_iso")
+            or (liga.get("pais_iso") if isinstance(liga, dict) else "")
+            or ""
+        ).strip()
+        if _pais_coh and _pais_coh.upper() != "INT":
+            try:
+                _coh_ctx = dict(
+                    validar_coherencia_competitiva_local_visita(
+                        contexto["doc_local"],
+                        contexto["doc_visitante"],
+                        pais_iso=_pais_coh,
+                        liga_pref=liga,
+                    )
+                )
+            except Exception:
+                _coh_ctx = {}
+    if (
+        isinstance(_coh_ctx, dict)
+        and not _coh_ctx.get("coherente", True)
+        and str(_coh_ctx.get("estado") or "").strip().upper() == "FALSO HOMÓNIMO EXTRANJERO"
+    ):
+        _abstencion_calidad_estado = "falso_homonimo_extranjero"
+        _abstencion_calidad_motivo = str(
+            _coh_ctx.get("motivo")
+            or "FALSO HOMÓNIMO EXTRANJERO detectado: los historiales no pertenecen a la misma liga ni país."
+        )
+        _abstencion_calidad_detalle = {"coherencia_competitiva": _coh_ctx}
+
+    if _abstencion_calidad_estado is None:
+        _f_ref_antig = (
+            str(ctx.get("fecha_corte") or "").strip()[:10]
+            or str(ctx.get("cutoff_timestamp") or "").strip()[:10]
+            or (
+                str(ctx.get("fecha_partido") or "").strip()[:10]
+                if re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(ctx.get("fecha_partido") or "").strip()[:10])
+                else ""
+            )
+            or None
+        )
+        _antig = evaluar_antiguedad_datos(
+            contexto.get("doc_local"),
+            contexto.get("doc_visitante"),
+            fecha_referencia=_f_ref_antig,
+            max_dias=MAX_DIAS_ANTIGUEDAD_ULTIMO_PARTIDO,
+        )
+        contexto["antiguedad_datos"] = _antig
+        if _antig.get("desactualizado"):
+            _abstencion_calidad_estado = "datos_desactualizados"
+            _abstencion_calidad_motivo = str(_antig.get("motivo") or "Datos desactualizados.")
+            _abstencion_calidad_detalle = {"antiguedad_datos": _antig}
+
+    if _abstencion_calidad_estado is not None:
+        meta_abs_cal = {
+            "equipo_local": contexto["equipo_local"],
+            "equipo_visitante": contexto["equipo_visitante"],
+            "competicion": ctx.get("competicion", "Competición oficial"),
+            "fecha_partido": ctx.get("fecha_partido"),
+            "etiqueta_fecha": ctx.get("etiqueta_fecha") or formatear_etiqueta_fecha_encabezado(ctx),
+            "hora_inicio_partido": ctx.get("hora_inicio_partido"),
+            "hora_inicio_local": ctx.get("hora_inicio_local"),
+            **({"fuente_hora_inicio": ctx.get("fuente_hora_inicio")} if ctx.get("fuente_hora_inicio") else {}),
+            **({"zona_origen_hora_inicio": ctx.get("zona_origen_hora_inicio")} if ctx.get("zona_origen_hora_inicio") else {}),
+            "fixture_confirmado": bool(ctx.get("fixture_confirmado", False)),
+            "fuente_fecha": ctx.get("fuente_fecha") or ("fixture" if ctx.get("fixture_confirmado") else "fallback"),
+            "generado_en": _ahora(),
+            "abstenido": True,
+            "bloqueado_por_cobertura": True,
+            "estado_cobertura": _abstencion_calidad_estado,
+            "motivo_abstencion": _abstencion_calidad_motivo,
+            "decision_cobertura": {"estado": _abstencion_calidad_estado, **_abstencion_calidad_detalle},
+            "fuente": "Guarda Calidad de Datos",
+            "fuente_local": _info_f_datos["fuente_local"],
+            "fuente_visitante": _info_f_datos["fuente_visitante"],
+            "firma_datos": _info_f_datos["firma_datos"],
+            "datos_hasta_local": _fechas_dh["datos_hasta_local"],
+            "datos_hasta_visitante": _fechas_dh["datos_hasta_visitante"],
+            "datos_hasta": _fechas_dh["datos_hasta"],
+            "red_neuronal": {"aplicado": False, "motivo": f"Abstenido ({_abstencion_calidad_estado})"},
+            **_abstencion_calidad_detalle,
+        }
+        _p_cal_tg, _f_cal_tg = formatear_encabezado_partido_y_fuentes_telegram(
+            meta_abs_cal,
+            contexto.get("doc_local"),
+            contexto.get("doc_visitante"),
+            equipo_local=contexto["equipo_local"],
+            equipo_visitante=contexto["equipo_visitante"],
+        )
+        texto_cal = (
+            f"🚨 PRONÓSTICO ABSTENIDO ({_abstencion_calidad_estado.upper()})\n"
+            f"📅 {_p_cal_tg}\n"
+            f"📡 {_f_cal_tg}\n\n"
+            f"{_abstencion_calidad_motivo}\n\n"
+            f"⚠️ No se publican probabilidades ni selecciones hasta contar con historiales coherentes y vigentes.\n"
+            f"🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
+        )
+        analisis_abs_cal = type("AnalisisAbstenidoCalidadObj", (), {
+            "metadatos": meta_abs_cal,
+            "parametros": params,
+            "selecciones_filtradas": [],
+            "mercados": [],
+            "informe": texto_cal,
+            "mensaje": texto_cal,
+            "abstenido": True,
+            "estado_cobertura": _abstencion_calidad_estado,
+            "motivo_abstencion": _abstencion_calidad_motivo,
+            "grupos": {"mantiene": [], "sensible": []},
+        })()
+        id_trabajo_cal = identificar_trabajo(meta_abs_cal, contexto["doc_local"], contexto["doc_visitante"])
+        return {
+            "analisis": analisis_abs_cal,
+            "id_trabajo": id_trabajo_cal,
+            "rutas": {},
+            "contexto": contexto,
+            "abstenido": True,
+            "estado_cobertura": _abstencion_calidad_estado,
+            "motivo_abstencion": _abstencion_calidad_motivo,
+            "decision_cobertura": meta_abs_cal["decision_cobertura"],
+            "analisis_texto_3_parrafos": texto_cal,
+            "ruta_imagen": None,
+        }
 
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
     from decision_cobertura import evaluar_decision_cobertura
@@ -3022,6 +3416,9 @@ def preparar_analisis(
             "fuente_local": _info_f_datos["fuente_local"],
             "fuente_visitante": _info_f_datos["fuente_visitante"],
             "firma_datos": _info_f_datos["firma_datos"],
+            "datos_hasta_local": _fechas_dh["datos_hasta_local"],
+            "datos_hasta_visitante": _fechas_dh["datos_hasta_visitante"],
+            "datos_hasta": _fechas_dh["datos_hasta"],
             "red_neuronal": {"aplicado": False, "motivo": f"Abstenido por cobertura ({decision_cob.estado})"},
         }
 
@@ -3154,9 +3551,14 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
+    analisis.metadatos.setdefault("datos_hasta_local", _fechas_dh["datos_hasta_local"])
+    analisis.metadatos.setdefault("datos_hasta_visitante", _fechas_dh["datos_hasta_visitante"])
+    analisis.metadatos.setdefault("datos_hasta", _fechas_dh["datos_hasta"])
+    analisis.metadatos["calidad_fuente_local"] = _info_f_datos["calidad_fuente_local"]
+    analisis.metadatos["calidad_fuente_visitante"] = _info_f_datos["calidad_fuente_visitante"]
     analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
     analisis.metadatos.setdefault("fuente_fecha", "fixture" if analisis.metadatos.get("fixture_confirmado") else "fallback")
     analisis.metadatos.setdefault("etiqueta_fecha", formatear_etiqueta_fecha_encabezado(analisis.metadatos))

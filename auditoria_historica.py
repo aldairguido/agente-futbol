@@ -309,6 +309,13 @@ def validar_coherencia_competitiva_local_visita(
 
     ok_pais_l = _coincide_pais_equipo(eq_l, ligas_raw_l)
     ok_pais_v = _coincide_pais_equipo(eq_v, ligas_raw_v)
+    if rivales_comunes:
+        iso_eq_l = normalizar_pais_iso(eq_l.get("pais_iso") or eq_l.get("pais") or eq_l.get("ccode") or "")
+        iso_eq_v = normalizar_pais_iso(eq_v.get("pais_iso") or eq_v.get("pais") or eq_v.get("ccode") or "")
+        if iso_eq_l == iso_esp:
+            ok_pais_l = True
+        if iso_eq_v == iso_esp:
+            ok_pais_v = True
 
     # Condición de rechazo: 0 ligas en común Y 0 rivales en común
     sin_ligas_ni_rivales_comunes = (len(ligas_comunes) == 0 and len(rivales_comunes) == 0)
