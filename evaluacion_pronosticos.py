@@ -205,6 +205,9 @@ class SnapshotPronostico:
     es_canonica: bool | None = None
     estado_canonico: str | None = None
     regla_contabilidad_oos: str | None = None
+    fuente_local: str | None = None
+    fuente_visitante: str | None = None
+    firma_datos: str | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -251,6 +254,12 @@ class SnapshotPronostico:
             out["es_canonica"] = self.es_canonica
             out["estado_canonico"] = self.estado_canonico
             out["regla_contabilidad_oos"] = self.regla_contabilidad_oos or REGLA_CONTABILIDAD_OOS
+        if self.fuente_local is not None:
+            out["fuente_local"] = self.fuente_local
+        if self.fuente_visitante is not None:
+            out["fuente_visitante"] = self.fuente_visitante
+        if self.firma_datos is not None:
+            out["firma_datos"] = self.firma_datos
         return out
 
 
@@ -395,6 +404,76 @@ def evaluar_contabilidad_oos_registro(
         "es_canonica": es_canonica,
         "estado_canonico": estado_canonico,
         "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
+    }
+
+
+def _extraer_fuentes_y_firma_registro(
+    *,
+    preparado: dict[str, Any] | None = None,
+    doc: dict[str, Any] | None = None,
+    metadatos: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    """Extrae `fuente_local`, `fuente_visitante` y `firma_datos` de análisis, documento o pre_partido."""
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    an = prep.get("analisis")
+    meta = (
+        metadatos
+        if isinstance(metadatos, dict)
+        else (getattr(an, "metadatos", None) if an is not None else None)
+        or d.get("metadatos")
+        or {}
+    )
+    ctx = prep.get("contexto") if isinstance(prep.get("contexto"), dict) else {}
+    mot = getattr(an, "motor", None) if an is not None else None
+    dl = ctx.get("doc_local") or (getattr(mot, "doc_local", None) if mot is not None else None)
+    dv = ctx.get("doc_visitante") or (getattr(mot, "doc_visitante", None) if mot is not None else None)
+    dc = d.get("datos_corte") if isinstance(d.get("datos_corte"), dict) else {}
+    pr = pre_ref if isinstance(pre_ref, dict) else {}
+
+    f_loc = (
+        meta.get("fuente_local")
+        or ctx.get("fuente_local")
+        or (dl.get("fuente") if isinstance(dl, dict) else None)
+        or d.get("fuente_local")
+        or dc.get("fuente_local")
+        or pr.get("fuente_local")
+    )
+    f_vis = (
+        meta.get("fuente_visitante")
+        or ctx.get("fuente_visitante")
+        or (dv.get("fuente") if isinstance(dv, dict) else None)
+        or d.get("fuente_visitante")
+        or dc.get("fuente_visitante")
+        or pr.get("fuente_visitante")
+    )
+    firma = (
+        meta.get("firma_datos")
+        or ctx.get("firma_datos")
+        or d.get("firma_datos")
+        or dc.get("firma_datos")
+        or pr.get("firma_datos")
+    )
+    if not firma and (isinstance(dl, dict) or isinstance(dv, dict)):
+        dl_d = dl if isinstance(dl, dict) else {}
+        dv_d = dv if isinstance(dv, dict) else {}
+        firma = hashlib.sha256(
+            json.dumps(
+                [
+                    len(dl_d.get("partidos", []) or []),
+                    len(dv_d.get("partidos", []) or []),
+                    dl_d.get("generado_en"),
+                    dv_d.get("generado_en"),
+                ],
+                ensure_ascii=False,
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:12]
+    return {
+        "fuente_local": str(f_loc).strip() if f_loc else None,
+        "fuente_visitante": str(f_vis).strip() if f_vis else None,
+        "firma_datos": str(firma).strip() if firma else None,
     }
 
 
@@ -676,12 +755,20 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         id_trabajo=str(preparado.get("id_trabajo") or ""),
         registros_existentes=existentes_snapshots,
     )
+    f_info_snap = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=metadatos)
     abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
     if abstenido:
         dec_cob = metadatos.get("decision_cobertura") or {}
         est_cob = str(dec_cob.get("estado") or metadatos.get("estado_cobertura") or "abstenido")
         mot_abs = str(dec_cob.get("alerta_descriptiva") or metadatos.get("motivo_abstencion") or "")
         umbral_val = float(getattr(analisis.parametros, "umbral", 0.70) if hasattr(analisis, "parametros") and analisis.parametros else 0.70)
+        dc_abs = {"abstenido": True, "estado_cobertura": est_cob, "motivo_abstencion": mot_abs, "fuente": metadatos.get("fuente")}
+        if f_info_snap["fuente_local"] is not None:
+            dc_abs["fuente_local"] = f_info_snap["fuente_local"]
+        if f_info_snap["fuente_visitante"] is not None:
+            dc_abs["fuente_visitante"] = f_info_snap["fuente_visitante"]
+        if f_info_snap["firma_datos"] is not None:
+            dc_abs["firma_datos"] = f_info_snap["firma_datos"]
         return SnapshotPronostico(
             id_trabajo=preparado.get("id_trabajo") or "abstenido",
             equipos={"local": metadatos.get("equipo_local"), "visitante": metadatos.get("equipo_visitante")},
@@ -700,7 +787,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             publicado_en=publicado_en,
             modelo={"nombre": NOMBRE_MODELO, "version": VERSION_MODELO, "umbral": umbral_val,
                     "w_condicion": 0.0, "w_xg": 0.0, "distribucion_conteos": "poisson"},
-            datos_corte={"abstenido": True, "estado_cobertura": est_cob, "motivo_abstencion": mot_abs, "fuente": metadatos.get("fuente")},
+            datos_corte=dc_abs,
             selecciones=[],
             selecciones_publicadas=[],
             umbral_publicado=umbral_val,
@@ -720,6 +807,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             es_canonica=contab_snap["es_canonica"],
             estado_canonico=contab_snap["estado_canonico"],
             regla_contabilidad_oos=contab_snap["regla_contabilidad_oos"],
+            fuente_local=f_info_snap["fuente_local"],
+            fuente_visitante=f_info_snap["fuente_visitante"],
+            firma_datos=f_info_snap["firma_datos"],
         )
     motor = analisis.motor
     umbral = float(analisis.parametros.umbral)
@@ -772,6 +862,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             "partidos_local_condicion": motor.muestras["local_cond"].partidos_condicion,
             "partidos_visitante_condicion": motor.muestras["visitante_cond"].partidos_condicion,
             "fuente": metadatos.get("fuente"),
+            **({"fuente_local": f_info_snap["fuente_local"]} if f_info_snap["fuente_local"] is not None else {}),
+            **({"fuente_visitante": f_info_snap["fuente_visitante"]} if f_info_snap["fuente_visitante"] is not None else {}),
+            **({"firma_datos": f_info_snap["firma_datos"]} if f_info_snap["firma_datos"] is not None else {}),
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
         },
@@ -794,6 +887,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         es_canonica=contab_snap["es_canonica"],
         estado_canonico=contab_snap["estado_canonico"],
         regla_contabilidad_oos=contab_snap["regla_contabilidad_oos"],
+        fuente_local=f_info_snap["fuente_local"],
+        fuente_visitante=f_info_snap["fuente_visitante"],
+        firma_datos=f_info_snap["firma_datos"],
     )
 
 
@@ -4450,6 +4546,13 @@ def registrar_en_ledger_oos(
             registros_existentes=existentes,
         )
         nuevo.update(contab)
+    for _k_f_ord in ("fuente_local", "fuente_visitante", "firma_datos"):
+        if nuevo.get(_k_f_ord) is None:
+            _v_dc = (registro.get("datos_corte") or {}).get(_k_f_ord) if isinstance(registro.get("datos_corte"), dict) else None
+            _v_mt = (registro.get("metadatos") or {}).get(_k_f_ord) if isinstance(registro.get("metadatos"), dict) else None
+            _v_f_ord = _v_dc or _v_mt
+            if _v_f_ord is not None:
+                nuevo[_k_f_ord] = _v_f_ord
     comp_low = str(nuevo.get("competicion") or "").strip().lower()
     tipo_low = str(nuevo.get("tipo_partido") or "").strip().lower()
     if tipo_low == "amistoso" or any(tok in comp_low for tok in ("friendly", "friendlies", "amistoso")):
@@ -10237,6 +10340,10 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
+    _f_pre = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=meta)
+    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos"):
+        if _f_pre.get(_k_f) is not None:
+            registro[_k_f] = _f_pre[_k_f]
     if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
         registro["telegram_message_id"] = tg_m.get("message_id")
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
@@ -10389,6 +10496,11 @@ def liquidar_sombras_en_ledger_oos(
                 "telegram_message_date": _tg_dt_liq,
                 "hora_mensaje_utc": _hm_liq,
             } if (_fx_liq is not None or _hi_liq is not None or _tg_dt_liq is not None) else {}),
+            **{
+                k_f: v_f
+                for k_f, v_f in _extraer_fuentes_y_firma_registro(doc=doc, pre_ref=pre_ref).items()
+                if v_f is not None
+            },
             "tipo_partido": str(doc.get("tipo_partido") or (doc.get("metadatos") or {}).get("tipo_partido") or ""),
             "pre_partido_sha256": (pre_ref or {}).get("sha256"),
             "marcador_real": {

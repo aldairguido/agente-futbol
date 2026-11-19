@@ -1071,6 +1071,40 @@ def resolver_enfrentamiento(
 FIRMA_MOTOR = "red-neuronal-recursiva-45"
 
 
+def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[str, Any] | None) -> str:
+    """Calcula la firma determinista SHA-256 corta (12 hex) sobre los historiales cargados."""
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    return hashlib.sha256(
+        json.dumps(
+            [
+                len(dl.get("partidos", []) or []),
+                len(dv.get("partidos", []) or []),
+                dl.get("generado_en"),
+                dv.get("generado_en"),
+            ],
+            ensure_ascii=False,
+            sort_keys=True,
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+
+
+def extraer_fuentes_y_firma_datos(
+    doc_local: dict[str, Any] | None,
+    doc_visitante: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`) y `firma_datos`."""
+    dl = doc_local if isinstance(doc_local, dict) else {}
+    dv = doc_visitante if isinstance(doc_visitante, dict) else {}
+    f_loc = str(dl.get("fuente") or "").strip() or None
+    f_vis = str(dv.get("fuente") or "").strip() or None
+    return {
+        "fuente_local": f_loc,
+        "fuente_visitante": f_vis,
+        "firma_datos": calcular_firma_datos(dl, dv),
+    }
+
+
 def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str, Any],
                         doc_visitante: dict[str, Any]) -> str:
     """
@@ -1078,11 +1112,7 @@ def identificar_trabajo(analisis_metadatos: dict[str, Any], doc_local: dict[str,
     del modelo + firma del motor. Sirve para no repetir envíos ya confirmados y
     para distinguir un reintento técnico de una nueva solicitud explícita.
     """
-    firma_datos = hashlib.sha256(
-        json.dumps([len(doc_local.get("partidos", [])), len(doc_visitante.get("partidos", [])),
-                    doc_local.get("generado_en"), doc_visitante.get("generado_en")],
-                   ensure_ascii=False, sort_keys=True).encode("utf-8")
-    ).hexdigest()[:12]
+    firma_datos = calcular_firma_datos(doc_local, doc_visitante)
     base = "|".join([
         str(analisis_metadatos.get("equipo_local", "")).lower(),
         str(analisis_metadatos.get("equipo_visitante", "")).lower(),
@@ -2680,6 +2710,12 @@ def preparar_analisis(
             "ruta_imagen": None,
         }
 
+    # ── Metadatos de fuente por club y firma de datos (Ronda 19 Bloque 1) ──
+    _info_f_datos = extraer_fuentes_y_firma_datos(contexto.get("doc_local"), contexto.get("doc_visitante"))
+    contexto["fuente_local"] = _info_f_datos["fuente_local"]
+    contexto["fuente_visitante"] = _info_f_datos["fuente_visitante"]
+    contexto["firma_datos"] = _info_f_datos["firma_datos"]
+
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
     from decision_cobertura import evaluar_decision_cobertura
     doc_l_eval = dict(contexto["doc_local"])
@@ -2724,6 +2760,9 @@ def preparar_analisis(
             "etiqueta_cobertura_local": decision_cob.etiqueta_cobertura_a,
             "etiqueta_cobertura_visitante": decision_cob.etiqueta_cobertura_b,
             "fuente": "Auditoría Cobertura D.1",
+            "fuente_local": _info_f_datos["fuente_local"],
+            "fuente_visitante": _info_f_datos["fuente_visitante"],
+            "firma_datos": _info_f_datos["firma_datos"],
             "red_neuronal": {"aplicado": False, "motivo": f"Abstenido por cobertura ({decision_cob.estado})"},
         }
 
@@ -2842,6 +2881,9 @@ def preparar_analisis(
 
     analisis.doc_local = contexto.get("doc_local")
     analisis.doc_visitante = contexto.get("doc_visitante")
+    analisis.metadatos["fuente_local"] = _info_f_datos["fuente_local"]
+    analisis.metadatos["fuente_visitante"] = _info_f_datos["fuente_visitante"]
+    analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
     for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):

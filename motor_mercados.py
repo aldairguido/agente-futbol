@@ -7549,6 +7549,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
         "origen_condicion": origen_cond,
         "generado_en": datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S"),
         "fuente": dl.get("fuente") or dv.get("fuente"),
+        "fuente_local": dl.get("fuente"),
+        "fuente_visitante": dv.get("fuente"),
         "modelo": f"{NOMBRE_MODELO} v{VERSION_MODELO}",
     }
 
