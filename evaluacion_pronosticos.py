@@ -200,6 +200,8 @@ class SnapshotPronostico:
     fixture_confirmado: bool | None = None
     fuente_fecha: str | None = None
     hora_inicio_partido: str | None = None
+    fuente_hora_inicio: str | None = None
+    zona_origen_hora_inicio: str | None = None
     hora_mensaje_utc: str | None = None
     es_oos_valido: bool | None = None
     es_canonica: bool | None = None
@@ -261,6 +263,10 @@ class SnapshotPronostico:
             out["fuente_visitante"] = self.fuente_visitante
         if self.firma_datos is not None:
             out["firma_datos"] = self.firma_datos
+        if self.fuente_hora_inicio is not None:
+            out["fuente_hora_inicio"] = self.fuente_hora_inicio
+        if self.zona_origen_hora_inicio is not None:
+            out["zona_origen_hora_inicio"] = self.zona_origen_hora_inicio
         if self.lambdas_plano is not None:
             out["lambdas_plano"] = self.lambdas_plano
         return out
@@ -896,6 +902,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     )
     f_fec = str(metadatos.get("fuente_fecha") or ctx_p.get("fuente_fecha") or ("fixture" if fx_conf else "fallback"))
     h_ini = metadatos.get("hora_inicio_partido") or ctx_p.get("hora_inicio_partido")
+    f_hini = metadatos.get("fuente_hora_inicio") or ctx_p.get("fuente_hora_inicio")
+    z_hini = metadatos.get("zona_origen_hora_inicio") or ctx_p.get("zona_origen_hora_inicio")
     id_part_snap = str(
         preparado.get("id_partido")
         or metadatos.get("id_partido")
@@ -938,6 +946,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 "hora_inicio_partido": contab_snap["hora_inicio_partido"],
                 "fixture_confirmado": contab_snap["fixture_confirmado"],
                 "fuente_fecha": contab_snap["fuente_fecha"],
+                **({"fuente_hora_inicio": f_hini} if f_hini is not None else {}),
+                **({"zona_origen_hora_inicio": z_hini} if z_hini is not None else {}),
                 "competicion": metadatos.get("competicion"),
                 "sede": metadatos.get("sede"),
                 "condicion_local": metadatos.get("condicion_local"),
@@ -963,6 +973,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             fixture_confirmado=contab_snap["fixture_confirmado"],
             fuente_fecha=contab_snap["fuente_fecha"],
             hora_inicio_partido=contab_snap["hora_inicio_partido"],
+            fuente_hora_inicio=f_hini,
+            zona_origen_hora_inicio=z_hini,
             hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
             es_oos_valido=contab_snap["es_oos_valido"],
             es_canonica=contab_snap["es_canonica"],
@@ -1005,6 +1017,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             "hora_inicio_partido": contab_snap["hora_inicio_partido"],
             "fixture_confirmado": contab_snap["fixture_confirmado"],
             "fuente_fecha": contab_snap["fuente_fecha"],
+            **({"fuente_hora_inicio": f_hini} if f_hini is not None else {}),
+            **({"zona_origen_hora_inicio": z_hini} if z_hini is not None else {}),
             "competicion": metadatos.get("competicion"),
             "sede": metadatos.get("sede"),
             "condicion_local": metadatos.get("condicion_local"),
@@ -1045,6 +1059,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         fixture_confirmado=contab_snap["fixture_confirmado"],
         fuente_fecha=contab_snap["fuente_fecha"],
         hora_inicio_partido=contab_snap["hora_inicio_partido"],
+        fuente_hora_inicio=f_hini,
+        zona_origen_hora_inicio=z_hini,
         hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
         es_oos_valido=contab_snap["es_oos_valido"],
         es_canonica=contab_snap["es_canonica"],
@@ -10533,6 +10549,8 @@ def registrar_sombra_prepartido_en_ledger_oos(
     )
     f_fec_pre = str(meta.get("fuente_fecha") or ctx.get("fuente_fecha") or ("fixture" if fx_conf_pre else "fallback"))
     h_ini_pre = meta.get("hora_inicio_partido") or ctx.get("hora_inicio_partido")
+    f_hini_pre = meta.get("fuente_hora_inicio") or ctx.get("fuente_hora_inicio")
+    z_hini_pre = meta.get("zona_origen_hora_inicio") or ctx.get("zona_origen_hora_inicio")
     tg_m = preparado.get("telegram_meta")
     tg_mdt_pre = tg_m.get("message_date") if isinstance(tg_m, dict) else meta.get("telegram_message_date")
     tg_mutc_pre = tg_m.get("message_date_utc") if isinstance(tg_m, dict) else meta.get("hora_mensaje_utc")
@@ -10549,6 +10567,8 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "fixture_confirmado": fx_conf_pre,
         "fuente_fecha": f_fec_pre,
         "hora_inicio_partido": h_ini_pre,
+        **({"fuente_hora_inicio": f_hini_pre} if f_hini_pre is not None else {}),
+        **({"zona_origen_hora_inicio": z_hini_pre} if z_hini_pre is not None else {}),
         "telegram_message_date": tg_mdt_pre,
         "hora_mensaje_utc": tg_mutc_pre,
         "snapshot_sha256": snapshot_sha,
@@ -10697,6 +10717,8 @@ def liquidar_sombras_en_ledger_oos(
             _fx_liq = pre_ref.get("fixture_confirmado")
         _ff_liq = doc.get("fuente_fecha") or _part_doc.get("fuente_fecha") or (pre_ref.get("fuente_fecha") if pre_ref else None)
         _hi_liq = doc.get("hora_inicio_partido") or _part_doc.get("hora_inicio_partido") or (pre_ref.get("hora_inicio_partido") if pre_ref else None)
+        _f_hini_liq = doc.get("fuente_hora_inicio") or _part_doc.get("fuente_hora_inicio") or (pre_ref.get("fuente_hora_inicio") if pre_ref else None)
+        _z_hini_liq = doc.get("zona_origen_hora_inicio") or _part_doc.get("zona_origen_hora_inicio") or (pre_ref.get("zona_origen_hora_inicio") if pre_ref else None)
         _tg_dt_liq = doc.get("telegram_message_date") if doc.get("telegram_message_date") is not None else ((doc.get("telegram_origen") or {}).get("message_date") or (pre_ref.get("telegram_message_date") if pre_ref else None))
         _hm_liq = doc.get("hora_mensaje_utc") or (doc.get("telegram_origen") or {}).get("message_date_utc") or (pre_ref.get("hora_mensaje_utc") if pre_ref else None)
 
@@ -10711,6 +10733,8 @@ def liquidar_sombras_en_ledger_oos(
                 "fixture_confirmado": bool(_fx_liq) if _fx_liq is not None else False,
                 "fuente_fecha": _ff_liq,
                 "hora_inicio_partido": _hi_liq,
+                **({"fuente_hora_inicio": _f_hini_liq} if _f_hini_liq is not None else {}),
+                **({"zona_origen_hora_inicio": _z_hini_liq} if _z_hini_liq is not None else {}),
                 "telegram_message_date": _tg_dt_liq,
                 "hora_mensaje_utc": _hm_liq,
             } if (_fx_liq is not None or _hi_liq is not None or _tg_dt_liq is not None) else {}),

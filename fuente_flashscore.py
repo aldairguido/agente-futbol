@@ -481,11 +481,15 @@ class ClienteFlashscore:
     #    AA = id (8 alfanuméricos)   AD = inicio (epoch)
     #    AB = estado (1 próximo, 2 en juego, 3 terminado)
     #    AE/AF = equipos            AG/AH = goles local/visitante
-    def partidos_terminados(self, dia: int = -1, idioma: str = "es-pe") -> list[dict[str, Any]]:
-        """
-        Lista de partidos terminados del día indicado (negativo = días atrás).
-        Devuelve [{id, local, visitante, goles_local, goles_visitante, fecha}].
-        """
+    def _leer_feed_diario(
+        self,
+        dia: int,
+        estados_ab: tuple[str, ...],
+        idioma: str = "es-pe",
+        *,
+        incluir_hora_utc: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Lee bloques de un feed diario `f_1_0_{dia}` filtrando por estado `AB`."""
         salida: list[dict[str, Any]] = []
         for base in (FLASHSCORE_FEED, FLASHSCORE_FEED_ALT):
             url = f"{base}/f_1_0_{dia}_{idioma}_1"
@@ -502,27 +506,139 @@ class ClienteFlashscore:
                         k, v = item.split("÷", 1)
                         campos[k] = v
                 pid = campos.get("AA")
-                if not pid:
-                    continue
-                if campos.get("AB") != "3":
+                if not pid or campos.get("AB") not in estados_ab:
                     continue
                 fecha = ""
+                utc_iso = None
                 if campos.get("AD"):
                     try:
-                        fecha = _fecha_desde_epoch(campos["AD"])
+                        utc_iso = _utc_iso_desde_epoch(campos["AD"])
+                        fecha = utc_iso[:10] if utc_iso else _fecha_desde_epoch(campos["AD"])
                     except Exception:
                         fecha = ""
-                salida.append({
+                fila: dict[str, Any] = {
                     "id": pid,
+                    "estado_ab": campos.get("AB"),
                     "local": campos.get("AE", ""),
                     "visitante": campos.get("AF", ""),
                     "goles_local": _int_o_none(campos.get("AG", "")),
                     "goles_visitante": _int_o_none(campos.get("AH", "")),
                     "fecha": fecha,
-                })
+                }
+                if incluir_hora_utc and utc_iso:
+                    fila["utc_time"] = utc_iso
+                    fila["zona_origen"] = "UTC"
+                salida.append(fila)
             if salida:
                 break
         return salida
+
+    def partidos_terminados(self, dia: int = -1, idioma: str = "es-pe") -> list[dict[str, Any]]:
+        """
+        Lista de partidos terminados del día indicado (negativo = días atrás).
+        Devuelve [{id, local, visitante, goles_local, goles_visitante, fecha}].
+        """
+        return [
+            {k: v for k, v in p.items() if k != "estado_ab"}
+            for p in self._leer_feed_diario(dia, ("3",), idioma=idioma)
+        ]
+
+    def partidos_programados(self, dia: int = 0, idioma: str = "es-pe") -> list[dict[str, Any]]:
+        """Lista de partidos próximos / en juego del día indicado (`AD` en epoch UTC)."""
+        return self._leer_feed_diario(dia, ("1", "2"), idioma=idioma, incluir_hora_utc=True)
+
+    def hora_inicio_desde_id(self, id_flashscore: str) -> str | None:
+        """
+        Obtiene la hora de inicio UTC (`YYYY-MM-DDTHH:MM:SSZ`) de un partido desde
+        `dc_1_{id_flashscore}` (campos `DC` / `DD` en epoch Unix UTC).
+        """
+        id_limpio = str(id_flashscore or "").strip()
+        if not id_limpio or id_limpio in ("N/D", "None"):
+            return None
+        for base in (FLASHSCORE_FEED, FLASHSCORE_FEED_ALT):
+            url = f"{base}/dc_1_{id_limpio}"
+            try:
+                r = self._get(url)
+            except Exception:
+                continue
+            if getattr(r, "status_code", 0) != 200 or not getattr(r, "text", ""):
+                continue
+            campos: dict[str, str] = {}
+            for item in str(r.text).split("¬"):
+                if "÷" in item:
+                    k, v = item.split("÷", 1)
+                    campos[k] = v
+            for clave_ep in ("DC", "DD", "AD"):
+                ep = campos.get(clave_ep)
+                if ep:
+                    iso = _utc_iso_desde_epoch(ep)
+                    if iso:
+                        return iso
+        return None
+
+    def buscar_fixture_programado(
+        self,
+        equipo_local: str,
+        equipo_visitante: str,
+        *,
+        fecha_objetivo: str | None = None,
+        dias: tuple[int, ...] = (0, 1, 2, -1),
+        idioma: str = "es-pe",
+    ) -> dict[str, Any] | None:
+        """
+        Busca el próximo partido programado entre `equipo_local` y `equipo_visitante`
+        en el feed diario de Flashscore (`AD` en epoch Unix UTC).
+        """
+        from datetime import date
+        eq_l = str(equipo_local or "").strip()
+        eq_v = str(equipo_visitante or "").strip()
+        if not eq_l or not eq_v:
+            return None
+        d_obj = None
+        if fecha_objetivo:
+            try:
+                d_obj = date.fromisoformat(str(fecha_objetivo)[:10])
+            except ValueError:
+                d_obj = None
+
+        mejor: tuple[int, str, dict[str, Any]] | None = None
+        for dia in dias:
+            try:
+                candidatos = self.partidos_programados(dia=dia, idioma=idioma)
+            except Exception:
+                continue
+            for c in candidatos:
+                loc_c = str(c.get("local") or "")
+                vis_c = str(c.get("visitante") or "")
+                directo = _parecido(loc_c, eq_l) and _parecido(vis_c, eq_v)
+                invertido = _parecido(loc_c, eq_v) and _parecido(vis_c, eq_l)
+                if not (directo or invertido):
+                    continue
+                if d_obj is not None and c.get("fecha"):
+                    try:
+                        if abs((d_obj - date.fromisoformat(str(c["fecha"])[:10])).days) > 2:
+                            continue
+                    except ValueError:
+                        pass
+                utc_iso = c.get("utc_time") or self.hora_inicio_desde_id(str(c.get("id") or ""))
+                if not utc_iso:
+                    continue
+                prioridad = 0 if directo else 1
+                cand_out = {
+                    "id_flashscore": str(c.get("id") or ""),
+                    "utcTime": utc_iso,
+                    "fecha": str(utc_iso)[:10],
+                    "local": loc_c,
+                    "visitante": vis_c,
+                    "fuente": "flashscore",
+                    "zona_origen": "UTC",
+                }
+                clave_orden = (prioridad, str(utc_iso), cand_out)
+                if mejor is None or clave_orden[:2] < mejor[:2]:
+                    mejor = clave_orden
+            if mejor is not None and mejor[0] == 0:
+                return mejor[2]
+        return mejor[2] if mejor is not None else None
 
     def estadisticas(self, id_flashscore: str) -> dict[str, tuple[str, str]]:
         """Métricas publicadas de un partido, o {} si no hay datos."""
@@ -874,9 +990,18 @@ def _int_o_none(texto: str) -> int | None:
         return None
 
 
-def _fecha_desde_epoch(texto: str) -> str:
+def _utc_iso_desde_epoch(texto: str) -> str | None:
+    """Convierte epoch Unix (segundos UTC) a ISO-8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`)."""
     from datetime import datetime, timezone
-    return datetime.fromtimestamp(int(texto), tz=timezone.utc).strftime("%Y-%m-%d")
+    try:
+        return datetime.fromtimestamp(int(float(str(texto).strip())), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    except (TypeError, ValueError, OSError):
+        return None
+
+
+def _fecha_desde_epoch(texto: str) -> str:
+    iso = _utc_iso_desde_epoch(texto)
+    return iso[:10] if iso else ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

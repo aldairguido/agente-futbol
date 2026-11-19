@@ -333,7 +333,7 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             continue
         vistos.add(clave)
         es_casa = es_directo
-        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), {
+        cand_meta: dict[str, Any] = {
             "id_partido": str(f.get("id_partido") or ""),
             "fecha_partido": fecha,
             "etiqueta_fecha": info_f["etiqueta_fecha"],
@@ -351,11 +351,153 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             "local_es": "local" if es_casa else "visitante",
             "evidencia_condicion": ("próximo enfrentamiento cruzado por ID numérico "
                                     "y nombre en el calendario de la fuente (America/Lima)"),
-        }))
+        }
+        if info_f.get("hora_inicio_partido"):
+            cand_meta["fuente_hora_inicio"] = str(f.get("fuente_hora") or "fotmob_fixture")
+            cand_meta["zona_origen_hora_inicio"] = str(f.get("zona_origen") or "UTC")
+        if f.get("id_flashscore"):
+            cand_meta["id_flashscore_partido"] = str(f.get("id_flashscore"))
+        candidatos.append((str(info_f.get("hora_inicio_partido") or fecha), cand_meta))
     if not candidatos:
         return None
     candidatos.sort(key=lambda x: x[0])          # el más próximo primero
     return candidatos[0][1]
+
+
+def obtener_hora_inicio_fotmob_match_details(id_partido: str, timeout: int = 5) -> str | None:
+    """Consulta `/api/data/matchDetails?matchId={id_partido}` en FotMob y devuelve `utcTime` ISO UTC."""
+    pid = str(id_partido or "").strip()
+    if not pid or not pid.isdigit():
+        return None
+    try:
+        import urllib.request
+        url = f"https://www.fotmob.com/api/data/matchDetails?matchId={pid}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            datos = json.loads(resp.read().decode("utf-8"))
+        cand = (
+            (datos.get("general") or {}).get("matchTimeUTCDate")
+            or ((datos.get("header") or {}).get("status") or {}).get("utcTime")
+        )
+        s = str(cand or "").strip()
+        if s and ("T" in s or ":" in s):
+            return s
+    except Exception:
+        return None
+    return None
+
+
+def _fecha_utc_compatible_fixture(utc_iso: str, fecha_esperada: str | None) -> bool:
+    """Permite ±2 días por desfase UTC/America_Lima frente a la fecha del fixture si existe."""
+    if not fecha_esperada:
+        return True
+    try:
+        from datetime import date
+        d_esp = date.fromisoformat(str(fecha_esperada)[:10])
+        d_enc = date.fromisoformat(str(utc_iso)[:10])
+        return abs((d_esp - d_enc).days) <= 2
+    except Exception:
+        return True
+
+
+def resolver_hora_inicio_encuentro(
+    contexto: dict[str, Any],
+    *,
+    equipo_local: str = "",
+    equipo_visitante: str = "",
+    id_flashscore: str | None = None,
+    cliente_fs: Any = None,
+    fetcher_fotmob: Any = None,
+) -> dict[str, Any]:
+    """
+    Completa `hora_inicio_partido` (ISO UTC), `hora_inicio_local` (`America/Lima`) y
+    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore o
+    FotMob antes de emitir el ticket, snapshot y registro en ledger OOS.
+    Si no se obtiene hora real con zona, mantiene `hora_inicio_partido=None` (no-OOS).
+    """
+    if not isinstance(contexto, dict):
+        return contexto
+    if contexto.get("hora_inicio_partido"):
+        contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
+        contexto.setdefault("zona_origen_hora_inicio", "UTC")
+        contexto.setdefault("zona_horaria", "America/Lima")
+        return contexto
+    if contexto.get("partido_ya_jugado") or contexto.get("omitir_busqueda_hora_red"):
+        contexto.setdefault("fuente_hora_inicio", "no_disponible")
+        return contexto
+
+    fecha_esp = str(contexto.get("fecha_partido") or "").strip() or None
+    if fecha_esp and not re.match(r"^\d{4}-\d{2}-\d{2}", fecha_esp):
+        fecha_esp = None
+
+    utc_resuelta: str | None = None
+    fuente_resuelta: str | None = None
+    zona_resuelta = "UTC"
+    id_fs_resuelto = str(id_flashscore or contexto.get("id_flashscore_partido") or "").strip() or None
+
+    # 1) Flashscore: ID próximo explícito o feed diario f_1_0_{dia} (AD/DC en epoch UTC)
+    if (equipo_local and equipo_visitante) or id_fs_resuelto:
+        try:
+            fs_cli = cliente_fs
+            if fs_cli is None:
+                from fuente_flashscore import ClienteFlashscore
+                fs_cli = ClienteFlashscore(timeout=5)
+            if id_fs_resuelto:
+                utc_id = fs_cli.hora_inicio_desde_id(id_fs_resuelto)
+                if utc_id and _fecha_utc_compatible_fixture(utc_id, fecha_esp):
+                    utc_resuelta = utc_id
+                    fuente_resuelta = "flashscore_dc"
+            if not utc_resuelta and equipo_local and equipo_visitante:
+                fx_fs = fs_cli.buscar_fixture_programado(
+                    equipo_local,
+                    equipo_visitante,
+                    fecha_objetivo=fecha_esp,
+                )
+                if fx_fs and fx_fs.get("utcTime") and _fecha_utc_compatible_fixture(fx_fs["utcTime"], fecha_esp):
+                    utc_resuelta = str(fx_fs["utcTime"])
+                    fuente_resuelta = str(fx_fs.get("fuente") or "flashscore")
+                    zona_resuelta = str(fx_fs.get("zona_origen") or "UTC")
+                    if fx_fs.get("id_flashscore"):
+                        id_fs_resuelto = str(fx_fs["id_flashscore"])
+        except Exception:
+            pass
+
+    # 2) FotMob matchDetails cuando partimos de fixture cacheado sin `utcTime`
+    id_p = str(contexto.get("id_partido") or "").strip()
+    if not utc_resuelta and id_p and id_p.isdigit():
+        try:
+            fn_fm = fetcher_fotmob or obtener_hora_inicio_fotmob_match_details
+            utc_fm = fn_fm(id_p)
+            if utc_fm and _fecha_utc_compatible_fixture(utc_fm, fecha_esp):
+                utc_resuelta = str(utc_fm)
+                fuente_resuelta = "fotmob_match_details"
+                zona_resuelta = "UTC"
+        except Exception:
+            pass
+
+    if utc_resuelta:
+        info = resolver_fecha_encuentro_lima(utc_resuelta, es_partido_programado=True)
+        if info.get("hora_inicio_partido"):
+            contexto["fecha_partido"] = info["fecha_partido"]
+            contexto["etiqueta_fecha"] = info["etiqueta_fecha"]
+            contexto["hora_inicio_partido"] = info["hora_inicio_partido"]
+            contexto["hora_inicio_local"] = info["hora_inicio_local"]
+            contexto["fixture_confirmado"] = True
+            contexto["fuente_fecha"] = "fixture"
+            contexto["zona_horaria"] = "America/Lima"
+            contexto["es_fecha_analisis"] = False
+            contexto["partido_activo"] = True
+            contexto["sin_partido_proximo"] = False
+            contexto["fuente_hora_inicio"] = fuente_resuelta or "fixture"
+            contexto["zona_origen_hora_inicio"] = zona_resuelta
+            if id_fs_resuelto:
+                contexto["id_flashscore_partido"] = id_fs_resuelto
+            return contexto
+
+    if id_fs_resuelto:
+        contexto["id_flashscore_partido"] = id_fs_resuelto
+    contexto.setdefault("fuente_hora_inicio", "no_disponible")
+    return contexto
 
 
 def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
@@ -942,6 +1084,12 @@ def resolver_enfrentamiento(
     avisar(formatear_mensaje_entidades_verificadas(nombre_a, str(pais_iso_a), nombre_b, str(pais_iso_b), str(liga_verif)))
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
+    if contexto.get("hora_inicio_partido") is None and not contexto.get("partido_ya_jugado"):
+        resolver_hora_inicio_encuentro(
+            contexto,
+            equipo_local=nombre_a,
+            equipo_visitante=nombre_b,
+        )
     # Blindaje anti-fuga temporal sobre doc_a y doc_b antes de calcular patrones o cuotas
     eff_corte = cutoff_timestamp if cutoff_timestamp is not None else fecha_corte
     eff_excl = exclude_match_ids if exclude_match_ids is not None else id_partido_excluir
@@ -2692,6 +2840,18 @@ def preparar_analisis(
         params.distribucion_conteos = "poisson"   # la central usa Poisson (documentado)
 
     ctx = contexto["contexto"]
+    if (
+        isinstance(ctx, dict)
+        and ctx.get("hora_inicio_partido") is None
+        and not ctx.get("partido_ya_jugado")
+        and (ctx.get("fixture_confirmado") or ctx.get("id_partido") or ctx.get("id_flashscore_partido"))
+    ):
+        resolver_hora_inicio_encuentro(
+            ctx,
+            equipo_local=str(contexto.get("equipo_local") or ""),
+            equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+            id_flashscore=ctx.get("id_flashscore_partido"),
+        )
 
     # ── Bloque A2: Si el partido objetivo ya se jugó o su hora de inicio ya pasó,
     # /mercados NO genera pronóstico prepartido: responde "partido ya jugado, usa /evaluar" y muestra el resultado.
@@ -2813,6 +2973,8 @@ def preparar_analisis(
             "etiqueta_fecha": ctx.get("etiqueta_fecha") or formatear_etiqueta_fecha_encabezado(ctx),
             "hora_inicio_partido": ctx.get("hora_inicio_partido"),
             "hora_inicio_local": ctx.get("hora_inicio_local"),
+            **({"fuente_hora_inicio": ctx.get("fuente_hora_inicio")} if ctx.get("fuente_hora_inicio") else {}),
+            **({"zona_origen_hora_inicio": ctx.get("zona_origen_hora_inicio")} if ctx.get("zona_origen_hora_inicio") else {}),
             "fixture_confirmado": bool(ctx.get("fixture_confirmado", False)),
             "fuente_fecha": ctx.get("fuente_fecha") or ("fixture" if ctx.get("fixture_confirmado") else "fallback"),
             "generado_en": _ahora(),
@@ -2950,7 +3112,7 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
     analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
@@ -3160,13 +3322,17 @@ def preparar_analisis(
         import informe as informe_mod
 
         cliente_fs = ClienteFlashscore()
-        # 1) Buscar id_flashscore directo del cruce o desde el feed H2H de un partido conocido
-        for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
-            sec = p_cand.get("fuente_secundaria") or {}
-            mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
-            if mid_cand and mid_cand not in ("N/D", "None", ""):
-                id_fs_partido = mid_cand
-                break
+        # 1) Priorizar id_flashscore del encuentro programado; luego duelos o historial conocido
+        id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
+        if id_fs_prog and id_fs_prog not in ("N/D", "None", ""):
+            id_fs_partido = id_fs_prog
+        if not id_fs_partido:
+            for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
+                sec = p_cand.get("fuente_secundaria") or {}
+                mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
+                if mid_cand and mid_cand not in ("N/D", "None", ""):
+                    id_fs_partido = mid_cand
+                    break
 
         if id_fs_partido:
             # Intentar extraer cuotas del partido o de los candidatos H2H
