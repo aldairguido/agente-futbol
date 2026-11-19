@@ -219,3 +219,57 @@ def test_punto5_hora_inicio_desde_fotmob_allfixtures_y_flashscore_y_no_oos(tmp_p
     assert regs[0]["es_oos_valido"] is True and regs[0]["es_canonica"] is True
     assert regs[1]["hora_inicio_partido"] is None
     assert regs[1]["es_oos_valido"] is False and regs[1]["estado_canonico"] == "no_oos"
+
+
+def test_punto6_prediccion_final_distingue_bajo_umbral_sensible_sec2_y_explica_veredicto() -> None:
+    from types import SimpleNamespace
+    import motor_inferencia as mi
+
+    # 1. formatear_pick_segun_estado distingue sensible (en Sección 2) vs sensible (fuera) vs < umbral (no validado)
+    txt_sec2 = mi.formatear_pick_segun_estado("Goles 2T: +0.5 Goles", 72.0, "sensible", en_seccion_2=True)
+    assert "sensible" in txt_sec2.lower() and "ver Sección 2" in txt_sec2
+    assert "no validado" not in txt_sec2.lower()
+
+    txt_fuera = mi.formatear_pick_segun_estado("Goles 2T: +0.5 Goles", 72.0, "sensible", en_seccion_2=False)
+    assert "fuera de Sección 2" in txt_fuera and "no validado" in txt_fuera.lower()
+    assert "ver Sección 2" not in txt_fuera
+
+    txt_bajo = mi.formatear_pick_segun_estado("Gana Vasco da Gama (1x2 Directo)", 62.0, "sensible")
+    assert "por debajo del umbral" in txt_bajo.lower()
+    assert "no validado" in txt_bajo.lower()
+    assert "ver Sección 2" not in txt_bajo
+    assert "sensible" not in txt_bajo.lower()
+
+    # 2. Caso Vasco 62.0%: aunque exista un evento terminado en `_1` sensible en sec2 (ej. al_menos_1),
+    # 1x2 Directo 62.0% NUNCA se etiqueta sensible ni remite a Sección 2, y explica diferencia vs Jugada #1 del Veredicto
+    cb = {"sin_derrotas": 9, "victorias": 8, "n_partidos": 15}
+    cc_none = {"sin_dato": True, "_meta": {"n_partidos_con_eventos": 0}}
+    pat = {"posesion_pct": 55.0, "faltas": 11.5, "corners": 6.0, "P26_Poder_Cierre_2T": 0.55, "_muestra_etiqueta": "Doble ADN pond."}
+    s_otro_1 = SimpleNamespace(evento="local_al_menos_1", periodo="FT", estado="sensible", probabilidad=0.78)
+    s_1x_ok = SimpleNamespace(evento="1x", periodo="FT", estado="mantiene", probabilidad=0.84)
+    motor_m = SimpleNamespace(_grupos_resumen={"mantiene": [s_1x_ok], "sensible": [s_otro_1]})
+
+    txt_vasco = mi.generar_reporte_xai_telegram(
+        "Vasco da Gama",
+        "Internacional",
+        pat,
+        pat,
+        {"local": 0.620, "empate": 0.220, "visita": 0.160},
+        [],
+        cb,
+        cb,
+        cc_none,
+        cc_none,
+        top5_podio=[
+            {"etiqueta": "Doble Oportunidad 1X: Vasco da Gama o Empate", "evento": "1x", "probabilidad": 0.840, "estado": "mantiene"},
+        ],
+        selecciones_sec1=[s_1x_ok],
+        selecciones_sec2=[s_otro_1],
+        motor=motor_m,
+    )
+    linea_pred = [ln for ln in txt_vasco.splitlines() if "Predicción Final" in ln][0]
+    assert "Por debajo del umbral (70%, no validado): Gana Vasco da Gama (1x2 Directo) (62.0%)" in linea_pred
+    assert "ver Sección 2" not in linea_pred
+    assert "sensible" not in linea_pred.lower()
+    assert "Diferencia con el Veredicto" in txt_vasco
+    assert "Doble Oportunidad 1X: Vasco da Gama o Empate" in txt_vasco

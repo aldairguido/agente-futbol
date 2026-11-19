@@ -1054,17 +1054,50 @@ def generar_reporte_xai_telegram(
         _prob_pred = p_1x * 100.0
         _ver_mantiene = f"{_pick_pred} | Probabilidad Ajustada: {_prob_pred:.1f}%"
 
+    _umbral_pct_xai = 70.0
     _est_pred = _inferir_estado_pick_dc(
         _ev_pred,
         top5_podio=top5_podio,
         selecciones_sec1=selecciones_sec1,
         selecciones_sec2=selecciones_sec2,
         motor=motor,
+        prob_pct=_prob_pred,
+        umbral_pct=_umbral_pct_xai,
     )
-    if _est_pred == "sensible":
-        veredicto = formatear_pick_segun_estado(_pick_pred, _prob_pred, "sensible")
+    if _prob_pred < _umbral_pct_xai or _est_pred in ("bajo_umbral", "no_validado"):
+        veredicto = formatear_pick_segun_estado(
+            _pick_pred,
+            _prob_pred,
+            "bajo_umbral",
+            en_seccion_2=False,
+            umbral_pct=_umbral_pct_xai,
+        )
+    elif _est_pred == "sensible":
+        _en_sec2_pred = _esta_en_seccion_2(
+            _ev_pred,
+            prob_pct=_prob_pred,
+            top5_podio=top5_podio,
+            selecciones_sec2=selecciones_sec2,
+            motor=motor,
+            umbral_pct=_umbral_pct_xai,
+        )
+        veredicto = formatear_pick_segun_estado(
+            _pick_pred,
+            _prob_pred,
+            "sensible",
+            en_seccion_2=_en_sec2_pred,
+            umbral_pct=_umbral_pct_xai,
+        )
     else:
         veredicto = _ver_mantiene
+
+    _nota_coherencia_veredicto = _explicacion_diferencia_prediccion_veredicto(
+        ev_pred=_ev_pred,
+        pick_pred=_pick_pred,
+        prob_pred=_prob_pred,
+        top5_podio=top5_podio,
+        umbral_pct=_umbral_pct_xai,
+    )
 
     def _cnt_b(d: Dict[str, Any], *claves: str) -> int:
         for k in claves:
@@ -1151,6 +1184,7 @@ def generar_reporte_xai_telegram(
     lineas = [
         f"📊 *TICKET DE ANÁLISIS PROFUNDO: {nombre_local.upper()} VS {nombre_visita.upper()}*",
         f"🎯 *Predicción Final:* {veredicto}",
+        *([f"ℹ️ _{_nota_coherencia_veredicto}_"] if _nota_coherencia_veredicto else []),
         f"🏷️ _{_obtener_sello_build()}_",
         "",
         "🧠 *¿POR QUÉ EL AGENTE TOMA ESTA DECISIÓN? (Análisis XAI - 55 Patrones)*",
@@ -1213,8 +1247,18 @@ def formatear_pick_segun_estado(
     estado: str,
     *,
     sufijo_extra: str = "",
+    en_seccion_2: Optional[bool] = None,
+    umbral_pct: float = 70.0,
 ) -> str:
-    """Redacción unificada: para picks sensibles evita 'Validada' y remite a Sección 2."""
+    """
+    Redacción unificada de picks:
+      - Si `prob_pct < umbral_pct` (o `estado in ('bajo_umbral', 'no_validado')`):
+        marca explícitamente `por debajo del umbral (<umbral>%) — no validado` y NUNCA remite a Sección 2.
+      - Si `estado == 'sensible'` y está presente en Sección 2 (`en_seccion_2 is not False`):
+        remite a Sección 2 sin usar 'Validada'.
+      - Si `estado == 'sensible'` pero `en_seccion_2 is False`:
+        declara explícitamente que está fuera de Sección 2 (no validado).
+    """
     est = str(estado or "mantiene").strip().lower()
     prob_str = f" ({prob_pct:.1f}%)" if prob_pct is not None else ""
     has_pct = (
@@ -1222,9 +1266,120 @@ def formatear_pick_segun_estado(
         and (f"{prob_pct:.1f}%" in pick_texto or f"{prob_pct:.0f}%" in pick_texto or "%" in pick_texto)
     )
     pick_con_pct = pick_texto if (has_pct or not prob_str) else f"{pick_texto}{prob_str}"
+
+    if est in ("bajo_umbral", "no_validado") or (
+        prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6
+    ):
+        return f"Por debajo del umbral ({umbral_pct:.0f}%, no validado): {pick_con_pct}{sufijo_extra}"
+
     if est == "sensible":
+        if en_seccion_2 is False:
+            return f"Inclinación estadística (sensible, fuera de Sección 2 — no validado): {pick_con_pct}{sufijo_extra}"
         return f"Inclinación estadística (sensible): {pick_con_pct} — ver Sección 2{sufijo_extra}"
     return f"{pick_con_pct}{sufijo_extra}"
+
+
+def _coincide_evento_resultado(ev_item: str, ev_obj: str, aliases: set[str]) -> bool:
+    if not ev_item:
+        return False
+    if ev_item in aliases:
+        return True
+    # Solo sufijos multi-carácter ('_1x', '_x2', '_local_gana'); evita colisiones con líneas '_1' o '_2'
+    return any(len(a) >= 2 and ev_item.endswith(f"_{a}") for a in aliases)
+
+
+def _aliases_evento_resultado(codigo_ev: str) -> tuple[str, set[str]]:
+    ev_obj = str(codigo_ev or "").strip().lower()
+    aliases = {
+        "1": {"1", "local_gana", "ganador_1"},
+        "2": {"2", "visitante_gana", "ganador_2"},
+        "1x": {"1x", "dc_1x"},
+        "x2": {"x2", "dc_x2"},
+    }.get(ev_obj, {ev_obj})
+    return ev_obj, aliases
+
+
+def _esta_en_seccion_2(
+    codigo_ev: str,
+    *,
+    prob_pct: Optional[float] = None,
+    top5_podio: Optional[List[Dict[str, Any]]] = None,
+    selecciones_sec2: Optional[List[Any]] = None,
+    motor: Any = None,
+    umbral_pct: float = 70.0,
+) -> bool:
+    if prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6:
+        return False
+    ev_obj, aliases = _aliases_evento_resultado(codigo_ev)
+
+    def _ev_de(item: Any) -> str:
+        return str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").strip().lower()
+
+    def _per_de(item: Any) -> str:
+        return str((item.get("periodo") if isinstance(item, dict) else getattr(item, "periodo", "FT")) or "FT").strip().upper()
+
+    for s in (selecciones_sec2 or []):
+        if _per_de(s) == "FT" and _coincide_evento_resultado(_ev_de(s), ev_obj, aliases):
+            return True
+
+    grupos_ref = getattr(motor, "_grupos_resumen", None) if motor is not None else None
+    if isinstance(grupos_ref, dict):
+        for s in (grupos_ref.get("sensible") or []):
+            if _per_de(s) == "FT" and _coincide_evento_resultado(_ev_de(s), ev_obj, aliases):
+                return True
+
+    # Cuando no hay lista explícita de Sección 2, respaldar desde top5_podio si tiene >= umbral
+    if selecciones_sec2 is None and not isinstance(grupos_ref, dict):
+        for it in (top5_podio or []):
+            et_t = str((it.get("etiqueta") if isinstance(it, dict) else getattr(it, "etiqueta", "")) or "").lower()
+            p_it = float((it.get("probabilidad") if isinstance(it, dict) else getattr(it, "probabilidad", 0.0)) or 0.0)
+            p_it_pct = p_it * 100.0 if p_it <= 1.0 else p_it
+            if p_it_pct < float(umbral_pct) - 1e-6:
+                continue
+            if _coincide_evento_resultado(_ev_de(it), ev_obj, aliases) or (
+                ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}"
+            ):
+                if str((it.get("estado") if isinstance(it, dict) else getattr(it, "estado", "")) or "").strip().lower() == "sensible":
+                    return True
+    return False
+
+
+def _explicacion_diferencia_prediccion_veredicto(
+    *,
+    ev_pred: str,
+    pick_pred: str,
+    prob_pred: float,
+    top5_podio: Optional[List[Dict[str, Any]]],
+    umbral_pct: float = 70.0,
+) -> str:
+    """Explica en una línea si Predicción Final difiere de Jugada #1 del Veredicto."""
+    if not top5_podio:
+        return ""
+    j1 = top5_podio[0]
+    j1_et = str((j1.get("etiqueta") if isinstance(j1, dict) else getattr(j1, "etiqueta", "")) or "").strip()
+    if not j1_et:
+        return ""
+    j1_ev = str((j1.get("evento") if isinstance(j1, dict) else getattr(j1, "evento", "")) or "").strip().lower()
+    raw_p = (j1.get("probabilidad") if isinstance(j1, dict) else getattr(j1, "probabilidad", 0.0)) or 0.0
+    j1_prob = float(raw_p) * 100.0 if float(raw_p) <= 1.0 else float(raw_p)
+
+    ev_p, aliases = _aliases_evento_resultado(ev_pred)
+    coincide = _coincide_evento_resultado(j1_ev, ev_p, aliases) or (
+        ev_p in ("1x", "x2") and f" {ev_p}:" in f" {j1_et.lower()}"
+    ) or (
+        ev_p in ("1", "2") and "1x2" in j1_et.lower() and "gana" in j1_et.lower()
+    )
+    if coincide:
+        return ""
+    if prob_pred < umbral_pct - 1e-6:
+        return (
+            f"Diferencia con el Veredicto: '{pick_pred}' ({prob_pred:.1f}%) está por debajo del umbral {umbral_pct:.0f}% "
+            f"(no validado en Sección 1/2); el Veredicto #1 usa la Jugada #1 del Ticket: '{j1_et}' ({j1_prob:.1f}%)."
+        )
+    return (
+        f"Diferencia con el Veredicto: Predicción Final resume el mercado de resultado ({prob_pred:.1f}%), "
+        f"mientras el Veredicto #1 usa la Jugada #1 del Ticket: '{j1_et}' ({j1_prob:.1f}%)."
+    )
 
 
 def _inferir_estado_pick_dc(
@@ -1234,14 +1389,12 @@ def _inferir_estado_pick_dc(
     selecciones_sec1: Optional[List[Any]] = None,
     selecciones_sec2: Optional[List[Any]] = None,
     motor: Any = None,
+    prob_pct: Optional[float] = None,
+    umbral_pct: float = 70.0,
 ) -> str:
-    ev_obj = str(codigo_ev or "").strip().lower()
-    aliases = {
-        "1": {"1", "local_gana"},
-        "2": {"2", "visitante_gana"},
-        "1x": {"1x", "dc_1x"},
-        "x2": {"x2", "dc_x2"},
-    }.get(ev_obj, {ev_obj})
+    if prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6:
+        return "bajo_umbral"
+    ev_obj, aliases = _aliases_evento_resultado(codigo_ev)
 
     def _ev_de(item: Any) -> str:
         return str((item.get("evento") if isinstance(item, dict) else getattr(item, "evento", "")) or "").strip().lower()
@@ -1253,28 +1406,28 @@ def _inferir_estado_pick_dc(
         return str((item.get("estado") if isinstance(item, dict) else getattr(item, "estado", "")) or "").strip().lower()
 
     for it in (selecciones_sec1 or []):
-        if _per_de(it) == "FT" and (_ev_de(it) in aliases or any(_ev_de(it).endswith(f"_{a}") for a in aliases)):
+        if _per_de(it) == "FT" and _coincide_evento_resultado(_ev_de(it), ev_obj, aliases):
             if _est_de(it) in ("", "mantiene"):
                 return "mantiene"
 
     grupos_ref = getattr(motor, "_grupos_resumen", None) if motor is not None else None
     if isinstance(grupos_ref, dict):
         for s in (grupos_ref.get("mantiene") or []):
-            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+            if _per_de(s) == "FT" and _coincide_evento_resultado(_ev_de(s), ev_obj, aliases):
                 return "mantiene"
         for s in (grupos_ref.get("sensible") or []):
-            if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+            if _per_de(s) == "FT" and _coincide_evento_resultado(_ev_de(s), ev_obj, aliases):
                 return "sensible"
 
     for s in (selecciones_sec2 or []):
-        if _per_de(s) == "FT" and (_ev_de(s) in aliases or any(_ev_de(s).endswith(f"_{a}") for a in aliases)):
+        if _per_de(s) == "FT" and _coincide_evento_resultado(_ev_de(s), ev_obj, aliases):
             return "sensible"
 
     for it in (top5_podio or []):
         ev_t = _ev_de(it)
         et_t = str((it.get("etiqueta") if isinstance(it, dict) else getattr(it, "etiqueta", "")) or "").lower()
         cat_t = str((it.get("categoria_podio") if isinstance(it, dict) else "") or "").upper()
-        if ev_t in aliases or (ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}") or (
+        if _coincide_evento_resultado(ev_t, ev_obj, aliases) or (ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}") or (
             ev_obj in ("1", "2") and "1x2" in et_t and "gana" in et_t and cat_t == "RESULTADO / DOBLE OPORTUNIDAD"
         ):
             if _est_de(it) == "sensible":
@@ -1591,7 +1744,15 @@ def generar_veredicto_tactico_partido(
         c1_tit = f"1. Duelo parejo / Ligera ventaja para {eq_fav} (o empate):"
     es_under = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "-0.5", "-1.5", "-2.5", "-3.5", "-4.5")) and not any(k in jugada_1_nombre.lower() for k in ("1x", "x2", "doble oportunidad", "victoria", "hándicap"))
     es_mercado_goles = any(k in jugada_1_nombre.lower() for k in ("menos", "under", "goles", "+0.5", "+1.5", "+2.5", "-2.5", "-3.5"))
-    if estado_j1 == "sensible":
+    if jugada_1_prob < 70.0 - 1e-6 or estado_j1 in ("bajo_umbral", "no_validado"):
+        accion_ticket = formatear_pick_segun_estado(
+            jugada_1_nombre,
+            jugada_1_prob,
+            "bajo_umbral",
+            en_seccion_2=False,
+            sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
+        )
+    elif estado_j1 == "sensible":
         accion_ticket = formatear_pick_segun_estado(
             jugada_1_nombre,
             jugada_1_prob,
