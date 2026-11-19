@@ -99,3 +99,109 @@ def test_b1_firma_motor_actualizada_r22():
     from servicio_mercados import FIRMA_MOTOR
 
     assert FIRMA_MOTOR == "red-neuronal-recursiva-45-r22"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 2: Falso homónimo extranjero, guarda de antigüedad y "Datos hasta"
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def _doc_minimo(nombre: str, liga: str, pais_iso: str, fechas: list[str], rivales: list[str], fuente: str = "fotmob"):
+    partidos = []
+    for i, fec in enumerate(fechas):
+        partidos.append({
+            "id_partido": f"{nombre}_{i}",
+            "fecha": fec,
+            "torneo": liga,
+            "rival": rivales[i % len(rivales)],
+            "condicion": "casa" if i % 2 == 0 else "fuera",
+            "marcador": {"equipo": 1, "rival": 1},
+            "periodos": {"FT": {"filas": []}, "1T": {"filas": []}, "2T": {"filas": []}},
+        })
+    return {
+        "equipo": {"id": f"id_{nombre}", "nombre": nombre, "liga": liga, "pais_iso": pais_iso},
+        "fuente": fuente,
+        "generado_en": "2026-11-19T00:00:00Z",
+        "partidos": partidos,
+        "partidos_futuros": [],
+    }
+
+
+def test_b2_falso_homonimo_extranjero_abstiene_con_motivo_explicito(monkeypatch):
+    import servicio_mercados as sm
+
+    fechas_ok = [f"2026-11-{15 - i:02d}" for i in range(15)]
+    doc_cor = _doc_minimo("Corinthians", "Serie A", "BRA", fechas_ok, ["Flamengo", "Palmeiras", "Bahia"])
+    doc_bot_cmr = _doc_minimo("Botafogo", "Elite One", "CMR", fechas_ok, ["Coton Sport", "Canon Yaounde"])
+
+    res_enf = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": doc_cor,
+        "doc_visitante": doc_bot_cmr,
+        "contexto": {
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "fecha_partido": "2026-11-19",
+        },
+    }
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **kw: dict(res_enf))
+    res = sm.preparar_analisis("Corinthians", "Botafogo")
+    assert res["abstenido"] is True
+    assert res["estado_cobertura"] == "falso_homonimo_extranjero"
+    assert "FALSO HOMÓNIMO EXTRANJERO" in res["motivo_abstencion"]
+    assert res["analisis"].selecciones_filtradas == []
+    assert "Datos hasta: 2026-11-15" in res["analisis_texto_3_parrafos"]
+
+
+def test_b2_guarda_antiguedad_abstiene_datos_desactualizados(monkeypatch):
+    import servicio_mercados as sm
+    from servicio_mercados import (
+        ETIQUETA_REGLA_ANTIGUEDAD,
+        MAX_DIAS_ANTIGUEDAD_ULTIMO_PARTIDO,
+        evaluar_antiguedad_datos,
+    )
+
+    fechas_rec = [f"2026-11-{15 - i:02d}" for i in range(15)]
+    fechas_viejas = [f"2017-05-{20 - i:02d}" for i in range(15)]
+    doc_l = _doc_minimo("Corinthians", "Brasileirao Serie A", "BRA", fechas_rec, ["Flamengo", "Palmeiras"])
+    doc_v = _doc_minimo("Botafogo", "Brasileirao Serie A", "BRA", fechas_viejas, ["Flamengo", "Palmeiras"])
+
+    antig = evaluar_antiguedad_datos(doc_l, doc_v, fecha_referencia="2026-11-19")
+    assert antig["desactualizado"] is True
+    assert antig["estado"] == "datos_desactualizados"
+    assert antig["max_dias"] == MAX_DIAS_ANTIGUEDAD_ULTIMO_PARTIDO == 60
+    assert antig["etiqueta_regla"] == ETIQUETA_REGLA_ANTIGUEDAD
+    assert "regla operativa sin validación" in antig["motivo"]
+
+    res_enf = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": doc_l,
+        "doc_visitante": doc_v,
+        "contexto": {
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "fecha_partido": "2026-11-19",
+        },
+    }
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **kw: dict(res_enf))
+    res = sm.preparar_analisis("Corinthians", "Botafogo")
+    assert res["abstenido"] is True
+    assert res["estado_cobertura"] == "datos_desactualizados"
+    assert "regla operativa sin validación" in res["motivo_abstencion"]
+    assert "Datos hasta: 2026-11-15 / 2017-05-20" in res["analisis_texto_3_parrafos"]
+
+
+def test_b2_encabezado_muestra_datos_hasta():
+    from servicio_mercados import formatear_fuentes_clubes_encabezado
+
+    doc_l = _doc_minimo("Vasco", "Serie A", "BRA", ["2026-11-12", "2026-11-08"], ["Bahia"])
+    doc_v = _doc_minimo("Internacional", "Serie A", "BRA", ["2026-11-14", "2026-11-09"], ["Bahia"])
+    hdr = formatear_fuentes_clubes_encabezado(
+        {"equipo_local": "Vasco", "equipo_visitante": "Internacional"},
+        doc_l,
+        doc_v,
+    )
+    assert "Fuentes: Vasco: fotmob · Internacional: fotmob" in hdr
+    assert "Datos hasta: 2026-11-12 / 2026-11-14" in hdr
