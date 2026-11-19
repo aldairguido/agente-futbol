@@ -1243,11 +1243,45 @@ def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[s
     ).hexdigest()[:12]
 
 
+def calcular_calidad_fuente_club(doc: dict[str, Any] | None) -> dict[str, int]:
+    """
+    Calcula métricas de calidad de fuente para un club sobre sus 15 partidos:
+    - `n_claves_no_nulas`: número de claves estadísticas distintas con al menos un valor no nulo.
+    - `n_eventos_gol`: número total de eventos de gol (con minuto/cronología) registrados.
+    """
+    if not isinstance(doc, dict):
+        return {"n_claves_no_nulas": 0, "n_eventos_gol": 0}
+    claves_no_nulas: set[str] = set()
+    n_eventos_gol = 0
+    for p in (doc.get("partidos") or [])[:15]:
+        if not isinstance(p, dict):
+            continue
+        periodos = p.get("periodos") or {}
+        if isinstance(periodos, dict):
+            for per_val in periodos.values():
+                filas = (per_val.get("filas") or []) if isinstance(per_val, dict) else []
+                for fila in filas:
+                    if not isinstance(fila, dict):
+                        continue
+                    cl = str(fila.get("clave") or "").strip()
+                    if cl and (fila.get("equipo") is not None or fila.get("rival") is not None):
+                        claves_no_nulas.add(cl)
+        for k_ev in ("goles_eventos", "eventos_gol", "goles", "minutos_gol"):
+            evs = p.get(k_ev)
+            if isinstance(evs, list) and evs:
+                n_eventos_gol += len(evs)
+                break
+    return {
+        "n_claves_no_nulas": len(claves_no_nulas),
+        "n_eventos_gol": int(n_eventos_gol),
+    }
+
+
 def extraer_fuentes_y_firma_datos(
     doc_local: dict[str, Any] | None,
     doc_visitante: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`) y `firma_datos`."""
+    """Devuelve fuente por club (`fuente_local`, `fuente_visitante`), `firma_datos` y calidad por club."""
     dl = doc_local if isinstance(doc_local, dict) else {}
     dv = doc_visitante if isinstance(doc_visitante, dict) else {}
     f_loc = str(dl.get("fuente") or "").strip() or None
@@ -1256,6 +1290,8 @@ def extraer_fuentes_y_firma_datos(
         "fuente_local": f_loc,
         "fuente_visitante": f_vis,
         "firma_datos": calcular_firma_datos(dl, dv),
+        "calidad_fuente_local": calcular_calidad_fuente_club(dl),
+        "calidad_fuente_visitante": calcular_calidad_fuente_club(dv),
     }
 
 
@@ -1388,6 +1424,8 @@ def formatear_fuentes_clubes_encabezado(
     partes: list[str] = []
     if f_l or f_v:
         partes.append(f"Fuentes: {eq_l}: {f_l or 'sin_dato'} · {eq_v}: {f_v or 'sin_dato'}")
+        if f_l.lower() == "flashscore" or f_v.lower() == "flashscore":
+            partes.append("datos reducidos")
     fechas_dh = extraer_fechas_datos_hasta(dl, dv, meta)
     if fechas_dh.get("datos_hasta"):
         partes.append(f"Datos hasta: {fechas_dh['datos_hasta']}")
@@ -3102,6 +3140,8 @@ def preparar_analisis(
     contexto["fuente_local"] = _info_f_datos["fuente_local"]
     contexto["fuente_visitante"] = _info_f_datos["fuente_visitante"]
     contexto["firma_datos"] = _info_f_datos["firma_datos"]
+    contexto["calidad_fuente_local"] = _info_f_datos["calidad_fuente_local"]
+    contexto["calidad_fuente_visitante"] = _info_f_datos["calidad_fuente_visitante"]
     _fechas_dh = extraer_fechas_datos_hasta(contexto.get("doc_local"), contexto.get("doc_visitante"), ctx)
     contexto["datos_hasta_local"] = _fechas_dh["datos_hasta_local"]
     contexto["datos_hasta_visitante"] = _fechas_dh["datos_hasta_visitante"]
@@ -3426,6 +3466,8 @@ def preparar_analisis(
     analisis.metadatos.setdefault("datos_hasta_local", _fechas_dh["datos_hasta_local"])
     analisis.metadatos.setdefault("datos_hasta_visitante", _fechas_dh["datos_hasta_visitante"])
     analisis.metadatos.setdefault("datos_hasta", _fechas_dh["datos_hasta"])
+    analisis.metadatos["calidad_fuente_local"] = _info_f_datos["calidad_fuente_local"]
+    analisis.metadatos["calidad_fuente_visitante"] = _info_f_datos["calidad_fuente_visitante"]
     analisis.metadatos.setdefault("fixture_confirmado", bool(ctx.get("fixture_confirmado", False)))
     analisis.metadatos.setdefault("fuente_fecha", "fixture" if analisis.metadatos.get("fixture_confirmado") else "fallback")
     analisis.metadatos.setdefault("etiqueta_fecha", formatear_etiqueta_fecha_encabezado(analisis.metadatos))

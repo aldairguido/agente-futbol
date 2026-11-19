@@ -210,6 +210,8 @@ class SnapshotPronostico:
     fuente_local: str | None = None
     fuente_visitante: str | None = None
     firma_datos: str | None = None
+    calidad_fuente_local: dict[str, Any] | None = None
+    calidad_fuente_visitante: dict[str, Any] | None = None
     lambdas_plano: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
@@ -263,6 +265,10 @@ class SnapshotPronostico:
             out["fuente_visitante"] = self.fuente_visitante
         if self.firma_datos is not None:
             out["firma_datos"] = self.firma_datos
+        if self.calidad_fuente_local is not None:
+            out["calidad_fuente_local"] = self.calidad_fuente_local
+        if self.calidad_fuente_visitante is not None:
+            out["calidad_fuente_visitante"] = self.calidad_fuente_visitante
         if self.fuente_hora_inicio is not None:
             out["fuente_hora_inicio"] = self.fuente_hora_inicio
         if self.zona_origen_hora_inicio is not None:
@@ -540,10 +546,38 @@ def _extraer_fuentes_y_firma_registro(
                 sort_keys=True,
             ).encode("utf-8")
         ).hexdigest()[:12]
+    cal_loc = (
+        meta.get("calidad_fuente_local")
+        or ctx.get("calidad_fuente_local")
+        or d.get("calidad_fuente_local")
+        or dc.get("calidad_fuente_local")
+        or pr.get("calidad_fuente_local")
+    )
+    cal_vis = (
+        meta.get("calidad_fuente_visitante")
+        or ctx.get("calidad_fuente_visitante")
+        or d.get("calidad_fuente_visitante")
+        or dc.get("calidad_fuente_visitante")
+        or pr.get("calidad_fuente_visitante")
+    )
+    if cal_loc is None and isinstance(dl, dict) and dl.get("partidos"):
+        try:
+            from servicio_mercados import calcular_calidad_fuente_club as _calc_cf
+            cal_loc = _calc_cf(dl)
+        except Exception:
+            cal_loc = None
+    if cal_vis is None and isinstance(dv, dict) and dv.get("partidos"):
+        try:
+            from servicio_mercados import calcular_calidad_fuente_club as _calc_cf
+            cal_vis = _calc_cf(dv)
+        except Exception:
+            cal_vis = None
     return {
         "fuente_local": str(f_loc).strip() if f_loc else None,
         "fuente_visitante": str(f_vis).strip() if f_vis else None,
         "firma_datos": str(firma).strip() if firma else None,
+        "calidad_fuente_local": dict(cal_loc) if isinstance(cal_loc, dict) else None,
+        "calidad_fuente_visitante": dict(cal_vis) if isinstance(cal_vis, dict) else None,
     }
 
 
@@ -1041,6 +1075,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             **({"fuente_local": f_info_snap["fuente_local"]} if f_info_snap["fuente_local"] is not None else {}),
             **({"fuente_visitante": f_info_snap["fuente_visitante"]} if f_info_snap["fuente_visitante"] is not None else {}),
             **({"firma_datos": f_info_snap["firma_datos"]} if f_info_snap["firma_datos"] is not None else {}),
+            **({"calidad_fuente_local": f_info_snap["calidad_fuente_local"]} if f_info_snap.get("calidad_fuente_local") is not None else {}),
+            **({"calidad_fuente_visitante": f_info_snap["calidad_fuente_visitante"]} if f_info_snap.get("calidad_fuente_visitante") is not None else {}),
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
             **({"lambdas_plano": lam_plano_snap} if lam_plano_snap is not None else {}),
@@ -1069,6 +1105,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         fuente_local=f_info_snap["fuente_local"],
         fuente_visitante=f_info_snap["fuente_visitante"],
         firma_datos=f_info_snap["firma_datos"],
+        calidad_fuente_local=f_info_snap.get("calidad_fuente_local"),
+        calidad_fuente_visitante=f_info_snap.get("calidad_fuente_visitante"),
         lambdas_plano=lam_plano_snap,
     )
 
@@ -10589,7 +10627,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "modo_sombra": payload_sombra,
     }
     _f_pre = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=meta)
-    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos"):
+    for _k_f in ("fuente_local", "fuente_visitante", "firma_datos", "calidad_fuente_local", "calidad_fuente_visitante"):
         if _f_pre.get(_k_f) is not None:
             registro[_k_f] = _f_pre[_k_f]
     _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)

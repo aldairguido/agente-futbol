@@ -283,3 +283,78 @@ def test_b3_seccion2_muestra_motivo_degradacion_desvio_y_estres():
     )
     assert "modelo 71.4% frente a observado 5/15 = 33%" in msg
     assert "estrés: cae hasta 69.1%" in msg
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 4: Calidad de fuente (n_claves_no_nulas, n_eventos_gol y "datos reducidos")
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_b4_calidad_fuente_por_club_y_datos_reducidos_en_encabezado():
+    from evaluacion_pronosticos import _extraer_fuentes_y_firma_registro
+    from servicio_mercados import (
+        calcular_calidad_fuente_club,
+        extraer_fuentes_y_firma_datos,
+        formatear_fuentes_clubes_encabezado,
+    )
+
+    doc_fm = {
+        "equipo": {"nombre": "Vasco"},
+        "fuente": "fotmob",
+        "generado_en": "2026-11-19T00:00:00Z",
+        "partidos": [
+            {
+                "fecha": "2026-11-15",
+                "goles_eventos": [{"minuto": 12}, {"minuto": 67}],
+                "periodos": {
+                    "FT": {
+                        "filas": [
+                            {"clave": "xg", "equipo": 1.4, "rival": 0.8},
+                            {"clave": "posesion", "equipo": 55, "rival": 45},
+                            {"clave": "faltas", "equipo": None, "rival": None},
+                        ]
+                    }
+                },
+            }
+        ],
+    }
+    doc_fs = {
+        "equipo": {"nombre": "Botafogo"},
+        "fuente": "flashscore",
+        "generado_en": "2026-11-19T00:00:00Z",
+        "partidos": [
+            {
+                "fecha": "2026-11-14",
+                "periodos": {
+                    "FT": {
+                        "filas": [
+                            {"clave": "posesion", "equipo": 48, "rival": 52},
+                        ]
+                    }
+                },
+            }
+        ],
+    }
+
+    cal_fm = calcular_calidad_fuente_club(doc_fm)
+    cal_fs = calcular_calidad_fuente_club(doc_fs)
+    assert cal_fm == {"n_claves_no_nulas": 2, "n_eventos_gol": 2}
+    assert cal_fs == {"n_claves_no_nulas": 1, "n_eventos_gol": 0}
+
+    info = extraer_fuentes_y_firma_datos(doc_fm, doc_fs)
+    assert info["calidad_fuente_local"] == {"n_claves_no_nulas": 2, "n_eventos_gol": 2}
+    assert info["calidad_fuente_visitante"] == {"n_claves_no_nulas": 1, "n_eventos_gol": 0}
+
+    reg = _extraer_fuentes_y_firma_registro(
+        preparado={"contexto": {"doc_local": doc_fm, "doc_visitante": doc_fs}},
+        metadatos={},
+    )
+    assert reg["calidad_fuente_local"] == {"n_claves_no_nulas": 2, "n_eventos_gol": 2}
+    assert reg["calidad_fuente_visitante"] == {"n_claves_no_nulas": 1, "n_eventos_gol": 0}
+
+    hdr_fs = formatear_fuentes_clubes_encabezado({}, doc_fm, doc_fs)
+    assert "Fuentes: Vasco: fotmob · Botafogo: flashscore" in hdr_fs
+    assert "datos reducidos" in hdr_fs
+
+    hdr_fm = formatear_fuentes_clubes_encabezado({}, doc_fm, doc_fm)
+    assert "datos reducidos" not in hdr_fm
