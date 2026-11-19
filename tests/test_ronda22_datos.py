@@ -205,3 +205,81 @@ def test_b2_encabezado_muestra_datos_hasta():
     )
     assert "Fuentes: Vasco: fotmob · Internacional: fotmob" in hdr
     assert "Datos hasta: 2026-11-12 / 2026-11-14" in hdr
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 3: Sección 2 con motivo de degradación (estrés vs desvío observado)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_b3_seccion2_muestra_motivo_degradacion_desvio_y_estres():
+    from motor_mercados import (
+        ESTADO_SENSIBLE,
+        Parametros,
+        Seleccion,
+        construir_mensaje,
+        formatear_motivo_degradacion_seccion2,
+    )
+
+    sel_desv = Seleccion(
+        mercado="Doble oportunidad",
+        id_mercado="doble_oportunidad",
+        evento="1x",
+        etiqueta="1X (Corinthians o empate)",
+        periodo="FT",
+        equipo="Corinthians",
+        linea=None,
+        probabilidad=0.714,
+        estado=ESTADO_SENSIBLE,
+        motivo="sin calibración validada (frec_emp: 33.3% vs mod: 71.4%, brecha -38.1 pp, desvío 38.1 pts > 10.0)",
+        escenarios={"wc0_wx0": 0.714, "wc1_wx1": 0.714},
+    )
+    mot_desv_full = formatear_motivo_degradacion_seccion2(sel_desv, umbral=0.70, corto=False)
+    mot_desv_corto = formatear_motivo_degradacion_seccion2(sel_desv, umbral=0.70, corto=True)
+    assert "modelo 71.4% frente a observado 5/15 = 33%" in mot_desv_full
+    assert "desvío obs. 5/15=33%" in mot_desv_corto
+
+    sel_est = Seleccion(
+        mercado="Botafogo - Tiros de esquina",
+        id_mercado="corners_visitante",
+        evento="under_5.5",
+        etiqueta="Botafogo: menos de 5.5 córneres",
+        periodo="FT",
+        equipo="Botafogo",
+        linea=5.5,
+        probabilidad=0.736,
+        estado=ESTADO_SENSIBLE,
+        motivo="Cae por debajo del 70% en escenario wc1_wx1",
+        escenarios={"wc0_wx0": 0.736, "wc1_wx1": 0.691},
+    )
+    mot_est_full = formatear_motivo_degradacion_seccion2(sel_est, umbral=0.70, corto=False)
+    mot_est_corto = formatear_motivo_degradacion_seccion2(sel_est, umbral=0.70, corto=True)
+    assert "estrés" in mot_est_full and "69.1%" in mot_est_full
+    assert "estrés" in mot_est_corto and "69%" in mot_est_corto
+
+    from types import SimpleNamespace
+    motor_stub = SimpleNamespace(
+        doc_local={"partidos": []},
+        doc_visitante={"partidos": []},
+        nombre_local="Corinthians",
+        nombre_visitante="Botafogo",
+        cond_local="casa",
+        cond_visitante="fuera",
+        tasas=SimpleNamespace(lambda_local_ft=1.3, lambda_visitante_ft=1.0, procedencia_tiempos="real"),
+        matriz_ft=None,
+        muestras={
+            "local_cond": SimpleNamespace(partidos_condicion=8),
+            "visitante_cond": SimpleNamespace(partidos_condicion=7),
+        },
+        clusters=None,
+        recursivo={},
+    )
+    msg = construir_mensaje(
+        {"equipo_local": "Corinthians", "equipo_visitante": "Botafogo", "fecha_partido": "2026-11-19"},
+        {"mantiene": [], "sensible": [sel_desv, sel_est], "incompleta": []},
+        Parametros(umbral=0.70),
+        motor_stub,
+        [],
+    )
+    assert "modelo 71.4% frente a observado 5/15 = 33%" in msg
+    assert "estrés: cae hasta 69.1%" in msg

@@ -2261,7 +2261,17 @@ def renderizar_ticket_mercados_png(
             filas_cat: list[dict[str, Any]] = []
             for amb in sorted(ambs_dict.keys(), key=_orden_ambito):
                 items = ambs_dict[amb]
-                pildoras_raw = [_formatear_pildora(s, cat) for s in items]
+                if es_seccion_1:
+                    pildoras_raw = [_formatear_pildora(s, cat) for s in items]
+                else:
+                    from motor_mercados import formatear_motivo_degradacion_seccion2 as _fmt_mot_s2
+                    pildoras_raw = []
+                    for _s_it in items:
+                        _lbl_s2, _pct_s2, _prob_s2 = _formatear_pildora(_s_it, cat)
+                        if _lbl_s2:
+                            _mot_s2 = _fmt_mot_s2(_s_it, umbral=umbral_val, corto=True)
+                            _lbl_s2 = f"{_lbl_s2} [{_mot_s2}]"
+                        pildoras_raw.append((_lbl_s2, _pct_s2, _prob_s2))
                 pildoras_raw.sort(key=lambda x: -x[2])
 
                 vistas_et = set()
