@@ -601,3 +601,114 @@ def test_bloque_4_serie_ab_sin_pais_pide_brasil_o_italia_y_fuentes_en_encabezado
         with patch("PIL.ImageDraw.Draw", side_effect=_cap_draw_abs):
             sm.renderizar_ticket_mercados_png(an_abs, destino=out_abs)
         assert any("Fuentes: Corinthians: flashscore · Botafogo: fotmob" in t for t in draw_abs), draw_abs
+
+
+def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_banderas() -> None:
+    from decision_cobertura import bandera_activa
+
+    assert bandera_activa("usar_tercer_brazo_plano_sombra") is False
+
+    dl = _doc_equipo_sintetico("Corinthians", fuente="flashscore", con_minutos=True)
+    dv = _doc_equipo_sintetico("Botafogo", fuente="fotmob", con_minutos=True)
+    res_fake = {
+        "equipo_local": "Corinthians",
+        "equipo_visitante": "Botafogo",
+        "doc_local": dl,
+        "doc_visitante": dv,
+        "meta_local": None,
+        "meta_visitante": None,
+        "contexto": {
+            "fecha_partido": "2026-11-22",
+            "hora_inicio_partido": "2026-11-22T22:00:00Z",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fotmob_fixture",
+            "competicion": "Série A (Brasil)",
+            "pais_iso": "BRA",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "origen_condicion": "fixture_real",
+            "sede": "Neo Química Arena",
+            "id_partido_objetivo": "5109977",
+        },
+        "liga_solicitada": {"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+        "estado_identidad": "verificada",
+        "motivo_identidad": "test",
+        "identidad_verificada": True,
+        "criterio_desempate": None,
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ruta_ledger = os.path.join(tmpdir, "ledger_b5.jsonl")
+        ruta_snaps = os.path.join(tmpdir, "snaps_b5")
+        with patch.object(sm, "resolver_enfrentamiento", return_value=res_fake):
+            prep = sm.preparar_analisis(
+                "Corinthians",
+                "Botafogo",
+                umbral=0.70,
+                directorio_salida=tmpdir,
+                liga={"nombre": "Série A (Brasil)", "pais_iso": "BRA"},
+            )
+        assert not prep.get("abstenido")
+        an = prep["analisis"]
+        lam_ft_antes = (an.motor.tasas.lambda_local_ft, an.motor.tasas.lambda_visitante_ft)
+
+        # La bandera sigue apagada tras el análisis y las selecciones/lambdas no se alteran
+        assert bandera_activa("usar_tercer_brazo_plano_sombra") is False
+        lp = ep.extraer_lambdas_plano_desde_analisis(an, prep)
+        assert isinstance(lp, dict)
+        for k in ("local_ft", "visitante_ft", "local_1t", "visitante_1t", "local_2t", "visitante_2t"):
+            assert k in lp and lp[k] is not None
+        assert (an.motor.tasas.lambda_local_ft, an.motor.tasas.lambda_visitante_ft) == lam_ft_antes
+
+        ep.adjuntar_modo_sombra_preparado(prep)
+        assert "lambdas_plano" not in prep["modo_sombra"]
+
+        tg_meta = {"message_id": 505, "message_date": 1795066740, "message_date_utc": "2026-11-18T05:39:00Z"}
+        prep["telegram_meta"] = tg_meta
+        snap = ep.snapshot_desde_analisis(
+            prep,
+            publicado_en="2026-11-18T05:39:00Z",
+            modo_sombra=prep.get("modo_sombra"),
+            telegram_meta=tg_meta,
+        )
+        snap_d = snap.a_dict()
+        assert snap_d["lambdas_plano"] == lp
+        assert snap_d["datos_corte"]["lambdas_plano"] == lp
+
+        ruta_snap = ep.guardar_snapshot(snap, directorio=ruta_snaps)
+        with open(ruta_snap, "r", encoding="utf-8") as fh:
+            guardado = json.load(fh)
+        assert guardado["lambdas_plano"] == lp
+
+        r_pre = ep.registrar_sombra_prepartido_en_ledger_oos(
+            prep, ruta_snapshot=ruta_snap, ruta_ledger=ruta_ledger
+        )
+        assert r_pre["registrado"] is True
+
+        res_obj = ep.ResultadoPartido(
+            id_partido="5109977",
+            estado="finalizado",
+            local="Corinthians",
+            visitante="Botafogo",
+            inicio_utc="2026-11-22T22:00:00Z",
+            goles_local=1,
+            goles_visitante=0,
+            goles_local_1t=0,
+            goles_visitante_1t=0,
+            corners_local={"FT": 5},
+            corners_visitante={"FT": 4},
+            amarillas_local={"FT": 2},
+            amarillas_visitante={"FT": 2},
+        )
+        r_liq = ep.liquidar_sombras_en_ledger_oos(
+            [guardado], {"Corinthians vs Botafogo": res_obj}, ruta_ledger=ruta_ledger
+        )
+        assert r_liq["n_liquidados_nuevos"] == 1
+
+        filas = ep.cargar_ledger_oos(ruta_ledger)
+        assert len(filas) == 2
+        assert filas[0]["lambdas_plano"] == lp
+        assert "lambdas_plano" not in filas[0]["modo_sombra"]
+        assert filas[1]["lambdas_plano"] == lp
+        assert "lambdas_plano" not in filas[1]["modo_sombra"]
+        assert ep.verificar_cadena_ledger_oos(ruta_ledger)["ok"] is True

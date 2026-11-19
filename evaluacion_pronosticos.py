@@ -208,6 +208,7 @@ class SnapshotPronostico:
     fuente_local: str | None = None
     fuente_visitante: str | None = None
     firma_datos: str | None = None
+    lambdas_plano: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -260,6 +261,8 @@ class SnapshotPronostico:
             out["fuente_visitante"] = self.fuente_visitante
         if self.firma_datos is not None:
             out["firma_datos"] = self.firma_datos
+        if self.lambdas_plano is not None:
+            out["lambdas_plano"] = self.lambdas_plano
         return out
 
 
@@ -475,6 +478,103 @@ def _extraer_fuentes_y_firma_registro(
         "fuente_visitante": str(f_vis).strip() if f_vis else None,
         "firma_datos": str(firma).strip() if firma else None,
     }
+
+
+def extraer_lambdas_plano_desde_analisis(
+    analisis: Any = None,
+    preparado: dict[str, Any] | None = None,
+    *,
+    doc: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """
+    Calcula o extrae `lambdas_plano` (Etapa 1 sin moduladores, sin λ_efectivo,
+    sin red 45-DCN ni reglas de Etapa 6) para guardarlo en snapshot y ledger sin alterar el ticket.
+    """
+    prep = preparado if isinstance(preparado, dict) else {}
+    d = doc if isinstance(doc, dict) else {}
+    pr = pre_ref if isinstance(pre_ref, dict) else {}
+    if analisis is None:
+        analisis = prep.get("analisis")
+
+    for origen in (
+        prep.get("modo_sombra"),
+        d.get("modo_sombra"),
+        d,
+        d.get("datos_corte"),
+        pr,
+    ):
+        if isinstance(origen, dict) and isinstance(origen.get("lambdas_plano"), dict):
+            lp_raw = origen["lambdas_plano"]
+            if lp_raw.get("local_ft") is not None and lp_raw.get("visitante_ft") is not None:
+                return dict(lp_raw)
+
+    mot = getattr(analisis, "motor", None) if analisis is not None else None
+    if mot is None:
+        return None
+    mu = getattr(mot, "muestras", None)
+    params_m = getattr(mot, "p", None)
+    if not isinstance(mu, dict):
+        return None
+
+    try:
+        from decision_cobertura import banderas_comportamiento
+        import motor_mercados as mm
+
+        det_g = getattr(mot, "detalle_goles", None) or {}
+        mods = det_g.get("_moduladores") if isinstance(det_g, dict) else None
+        lam_ft_l = None
+        lam_ft_v = None
+        if isinstance(mods, dict):
+            lam_ft_l = mods.get("lambda_local_sin_modular")
+            lam_ft_v = mods.get("lambda_visitante_sin_modular")
+        if lam_ft_l is None or lam_ft_v is None:
+            if isinstance(det_g, dict) and det_g.get("lambda_local") is not None and not det_g.get("_lambda_efectivo"):
+                lam_ft_l = det_g.get("lambda_local")
+                lam_ft_v = det_g.get("lambda_visitante")
+        if lam_ft_l is None or lam_ft_v is None:
+            mlg = mu.get("local_general")
+            mvg = mu.get("visitante_general")
+            mlc = mu.get("local_cond")
+            mvc = mu.get("visitante_cond")
+            if mlg is None or mvg is None or mlc is None or mvc is None:
+                return None
+            p_ref = params_m or mm.Parametros()
+            lam_ft_l, lam_ft_v, _ = mm.tasas_goles(
+                mlg,
+                mvg,
+                mlc,
+                mvc,
+                float(getattr(p_ref, "w_condicion", mm.W_CONDICION_DEFECTO)),
+                float(getattr(p_ref, "w_xg", mm.W_XG_DEFECTO)),
+                getattr(p_ref, "k_credibilidad", mm.K_CREDIBILIDAD_DEFECTO),
+            )
+        if lam_ft_l is None or lam_ft_v is None:
+            return None
+
+        dl = getattr(mot, "doc_local", None)
+        dv = getattr(mot, "doc_visitante", None)
+        lam_1t_l = lam_1t_v = lam_2t_l = lam_2t_v = None
+        if isinstance(dl, dict) and isinstance(dv, dict):
+            with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
+                lam_1t_l, lam_1t_v, lam_2t_l, lam_2t_v, _, _ = mm.repartir_lambdas_por_tiempos(
+                    dl,
+                    dv,
+                    float(lam_ft_l),
+                    float(lam_ft_v),
+                    getattr(mot, "cond_local", "casa"),
+                    getattr(mot, "cond_visitante", "fuera"),
+                )
+        return {
+            "local_ft": round(float(lam_ft_l), 6),
+            "visitante_ft": round(float(lam_ft_v), 6),
+            "local_1t": round(float(lam_1t_l), 6) if lam_1t_l is not None else None,
+            "visitante_1t": round(float(lam_1t_v), 6) if lam_1t_v is not None else None,
+            "local_2t": round(float(lam_2t_l), 6) if lam_2t_l is not None else None,
+            "visitante_2t": round(float(lam_2t_v), 6) if lam_2t_v is not None else None,
+        }
+    except Exception:
+        return None
 
 
 def _extraer_traza_etapa_6_snapshot(motor: Any) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None]:
@@ -833,6 +933,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 publicadas.append(dict(entrada))
 
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
+    lam_plano_snap = extraer_lambdas_plano_desde_analisis(analisis, preparado)
 
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
@@ -867,6 +968,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             **({"firma_datos": f_info_snap["firma_datos"]} if f_info_snap["firma_datos"] is not None else {}),
             "lambda_local_ft": motor.tasas.lambda_local_ft,
             "lambda_visitante_ft": motor.tasas.lambda_visitante_ft,
+            **({"lambdas_plano": lam_plano_snap} if lam_plano_snap is not None else {}),
         },
         selecciones=todas,
         selecciones_publicadas=publicadas,
@@ -890,6 +992,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         fuente_local=f_info_snap["fuente_local"],
         fuente_visitante=f_info_snap["fuente_visitante"],
         firma_datos=f_info_snap["firma_datos"],
+        lambdas_plano=lam_plano_snap,
     )
 
 
@@ -4546,7 +4649,7 @@ def registrar_en_ledger_oos(
             registros_existentes=existentes,
         )
         nuevo.update(contab)
-    for _k_f_ord in ("fuente_local", "fuente_visitante", "firma_datos"):
+    for _k_f_ord in ("fuente_local", "fuente_visitante", "firma_datos", "lambdas_plano"):
         if nuevo.get(_k_f_ord) is None:
             _v_dc = (registro.get("datos_corte") or {}).get(_k_f_ord) if isinstance(registro.get("datos_corte"), dict) else None
             _v_mt = (registro.get("metadatos") or {}).get(_k_f_ord) if isinstance(registro.get("metadatos"), dict) else None
@@ -10344,6 +10447,9 @@ def registrar_sombra_prepartido_en_ledger_oos(
     for _k_f in ("fuente_local", "fuente_visitante", "firma_datos"):
         if _f_pre.get(_k_f) is not None:
             registro[_k_f] = _f_pre[_k_f]
+    _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+    if _lp_pre is not None:
+        registro["lambdas_plano"] = _lp_pre
     if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
         registro["telegram_message_id"] = tg_m.get("message_id")
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
@@ -10501,6 +10607,9 @@ def liquidar_sombras_en_ledger_oos(
                 for k_f, v_f in _extraer_fuentes_y_firma_registro(doc=doc, pre_ref=pre_ref).items()
                 if v_f is not None
             },
+            **({
+                "lambdas_plano": _lp_liq
+            } if (_lp_liq := extraer_lambdas_plano_desde_analisis(doc=doc, pre_ref=pre_ref)) is not None else {}),
             "tipo_partido": str(doc.get("tipo_partido") or (doc.get("metadatos") or {}).get("tipo_partido") or ""),
             "pre_partido_sha256": (pre_ref or {}).get("sha256"),
             "marcador_real": {
