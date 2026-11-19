@@ -499,13 +499,24 @@ def _construir_filas_ticket_valor_legacy_5e8(
     c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
             if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
 
+    from motor_mercados import es_seleccion_competitiva_ticket as _es_comp_tv
+    _p_1x2_tv = (info["p_local"], info["p_empate"], info["p_visitante"])
+    _mot_tv = getattr(analisis, "motor", None)
+    definiciones_raw = [
+        (f"1 — Victoria {eq_l}", "Ganador del partido", "1", info["p_local"], c_loc),
+        ("X — Empate", "Ganador del partido", "x", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", "Ganador del partido", "2", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", "Doble oportunidad", "1x", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", "Doble oportunidad", "x2", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", "12", info["p_12"], c_12),
+    ]
     definiciones = [
-        (f"1 — Victoria {eq_l}", info["p_local"], c_loc),
-        ("X — Empate", info["p_empate"], c_emp),
-        (f"2 — Victoria {eq_v}", info["p_visitante"], c_vis),
-        (f"1X — {eq_l} o Empate", info["p_1x"], c_1x),
-        (f"X2 — Empate o {eq_v}", info["p_x2"], c_x2),
-        (f"12 — {eq_l} o {eq_v}", info["p_12"], c_12),
+        (nom, p_b, c_fs)
+        for nom, mkt_c, ev_c, p_b, c_fs in definiciones_raw
+        if _es_comp_tv(
+            {"mercado": mkt_c, "evento": ev_c, "etiqueta": nom, "periodo": "FT", "probabilidad": p_b},
+            eq_l=eq_l, eq_v=eq_v, p_1x2=_p_1x2_tv, motor=_mot_tv,
+        )
     ]
 
     filas: list[dict[str, Any]] = []
@@ -590,13 +601,24 @@ def construir_filas_ticket_valor(
         return _construir_filas_ticket_valor_legacy_5e8(analisis, cuotas_flashscore)
     from motor_mercados import calcular_ev_y_stake_calibrado
 
+    from motor_mercados import es_seleccion_competitiva_ticket as _es_comp_tv2
+    _p_1x2_tv2 = (info["p_local"], info["p_empate"], info["p_visitante"])
+    _mot_tv2 = getattr(analisis, "motor", None)
+    definiciones_raw = [
+        (f"1 — Victoria {eq_l}", "Ganador del partido", "1", info["p_local"], c_loc),
+        ("X — Empate", "Ganador del partido", "x", info["p_empate"], c_emp),
+        (f"2 — Victoria {eq_v}", "Ganador del partido", "2", info["p_visitante"], c_vis),
+        (f"1X — {eq_l} o Empate", "Doble oportunidad", "1x", info["p_1x"], c_1x),
+        (f"X2 — Empate o {eq_v}", "Doble oportunidad", "x2", info["p_x2"], c_x2),
+        (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", "12", info["p_12"], c_12),
+    ]
     definiciones = [
-        (f"1 — Victoria {eq_l}", "Ganador del partido", info["p_local"], c_loc),
-        ("X — Empate", "Ganador del partido", info["p_empate"], c_emp),
-        (f"2 — Victoria {eq_v}", "Ganador del partido", info["p_visitante"], c_vis),
-        (f"1X — {eq_l} o Empate", "Doble oportunidad", info["p_1x"], c_1x),
-        (f"X2 — Empate o {eq_v}", "Doble oportunidad", info["p_x2"], c_x2),
-        (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", info["p_12"], c_12),
+        (nom, mkt_c, p_b, c_fs)
+        for nom, mkt_c, ev_c, p_b, c_fs in definiciones_raw
+        if _es_comp_tv2(
+            {"mercado": mkt_c, "evento": ev_c, "etiqueta": nom, "periodo": "FT", "probabilidad": p_b},
+            eq_l=eq_l, eq_v=eq_v, p_1x2=_p_1x2_tv2, motor=_mot_tv2,
+        )
     ]
 
     filas: list[dict[str, Any]] = []
@@ -924,16 +946,24 @@ def redactar_analisis_3_parrafos(
         )
 
     # ── PÁRRAFO 3: Veredicto Final y Mejor Apuesta de Valor (+EV) ───────────
+    umbral_vf = float(getattr(getattr(analisis, "parametros", None), "umbral", 0.70) or 0.70)
     filas_ev = construir_filas_ticket_valor(analisis, cuotas_flashscore)
-    con_valor = [f for f in filas_ev if f["tiene_valor"] and f["ev_pct"] is not None]
-    # Ordenar por combinación de mayor EV y probabilidad sólida (>= 40% priorizado)
+    filas_ev_umbral = [f for f in filas_ev if float(f.get("prob_bot") or 0.0) >= (umbral_vf - 1e-6)]
+    con_valor = [f for f in filas_ev_umbral if f["tiene_valor"] and f["ev_pct"] is not None]
+    # Ordenar por combinación de mayor EV y probabilidad sólida
     con_valor_solido = sorted(
         con_valor,
         key=lambda x: (1 if x["prob_bot"] >= 0.45 else 0, float(x["ev_pct"] or -999.0), x["prob_bot"]),
         reverse=True,
     )
 
-    if con_valor_solido:
+    if not filas_ev_umbral:
+        parrafo_3 = (
+            f"🎯 3. Veredicto Final: No hay recomendación de resultado 1X2/Doble Oportunidad por encima del "
+            f"umbral ({umbral_vf:.0%}) tras aplicar los filtros competitivos · Stake 0%. "
+            f"Priorizar únicamente las líneas validadas de la Sección 1 del Ticket General si las hubiera."
+        )
+    elif con_valor_solido:
         mejor = con_valor_solido[0]
         vale_la_pena = (
             "Sí vale la pena arriesgar con gestión disciplinada (Quarter-Kelly), ya que combina ventaja "
@@ -951,9 +981,9 @@ def redactar_analisis_3_parrafos(
         )
     else:
         # Si no hubo cuota superior a la justa o Flashscore no publicó cuotas para el partido
-        mejor_prob = max(filas_ev, key=lambda x: x["prob_bot"]) if filas_ev else None
-        tiene_cuotas_fs = any(f["cuota_flashscore"] is not None for f in filas_ev)
-        if tiene_cuotas_fs and mejor_prob:
+        mejor_prob = max(filas_ev_umbral, key=lambda x: x["prob_bot"])
+        tiene_cuotas_fs = any(f["cuota_flashscore"] is not None for f in filas_ev_umbral)
+        if tiene_cuotas_fs:
             parrafo_3 = (
                 f"🎯 3. Veredicto Final y Auditoría de Valor (+EV): "
                 f"Las cuotas actuales de Flashscore en el mercado 1X2 están ajustadas por debajo de la Cuota Justa "
@@ -962,18 +992,13 @@ def redactar_analisis_3_parrafos(
                 f"({mejor_prob['prob_bot_str']}, Cuota Justa {mejor_prob['cuota_justa_str']}) únicamente si encuentras "
                 f"en tu casa de apuestas una cuota superior a {mejor_prob['cuota_justa_str']}."
             )
-        elif mejor_prob:
+        else:
             parrafo_3 = (
                 f"🎯 3. Veredicto Final y Referencia de Valor (+EV): "
                 f"Dado que Flashscore aún no publica cuotas 1X2 activas para este cruce, la selección matriz más "
                 f"sólida del modelo es «{mejor_prob['mercado']}» con un {mejor_prob['prob_bot_str']} de probabilidad "
                 f"y una Cuota Justa de {mejor_prob['cuota_justa_str']}: solo vale la pena arriesgar si la cuota "
                 f"ofrecida en casa de apuestas supera dicho umbral de {mejor_prob['cuota_justa_str']} (EV > 0%)."
-            )
-        else:
-            parrafo_3 = (
-                "🎯 3. Veredicto Final: Priorizar exclusivamente las selecciones del Top 5 del Ticket General "
-                "cuya cuota real supere la Cuota Justa calculada por la Red Neuronal."
             )
 
     _hdr_tg_lines: list[str] = []

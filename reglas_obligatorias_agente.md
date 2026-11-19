@@ -12,3 +12,5 @@
   3) Eliminación permanente de `"12 (Sin Empate)"` en Top 5 y Sección 1 cuando `P(X) >= 15%`.
   4) Factor Matagigantes (`pos_local < 36%` + alta puntería $\to$ `-20%` $\lambda$ visitante favorito) y regresión `-10%` por sobre-rendimiento (`goles_ult5 / xg_ult5 > 1.30`).
   5) Límite de tarjetas `-15%` por monopolio de posesión (`>= 68%`) y exclusión de `+4.5 Tarjetas` en Top 5.
+
+- **Desvío empírico (`tiene_desvio_excesivo_calibracion`)**: Doble Oportunidad (`1X`, `X2`, `12`) degrada a Sección 2 solo cuando el modelo sobreestima lo observado (brecha con signo > 10 pp); el resto de mercados degrada en ambos sentidos (valor absoluto `|modelo - observado| > 10 pp`).
