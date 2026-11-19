@@ -397,3 +397,82 @@ def test_b5_etiquetas_lambda_base_adn_y_veredicto_under_35_y_attack_orden():
     assert "Control de techo de goles" in ver
     assert "2.71 goles esperados" in ver
     assert "Attack 39.0 de RB Bragantino vs 17.1 de Vitória" in ver
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 6: Hora de inicio discrepante (FotMob vs Flashscore) y regla > 15 min
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+def test_b6_hora_inicio_discrepante_guarda_ambas_y_marca_no_oos_si_mayor_15_min():
+    from evaluacion_pronosticos import evaluar_contabilidad_oos_registro
+    from servicio_mercados import comparar_horas_inicio_fuentes, resolver_hora_inicio_encuentro
+
+    # 1) Comparación exacta (0 min) -> no discrepante
+    c0 = comparar_horas_inicio_fuentes("2026-11-19T22:30:00Z", "2026-11-19T22:30:00Z")
+    assert c0["diferencia_hora_inicio_min"] == 0.0
+    assert c0["hora_inicio_discrepante"] is False
+    assert c0["excede_tolerancia_oos"] is False
+
+    # 2) Diferencia de 10 min (<= 15 min) -> discrepante=True, pero sigue siendo OOS válido
+    c10 = comparar_horas_inicio_fuentes("2026-11-19T22:30:00Z", "2026-11-19T22:40:00Z")
+    assert c10["diferencia_hora_inicio_min"] == 10.0
+    assert c10["hora_inicio_discrepante"] is True
+    assert c10["excede_tolerancia_oos"] is False
+
+    ev_ok = evaluar_contabilidad_oos_registro(
+        fixture_confirmado=True,
+        fuente_fecha="fixture",
+        hora_inicio_partido="2026-11-19T22:30:00Z",
+        telegram_message_date="2026-11-19T09:14:00Z",
+        hora_inicio_fotmob="2026-11-19T22:30:00Z",
+        hora_inicio_flashscore="2026-11-19T22:40:00Z",
+    )
+    assert ev_ok["es_oos_valido"] is True
+    assert ev_ok["estado_canonico"] == "canonica"
+    assert ev_ok["hora_inicio_discrepante"] is True
+    assert ev_ok["diferencia_hora_inicio_min"] == 10.0
+
+    # 3) Diferencia de 30 min (> 15 min) -> guarda ambas y marca no_oos
+    class _CliFSFake:
+        def hora_inicio_desde_id(self, mid):
+            return None
+
+        def buscar_fixture_programado(self, eq_l, eq_v, fecha_objetivo=None):
+            return {
+                "utcTime": "2026-11-19T23:00:00Z",
+                "fuente": "flashscore_f_1_0",
+                "zona_origen": "UTC",
+                "id_flashscore": "FAKE1234",
+            }
+
+    ctx = {
+        "fecha_partido": "2026-11-19",
+        "hora_inicio_partido": "2026-11-19T22:30:00Z",
+        "fuente_hora_inicio": "fotmob_fixture",
+        "fixture_confirmado": True,
+    }
+    resolver_hora_inicio_encuentro(
+        ctx,
+        equipo_local="Vitória",
+        equipo_visitante="RB Bragantino",
+        cliente_fs=_CliFSFake(),
+    )
+    assert ctx["hora_inicio_fotmob"] == "2026-11-19T22:30:00Z"
+    assert ctx["hora_inicio_flashscore"] == "2026-11-19T23:00:00Z"
+    assert ctx["diferencia_hora_inicio_min"] == 30.0
+    assert ctx["hora_inicio_discrepante"] is True
+
+    ev_no_oos = evaluar_contabilidad_oos_registro(
+        fixture_confirmado=True,
+        fuente_fecha="fixture",
+        hora_inicio_partido=ctx["hora_inicio_partido"],
+        telegram_message_date="2026-11-19T09:14:00Z",
+        hora_inicio_fotmob=ctx["hora_inicio_fotmob"],
+        hora_inicio_flashscore=ctx["hora_inicio_flashscore"],
+    )
+    assert ev_no_oos["es_oos_valido"] is False
+    assert ev_no_oos["es_canonica"] is False
+    assert ev_no_oos["estado_canonico"] == "no_oos"
+    assert ev_no_oos["hora_inicio_discrepante"] is True
+    assert ev_no_oos["diferencia_hora_inicio_min"] == 30.0

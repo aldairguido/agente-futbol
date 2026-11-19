@@ -202,6 +202,10 @@ class SnapshotPronostico:
     hora_inicio_partido: str | None = None
     fuente_hora_inicio: str | None = None
     zona_origen_hora_inicio: str | None = None
+    hora_inicio_fotmob: str | None = None
+    hora_inicio_flashscore: str | None = None
+    diferencia_hora_inicio_min: float | None = None
+    hora_inicio_discrepante: bool | None = None
     hora_mensaje_utc: str | None = None
     es_oos_valido: bool | None = None
     es_canonica: bool | None = None
@@ -274,6 +278,14 @@ class SnapshotPronostico:
             out["fuente_hora_inicio"] = self.fuente_hora_inicio
         if self.zona_origen_hora_inicio is not None:
             out["zona_origen_hora_inicio"] = self.zona_origen_hora_inicio
+        if self.hora_inicio_fotmob is not None:
+            out["hora_inicio_fotmob"] = self.hora_inicio_fotmob
+        if self.hora_inicio_flashscore is not None:
+            out["hora_inicio_flashscore"] = self.hora_inicio_flashscore
+        if self.diferencia_hora_inicio_min is not None:
+            out["diferencia_hora_inicio_min"] = self.diferencia_hora_inicio_min
+        if self.hora_inicio_discrepante is not None:
+            out["hora_inicio_discrepante"] = bool(self.hora_inicio_discrepante)
         if self.lambdas_plano is not None:
             out["lambdas_plano"] = self.lambdas_plano
         if self.lambdas_base_doble_adn is not None:
@@ -360,6 +372,10 @@ def evaluar_contabilidad_oos_registro(
     hora_inicio_partido: Any,
     telegram_message_date: Any,
     hora_mensaje_utc: Any = None,
+    hora_inicio_fotmob: Any = None,
+    hora_inicio_flashscore: Any = None,
+    diferencia_hora_inicio_min: float | None = None,
+    hora_inicio_discrepante: bool | None = None,
     partido: Any = "",
     fecha: Any = "",
     id_partido: Any = "",
@@ -384,7 +400,21 @@ def evaluar_contabilidad_oos_registro(
     if dt_msg is None and telegram_message_date is not None:
         dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(telegram_message_date)
 
-    es_oos_valido = bool(fx_conf and dt_ini is not None and dt_msg is not None and dt_msg < dt_ini)
+    dt_fm, h_fm_str = _parsear_instante_con_zona_oos(hora_inicio_fotmob)
+    dt_fs, h_fs_str = _parsear_instante_con_zona_oos(hora_inicio_flashscore)
+    diff_h_min = float(diferencia_hora_inicio_min) if diferencia_hora_inicio_min is not None else None
+    if diff_h_min is None and dt_fm is not None and dt_fs is not None:
+        diff_h_min = round(abs((dt_fm - dt_fs).total_seconds()) / 60.0, 2)
+    h_discrepante = bool(hora_inicio_discrepante) or (diff_h_min is not None and diff_h_min > 0.0)
+    discrepancia_excede_15m = bool(diff_h_min is not None and diff_h_min > 15.0)
+
+    es_oos_valido = bool(
+        fx_conf
+        and dt_ini is not None
+        and dt_msg is not None
+        and dt_msg < dt_ini
+        and not discrepancia_excede_15m
+    )
     if not es_oos_valido:
         es_canonica = False
         estado_canonico = "no_oos"
@@ -412,7 +442,7 @@ def evaluar_contabilidad_oos_registro(
         es_canonica = not ya_hay_canonica
         estado_canonico = "canonica" if es_canonica else "no_canonica"
 
-    return {
+    res_oos = {
         "fixture_confirmado": fx_conf,
         "fuente_fecha": f_fec,
         "hora_inicio_partido": hora_ini_str,
@@ -423,6 +453,15 @@ def evaluar_contabilidad_oos_registro(
         "estado_canonico": estado_canonico,
         "regla_contabilidad_oos": REGLA_CONTABILIDAD_OOS,
     }
+    if h_fm_str is not None:
+        res_oos["hora_inicio_fotmob"] = h_fm_str
+    if h_fs_str is not None:
+        res_oos["hora_inicio_flashscore"] = h_fs_str
+    if diff_h_min is not None:
+        res_oos["diferencia_hora_inicio_min"] = diff_h_min
+    if h_discrepante:
+        res_oos["hora_inicio_discrepante"] = True
+    return res_oos
 
 
 def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
@@ -977,12 +1016,24 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         or ctx_p.get("id_partido")
         or ""
     )
+    h_fm_snap = metadatos.get("hora_inicio_fotmob") or ctx_p.get("hora_inicio_fotmob")
+    h_fs_snap = metadatos.get("hora_inicio_flashscore") or ctx_p.get("hora_inicio_flashscore")
+    diff_h_snap = metadatos.get("diferencia_hora_inicio_min")
+    if diff_h_snap is None:
+        diff_h_snap = ctx_p.get("diferencia_hora_inicio_min")
+    h_disc_snap = metadatos.get("hora_inicio_discrepante")
+    if h_disc_snap is None:
+        h_disc_snap = ctx_p.get("hora_inicio_discrepante")
     contab_snap = evaluar_contabilidad_oos_registro(
         fixture_confirmado=fx_conf,
         fuente_fecha=f_fec,
         hora_inicio_partido=h_ini,
         telegram_message_date=tg_mdt,
         hora_mensaje_utc=tg_mutc,
+        hora_inicio_fotmob=h_fm_snap,
+        hora_inicio_flashscore=h_fs_snap,
+        diferencia_hora_inicio_min=diff_h_snap,
+        hora_inicio_discrepante=h_disc_snap,
         partido=f"{metadatos.get('equipo_local') or ''} vs {metadatos.get('equipo_visitante') or ''}",
         fecha=metadatos.get("fecha_partido") or h_ini,
         id_partido=id_part_snap,
@@ -1131,6 +1182,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         hora_inicio_partido=contab_snap["hora_inicio_partido"],
         fuente_hora_inicio=f_hini,
         zona_origen_hora_inicio=z_hini,
+        hora_inicio_fotmob=contab_snap.get("hora_inicio_fotmob"),
+        hora_inicio_flashscore=contab_snap.get("hora_inicio_flashscore"),
+        diferencia_hora_inicio_min=contab_snap.get("diferencia_hora_inicio_min"),
+        hora_inicio_discrepante=contab_snap.get("hora_inicio_discrepante"),
         hora_mensaje_utc=contab_snap["hora_mensaje_utc"],
         es_oos_valido=contab_snap["es_oos_valido"],
         es_canonica=contab_snap["es_canonica"],
@@ -4804,6 +4859,10 @@ def registrar_en_ledger_oos(
             hora_inicio_partido=registro.get("hora_inicio_partido"),
             telegram_message_date=registro.get("telegram_message_date"),
             hora_mensaje_utc=registro.get("hora_mensaje_utc"),
+            hora_inicio_fotmob=registro.get("hora_inicio_fotmob"),
+            hora_inicio_flashscore=registro.get("hora_inicio_flashscore"),
+            diferencia_hora_inicio_min=registro.get("diferencia_hora_inicio_min"),
+            hora_inicio_discrepante=registro.get("hora_inicio_discrepante"),
             partido=partido,
             fecha=fecha,
             id_partido=id_part,
@@ -10663,6 +10722,14 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
+    for _k_hd in ("hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante"):
+        _v_hd = meta.get(_k_hd)
+        if _v_hd is None and isinstance(preparado.get("contexto"), dict):
+            _v_hd = (preparado["contexto"].get("contexto") or {}).get(_k_hd)
+            if _v_hd is None:
+                _v_hd = preparado["contexto"].get(_k_hd)
+        if _v_hd is not None:
+            registro[_k_hd] = _v_hd
     _f_pre = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=meta)
     for _k_f in ("fuente_local", "fuente_visitante", "firma_datos", "calidad_fuente_local", "calidad_fuente_visitante"):
         if _f_pre.get(_k_f) is not None:

@@ -400,6 +400,52 @@ def _fecha_utc_compatible_fixture(utc_iso: str, fecha_esperada: str | None) -> b
         return True
 
 
+def comparar_horas_inicio_fuentes(
+    hora_fotmob: str | None,
+    hora_flashscore: str | None,
+    *,
+    tolerancia_min: float = 15.0,
+) -> dict[str, Any]:
+    """
+    Compara las horas de inicio UTC reportadas por FotMob y Flashscore.
+    Si difieren, marca `hora_inicio_discrepante=True` y calcula `diferencia_hora_inicio_min`.
+    Si la diferencia supera `tolerancia_min` (15 min), marca `excede_tolerancia_oos=True`.
+    """
+    def _parse_utc(v: str | None):
+        if not v:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                return None
+            return dt.astimezone(timezone.utc)
+        except Exception:
+            return None
+
+    dt_fm = _parse_utc(hora_fotmob)
+    dt_fs = _parse_utc(hora_flashscore)
+    h_fm = dt_fm.strftime("%Y-%m-%dT%H:%M:%SZ") if dt_fm else (str(hora_fotmob).strip() if hora_fotmob else None)
+    h_fs = dt_fs.strftime("%Y-%m-%dT%H:%M:%SZ") if dt_fs else (str(hora_flashscore).strip() if hora_flashscore else None)
+
+    diff_min: float | None = None
+    discrepante = False
+    excede_oos = False
+    if dt_fm is not None and dt_fs is not None:
+        diff_min = round(abs((dt_fm - dt_fs).total_seconds()) / 60.0, 2)
+        discrepante = diff_min > 0.0
+        excede_oos = diff_min > float(tolerancia_min)
+    return {
+        "hora_inicio_fotmob": h_fm,
+        "hora_inicio_flashscore": h_fs,
+        "diferencia_hora_inicio_min": diff_min,
+        "hora_inicio_discrepante": discrepante,
+        "excede_tolerancia_oos": excede_oos,
+    }
+
+
 def resolver_hora_inicio_encuentro(
     contexto: dict[str, Any],
     *,
@@ -411,32 +457,56 @@ def resolver_hora_inicio_encuentro(
 ) -> dict[str, Any]:
     """
     Completa `hora_inicio_partido` (ISO UTC), `hora_inicio_local` (`America/Lima`) y
-    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore o
+    su procedencia (`fuente_hora_inicio`, `zona_origen_hora_inicio`) usando Flashscore y
     FotMob antes de emitir el ticket, snapshot y registro en ledger OOS.
+    Cuando ambas fuentes devuelven hora, guarda ambas (`hora_inicio_fotmob`,
+    `hora_inicio_flashscore`, `diferencia_hora_inicio_min`, `hora_inicio_discrepante`).
     Si no se obtiene hora real con zona, mantiene `hora_inicio_partido=None` (no-OOS).
     """
     if not isinstance(contexto, dict):
         return contexto
-    if contexto.get("hora_inicio_partido"):
-        contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
-        contexto.setdefault("zona_origen_hora_inicio", "UTC")
-        contexto.setdefault("zona_horaria", "America/Lima")
-        return contexto
     if contexto.get("partido_ya_jugado") or contexto.get("omitir_busqueda_hora_red"):
-        contexto.setdefault("fuente_hora_inicio", "no_disponible")
+        if contexto.get("hora_inicio_partido"):
+            contexto.setdefault("fuente_hora_inicio", "fotmob_fixture")
+            contexto.setdefault("zona_origen_hora_inicio", "UTC")
+            contexto.setdefault("zona_horaria", "America/Lima")
+        else:
+            contexto.setdefault("fuente_hora_inicio", "no_disponible")
         return contexto
 
     fecha_esp = str(contexto.get("fecha_partido") or "").strip() or None
     if fecha_esp and not re.match(r"^\d{4}-\d{2}-\d{2}", fecha_esp):
         fecha_esp = None
 
-    utc_resuelta: str | None = None
-    fuente_resuelta: str | None = None
-    zona_resuelta = "UTC"
+    utc_fotmob: str | None = None
+    fuente_fotmob: str | None = None
+    utc_flashscore: str | None = None
+    fuente_flashscore: str | None = None
+    zona_flashscore = "UTC"
     id_fs_resuelto = str(id_flashscore or contexto.get("id_flashscore_partido") or "").strip() or None
 
+    # Si contexto ya trae hora_inicio_partido (p. ej. FotMob fixture), registrarla como FotMob
+    if contexto.get("hora_inicio_partido"):
+        f_prev = str(contexto.get("fuente_hora_inicio") or "fotmob_fixture").strip()
+        if "flashscore" in f_prev.lower():
+            utc_flashscore = str(contexto["hora_inicio_partido"])
+            fuente_flashscore = f_prev
+        else:
+            utc_fotmob = str(contexto["hora_inicio_partido"])
+            fuente_fotmob = f_prev
+        contexto.setdefault("fuente_hora_inicio", f_prev)
+        contexto.setdefault("zona_origen_hora_inicio", "UTC")
+        contexto.setdefault("zona_horaria", "America/Lima")
+
+    if contexto.get("hora_inicio_fotmob") and not utc_fotmob:
+        utc_fotmob = str(contexto["hora_inicio_fotmob"])
+        fuente_fotmob = "fotmob"
+    if contexto.get("hora_inicio_flashscore") and not utc_flashscore:
+        utc_flashscore = str(contexto["hora_inicio_flashscore"])
+        fuente_flashscore = "flashscore"
+
     # 1) Flashscore: ID próximo explícito o feed diario f_1_0_{dia} (AD/DC en epoch UTC)
-    if (equipo_local and equipo_visitante) or id_fs_resuelto:
+    if not utc_flashscore and ((equipo_local and equipo_visitante) or id_fs_resuelto):
         try:
             fs_cli = cliente_fs
             if fs_cli is None:
@@ -445,35 +515,54 @@ def resolver_hora_inicio_encuentro(
             if id_fs_resuelto:
                 utc_id = fs_cli.hora_inicio_desde_id(id_fs_resuelto)
                 if utc_id and _fecha_utc_compatible_fixture(utc_id, fecha_esp):
-                    utc_resuelta = utc_id
-                    fuente_resuelta = "flashscore_dc"
-            if not utc_resuelta and equipo_local and equipo_visitante:
+                    utc_flashscore = utc_id
+                    fuente_flashscore = "flashscore_dc"
+            if not utc_flashscore and equipo_local and equipo_visitante:
                 fx_fs = fs_cli.buscar_fixture_programado(
                     equipo_local,
                     equipo_visitante,
                     fecha_objetivo=fecha_esp,
                 )
                 if fx_fs and fx_fs.get("utcTime") and _fecha_utc_compatible_fixture(fx_fs["utcTime"], fecha_esp):
-                    utc_resuelta = str(fx_fs["utcTime"])
-                    fuente_resuelta = str(fx_fs.get("fuente") or "flashscore")
-                    zona_resuelta = str(fx_fs.get("zona_origen") or "UTC")
+                    utc_flashscore = str(fx_fs["utcTime"])
+                    fuente_flashscore = str(fx_fs.get("fuente") or "flashscore")
+                    zona_flashscore = str(fx_fs.get("zona_origen") or "UTC")
                     if fx_fs.get("id_flashscore"):
                         id_fs_resuelto = str(fx_fs["id_flashscore"])
         except Exception:
             pass
 
-    # 2) FotMob matchDetails cuando partimos de fixture cacheado sin `utcTime`
+    # 2) FotMob matchDetails cuando no tenemos hora FotMob y hay id_partido numérico
     id_p = str(contexto.get("id_partido") or "").strip()
-    if not utc_resuelta and id_p and id_p.isdigit():
+    if not utc_fotmob and id_p and id_p.isdigit():
         try:
             fn_fm = fetcher_fotmob or obtener_hora_inicio_fotmob_match_details
             utc_fm = fn_fm(id_p)
             if utc_fm and _fecha_utc_compatible_fixture(utc_fm, fecha_esp):
-                utc_resuelta = str(utc_fm)
-                fuente_resuelta = "fotmob_match_details"
-                zona_resuelta = "UTC"
+                utc_fotmob = str(utc_fm)
+                fuente_fotmob = "fotmob_match_details"
         except Exception:
             pass
+
+    # Comparar ambas fuentes si están presentes (Bloque 6 Ronda 22)
+    comp_h = comparar_horas_inicio_fuentes(utc_fotmob, utc_flashscore, tolerancia_min=15.0)
+    if comp_h["hora_inicio_fotmob"] is not None:
+        contexto["hora_inicio_fotmob"] = comp_h["hora_inicio_fotmob"]
+    if comp_h["hora_inicio_flashscore"] is not None:
+        contexto["hora_inicio_flashscore"] = comp_h["hora_inicio_flashscore"]
+    if comp_h["diferencia_hora_inicio_min"] is not None:
+        contexto["diferencia_hora_inicio_min"] = comp_h["diferencia_hora_inicio_min"]
+    if comp_h["hora_inicio_discrepante"]:
+        contexto["hora_inicio_discrepante"] = True
+
+    if contexto.get("hora_inicio_partido"):
+        if id_fs_resuelto:
+            contexto["id_flashscore_partido"] = id_fs_resuelto
+        return contexto
+
+    utc_resuelta = utc_flashscore or utc_fotmob
+    fuente_resuelta = fuente_flashscore if utc_flashscore else fuente_fotmob
+    zona_resuelta = zona_flashscore if utc_flashscore else "UTC"
 
     if utc_resuelta:
         info = resolver_fecha_encuentro_lima(utc_resuelta, es_partido_programado=True)
@@ -1090,7 +1179,7 @@ def resolver_enfrentamiento(
 
     contexto = _metadatos_del_encuentro(doc_a, doc_b, nombre_a, nombre_b)
     contexto["coherencia_competitiva"] = dict(coherencia) if isinstance(coherencia, dict) else {}
-    if contexto.get("hora_inicio_partido") is None and not contexto.get("partido_ya_jugado"):
+    if not contexto.get("partido_ya_jugado"):
         resolver_hora_inicio_encuentro(
             contexto,
             equipo_local=nombre_a,
@@ -3460,7 +3549,7 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
     analisis.metadatos.setdefault("datos_hasta_local", _fechas_dh["datos_hasta_local"])
