@@ -5709,6 +5709,8 @@ class FuenteFlashscore(FuenteXG):
             if _es_region_geografica(torneo_eq):
                 torneo_eq = ""
             torneo = torneo_item or torneo_eq or "Competición Oficial"
+            if item.get("goles_local") is None or item.get("goles_visitante") is None:
+                continue
             loc = str(item.get("local") or "")
             vis = str(item.get("visitante") or "")
             es_local = bool(_parecido(loc, nom_eq)) or not bool(_parecido(vis, nom_eq))

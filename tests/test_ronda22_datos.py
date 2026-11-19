@@ -10,29 +10,60 @@ import pytest
 
 
 def test_b1_flashscore_penales_intercalados_palmeiras_90_min():
-    from fuente_flashscore import resolver_marcador_reglamentario_flashscore
+    from fuente_flashscore import (
+        parsear_marcador_90_desde_sui_flashscore,
+        resolver_marcador_reglamentario_flashscore,
+    )
 
-    # Los 3 partidos reales de copa de Palmeiras en Flashscore DOM (intercalados):
-    # 1) 08.11 Vasco vs Palmeiras: 90' FT 2-1, penales (4)-(5)
+    # Los 3 partidos reales de copa de Palmeiras en Flashscore (DOM intercalado + df_sui_1):
+    # 1) 08.11 Vasco vs Palmeiras: SUI 1T 1-0 + 2T 1-1 = 2-1 (90'), Penales 4-5 (FotMob: 1-2 fuera)
+    sui_vasco = "AC÷1er Tiempo¬IG÷1¬IH÷0~AC÷2º Tiempo¬IG÷1¬IH÷1~AC÷Penales¬IG÷4¬IH÷5"
+    gl_s, gv_s, et_s = parsear_marcador_90_desde_sui_flashscore(sui_vasco)
+    assert (gl_s, gv_s, et_s) == (2, 1, False)
     gl, gv, desemp = resolver_marcador_reglamentario_flashscore(
-        ["2", "(4)", "1", "(5)", "W"], estado_extra="Pen"
+        ["2", "(4)", "1", "(5)", "W"], estado_extra="Pen", goles_90_confirmados=(gl_s, gv_s)
     )
     assert (gl, gv) == (2, 1)
     assert desemp == "4-5 (Pen)"
 
-    # 2) 21.10 Palmeiras vs Fluminense: 90' FT 0-1, penales (5)-(3)
+    # 2) 21.10 Palmeiras vs Fluminense: SUI 1T 0-0 + 2T 0-1 = 0-1 (90'), Penales 5-3 (FotMob: 0-1 casa)
+    sui_flu = "AC÷1er Tiempo¬IG÷0¬IH÷0~AC÷2º Tiempo¬IG÷0¬IH÷1~AC÷Penales¬IG÷5¬IH÷3"
+    gl_s, gv_s, et_s = parsear_marcador_90_desde_sui_flashscore(sui_flu)
+    assert (gl_s, gv_s, et_s) == (0, 1, False)
     gl, gv, desemp = resolver_marcador_reglamentario_flashscore(
-        ["0", "(5)", "1", "(3)", "W"], estado_extra="Pen"
+        ["0", "(5)", "1", "(3)", "W"], estado_extra="Pen", goles_90_confirmados=(gl_s, gv_s)
     )
     assert (gl, gv) == (0, 1)
     assert desemp == "5-3 (Pen)"
 
-    # 3) 16.09 LDU Quito vs Palmeiras: 90' FT 3-2, penales (3)-(4)
+    # 3) 16.09 LDU Quito vs Palmeiras: SUI 1T 1-1 + 2T 2-1 = 3-2 (90'), Penales 3-4 (FotMob: 2-3 fuera)
+    sui_ldu = "AC÷1er Tiempo¬IG÷1¬IH÷1~AC÷2º Tiempo¬IG÷2¬IH÷1~AC÷Penales¬IG÷3¬IH÷4"
+    gl_s, gv_s, et_s = parsear_marcador_90_desde_sui_flashscore(sui_ldu)
+    assert (gl_s, gv_s, et_s) == (3, 2, False)
     gl, gv, desemp = resolver_marcador_reglamentario_flashscore(
-        ["3", "(3)", "2", "(4)", "W"], estado_extra="Pen"
+        ["3", "(3)", "2", "(4)", "W"], estado_extra="Pen", goles_90_confirmados=(gl_s, gv_s)
     )
     assert (gl, gv) == (3, 2)
     assert desemp == "3-4 (Pen)"
+
+    # 4) Partido real con PRÓRROGA + PENALES: 90' = 1-1 (1T 1-0, 2T 0-1), Prórroga 1-1 (120' = 2-2), Penales 5-4
+    #    El DOM de listado muestra ['2', '(5)', '2', '(4)', 'W'] (incluye prórroga).
+    #    Con SUI confirmado devuelve 1-1 (EXCLUYE prórroga); SIN SUI devuelve (None, None, '5-4 (Pen)') (nunca 0).
+    sui_aet_pen = "AC÷1er Tiempo¬IG÷1¬IH÷0~AC÷2º Tiempo¬IG÷0¬IH÷1~AC÷Prórroga¬IG÷1¬IH÷1~AC÷Penales¬IG÷5¬IH÷4"
+    gl_a, gv_a, tuvo_et = parsear_marcador_90_desde_sui_flashscore(sui_aet_pen)
+    assert (gl_a, gv_a, tuvo_et) == (1, 1, True)
+    gl_ok, gv_ok, d_ok = resolver_marcador_reglamentario_flashscore(
+        ["2", "(5)", "2", "(4)", "W"], estado_extra="Pen", goles_90_confirmados=(gl_a, gv_a)
+    )
+    assert (gl_ok, gv_ok) == (1, 1)
+    assert d_ok == "5-4 (Pen)"
+
+    # Sin confirmación de 90' (no se puede distinguir 90'+Pen de 120'+Pen): devuelve None, nunca 0
+    gl_none, gv_none, d_none = resolver_marcador_reglamentario_flashscore(
+        ["2", "(5)", "2", "(4)", "W"], estado_extra="Pen"
+    )
+    assert gl_none is None and gv_none is None
+    assert d_none == "5-4 (Pen)"
 
     # Compatibilidad con formato contiguo Bosnia (Pen) y prórroga (AET):
     gl_b, gv_b, desemp_b = resolver_marcador_reglamentario_flashscore(
