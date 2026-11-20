@@ -51,3 +51,40 @@ def test_r24_b1_jugada_optima_exige_70_y_pertenencia_sec1_2_y_sin_te_apuesto_en_
     doc_v = doc_sintetico("Visita FC", [("fuera", 0, 2), ("casa", 1, 2)] * 8, xg=[(0.8, 1.8)] * 16)
     an = analizar(doc_l, doc_v, "Local FC", "Visita FC")
     assert "TE APUESTO" not in an.informe.upper()
+
+
+def test_r24_b2_stake_ticket_valor_sin_cuotas_rotulado_hipotetico(tmp_path):
+    from types import SimpleNamespace
+    import informe as inf
+
+    mat = _matriz_poisson(2.10, 0.85)
+    an_stub = SimpleNamespace(
+        metadatos={"equipo_local": "Local FC", "equipo_visitante": "Visita FC", "competicion": "Liga"},
+        parametros=SimpleNamespace(umbral=0.70),
+        motor=SimpleNamespace(
+            matriz_ft=mat,
+            tasas=SimpleNamespace(lambda_local_ft=2.10, lambda_visitante_ft=0.85),
+            recursivo={"aplicado": False},
+        ),
+        mercados=[],
+        selecciones_filtradas=[],
+        grupos={"mantiene": [], "sensible": []},
+    )
+
+    filas = inf.construir_filas_ticket_valor(an_stub, cuotas_flashscore={})
+    filas_con_stake = [f for f in filas if "Stake" in f["recomendacion"]]
+    assert filas_con_stake
+    for f in filas_con_stake:
+        assert "hipotético a cuota mínima, sin validar" in f["recomendacion"]
+
+    filas_leg = inf._construir_filas_ticket_valor_legacy_5e8(an_stub, cuotas_flashscore={})
+    for f in filas_leg:
+        if "Stake" in f["recomendacion"]:
+            assert "hipotético a cuota mínima, sin validar" in f["recomendacion"]
+
+    txt_3p = inf.redactar_analisis_3_parrafos(an_stub, cuotas_flashscore={})
+    assert "hipotético a cuota mínima, sin validar" in txt_3p
+
+    png_out = tmp_path / "ticket_valor_sin_cuotas.png"
+    ruta_png = inf.generar_ticket_valor_png(an_stub, cuotas_flashscore={}, destino=str(png_out))
+    assert png_out.exists() and png_out.stat().st_size > 5000

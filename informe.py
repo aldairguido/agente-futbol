@@ -546,7 +546,7 @@ def _construir_filas_ticket_valor_legacy_5e8(
         else:
             ev_pct = None
             tiene_valor = False
-            recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
+            recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}% hipotético a cuota mínima, sin validar){alerta_drop}"
 
         filas.append({
             "mercado": nombre_mkt,
@@ -672,7 +672,7 @@ def construir_filas_ticket_valor(
             if bajo_vig_f:
                 recomendacion = f"Cuota Mín cal: {cuota_minima_cal:.2f} (Sin stake: bajo vigilancia){alerta_drop}"
             else:
-                recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}%){alerta_drop}"
+                recomendacion = f"Cuota Mín. +EV: {cuota_minima:.2f} (Stake {stake_kelly_min_pct:.1f}% hipotético a cuota mínima, sin validar){alerta_drop}"
 
         filas.append({
             "mercado": nombre_mkt,
@@ -816,10 +816,13 @@ def generar_ticket_valor_png(
             if col_idx == 0:
                 celda._loc = "left"
 
+    sin_cuotas_png = not any(f.get("cuota_flashscore") is not None for f in filas)
+    nota_hip_png = "  |  Sin cuotas: todo Stake es hipotético a cuota mínima, sin validar." if sin_cuotas_png else ""
     pie = (
         "Criterio Matemático: Cuota Justa = 1 / Prob. Bot  |  "
         "EV (%) = (Prob. Bot × Cuota Flashscore - 1) × 100  |  "
         "Filas resaltadas en VERDE indican Cuota Flashscore > Cuota Justa (Valor Positivo +EV)."
+        + nota_hip_png
     )
     fig.text(
         0.03, 0.04, pie,
@@ -957,10 +960,12 @@ def redactar_analisis_3_parrafos(
         reverse=True,
     )
 
+    tiene_cuotas_global = any(f.get("cuota_flashscore") is not None for f in filas_ev)
     if not filas_ev_umbral:
+        suf_sin_c = " (sin cuotas: todo Stake del Ticket de Valor es hipotético a cuota mínima, sin validar)." if not tiene_cuotas_global else "."
         parrafo_3 = (
             f"🎯 3. Veredicto Final: No hay recomendación de resultado 1X2/Doble Oportunidad por encima del "
-            f"umbral ({umbral_vf:.0%}) tras aplicar los filtros competitivos · Stake 0%. "
+            f"umbral ({umbral_vf:.0%}) tras aplicar los filtros competitivos · Stake 0%{suf_sin_c} "
             f"Priorizar únicamente las líneas validadas de la Sección 1 del Ticket General si las hubiera."
         )
     elif con_valor_solido:
@@ -998,7 +1003,8 @@ def redactar_analisis_3_parrafos(
                 f"Dado que Flashscore aún no publica cuotas 1X2 activas para este cruce, la selección matriz más "
                 f"sólida del modelo es «{mejor_prob['mercado']}» con un {mejor_prob['prob_bot_str']} de probabilidad "
                 f"y una Cuota Justa de {mejor_prob['cuota_justa_str']}: solo vale la pena arriesgar si la cuota "
-                f"ofrecida en casa de apuestas supera dicho umbral de {mejor_prob['cuota_justa_str']} (EV > 0%)."
+                f"ofrecida en casa de apuestas supera dicho umbral de {mejor_prob['cuota_justa_str']} (EV > 0%; "
+                f"todo Stake del Ticket de Valor es hipotético a cuota mínima, sin validar)."
             )
 
     _hdr_tg_lines: list[str] = []
