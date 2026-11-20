@@ -4558,7 +4558,7 @@ def formatear_bloque_xai(motor: MotorMercados) -> list[str]:
     if dom:
         lineas.append(f"🎯 Cluster Dominante: {dom.get('nombre')} {dom.get('texto_marcadores')} ({dom.get('probabilidad_pct', 0.0):.1f}%)")
     if cl.get("jugada_optima"):
-        lineas.append(f"🎯 JUGADA ÓPTIMA TE APUESTO: {cl.get('jugada_optima')}")
+        lineas.append(f"🎯 JUGADA ÓPTIMA: {cl.get('jugada_optima')}")
     return lineas
 
 
@@ -6703,6 +6703,7 @@ def clusters_marcador(
     nombre_visita: str = "Visita",
     asedio_bandas: bool = False,
     info_cruces: dict[str, Any] | None = None,
+    selecciones_sec1_2: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
     Agrupa marcadores vecinos en clusters probabilísticos coherentes
@@ -6986,46 +6987,84 @@ def clusters_marcador(
     p_u15_1t = round(math.exp(-lam_1t_comb) * (1.0 + lam_1t_comb) * 100.0, 1)
 
     # 1. Determinar la mejor jugada validada (sincronizada con regla de calibración y Doble ADN)
-    # Punto 1.6: En duelos parejos o con recorte alto donde 1X se degrada por baja frecuencia observada,
-    # se priorizan las líneas de goles con respaldo cuantitativo
+    # Ronda 24: Jugada óptima solo si >= 70% y pertenece a Sección 1 o 2; si no, "Sin jugada óptima ≥70%".
+    def _val_s12(obj: Any, k: str, d: Any = None) -> Any:
+        return obj.get(k, d) if isinstance(obj, dict) else getattr(obj, k, d)
+
+    def _en_sec1_o_2(ev_esperado: str, per_esperado: str = "FT") -> bool:
+        if selecciones_sec1_2 is None:
+            return True
+        ev_t = ev_esperado.strip().lower()
+        per_t = per_esperado.strip().upper()
+        for s_it in selecciones_sec1_2:
+            p_it = float(_val_s12(s_it, "probabilidad", 0.0) or 0.0)
+            if p_it > 1.0:
+                p_it /= 100.0
+            if p_it < 0.70 - 1e-6:
+                continue
+            per_it = str(_val_s12(s_it, "periodo", "FT") or "FT").strip().upper()
+            if per_it != per_t:
+                continue
+            ev_it = str(_val_s12(s_it, "evento", "") or "").strip().lower()
+            if ev_t == "1" and ev_it in ("1", "local_gana"):
+                return True
+            if ev_t == "2" and ev_it in ("2", "visitante_gana"):
+                return True
+            if ev_t == "1x" and (ev_it in ("1x", "dc_1x") or ev_it.endswith("_1x")):
+                return True
+            if ev_t == "x2" and (ev_it in ("x2", "dc_x2") or ev_it.endswith("_x2")):
+                return True
+            if ev_t == "under_2.5" and ev_it in ("under_2.5", "menos_2.5", "goles_under_2.5"):
+                return True
+            if ev_t == "under_3.5" and ev_it in ("under_3.5", "menos_3.5", "goles_under_3.5"):
+                return True
+            if ev_t == "btts_no" and ev_it in ("btts_no", "ambos_marcan_no", "no"):
+                return True
+            if ev_t == "under_1.5" and ev_it in ("under_1.5", "menos_1.5", "goles_under_1.5"):
+                return True
+            if ev_t == "corners_over_8.5" and ev_it == "corners_over_8.5":
+                return True
+            if ev_it == ev_t:
+                return True
+        return False
+
+    ev_fav_code = "1" if p_1 >= p_2 else "2"
+    ev_dc_code = "1x" if p_1 >= p_2 else "x2"
     jugada_optima_prob = 0.0
-    if p_fav_val >= 62.0 and p_00_pct < 8.5 and diff_lam_est >= 0.40:
+    if p_fav_val >= 70.0 - 1e-6 and p_00_pct < 8.5 and diff_lam_est >= 0.40 and _en_sec1_o_2(ev_fav_code, "FT"):
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
         jugada_optima_prob = float(p_fav_val)
-    elif is_11_or_00_top3 and p_u25_pct >= 55.0:
+    elif is_11_or_00_top3 and p_u25_pct >= 70.0 - 1e-6 and _en_sec1_o_2("under_2.5", "FT"):
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
         jugada_optima_prob = float(p_u25_pct)
-    elif p_u35_pct >= 75.0 and (p_fav_val < 55.0):
+    elif p_u35_pct >= 75.0 and (p_fav_val < 55.0) and _en_sec1_o_2("under_3.5", "FT"):
         jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
         jugada_optima_prob = float(p_u35_pct)
-    elif p_dc_val >= 66.0:
+    elif p_dc_val >= 70.0 - 1e-6 and _en_sec1_o_2(ev_dc_code, "FT"):
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
         jugada_optima_prob = float(p_dc_val)
-    elif p_btts_no_pct >= 55.0:
+    elif p_btts_no_pct >= 70.0 - 1e-6 and _en_sec1_o_2("btts_no", "FT"):
         jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
         jugada_optima_prob = float(p_btts_no_pct)
-    elif p_u25_pct >= 62.0 and p_cerrados_pct >= 50.0:
+    elif p_u25_pct >= 70.0 - 1e-6 and p_cerrados_pct >= 50.0 and _en_sec1_o_2("under_2.5", "FT"):
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
         jugada_optima_prob = float(p_u25_pct)
     else:
         jugada_optima_txt = ""
         jugada_optima_prob = 0.0
 
-    # 2. Mitades 1T: solo anexar si hay jugada base validada y lam_1t_comb bajo
-    if jugada_optima_txt and patron_diesel_1t and p_u15_1t >= 75.0 and lam_1t_comb <= 0.95:
+    # 2. Mitades 1T: solo anexar si hay jugada base validada, lam_1t_comb bajo y pertenece a Sección 1 o 2
+    if jugada_optima_txt and patron_diesel_1t and p_u15_1t >= 75.0 and lam_1t_comb <= 0.95 and _en_sec1_o_2("under_1.5", "1T"):
         jugada_optima_txt += f" | 1ra Mitad : Menos de 1.5 Goles ({p_u15_1t:.1f}%)"
 
-    if jugada_optima_txt and asedio_bandas:
+    if jugada_optima_txt and asedio_bandas and _en_sec1_o_2("corners_over_8.5", "FT"):
         jugada_optima_txt += " | Córneres : Más de 8.5"
 
-    if not jugada_optima_txt:
-        jugada_optima_txt = "No hay jugada óptima para este partido"
-        linea_jugada_pie = "ℹ️ No hay jugada óptima para este partido"
-    elif jugada_optima_prob < 70.0 - 1e-6:
-        jugada_optima_txt = f"{jugada_optima_txt} — por debajo del umbral, no validado"
-        linea_jugada_pie = f"ℹ️ Referencia estadística (por debajo del umbral, no validado): {jugada_optima_txt}"
+    if not jugada_optima_txt or jugada_optima_prob < 70.0 - 1e-6:
+        jugada_optima_txt = "Sin jugada óptima ≥70%"
+        linea_jugada_pie = "ℹ️ Sin jugada óptima ≥70%"
     else:
-        linea_jugada_pie = f"🎯 JUGADA ÓPTIMA TE APUESTO: {jugada_optima_txt}"
+        linea_jugada_pie = f"🎯 JUGADA ÓPTIMA: {jugada_optima_txt}"
 
     linea_pie = (
         f"Dominante [{top4_txt}]: {top4_pct:.1f}%  ·  {comp_favorito_txt}\n"
@@ -7724,6 +7763,40 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
         ESTADO_MANTIENE: list(grupos.get(ESTADO_MANTIENE) or []),
         ESTADO_SENSIBLE: list(grupos.get(ESTADO_SENSIBLE) or []),
     }
+    if getattr(motor, "matriz_ft", None):
+        try:
+            from servicio_mercados import calcular_seccion1_unificada as _calc_s12_mm
+            from types import SimpleNamespace as _SNS_mm
+            _res_s12_mm = _calc_s12_mm(
+                _SNS_mm(motor=motor, metadatos=metadatos, parametros=params, grupos=grupos),
+                metadatos=metadatos,
+                umbral=params.umbral,
+                eq_l=motor.nombre_local,
+                eq_v=motor.nombre_visitante,
+                matriz_prob=motor.matriz_ft,
+            )
+            _sels_sec12_mm = list(_res_s12_mm.get("mantiene_raw") or []) + list(_res_s12_mm.get("sensibles_raw") or [])
+            _rec_mm = getattr(motor, "recursivo", None) or {}
+            _asedio_mm = bool(_rec_mm.get("asedio_bandas_activo", False))
+            _info_c_mm = dict(_rec_mm.get("cruces_tacticos") or {})
+            _info_c_mm["lambda_local_1t"] = getattr(motor.tasas, "lambda_local_1t", None)
+            _info_c_mm["lambda_visita_1t"] = getattr(motor.tasas, "lambda_visitante_1t", None)
+            _info_c_mm["lambda_local_2t"] = getattr(motor.tasas, "lambda_local_2t", None)
+            _info_c_mm["lambda_visita_2t"] = getattr(motor.tasas, "lambda_visitante_2t", None)
+            _info_c_mm["seg_gol_concedido_L"] = _rec_mm.get("seg_gol_concedido_rival_V", 0.0)
+            _info_c_mm["seg_gol_concedido_V"] = _rec_mm.get("seg_gol_concedido_rival_L", 0.0)
+            _info_c_mm["mu_local_casa"] = _rec_mm.get("mu_local_casa", {})
+            _info_c_mm["mu_visita_fuera"] = _rec_mm.get("mu_visita_fuera", {})
+            motor.clusters = clusters_marcador(
+                motor.matriz_ft,
+                motor.nombre_local,
+                motor.nombre_visitante,
+                asedio_bandas=_asedio_mm,
+                info_cruces=_info_c_mm,
+                selecciones_sec1_2=_sels_sec12_mm,
+            )
+        except Exception:
+            pass
     avisar(f"{len(selecciones)} selecciones superan el {params.umbral:.0%} central "
            f"({len(grupos[ESTADO_MANTIENE])} mantienen, "
            f"{len(grupos[ESTADO_SENSIBLE])} sensibles, "

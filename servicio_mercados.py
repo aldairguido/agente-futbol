@@ -1650,6 +1650,8 @@ def _sanear_para_canvas(texto: str) -> str:
     t = (
         texto.replace("🎯 JUGADA ÓPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
              .replace("🎯 JUGADA OPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
+             .replace("🎯 JUGADA ÓPTIMA:", ">> JUGADA OPTIMA:")
+             .replace("🎯 JUGADA OPTIMA:", ">> JUGADA OPTIMA:")
              .replace("🎯", ">>")
              .replace("⚖️ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
              .replace("⚖ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
@@ -2542,7 +2544,12 @@ def renderizar_ticket_mercados_png(
         clusters_info = getattr(motor, "clusters", None)
         if not clusters_info and hasattr(analisis, "matriz_ft"):
             try:
-                clusters_info = clusters_marcador(getattr(analisis, "matriz_ft"), eq_l, eq_v)
+                clusters_info = clusters_marcador(
+                    getattr(analisis, "matriz_ft"),
+                    eq_l,
+                    eq_v,
+                    selecciones_sec1_2=list(mantiene_raw) + list(sensibles_raw),
+                )
             except Exception:
                 clusters_info = None
 
