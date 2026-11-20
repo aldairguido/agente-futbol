@@ -897,48 +897,84 @@ def redactar_analisis_3_parrafos(
     n_h2h = int(h2h.get("n_duelos") or len(duelos) or 0)
 
     if n_h2h > 0:
-        lam_h2h_l = h2h.get("lambda_local")
-        lam_h2h_v = h2h.get("lambda_visitante")
-        if lam_h2h_l is not None and lam_h2h_v is not None:
-            prom_goles_h2h = float(lam_h2h_l) + float(lam_h2h_v)
-        elif duelos:
-            tot_g = sum(int(d.get("goles_local", 0) or 0) + int(d.get("goles_visitante", 0) or 0) for d in duelos)
-            prom_goles_h2h = tot_g / max(1, len(duelos))
+        from cuadro_h2h_2024_2026 import calcular_resumen_crudo_h2h as _calc_crudo_h2h
+        crudo_h2h = h2h.get("resumen_crudo")
+        if not isinstance(crudo_h2h, dict) or not crudo_h2h.get("n"):
+            crudo_h2h = _calc_crudo_h2h(duelos, eq_l, eq_v)
+        lam_h2h_l = h2h.get("lambda_a_h2h") if h2h.get("lambda_a_h2h") is not None else h2h.get("lambda_local")
+        lam_h2h_v = h2h.get("lambda_b_h2h") if h2h.get("lambda_b_h2h") is not None else h2h.get("lambda_visitante")
+        if crudo_h2h.get("n", 0) > 0:
+            prom_goles_h2h = float(crudo_h2h["prom_total"])
+            prom_crudo_l = float(crudo_h2h["prom_local"])
+            prom_crudo_v = float(crudo_h2h["prom_visita"])
+            n_eff_h2h = int(crudo_h2h["n"])
+            ved_txt = str(crudo_h2h["ved_str"])
+            o25_cnt = int(crudo_h2h["over_25"])
+            btts_cnt = int(crudo_h2h["btts"])
+        elif lam_h2h_l is not None and lam_h2h_v is not None:
+            prom_crudo_l = float(lam_h2h_l)
+            prom_crudo_v = float(lam_h2h_v)
+            prom_goles_h2h = prom_crudo_l + prom_crudo_v
+            n_eff_h2h = n_h2h
+            ved_txt = "N/D"
+            o25_cnt = 0
+            btts_cnt = 0
         else:
+            prom_crudo_l = lam_l
+            prom_crudo_v = lam_v
             prom_goles_h2h = lam_tot
+            n_eff_h2h = n_h2h
+            ved_txt = "N/D"
+            o25_cnt = 0
+            btts_cnt = 0
+
+        lam_mod_txt = (
+            f"λ módulo H2H: {float(lam_h2h_l):.2f}–{float(lam_h2h_v):.2f} | "
+            if (lam_h2h_l is not None and lam_h2h_v is not None) else ""
+        )
+        resumen_crudo_inline = (
+            f"[{lam_mod_txt}Promedios crudos (exploratorio, n={n_eff_h2h}): "
+            f"{eq_l} {prom_crudo_l:.2f} – {prom_crudo_v:.2f} {eq_v} (total {prom_goles_h2h:.2f}) · "
+            f"V/E/D: {ved_txt} · +2.5: {o25_cnt}/{n_eff_h2h} · BTTS: {btts_cnt}/{n_eff_h2h}]"
+        )
 
         gen_es_over = (p_o25 >= 0.50)
         h2h_es_over = (prom_goles_h2h >= 2.50)
 
         if gen_es_over and h2h_es_over:
             contraste_txt = (
-                f"el historial directo APOYA y refuerza al modelo general: ambos coinciden en un guion "
-                f"abierto de goles (Over 2.5), registrando {prom_goles_h2h:.2f} goles promedio en sus cruces directos"
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo APOYA al modelo general: "
+                f"ambos apuntan a un guion abierto de goles (Over 2.5), registrando un promedio crudo de "
+                f"{prom_goles_h2h:.2f} goles por encuentro ({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; "
+                f"+2.5 en {o25_cnt}/{n_eff_h2h}, BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"
             )
         elif (not gen_es_over) and (not h2h_es_over):
             contraste_txt = (
-                f"el historial directo APOYA al modelo general: mientras la red de 15 partidos apunta al "
-                f"Under 2.5 ({p_u25 * 100:.1f}%), el H2H confirma duelos tácticos de bajo marcador "
-                f"con un promedio de {prom_goles_h2h:.2f} goles por encuentro"
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo APOYA al modelo general: "
+                f"mientras la red de 15 partidos apunta al Under 2.5 ({p_u25 * 100:.1f}%), los cruces directos "
+                f"registran un promedio crudo de {prom_goles_h2h:.2f} goles por encuentro "
+                f"({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; +2.5 en {o25_cnt}/{n_eff_h2h}, "
+                f"BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"
             )
         elif (not gen_es_over) and h2h_es_over:
             contraste_txt = (
-                f"el historial directo CONTRADICE la cautela del modelo general: aunque la muestra de 15 partidos "
-                f"sugiere Under 2.5 ({p_u25 * 100:.1f}% con {lam_tot:.2f} goles esperados), cuando {eq_l} y {eq_v} "
-                f"se enfrentan entre sí el ritmo se rompe hacia el Over 2.5 con {prom_goles_h2h:.2f} goles de media"
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo CONTRADICE la cautela del modelo general: "
+                f"aunque la muestra de 15 partidos sugiere Under 2.5 ({p_u25 * 100:.1f}% con {lam_tot:.2f} goles esperados), "
+                f"los enfrentamientos directos registran un promedio crudo de {prom_goles_h2h:.2f} goles "
+                f"({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; +2.5 en {o25_cnt}/{n_eff_h2h}, "
+                f"BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"
             )
         else:
             contraste_txt = (
-                f"el historial directo CONTRADICE el ritmo goleador del modelo general: mientras los 15 partidos "
-                f"proyectan Over 2.5 ({p_o25 * 100:.1f}%), sus enfrentamientos directos han sido mucho más "
-                f"friccionados y cerrados (Under 2.5 con {prom_goles_h2h:.2f} goles promedio)"
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo CONTRADICE el ritmo goleador del modelo general: "
+                f"mientras los 15 partidos proyectan Over 2.5 ({p_o25 * 100:.1f}%), los enfrentamientos directos "
+                f"registran un promedio crudo de {prom_goles_h2h:.2f} goles ({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; "
+                f"+2.5 en {o25_cnt}/{n_eff_h2h}, BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"
             )
 
         parrafo_2 = (
-            f"⚔️ 2. Contraste con el Modelo H2H Directo ({n_h2h} duelos en 2024–2026): "
-            f"Al cruzar la tendencia general contra la memoria específica del enfrentamiento, {contraste_txt}. "
-            f"Esta lectura cruzada permite ajustar la exposición en líneas de goles y priorizar mercados donde "
-            f"ambas muestras convergen."
+            f"⚔️ 2. Contraste con el Modelo H2H Directo (exploratorio, n={n_eff_h2h}; 2024–2026): "
+            f"{resumen_crudo_inline}. Al cruzar la tendencia general contra los datos crudos del enfrentamiento, {contraste_txt}."
         )
     else:
         parrafo_2 = (

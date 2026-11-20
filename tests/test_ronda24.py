@@ -88,3 +88,60 @@ def test_r24_b2_stake_ticket_valor_sin_cuotas_rotulado_hipotetico(tmp_path):
     png_out = tmp_path / "ticket_valor_sin_cuotas.png"
     ruta_png = inf.generar_ticket_valor_png(an_stub, cuotas_flashscore={}, destino=str(png_out))
     assert png_out.exists() and png_out.stat().st_size > 5000
+
+
+def test_r24_b3_h2h_promedios_crudos_conteos_y_parrafo2_datos_crudos():
+    from types import SimpleNamespace
+    import cuadro_h2h_2024_2026 as ch2h
+    import informe as inf
+
+    # Caso Orlando City vs FC Cincinnati: 2 duelos crudos (1-1 y 1-0 para Cincinnati en casa -> para Orlando: 0V-1E-1D,
+    # goles crudos Orlando 0.50, Cincinnati 1.00, total crudo 1.50 < 2.5, +2.5: 0/2, BTTS: 1/2),
+    # aunque el λ del módulo H2H tras red recursiva fuese alto (p. ej. 1.71 - 1.70 = 3.41).
+    duelos = [
+        {"fecha": "2025-07-10", "torneo": "MLS", "local": "Orlando City", "visitante": "FC Cincinnati", "goles_local": 1, "goles_visitante": 1},
+        {"fecha": "2024-09-01", "torneo": "MLS", "local": "FC Cincinnati", "visitante": "Orlando City", "goles_local": 1, "goles_visitante": 0},
+    ]
+    crudo = ch2h.calcular_resumen_crudo_h2h(duelos, "Orlando City", "FC Cincinnati")
+    assert crudo["n"] == 2
+    assert crudo["etiqueta"] == "exploratorio, n=2"
+    assert abs(crudo["prom_local"] - 0.50) < 1e-6
+    assert abs(crudo["prom_visita"] - 1.00) < 1e-6
+    assert abs(crudo["prom_total"] - 1.50) < 1e-6
+    assert crudo["ved_str"] == "0/1/1"
+    assert crudo["over_25"] == 0
+    assert crudo["btts"] == 1
+    assert "exploratorio, n=2" in crudo["texto_crudo"]
+
+    # El párrafo 2 de Telegram debe basarse en los datos crudos (1.50 < 2.50 -> contradice el Over 2.5 general),
+    # NO en la suma de lambdas del módulo (1.71 + 1.70 = 3.41 > 2.50), y mostrar ambos junto con V/E/D, +2.5 y BTTS.
+    mat = _matriz_poisson(2.25, 2.12)
+    an_stub = SimpleNamespace(
+        metadatos={"equipo_local": "Orlando City", "equipo_visitante": "FC Cincinnati", "competicion": "MLS"},
+        parametros=SimpleNamespace(umbral=0.70),
+        motor=SimpleNamespace(
+            matriz_ft=mat,
+            tasas=SimpleNamespace(lambda_local_ft=2.25, lambda_visitante_ft=2.12),
+            recursivo={"aplicado": True},
+        ),
+        mercados=[],
+        selecciones_filtradas=[],
+        grupos={"mantiene": [], "sensible": []},
+    )
+    info_h2h = {
+        "n_duelos": 2,
+        "duelos": duelos,
+        "lambda_a_h2h": 1.71,
+        "lambda_b_h2h": 1.70,
+    }
+    txt_3p = inf.redactar_analisis_3_parrafos(an_stub, info_h2h=info_h2h, cuotas_flashscore={})
+    parrafos = [p.strip() for p in txt_3p.split("\n\n") if "2. Contraste con el Modelo H2H" in p]
+    assert len(parrafos) == 1
+    p2 = parrafos[0]
+    assert "exploratorio, n=2" in p2
+    assert "λ módulo H2H: 1.71–1.70" in p2
+    assert "0.50 – 1.00" in p2 and "1.50" in p2
+    assert "V/E/D: 0/1/1" in p2
+    assert "+2.5: 0/2" in p2
+    assert "BTTS: 1/2" in p2
+    assert "CONTRADICE el ritmo goleador del modelo general" in p2
