@@ -1958,6 +1958,8 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 evaluacion.adjuntar_modo_sombra_preparado(preparado)
             except Exception as _e_somb:
                 print(f"[BOT TELEGRAM] ⚠️ Modo sombra no bloqueante omitido: {_e_somb}")
+            res_inp = evaluacion.guardar_inputs_reproducibles(preparado)
+            ruta_inp_gz = res_inp.get("ruta") if isinstance(res_inp, dict) else None
             snapshot = evaluacion.snapshot_desde_analisis(preparado, telegram_meta=telegram_meta)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
             try:
@@ -1975,10 +1977,17 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 rel_snap = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
             except Exception:
                 rel_snap = os.path.relpath(ruta_snap, str(BASE_DIR)).replace("\\", "/")
+            archivos_sync_pre = [rel_snap]
+            if ruta_inp_gz and os.path.exists(ruta_inp_gz):
+                try:
+                    rel_inp = Path(ruta_inp_gz).resolve().relative_to(BASE_DIR.resolve()).as_posix()
+                except Exception:
+                    rel_inp = os.path.relpath(ruta_inp_gz, str(BASE_DIR)).replace("\\", "/")
+                archivos_sync_pre.append(rel_inp)
             _encolar_persistencia_segura(
                 tipo="mercados_pre",
                 id_trabajo=str(preparado.get("id_trabajo") or ""),
-                archivos_rel=[rel_snap],
+                archivos_rel=archivos_sync_pre,
                 mensaje_commit=f"datos(mercados): pre_partido {preparado.get('id_trabajo')}",
             )
             print(f"[BOT TELEGRAM] 🗂️  Snapshot de pronóstico guardado: {ruta_snap} "

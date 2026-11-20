@@ -289,3 +289,86 @@ def test_r24_b4_snapshot_signo_desvio_sec2_y_ronda_etapa_formato():
     assert "ronda" in snap_sin["partido"] and snap_sin["partido"]["ronda"] is None
     assert "etapa" in snap_sin["partido"] and snap_sin["partido"]["etapa"] is None
     assert "formato" in snap_sin["partido"] and snap_sin["partido"]["formato"] is None
+
+
+
+def test_r24_b5_inputs_gz_sha256_y_reproduccion_ab(tmp_path):
+    from pathlib import Path
+    import json
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+    from decision_cobertura import banderas_comportamiento
+
+    raiz = Path(r"D:\agente_futbol")
+    ln_docs = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl = ln_docs["londrina"]
+    dv = ln_docs["nautico"]
+
+    with banderas_comportamiento(activar_todas=False):
+        an = mm.analizar(
+            dl, dv, "Londrina", "Náutico",
+            condicion_local="casa", condicion_visitante="fuera",
+            competicion="Série C",
+        )
+    an.metadatos["fecha_partido"] = "2026-11-12"
+    an.metadatos["generado_en"] = "2026-11-12T10:00:00Z"
+    an.metadatos["competicion"] = "Série C"
+    an.metadatos["ronda"] = "Jornada 19"
+    an.metadatos["etapa"] = "Fase Regular"
+    an.metadatos["formato"] = "Liga"
+
+    prep = {
+        "id_trabajo": "r24_b5_ln_repro",
+        "analisis": an,
+        "contexto": {
+            "doc_local": dl,
+            "doc_visitante": dv,
+            "equipo_local": "Londrina",
+            "equipo_visitante": "Náutico",
+            "fecha_partido": "2026-11-12",
+            "competicion": "Série C",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+        },
+        "rutas": {},
+    }
+    ep.adjuntar_modo_sombra_preparado(prep)
+    res_inp = ep.guardar_inputs_reproducibles(prep, directorio=str(tmp_path))
+    assert res_inp["ok"] is True
+    ruta_gz = Path(res_inp["ruta"])
+    assert ruta_gz.name == "inputs_r24_b5_ln_repro.json.gz"
+    assert ruta_gz.exists() and ruta_gz.stat().st_size > 1000
+    assert res_inp["inputs_sha256"] and len(res_inp["inputs_sha256"]) == 64
+
+    # Verificar contenido de inputs_<id_trabajo>.json.gz
+    doc_inp = ep.cargar_inputs_reproducibles(str(ruta_gz))
+    assert doc_inp["esquema"] == "inputs-reproducibles-v1"
+    assert doc_inp["semillas"]["semilla_mc"] == 42
+    assert doc_inp["semillas"]["semilla_bootstrap"] == 20261114
+    assert doc_inp["perfiles"]["local"] is not None
+    assert doc_inp["perfiles"]["visitante"] is not None
+    assert len(doc_inp["clubes_15p"]["local"]["partidos"]) == 15
+    assert len(doc_inp["clubes_15p"]["visitante"]["partidos"]) == 15
+    assert doc_inp["lambdas_base_doble_adn"]["local_ft"] is not None
+    assert doc_inp["traza_dcn"]["aplicado"] is True
+    assert len(doc_inp["traza_dcn"]["traza_lambda"]) > 0
+
+    # Snapshot incluye inputs_sha256 como campo opcional compatible
+    snap = ep.snapshot_desde_analisis(prep, publicado_en="2026-11-12T10:05:00Z").a_dict()
+    assert snap.get("inputs_sha256") == res_inp["inputs_sha256"]
+
+    # Prueba de reproducción: recalculando A+B (y soloA) desde inputs_<id>.json.gz coincide con el snapshot
+    repro = ep.reproducir_ab_desde_inputs(str(ruta_gz))
+    sombra_snap = snap["modo_sombra"]
+    sombra_repro = repro["modo_sombra"]
+    assert sombra_repro["lambdas_base"] == sombra_snap["lambdas_base"]
+    assert sombra_repro["lambdas_sombra"] == sombra_snap["lambdas_sombra"]
+    assert sombra_repro["n_selecciones_comparables"] == sombra_snap["n_selecciones_comparables"]
+
+    comp_snap = {(c["evento"], c["periodo"], c["equipo"], c["linea"]): (c["prob_base"], c["prob_sombra"]) for c in sombra_snap["comparaciones"]}
+    comp_repro = {(c["evento"], c["periodo"], c["equipo"], c["linea"]): (c["prob_base"], c["prob_sombra"]) for c in sombra_repro["comparaciones"]}
+    assert comp_repro == comp_snap
+
+    # Si falla la escritura de inputs_<id_trabajo>.json.gz, NO bloquea el pronóstico
+    res_fail = ep.guardar_inputs_reproducibles({"id_trabajo": ""}, directorio=str(tmp_path))
+    assert res_fail["ok"] is False

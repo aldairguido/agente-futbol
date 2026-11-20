@@ -218,6 +218,7 @@ class SnapshotPronostico:
     calidad_fuente_visitante: dict[str, Any] | None = None
     lambdas_plano: dict[str, Any] | None = None
     lambdas_base_doble_adn: dict[str, Any] | None = None
+    inputs_sha256: str | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -290,6 +291,8 @@ class SnapshotPronostico:
             out["lambdas_plano"] = self.lambdas_plano
         if self.lambdas_base_doble_adn is not None:
             out["lambdas_base_doble_adn"] = self.lambdas_base_doble_adn
+        if self.inputs_sha256 is not None:
+            out["inputs_sha256"] = self.inputs_sha256
         return out
 
 
@@ -825,6 +828,247 @@ def ruta_snapshot(id_trabajo: str, directorio: str | None = None) -> str:
     return os.path.join(directorio or PRONOSTICOS_DIR, f"{id_trabajo}.json")
 
 
+def ruta_inputs_reproducibles(id_trabajo: str, directorio: str | None = None) -> str:
+    return os.path.join(directorio or PRONOSTICOS_DIR, f"inputs_{id_trabajo}.json.gz")
+
+
+def _compactar_doc_equipo_15p(doc: dict[str, Any] | None, fecha_corte: str | None = None, limite: int = 15) -> dict[str, Any]:
+    if not isinstance(doc, dict):
+        return {"equipo": {}, "partidos": []}
+    try:
+        import motor_mercados as _mm_inp
+        doc_flt = _mm_inp.filtrar_por_fecha(doc, fecha_corte) if fecha_corte else doc
+    except Exception:
+        doc_flt = doc
+    eq_raw = doc_flt.get("equipo") if isinstance(doc_flt.get("equipo"), dict) else {}
+    eq_compact: dict[str, Any] = {}
+    for k in ("id", "nombre", "nombre_solicitado", "liga", "id_liga", "pais_iso", "es_femenino", "es_juvenil", "clave_cache", "alternativas", "variante_busqueda", "ambiguous"):
+        if k in eq_raw:
+            eq_compact[k] = eq_raw[k]
+    partidos_raw = list(doc_flt.get("partidos") or [])[:max(1, int(limite))]
+    partidos_compact: list[dict[str, Any]] = []
+    for p in partidos_raw:
+        if not isinstance(p, dict):
+            continue
+        p_out: dict[str, Any] = {}
+        for kp in ("id_partido", "fecha", "torneo", "competicion", "equipo", "rival", "condicion", "marcador", "marcador_1t", "goles_local_1t", "goles_visitante_1t", "url", "fuente_secundaria", "procedencia"):
+            if kp in p and p[kp] is not None:
+                p_out[kp] = p[kp]
+        per_in = p.get("periodos") if isinstance(p.get("periodos"), dict) else {}
+        per_out: dict[str, Any] = {}
+        for per_k, per_v in per_in.items():
+            if not isinstance(per_v, dict):
+                continue
+            filas_in = per_v.get("filas") or []
+            filas_out = [
+                {
+                    "clave": f.get("clave"),
+                    "equipo": f.get("equipo"),
+                    "rival": f.get("rival"),
+                    **({"estimado": True} if f.get("estimado") else {}),
+                }
+                for f in filas_in
+                if isinstance(f, dict) and f.get("clave")
+            ]
+            per_out[per_k] = {"periodo": per_v.get("periodo", per_k), "filas": filas_out}
+        p_out["periodos"] = per_out
+        partidos_compact.append(p_out)
+    out_doc: dict[str, Any] = {
+        "generado_en": doc_flt.get("generado_en"),
+        "zona_horaria": doc_flt.get("zona_horaria", "America/Lima"),
+        "equipo_solicitado": doc_flt.get("equipo_solicitado"),
+        "limite_partidos": doc_flt.get("limite_partidos", limite),
+        "minimo_con_datos": doc_flt.get("minimo_con_datos", limite),
+        "incluir_amistosos": bool(doc_flt.get("incluir_amistosos", False)),
+        "fuente": doc_flt.get("fuente", "fotmob"),
+        "equipo": eq_compact,
+        "partidos": partidos_compact,
+    }
+    return out_doc
+
+
+def construir_payload_inputs_reproducibles(preparado: dict[str, Any]) -> dict[str, Any]:
+    """
+    Construye el paquete compacto reproducible `inputs_<id_trabajo>` con:
+      - perfiles de ambos clubes (`perfiles`),
+      - 15 partidos compactos por club (`doc_local`, `doc_visitante`),
+      - `lambdas_base_doble_adn`,
+      - `traza_dcn` (recursivo + traza_lambda completa),
+      - semillas deterministas (`semilla_mc`: 42, `semilla_bootstrap`: 20261114).
+    """
+    analisis = preparado.get("analisis")
+    ctx = preparado.get("contexto") or {}
+    meta = (getattr(analisis, "metadatos", None) or {}) if analisis is not None else {}
+    motor = getattr(analisis, "motor", None) if analisis is not None else None
+    params = getattr(analisis, "parametros", None) if analisis is not None else None
+    dl = getattr(motor, "doc_local", None) or ctx.get("doc_local")
+    dv = getattr(motor, "doc_visitante", None) or ctx.get("doc_visitante")
+    eq_l = str(meta.get("equipo_local") or ctx.get("equipo_local") or getattr(motor, "nombre_local", "") or "Local")
+    eq_v = str(meta.get("equipo_visitante") or ctx.get("equipo_visitante") or getattr(motor, "nombre_visitante", "") or "Visitante")
+    fecha_p = meta.get("fecha_partido") or ctx.get("fecha_partido")
+    cond_l = str(meta.get("condicion_local") or ctx.get("condicion_local") or getattr(motor, "cond_local", "casa") or "casa")
+    cond_v = str(meta.get("condicion_visitante") or ctx.get("condicion_visitante") or getattr(motor, "cond_visitante", "fuera") or "fuera")
+    comp = meta.get("competicion") or ctx.get("competicion") or (getattr(params, "competicion", None) if params else None)
+
+    dl_comp = _compactar_doc_equipo_15p(dl, fecha_corte=None, limite=15)
+    dv_comp = _compactar_doc_equipo_15p(dv, fecha_corte=None, limite=15)
+
+    perfiles: dict[str, Any] = {"local": None, "visitante": None}
+    try:
+        import cuadro_especialista as _ce_inp
+        if dl_comp.get("partidos"):
+            b_l = _ce_inp.bloque_desde_muestra(dl_comp["partidos"], eq_l, "global", doc=dl_comp)
+            perfiles["local"] = _ce_inp.construir_perfil_especialista_equipo(b_l)
+        if dv_comp.get("partidos"):
+            b_v = _ce_inp.bloque_desde_muestra(dv_comp["partidos"], eq_v, "global", doc=dv_comp)
+            perfiles["visitante"] = _ce_inp.construir_perfil_especialista_equipo(b_v)
+    except Exception:
+        pass
+
+    lam_base_adn = extraer_lambdas_base_doble_adn_desde_analisis(analisis, preparado)
+    lam_plano = extraer_lambdas_plano_desde_analisis(analisis, preparado)
+    rec = getattr(motor, "recursivo", None) if motor is not None else None
+    traza_full = list(
+        getattr(motor, "traza_lambda", None)
+        or (rec.get("traza_lambda") if isinstance(rec, dict) else None)
+        or []
+    )
+    traza_dcn = {
+        "aplicado": bool(rec.get("aplicado")) if isinstance(rec, dict) else False,
+        "lambda_base_local": rec.get("lambda_base_local") if isinstance(rec, dict) else None,
+        "lambda_base_visita": rec.get("lambda_base_visita") if isinstance(rec, dict) else None,
+        "lambda_local_recursivo": rec.get("lambda_local_recursivo") if isinstance(rec, dict) else None,
+        "lambda_visita_recursivo": rec.get("lambda_visita_recursivo") if isinstance(rec, dict) else None,
+        "cruces_tacticos": rec.get("cruces_tacticos") if isinstance(rec, dict) else None,
+        "traza_lambda": traza_full,
+    }
+    parametros_dict = {}
+    if params is not None:
+        for kp in ("w_condicion", "w_xg", "umbral", "k_nb", "distribucion_conteos", "k_credibilidad", "rho", "aplicar_moduladores", "aplicar_motor_recursivo", "mc_simulaciones", "competicion", "aplicar_lambda_efectivo", "aplicar_cola_ancha"):
+            if hasattr(params, kp):
+                parametros_dict[kp] = getattr(params, kp)
+
+    return {
+        "esquema": "inputs-reproducibles-v1",
+        "id_trabajo": str(preparado.get("id_trabajo") or ""),
+        "equipos": {"local": eq_l, "visitante": eq_v},
+        "partido": {
+            "fecha_partido": fecha_p,
+            "competicion": comp,
+            "ronda": meta.get("ronda") if "ronda" in meta else ctx.get("ronda"),
+            "etapa": meta.get("etapa") if "etapa" in meta else ctx.get("etapa"),
+            "formato": meta.get("formato") if "formato" in meta else ctx.get("formato"),
+            "condicion_local": cond_l,
+            "condicion_visitante": cond_v,
+        },
+        "semillas": {
+            "semilla_mc": 42,
+            "semilla_bootstrap": 20261114,
+        },
+        "parametros": parametros_dict,
+        "perfiles": perfiles,
+        "clubes_15p": {
+            "local": dl_comp,
+            "visitante": dv_comp,
+        },
+        "lambdas_plano": lam_plano,
+        "lambdas_base_doble_adn": lam_base_adn,
+        "traza_dcn": traza_dcn,
+    }
+
+
+def guardar_inputs_reproducibles(
+    preparado: dict[str, Any],
+    directorio: str | None = None,
+) -> dict[str, Any]:
+    """
+    Escribe `inputs_<id_trabajo>.json.gz` de forma atómica y determinista (mtime=0)
+    en `informes/pronosticos/` y devuelve `{"ok": True, "ruta": ..., "inputs_sha256": ...}`.
+    Nunca bloquea el pronóstico: si ocurre cualquier error devuelve `{"ok": False, ...}`.
+    """
+    import gzip as _gzip_inp
+    import tempfile as _tmp_inp
+    try:
+        if not isinstance(preparado, dict):
+            return {"ok": False, "motivo": "preparado_invalido", "ruta": None, "inputs_sha256": None}
+        id_trabajo = str(preparado.get("id_trabajo") or "").strip()
+        if not id_trabajo:
+            return {"ok": False, "motivo": "sin_id_trabajo", "ruta": None, "inputs_sha256": None}
+        destino = ruta_inputs_reproducibles(id_trabajo, directorio)
+        parent_dir = os.path.dirname(destino)
+        os.makedirs(parent_dir, exist_ok=True)
+        if not os.path.exists(destino):
+            payload = construir_payload_inputs_reproducibles(preparado)
+            raw_json = (json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+            fd, tmp_ruta = _tmp_inp.mkstemp(prefix=".inp_", suffix=".json.gz", dir=parent_dir)
+            try:
+                with os.fdopen(fd, "wb") as f_raw:
+                    with _gzip_inp.GzipFile(filename="", mode="wb", compresslevel=6, fileobj=f_raw, mtime=0) as gz:
+                        gz.write(raw_json)
+                    f_raw.flush()
+                    os.fsync(f_raw.fileno())
+                if not os.path.exists(destino):
+                    os.replace(tmp_ruta, destino)
+                else:
+                    os.unlink(tmp_ruta)
+            except Exception:
+                try:
+                    os.unlink(tmp_ruta)
+                except OSError:
+                    pass
+                raise
+        sha = _hash_archivo_sha256(destino)
+        preparado["ruta_inputs_gz"] = destino
+        preparado["inputs_sha256"] = sha
+        return {"ok": True, "ruta": destino, "inputs_sha256": sha}
+    except Exception as exc:
+        print(f"[EVALUACIÓN] ⚠️ No se pudo guardar inputs reproducibles (no bloqueante): {type(exc).__name__}: {exc}")
+        return {"ok": False, "motivo": f"{type(exc).__name__}: {exc}", "ruta": None, "inputs_sha256": None}
+
+
+def cargar_inputs_reproducibles(ruta_gz: str) -> dict[str, Any]:
+    """Carga y descomprime `inputs_<id_trabajo>.json.gz`."""
+    import gzip as _gzip_inp
+    with _gzip_inp.open(ruta_gz, "rt", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def reproducir_ab_desde_inputs(inputs_doc_o_ruta: str | dict[str, Any]) -> dict[str, Any]:
+    """
+    Recalcula `soloA` y `A+B` a partir de `inputs_<id_trabajo>.json.gz` y devuelve
+    el diccionario `modo_sombra` reconstruido más ambos objetos `Analisis`.
+    """
+    from decision_cobertura import BANDERAS_COMPORTAMIENTO_DEFECTO
+    import motor_mercados as _mm_rep
+
+    doc = cargar_inputs_reproducibles(inputs_doc_o_ruta) if isinstance(inputs_doc_o_ruta, str) else dict(inputs_doc_o_ruta)
+    eq = doc.get("equipos") or {}
+    pt = doc.get("partido") or {}
+    clubes = doc.get("clubes_15p") or {}
+    dl = clubes.get("local") or {}
+    dv = clubes.get("visitante") or {}
+    p_dict = dict(doc.get("parametros") or {})
+    params = _mm_rep.Parametros(**{k: v for k, v in p_dict.items() if hasattr(_mm_rep.Parametros, k) or k in _mm_rep.Parametros.__dataclass_fields__})
+    kw = {
+        "fecha_partido": pt.get("fecha_partido"),
+        "competicion": pt.get("competicion"),
+        "condicion_local": pt.get("condicion_local") or "casa",
+        "condicion_visitante": pt.get("condicion_visitante") or "fuera",
+        "parametros": params,
+    }
+    banderas_ab = {k: True for k in BANDERAS_COMPORTAMIENTO_DEFECTO}
+    res = ejecutar_analisis_modo_sombra(
+        dl,
+        dv,
+        str(eq.get("local") or "Local"),
+        str(eq.get("visitante") or "Visitante"),
+        banderas_candidatas=banderas_ab,
+        **kw,
+    )
+    res["modo_sombra"]["version_sombra"] = "A+B"
+    return res
+
+
 def guardar_snapshot(snapshot: SnapshotPronostico | dict[str, Any],
                      directorio: str | None = None) -> str:
     """
@@ -1153,6 +1397,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
     lam_plano_snap = extraer_lambdas_plano_desde_analisis(analisis, preparado)
     lam_base_adn_snap = extraer_lambdas_base_doble_adn_desde_analisis(analisis, preparado)
+    inp_sha_snap = preparado.get("inputs_sha256") or metadatos.get("inputs_sha256")
 
     return SnapshotPronostico(
         id_trabajo=preparado["id_trabajo"],
@@ -1229,6 +1474,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         calidad_fuente_visitante=f_info_snap.get("calidad_fuente_visitante"),
         lambdas_plano=lam_plano_snap,
         lambdas_base_doble_adn=lam_base_adn_snap,
+        inputs_sha256=inp_sha_snap,
     )
 
 
@@ -10699,6 +10945,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
     )
     id_trabajo = str(preparado.get("id_trabajo") or "")
     snapshot_sha = _hash_archivo_sha256(ruta_snapshot)
+    inputs_sha = preparado.get("inputs_sha256") or _hash_archivo_sha256(preparado.get("ruta_inputs_gz"))
     payload_sombra = {
         "esquema": str(sombra.get("esquema") or "sombra-v1"),
         "publicado": str(sombra.get("publicado") or "soloA"),
@@ -10750,6 +10997,7 @@ def registrar_sombra_prepartido_en_ledger_oos(
         "telegram_message_date": tg_mdt_pre,
         "hora_mensaje_utc": tg_mutc_pre,
         "snapshot_sha256": snapshot_sha,
+        **({"inputs_sha256": inputs_sha} if inputs_sha is not None else {}),
         "sombra_comparaciones_sha256": sha_comp,
         "modo_sombra": payload_sombra,
     }
