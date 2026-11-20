@@ -42,7 +42,10 @@ def test_ronda14_defectos_vigentes_y_documentacion():
     assert "usar_sobredispersion_nb_corners: true  # regla operativa sin validación" in yaml_txt
 
     for aux in dc._BANDERAS_AUXILIARES_DEFECTO:
-        assert dc.bandera_activa(aux) is False
+        if aux == "usar_tercer_brazo_plano_sombra":
+            assert dc.bandera_activa(aux) is True
+        else:
+            assert dc.bandera_activa(aux) is False
 
     # La bandera activa por defecto queda bloqueada para autopromoción duplicada
     prom_nb = ep.evaluar_promocion_regla_futura(
@@ -77,7 +80,7 @@ def test_ronda14_guarda_doble_defensa_rota_solo_como_brazo_sombra(tmp_path):
     }
     somb = ep.adjuntar_modo_sombra_preparado(prep)
     assert somb is not None
-    assert somb["esquema"] == "sombra-v1"
+    assert somb["esquema"] in ("sombra-v1", "sombra-v2-tribrazo")
     assert somb["version_base"] == "soloA"
     assert somb["banderas_base"]["usar_sobredispersion_nb_corners"] is True
     assert somb["banderas_base"]["usar_guarda_doble_defensa_rota"] is False
@@ -133,7 +136,7 @@ def test_ronda14_guarda_doble_defensa_rota_solo_como_brazo_sombra(tmp_path):
 
     # Extracción estándar no rompe probs duales; extracción por brazo_regla aísla guarda_doble_defensa_rota
     obs_dual = ep.extraer_observaciones_sombra_desde_ledger(ruta_led, excluir_diseno=False)
-    assert set(obs_dual["observaciones"][0]["probs"].keys()) == {"base", "sombra"}
+    assert {"base", "sombra"}.issubset(set(obs_dual["observaciones"][0]["probs"].keys()))
     obs_ddr = ep.extraer_observaciones_sombra_desde_ledger(
         ruta_led,
         excluir_diseno=False,

@@ -693,3 +693,66 @@ def test_r24_b10_optimizacion_tercer_brazo_plano_sin_sensibilidad_bit_a_bit():
     ]
     assert probs_opt == probs_full
     assert sum(1 for x in probs_opt if x[4] is not None) > 250
+
+
+def test_r24_b11_tercer_brazo_plano_sombra_activo_por_defecto_publicado_identico():
+    import json
+    from pathlib import Path
+    import decision_cobertura as dc
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+
+    # 1. Valor por defecto en _BANDERAS_AUXILIARES_DEFECTO es True
+    assert dc._BANDERAS_AUXILIARES_DEFECTO["usar_tercer_brazo_plano_sombra"] is True
+    assert dc.bandera_activa("usar_tercer_brazo_plano_sombra") is True
+
+    ln_docs = json.loads((Path(r"D:\agente_futbol") / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl, dv = ln_docs["londrina"], ln_docs["nautico"]
+
+    # 2. Análisis con bandera por defecto (True) vs bandera forzada a False
+    an_def = mm.analizar(
+        dl, dv, "Londrina", "Náutico",
+        condicion_local="casa", condicion_visitante="fuera",
+        competicion="Série C", fecha_partido="2026-11-12",
+    )
+    ts_def = str(an_def.metadatos.get("generado_en") or "")
+    an_def.metadatos["generado_en"] = "2026-11-12T10:00:00Z"
+
+    with dc.banderas_comportamiento(usar_tercer_brazo_plano_sombra=False):
+        an_off = mm.analizar(
+            dl, dv, "Londrina", "Náutico",
+            condicion_local="casa", condicion_visitante="fuera",
+            competicion="Série C", fecha_partido="2026-11-12",
+        )
+    ts_off = str(an_off.metadatos.get("generado_en") or "")
+    an_off.metadatos["generado_en"] = "2026-11-12T10:00:00Z"
+
+    ctx = {
+        "doc_local": dl, "doc_visitante": dv,
+        "equipo_local": "Londrina", "equipo_visitante": "Náutico",
+        "fecha_partido": "2026-11-12", "competicion": "Série C",
+        "condicion_local": "casa", "condicion_visitante": "fuera",
+    }
+    prep_def = {"id_trabajo": "r24_b11_ln", "analisis": an_def, "contexto": dict(ctx), "rutas": {}}
+    prep_off = {"id_trabajo": "r24_b11_ln", "analisis": an_off, "contexto": dict(ctx), "rutas": {}}
+
+    somb_def = ep.adjuntar_modo_sombra_preparado(prep_def)
+    with dc.banderas_comportamiento(usar_tercer_brazo_plano_sombra=False):
+        somb_off = ep.adjuntar_modo_sombra_preparado(prep_off)
+
+    assert somb_def["esquema"] == "sombra-v2-tribrazo"
+    assert "lambdas_plano" in somb_def
+    assert any(c.get("prob_plano") is not None for c in somb_def["comparaciones"])
+    assert somb_off["esquema"] == "sombra-v1"
+
+    # 3. Todo lo publicado (mensaje, informe .md y selecciones del snapshot) sigue idéntico byte a byte
+    assert an_def.mensaje.replace(ts_def, "TS").encode("utf-8") == an_off.mensaje.replace(ts_off, "TS").encode("utf-8")
+    assert an_def.informe.replace(ts_def, "TS").encode("utf-8") == an_off.informe.replace(ts_off, "TS").encode("utf-8")
+
+    snap_def = ep.snapshot_desde_analisis(prep_def, publicado_en="2026-11-12T10:05:00Z").a_dict()
+    snap_off = ep.snapshot_desde_analisis(prep_off, publicado_en="2026-11-12T10:05:00Z").a_dict()
+
+    for campo_pub in ("selecciones_publicadas", "selecciones", "top5", "datos_corte", "equipos", "partido", "modelo"):
+        b_def = json.dumps(snap_def.get(campo_pub), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        b_off = json.dumps(snap_off.get(campo_pub), sort_keys=True, ensure_ascii=False).encode("utf-8")
+        assert b_def == b_off, f"Diferencia en campo publicado {campo_pub}"

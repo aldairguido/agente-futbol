@@ -12391,14 +12391,17 @@ def _enriquecer_sombra_con_brazo_plano(
     mot_p = getattr(analisis_plano, "motor", None)
     tas_p = getattr(mot_p, "tasas", None)
     p_p = getattr(mot_p, "p", None)
+    def _r6_pl(v: Any) -> float | None:
+        return None if v is None else round(float(v), 6)
+
     lam_plano = (
         {
-            "local_ft": getattr(tas_p, "lambda_local_ft", None),
-            "visitante_ft": getattr(tas_p, "lambda_visitante_ft", None),
-            "local_1t": getattr(tas_p, "lambda_local_1t", None),
-            "visitante_1t": getattr(tas_p, "lambda_visitante_1t", None),
-            "local_2t": getattr(tas_p, "lambda_local_2t", None),
-            "visitante_2t": getattr(tas_p, "lambda_visitante_2t", None),
+            "local_ft": _r6_pl(getattr(tas_p, "lambda_local_ft", None)),
+            "visitante_ft": _r6_pl(getattr(tas_p, "lambda_visitante_ft", None)),
+            "local_1t": _r6_pl(getattr(tas_p, "lambda_local_1t", None)),
+            "visitante_1t": _r6_pl(getattr(tas_p, "lambda_visitante_1t", None)),
+            "local_2t": _r6_pl(getattr(tas_p, "lambda_local_2t", None)),
+            "visitante_2t": _r6_pl(getattr(tas_p, "lambda_visitante_2t", None)),
         }
         if tas_p is not None
         else {}

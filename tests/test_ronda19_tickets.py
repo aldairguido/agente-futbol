@@ -606,7 +606,7 @@ def test_bloque_4_serie_ab_sin_pais_pide_brasil_o_italia_y_fuentes_en_encabezado
 def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_banderas() -> None:
     from decision_cobertura import bandera_activa
 
-    assert bandera_activa("usar_tercer_brazo_plano_sombra") is False
+    assert bandera_activa("usar_tercer_brazo_plano_sombra") is True
 
     dl = _doc_equipo_sintetico("Corinthians", fuente="flashscore", con_minutos=True)
     dv = _doc_equipo_sintetico("Botafogo", fuente="fotmob", con_minutos=True)
@@ -653,7 +653,7 @@ def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_bande
         lam_ft_antes = (an.motor.tasas.lambda_local_ft, an.motor.tasas.lambda_visitante_ft)
 
         # La bandera sigue apagada tras el análisis y las selecciones/lambdas no se alteran
-        assert bandera_activa("usar_tercer_brazo_plano_sombra") is False
+        assert bandera_activa("usar_tercer_brazo_plano_sombra") is True
         lp = ep.extraer_lambdas_plano_desde_analisis(an, prep)
         assert isinstance(lp, dict)
         for k in ("local_ft", "visitante_ft", "local_1t", "visitante_1t", "local_2t", "visitante_2t"):
@@ -661,7 +661,7 @@ def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_bande
         assert (an.motor.tasas.lambda_local_ft, an.motor.tasas.lambda_visitante_ft) == lam_ft_antes
 
         ep.adjuntar_modo_sombra_preparado(prep)
-        assert "lambdas_plano" not in prep["modo_sombra"]
+        assert "lambdas_plano" in prep["modo_sombra"]
 
         tg_meta = {"message_id": 505, "message_date": 1795066740, "message_date_utc": "2026-11-18T05:39:00Z"}
         prep["telegram_meta"] = tg_meta
@@ -708,9 +708,9 @@ def test_bloque_5_lambdas_plano_en_snapshot_y_ledger_sin_alterar_ticket_ni_bande
         filas = ep.cargar_ledger_oos(ruta_ledger)
         assert len(filas) == 2
         assert filas[0]["lambdas_plano"] == lp
-        assert "lambdas_plano" not in filas[0]["modo_sombra"]
+        assert "lambdas_plano" in filas[0]["modo_sombra"]
         assert filas[1]["lambdas_plano"] == lp
-        assert "lambdas_plano" not in filas[1]["modo_sombra"]
+        assert "lambdas_plano" in filas[1]["modo_sombra"]
         assert ep.verificar_cadena_ledger_oos(ruta_ledger)["ok"] is True
 
 

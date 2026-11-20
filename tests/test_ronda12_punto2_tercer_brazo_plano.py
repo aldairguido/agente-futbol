@@ -30,13 +30,13 @@ def _cargar_gal_bar():
 
 
 def test_ronda12_punto2_bandera_defecto_false_y_no_cambia_modo_dual(tmp_path):
-    assert dc.bandera_activa("usar_tercer_brazo_plano_sombra") is False
+    assert dc.bandera_activa("usar_tercer_brazo_plano_sombra") is True
     banderas_def = dc.obtener_banderas_comportamiento()
     assert banderas_def["usar_sobredispersion_nb_corners"] is True
     assert all(not v for k, v in banderas_def.items() if k != "usar_sobredispersion_nb_corners")
     assert "usar_tercer_brazo_plano_sombra" in dc._BANDERAS_AUXILIARES_DEFECTO
     assert "usar_tercer_brazo_plano_sombra" not in dc.BANDERAS_COMPORTAMIENTO_DEFECTO
-    with dc.banderas_comportamiento(activar_todas=True):
+    with dc.banderas_comportamiento(activar_todas=True, usar_tercer_brazo_plano_sombra=False):
         assert dc.bandera_activa("usar_tercer_brazo_plano_sombra") is False
 
     dl_c, dv_c = _cargar_gal_bar()
@@ -56,7 +56,8 @@ def test_ronda12_punto2_bandera_defecto_false_y_no_cambia_modo_dual(tmp_path):
             "condicion_local": "casa", "condicion_visitante": "fuera",
         },
     }
-    somb_off = ep.adjuntar_modo_sombra_preparado(prep_off)
+    with dc.banderas_comportamiento(activar_todas=False, usar_tercer_brazo_plano_sombra=False):
+        somb_off = ep.adjuntar_modo_sombra_preparado(prep_off)
     assert somb_off is not None
     assert somb_off["esquema"] == "sombra-v1"
     assert "lambdas_plano" not in somb_off
