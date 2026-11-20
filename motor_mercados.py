@@ -7742,6 +7742,25 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                 _brecha_emp_s = round(round(float(f_obs) * 100.0, 1) - round(float(s.probabilidad) * 100.0, 1), 1)
                 motivo = f"sin calibración validada (frec_emp: {f_obs*100:.1f}% vs mod: {s.probabilidad*100:.1f}%, brecha {_brecha_emp_s:+.1f} pp, desvío {desv_pts:.1f} pts > 10.0)"
             s.estado = estado
+            _desv_obs_pp = round((float(f_obs) - float(s.probabilidad)) * 100.0, 2) if f_obs is not None else None
+            _signo_desv: str | None = None
+            if estado == ESTADO_SENSIBLE:
+                if _desv_obs_pp is not None:
+                    if _desv_obs_pp > 1e-6:
+                        _signo_desv = "+"
+                    elif _desv_obs_pp < -1e-6:
+                        _signo_desv = "-"
+                    else:
+                        _signo_desv = "0"
+                elif esc:
+                    _vals_esc = [float(v) for v in esc.values() if v is not None]
+                    if _vals_esc:
+                        _min_esc = min(_vals_esc)
+                        _diff_esc = _min_esc - float(s.probabilidad)
+                        _signo_desv = "-" if _diff_esc < -1e-6 else ("+" if _diff_esc > 1e-6 else "0")
+            setattr(s, "frecuencia_observada_muestra", float(f_obs) if f_obs is not None else None)
+            setattr(s, "desvio_observado_pp", _desv_obs_pp)
+            setattr(s, "signo_desvio", _signo_desv)
             if motivo:
                 s.motivo = motivo
             if _rep_5050 and es_mercado_cronologia_mitades(s):

@@ -346,6 +346,9 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             "partido_activo": True,
             "alcance_mercado": "90_minutos_reglamentarios",
             "competicion": f.get("competicion"),
+            "ronda": f.get("ronda"),
+            "etapa": f.get("etapa"),
+            "formato": f.get("formato"),
             "condicion_local": "casa" if es_casa else "fuera",
             "condicion_visitante": "fuera" if es_casa else "casa",
             "local_es": "local" if es_casa else "visitante",
@@ -3558,9 +3561,11 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta", "ronda", "etapa", "formato"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
+    for _k_fix_opt in ("ronda", "etapa", "formato"):
+        analisis.metadatos.setdefault(_k_fix_opt, ctx.get(_k_fix_opt) if _k_fix_opt in ctx else None)
     analisis.metadatos.setdefault("datos_hasta_local", _fechas_dh["datos_hasta_local"])
     analisis.metadatos.setdefault("datos_hasta_visitante", _fechas_dh["datos_hasta_visitante"])
     analisis.metadatos.setdefault("datos_hasta", _fechas_dh["datos_hasta"])

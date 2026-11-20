@@ -1066,6 +1066,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 **({"fuente_hora_inicio": f_hini} if f_hini is not None else {}),
                 **({"zona_origen_hora_inicio": z_hini} if z_hini is not None else {}),
                 "competicion": metadatos.get("competicion"),
+                "ronda": metadatos.get("ronda"),
+                "etapa": metadatos.get("etapa"),
+                "formato": metadatos.get("formato"),
                 "sede": metadatos.get("sede"),
                 "condicion_local": metadatos.get("condicion_local"),
                 "condicion_visitante": metadatos.get("condicion_visitante"),
@@ -1110,11 +1113,36 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         for s in res.selecciones:
             if not s.estimable or s.probabilidad is None:
                 continue
+            _est_sens = s.estado or "no_evaluada"
+            _sig_desv = getattr(s, "signo_desvio", None)
+            _desv_pp = getattr(s, "desvio_observado_pp", None)
+            if _est_sens == "sensible" and _sig_desv is None:
+                try:
+                    from motor_mercados import calcular_frecuencia_observada
+                    _f_obs_snap = calcular_frecuencia_observada(
+                        s,
+                        getattr(motor, "doc_local", None),
+                        getattr(motor, "doc_visitante", None),
+                        getattr(motor, "nombre_local", ""),
+                        getattr(motor, "nombre_visitante", ""),
+                    )
+                except Exception:
+                    _f_obs_snap = None
+                if _f_obs_snap is not None:
+                    _desv_pp = round((float(_f_obs_snap) - float(s.probabilidad)) * 100.0, 2)
+                    _sig_desv = "+" if _desv_pp > 1e-6 else ("-" if _desv_pp < -1e-6 else "0")
+                elif isinstance(s.escenarios, dict) and s.escenarios:
+                    _vals_e = [float(v) for v in s.escenarios.values() if v is not None]
+                    if _vals_e:
+                        _d_e = min(_vals_e) - float(s.probabilidad)
+                        _sig_desv = "-" if _d_e < -1e-6 else ("+" if _d_e > 1e-6 else "0")
             entrada = {
                 "mercado": s.mercado, "id_mercado": s.id_mercado, "evento": s.evento,
                 "etiqueta": s.etiqueta, "periodo": s.periodo, "equipo": s.equipo,
                 "linea": s.linea, "probabilidad": s.probabilidad,
-                "estado_sensibilidad": s.estado or "no_evaluada",
+                "estado_sensibilidad": _est_sens,
+                "signo_desvio": _sig_desv if _est_sens == "sensible" else None,
+                **({"desvio_observado_pp": _desv_pp} if _desv_pp is not None and _est_sens == "sensible" else {}),
                 "escenarios": s.escenarios,
                 "supera_umbral": bool(s.probabilidad > umbral),
             }
@@ -1138,6 +1166,9 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             **({"fuente_hora_inicio": f_hini} if f_hini is not None else {}),
             **({"zona_origen_hora_inicio": z_hini} if z_hini is not None else {}),
             "competicion": metadatos.get("competicion"),
+            "ronda": metadatos.get("ronda"),
+            "etapa": metadatos.get("etapa"),
+            "formato": metadatos.get("formato"),
             "sede": metadatos.get("sede"),
             "condicion_local": metadatos.get("condicion_local"),
             "condicion_visitante": metadatos.get("condicion_visitante"),

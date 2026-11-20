@@ -145,3 +145,147 @@ def test_r24_b3_h2h_promedios_crudos_conteos_y_parrafo2_datos_crudos():
     assert "+2.5: 0/2" in p2
     assert "BTTS: 1/2" in p2
     assert "CONTRADICE el ritmo goleador del modelo general" in p2
+
+
+
+def test_r24_b4_snapshot_signo_desvio_sec2_y_ronda_etapa_formato():
+    from types import SimpleNamespace
+    import fuentes_xg as fxg
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+
+    # 1. Fixture de FotMob con ronda, etapa y formato -> se normalizan, y cuando faltan quedan en None
+    fut_con = fxg._normalizar_futuros([{
+        "id": "999001",
+        "status": {"finished": False, "utcTime": "2026-11-21T20:00:00Z"},
+        "home": {"id": "101", "name": "Orlando City"},
+        "away": {"id": "102", "name": "FC Cincinnati"},
+        "tournament": {"name": "MLS Cup Playoffs", "stage": "Knockout", "format": "Eliminación directa"},
+        "round": "Semifinal de Conferencia",
+    }])
+    assert len(fut_con) == 1
+    assert fut_con[0]["ronda"] == "Semifinal de Conferencia"
+    assert fut_con[0]["etapa"] == "Knockout"
+    assert fut_con[0]["formato"] == "Eliminación directa"
+
+    fut_sin = fxg._normalizar_futuros([{
+        "id": "999002",
+        "status": {"finished": False, "utcTime": "2026-11-21T22:00:00Z"},
+        "home": {"id": "103", "name": "Vitória"},
+        "away": {"id": "104", "name": "RB Bragantino"},
+        "tournament": {"name": "Brasileirão Série A"},
+    }])
+    assert len(fut_sin) == 1
+    assert fut_sin[0]["ronda"] is None
+    assert fut_sin[0]["etapa"] is None
+    assert fut_sin[0]["formato"] is None
+
+    # 2. Snapshot guarda signo_desvio en líneas de Sección 2 (sensible) y None en mantiene,
+    #    además de ronda/etapa/formato en partido (o None si no vienen).
+    sel_sec1 = mm.Seleccion(
+        mercado="Dobles oportunidades (1X2)",
+        id_mercado="doble_oportunidad",
+        evento="1X",
+        etiqueta="Local o empate (1X)",
+        periodo="FT",
+        equipo="ambos",
+        linea=None,
+        probabilidad=0.81,
+        estimable=True,
+        estado="mantiene",
+        escenarios={"c_low": 0.78},
+    )
+    sel_sec2_neg = mm.Seleccion(
+        mercado="Total de goles (Más/Menos)",
+        id_mercado="goles_ft",
+        evento="mas_de",
+        etiqueta="Más de 1.5 goles",
+        periodo="FT",
+        equipo="ambos",
+        linea=1.5,
+        probabilidad=0.88,
+        estimable=True,
+        estado="sensible",
+        escenarios={"c_low": 0.65},
+    )
+    setattr(sel_sec2_neg, "signo_desvio", "-")
+    setattr(sel_sec2_neg, "desvio_observado_pp", -14.2)
+
+    sel_sec2_pos = mm.Seleccion(
+        mercado="Ambos equipos anotan (BTTS)",
+        id_mercado="ambos_anotan",
+        evento="si",
+        etiqueta="Ambos anotan: Sí",
+        periodo="FT",
+        equipo="ambos",
+        linea=None,
+        probabilidad=0.72,
+        estimable=True,
+        estado="sensible",
+        escenarios={"c_low": 0.71},
+    )
+    setattr(sel_sec2_pos, "signo_desvio", "+")
+    setattr(sel_sec2_pos, "desvio_observado_pp", 12.5)
+
+    muestra_dummy = SimpleNamespace(partidos_general=15, partidos_condicion=7)
+    motor_stub = SimpleNamespace(
+        muestras={
+            "local_general": muestra_dummy,
+            "visitante_general": muestra_dummy,
+            "local_cond": muestra_dummy,
+            "visitante_cond": muestra_dummy,
+        },
+        tasas=SimpleNamespace(lambda_local_ft=1.80, lambda_visitante_ft=1.35),
+        recursivo={},
+        doc_local=None,
+        doc_visitante=None,
+        nombre_local="Orlando City",
+        nombre_visitante="FC Cincinnati",
+    )
+    an_con = SimpleNamespace(
+        metadatos={
+            "equipo_local": "Orlando City",
+            "equipo_visitante": "FC Cincinnati",
+            "fecha_partido": "2026-11-21",
+            "hora_inicio_partido": "2026-11-21T20:00:00Z",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fixture",
+            "competicion": "MLS Cup Playoffs",
+            "ronda": "Semifinal de Conferencia",
+            "etapa": "Knockout",
+            "formato": "Eliminación directa",
+            "generado_en": "2026-11-20T12:00:00Z",
+        },
+        motor=motor_stub,
+        parametros=SimpleNamespace(umbral=0.70, w_condicion=0.5, w_xg=0.6, distribucion_conteos="poisson"),
+        mercados=[SimpleNamespace(selecciones=[sel_sec1, sel_sec2_neg, sel_sec2_pos])],
+    )
+    prep_con = {"id_trabajo": "test_b4_con", "analisis": an_con, "rutas": {}}
+    snap_con = ep.snapshot_desde_analisis(prep_con, publicado_en="2026-11-20T12:01:00Z").a_dict()
+    assert snap_con["partido"]["ronda"] == "Semifinal de Conferencia"
+    assert snap_con["partido"]["etapa"] == "Knockout"
+    assert snap_con["partido"]["formato"] == "Eliminación directa"
+
+    por_id = {s["id_mercado"]: s for s in snap_con["selecciones_publicadas"]}
+    assert por_id["doble_oportunidad"]["signo_desvio"] is None
+    assert por_id["goles_ft"]["signo_desvio"] == "-"
+    assert por_id["goles_ft"]["desvio_observado_pp"] == -14.2
+    assert por_id["ambos_anotan"]["signo_desvio"] == "+"
+    assert por_id["ambos_anotan"]["desvio_observado_pp"] == 12.5
+
+    # Sin ronda/etapa/formato en metadatos -> deben existir con valor None
+    an_sin = SimpleNamespace(
+        metadatos={
+            "equipo_local": "Vitória",
+            "equipo_visitante": "RB Bragantino",
+            "fecha_partido": "2026-11-21",
+            "generado_en": "2026-11-20T12:00:00Z",
+        },
+        motor=motor_stub,
+        parametros=SimpleNamespace(umbral=0.70, w_condicion=0.5, w_xg=0.6, distribucion_conteos="poisson"),
+        mercados=[SimpleNamespace(selecciones=[sel_sec1])],
+    )
+    snap_sin = ep.snapshot_desde_analisis({"id_trabajo": "test_b4_sin", "analisis": an_sin, "rutas": {}}, publicado_en="2026-11-20T12:01:00Z").a_dict()
+    assert "ronda" in snap_sin["partido"] and snap_sin["partido"]["ronda"] is None
+    assert "etapa" in snap_sin["partido"] and snap_sin["partido"]["etapa"] is None
+    assert "formato" in snap_sin["partido"] and snap_sin["partido"]["formato"] is None
