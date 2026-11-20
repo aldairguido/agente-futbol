@@ -12337,6 +12337,7 @@ def ejecutar_tercer_brazo_plano_analisis(
     *,
     parametros_base: Any = None,
     rho_override: float | None = None,
+    incluir_sensibilidad: bool = False,
     **analizar_kwargs: Any,
 ) -> Any:
     """
@@ -12367,6 +12368,7 @@ def ejecutar_tercer_brazo_plano_analisis(
     )
     kw = dict(analizar_kwargs)
     kw.pop("parametros", None)
+    kw.pop("incluir_sensibilidad", None)
     with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
         return mm.analizar(
             doc_local,
@@ -12374,6 +12376,7 @@ def ejecutar_tercer_brazo_plano_analisis(
             equipo_local,
             equipo_visitante,
             parametros=params_plano,
+            incluir_sensibilidad=incluir_sensibilidad,
             **kw,
         )
 

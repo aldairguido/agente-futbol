@@ -7638,7 +7638,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
              condicion_visitante: str | None = None,
              parametros: Parametros | None = None,
              aviso: Callable[[str], None] | None = None,
-             id_partido_excluir: str | None = None) -> Analisis:
+             id_partido_excluir: str | None = None,
+             incluir_sensibilidad: bool = True) -> Analisis:
     """
     Ejecuta el análisis completo del enfrentamiento.
 
@@ -7691,6 +7692,10 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
     if motor.tasas.lambda_local_ft is None or motor.tasas.lambda_visitante_ft is None:
         avisar("⚠️ λ FT no estimables: los mercados de goles quedarán como datos insuficientes")
     mercados = motor.evaluar_catalogo()
+    if not incluir_sensibilidad:
+        grupos_vacios = {ESTADO_MANTIENE: [], ESTADO_SENSIBLE: [], ESTADO_INCOMPLETA: []}
+        motor._grupos_resumen = {ESTADO_MANTIENE: [], ESTADO_SENSIBLE: []}
+        return Analisis(metadatos, params, motor, mercados, [], grupos_vacios, {}, "", "")
 
     # 4) Sensibilidad
     sensibilidad = evaluar_sensibilidad(dl, dv, cl, cv, equipo_local, equipo_visitante,

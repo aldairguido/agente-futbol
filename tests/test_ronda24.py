@@ -641,3 +641,55 @@ def test_r24_b9_firma_motor_actualizada_r24():
     from servicio_mercados import FIRMA_MOTOR
 
     assert FIRMA_MOTOR == "red-neuronal-recursiva-45-r24"
+
+
+def test_r24_b10_optimizacion_tercer_brazo_plano_sin_sensibilidad_bit_a_bit():
+    import copy
+    import time
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+    from decision_cobertura import banderas_comportamiento, obtener_banderas_comportamiento
+
+    from pathlib import Path
+    import json
+    ln_docs = json.loads((Path(r"D:\agente_futbol") / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl, dv = ln_docs["londrina"], ln_docs["nautico"]
+    with banderas_comportamiento(activar_todas=False):
+        an_base = mm.analizar(dl, dv, "Londrina", "Náutico", fecha_partido="2026-11-12")
+    with banderas_comportamiento(activar_todas=True):
+        banderas_cand = obtener_banderas_comportamiento()
+        an_somb = mm.analizar(dl, dv, "Londrina", "Náutico", fecha_partido="2026-11-12")
+    sombra_seed = ep.construir_modo_sombra_desde_analisis(
+        an_base, an_somb, banderas_cand
+    )
+
+    t0 = time.perf_counter()
+    an_plano_opt = ep.ejecutar_tercer_brazo_plano_analisis(
+        dl, dv, "Londrina", "Náutico", fecha_partido="2026-11-12"
+    )
+    ms_opt = (time.perf_counter() - t0) * 1000.0
+
+    t1 = time.perf_counter()
+    an_plano_full = ep.ejecutar_tercer_brazo_plano_analisis(
+        dl, dv, "Londrina", "Náutico", fecha_partido="2026-11-12", incluir_sensibilidad=True
+    )
+    ms_full = (time.perf_counter() - t1) * 1000.0
+
+    assert an_plano_opt.sensibilidad == {}
+    assert len(an_plano_full.sensibilidad) > 0
+    assert ms_opt < ms_full
+
+    somb_opt = ep._enriquecer_sombra_con_brazo_plano(copy.deepcopy(sombra_seed), an_plano_opt)
+    somb_full = ep._enriquecer_sombra_con_brazo_plano(copy.deepcopy(sombra_seed), an_plano_full)
+
+    assert somb_opt["lambdas_plano"] == somb_full["lambdas_plano"]
+    probs_opt = [
+        (c["evento"], c["periodo"], c["equipo"], c["linea"], c.get("prob_plano"))
+        for c in somb_opt["comparaciones"]
+    ]
+    probs_full = [
+        (c["evento"], c["periodo"], c["equipo"], c["linea"], c.get("prob_plano"))
+        for c in somb_full["comparaciones"]
+    ]
+    assert probs_opt == probs_full
+    assert sum(1 for x in probs_opt if x[4] is not None) > 250
