@@ -372,3 +372,198 @@ def test_r24_b5_inputs_gz_sha256_y_reproduccion_ab(tmp_path):
     # Si falla la escritura de inputs_<id_trabajo>.json.gz, NO bloquea el pronóstico
     res_fail = ep.guardar_inputs_reproducibles({"id_trabajo": ""}, directorio=str(tmp_path))
     assert res_fail["ok"] is False
+
+
+
+def test_r24_b6_evaluar_separa_oos_excluye_100_y_exploratorio_y_desglose_build():
+    import evaluacion_pronosticos as ep
+
+    # 31 partidos en total: 2 OOS válidos y canónicos, 28 legacy_sin_fixture (build exploratorio) y 1 no_oos.
+    # Aunque total_partidos = 31 >= 30, solo hay 2 OOS válidos (< 30), por lo que NO debe decir "Evidencia suficiente".
+    pronosticos = []
+    resultados = {}
+
+    # 2 partidos OOS válidos con build de producción f72ea17, uno con una selección de prob=1.0 exacto y otra 0.78
+    for i in range(1, 3):
+        loc = f"ClubOOS_L{i}"
+        vis = f"ClubOOS_V{i}"
+        clave = f"{loc} vs {vis}"
+        sels = [
+            {
+                "mercado": "Total de goles (Más/Menos)",
+                "evento": "over_1.5",
+                "etiqueta": "Más de 1.5 goles",
+                "periodo": "FT",
+                "equipo": None,
+                "linea": 1.5,
+                "probabilidad": 0.78,
+                "estado_sensibilidad": "mantiene",
+                "supera_umbral": True,
+            },
+        ]
+        if i == 1:
+            sels.append({
+                "mercado": "Total de goles (Más/Menos)",
+                "evento": "under_8.5",
+                "etiqueta": "Menos de 8.5 goles",
+                "periodo": "FT",
+                "equipo": None,
+                "linea": 8.5,
+                "probabilidad": 1.0,
+                "estado_sensibilidad": "mantiene",
+                "supera_umbral": True,
+            })
+        pronosticos.append({
+            "id_trabajo": f"job_oos_{i}",
+            "equipos": {"local": loc, "visitante": vis},
+            "partido": {"fecha": "2026-11-19"},
+            "generado_en": "2026-11-19T18:00:00Z",
+            "publicado_en": "2026-11-19T18:01:00Z",
+            "modelo": {"nombre": "mercados-Red45DCN", "version": "3.0", "build": "f72ea17"},
+            "build": "f72ea17",
+            "fixture_confirmado": True,
+            "fuente_fecha": "fixture",
+            "hora_inicio_partido": "2026-11-19T22:00:00Z",
+            "telegram_message_date": 1795111260,
+            "hora_mensaje_utc": "2026-11-19T18:01:00Z",
+            "es_oos_valido": True,
+            "es_canonica": True,
+            "estado_canonico": "canonica",
+            "selecciones": sels,
+            "selecciones_publicadas": sels,
+        })
+        resultados[clave] = ep.ResultadoPartido(
+            id_partido=f"pid_oos_{i}",
+            estado="finalizado",
+            local=loc,
+            visitante=vis,
+            goles_local=2,
+            goles_visitante=1,
+            goles_local_1t=1,
+            goles_visitante_1t=0,
+            inicio_utc="2026-11-19T22:00:00Z",
+        )
+
+    # 28 partidos legacy_sin_fixture con build exploratorio
+    for i in range(1, 29):
+        loc = f"ClubLeg_L{i}"
+        vis = f"ClubLeg_V{i}"
+        clave = f"{loc} vs {vis}"
+        sels = [{
+            "mercado": "Total de goles (Más/Menos)",
+            "evento": "over_1.5",
+            "etiqueta": "Más de 1.5 goles",
+            "periodo": "FT",
+            "equipo": None,
+            "linea": 1.5,
+            "probabilidad": 0.82,
+            "estado_sensibilidad": "mantiene",
+            "supera_umbral": True,
+        }]
+        pronosticos.append({
+            "id_trabajo": f"job_leg_{i}",
+            "equipos": {"local": loc, "visitante": vis},
+            "partido": {"fecha": "2026-10-15"},
+            "generado_en": "2026-10-15T12:00:00Z",
+            "origen": "importado_historico",
+            "modelo": {"nombre": "mercados-poisson-exploratorio", "version": "1.0"},
+            "selecciones": sels,
+            "selecciones_publicadas": sels,
+        })
+        resultados[clave] = ep.ResultadoPartido(
+            id_partido=f"pid_leg_{i}",
+            estado="finalizado",
+            local=loc,
+            visitante=vis,
+            goles_local=2,
+            goles_visitante=0,
+            goles_local_1t=1,
+            goles_visitante_1t=0,
+            inicio_utc="2026-10-15T18:00:00Z",
+        )
+
+    # 1 partido no_oos explícito (emitido sin fixture_confirmado) con build 48478aa
+    loc_no = "Vasco da Gama"
+    vis_no = "Internacional"
+    clave_no = f"{loc_no} vs {vis_no}"
+    sels_no = [{
+        "mercado": "Total de goles (Más/Menos)",
+        "evento": "over_1.5",
+        "etiqueta": "Más de 1.5 goles",
+        "periodo": "FT",
+        "equipo": None,
+        "linea": 1.5,
+        "probabilidad": 0.76,
+        "estado_sensibilidad": "mantiene",
+        "supera_umbral": True,
+    }]
+    pronosticos.append({
+        "id_trabajo": "job_no_oos_1",
+        "equipos": {"local": loc_no, "visitante": vis_no},
+        "partido": {"fecha": "2026-11-19"},
+        "generado_en": "2026-11-19T18:00:00Z",
+        "modelo": {"nombre": "mercados-Red45DCN", "version": "3.0", "build": "48478aa"},
+        "build": "48478aa",
+        "fixture_confirmado": False,
+        "fuente_fecha": "fallback",
+        "es_oos_valido": False,
+        "es_canonica": False,
+        "estado_canonico": "no_oos",
+        "selecciones": sels_no,
+        "selecciones_publicadas": sels_no,
+    })
+    resultados[clave_no] = ep.ResultadoPartido(
+        id_partido="pid_no_oos_1",
+        estado="finalizado",
+        local=loc_no,
+        visitante=vis_no,
+        goles_local=2,
+        goles_visitante=1,
+        goles_local_1t=1,
+        goles_visitante_1t=0,
+        inicio_utc="2026-11-19T22:00:00Z",
+    )
+
+    inf = ep.evaluar_tanda(pronosticos, resultados=resultados)
+
+    # (a) Separación OOS válido y canónico vs legacy_sin_fixture vs no_oos y regla >= 30 OOS válidos
+    assert inf.evidencia["partidos_unicos"] == 31
+    assert inf.evidencia["partidos_oos_validos"] == 2
+    assert inf.evidencia["partidos_legacy_sin_fixture"] == 28
+    assert inf.evidencia["partidos_no_oos"] == 1
+    assert inf.evidencia["evidencia_suficiente"] is False
+    assert "Evidencia suficiente" not in inf.evidencia["mensaje"]
+    assert "EVIDENCIA INSUFICIENTE" in inf.evidencia["mensaje"]
+
+    assert inf.separacion_oos["oos_valido_canonico"]["partidos_unicos"] == 2
+    assert inf.separacion_oos["legacy_sin_fixture"]["partidos_unicos"] == 28
+    assert inf.separacion_oos["no_oos"]["partidos_unicos"] == 1
+
+    # (b) Exclusión de p == 1.0 exacto y de build exploratorio en tabla_calibracion
+    assert inf.exclusiones_calibracion["n_excluidas_probabilidad_1_exacta"] == 1
+    assert inf.exclusiones_calibracion["n_excluidas_build_exploratorio"] == 28
+    assert inf.exclusiones_calibracion["n_excluidas_total"] == 29
+    assert inf.exclusiones_calibracion["n_incluidas_tabla_calibracion"] == 3  # 2 de f72ea17 (0.78) + 1 de 48478aa (0.76)
+
+    bandas_cal = {f["banda"]: f for f in inf.calibracion}
+    assert "1.00 exacto" not in bandas_cal
+    assert "0.80-0.85" not in bandas_cal  # Las 28 de 0.82 eran todas de build exploratorio
+    assert bandas_cal["0.75-0.80"]["n"] == 3
+
+    # (c) Desglose por build presente en informe, resumen_telegram y generar_informe_texto
+    assert "f72ea17" in inf.desglose_por_build
+    assert "48478aa" in inf.desglose_por_build
+    assert any("exploratorio" in k for k in inf.desglose_por_build)
+    assert inf.desglose_por_build["f72ea17"]["partidos_oos_validos"] == 2
+    assert inf.desglose_por_build["48478aa"]["partidos_oos_validos"] == 0
+
+    txt_tg = ep.resumen_telegram(inf)
+    assert "OOS válidos y canónicos: 2 | legacy_sin_fixture: 28 | no_oos: 1" in txt_tg
+    assert "Excluidas de tabla de calibración: 29" in txt_tg
+    assert "Desglose por build:" in txt_tg
+    assert "f72ea17" in txt_tg and "48478aa" in txt_tg
+
+    txt_md = ep.generar_informe_texto(inf)
+    assert "Separación OOS válido y canónico vs legacy_sin_fixture vs no_oos" in txt_md
+    assert "Desglose por build" in txt_md
+    assert "Exclusiones aplicadas a la tabla de calibración" in txt_md

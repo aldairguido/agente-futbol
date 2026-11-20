@@ -1321,7 +1321,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             generado_en=str(metadatos.get("generado_en")),
             publicado_en=publicado_en,
             modelo={"nombre": NOMBRE_MODELO, "version": VERSION_MODELO, "umbral": umbral_val,
-                    "w_condicion": 0.0, "w_xg": 0.0, "distribucion_conteos": "poisson"},
+                    "w_condicion": 0.0, "w_xg": 0.0, "distribucion_conteos": "poisson",
+                    **({"build": metadatos.get("build")} if metadatos.get("build") else {})},
             datos_corte=dc_abs,
             selecciones=[],
             selecciones_publicadas=[],
@@ -1425,7 +1426,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 "umbral": umbral,
                 "w_condicion": analisis.parametros.w_condicion,
                 "w_xg": analisis.parametros.w_xg,
-                "distribucion_conteos": analisis.parametros.distribucion_conteos},
+                "distribucion_conteos": analisis.parametros.distribucion_conteos,
+                **({"build": metadatos.get("build")} if metadatos.get("build") else {})},
         datos_corte={
             "partidos_local": motor.muestras["local_general"].partidos_general,
             "partidos_visitante": motor.muestras["visitante_general"].partidos_general,
@@ -2098,6 +2100,14 @@ class Evaluacion:
     detalle: str = ""
     referencia: str = ""
     id_partido: str | None = None
+    clasificacion_oos: str = "canonica"
+    es_oos_valido: bool = True
+    es_canonica: bool = True
+    build: str | None = None
+    es_build_exploratorio: bool = False
+    es_probabilidad_1_exacta: bool = False
+    excluida_tabla_calibracion: bool = False
+    motivo_exclusion_calibracion: str | None = None
 
     @property
     def evaluable_binario(self) -> bool:
@@ -2120,6 +2130,14 @@ class Evaluacion:
             "objetivo_probabilidad": self.objetivo_probabilidad,
             "detalle": self.detalle, "referencia": self.referencia,
             "evaluable_binario": self.evaluable_binario,
+            "clasificacion_oos": self.clasificacion_oos,
+            "es_oos_valido": self.es_oos_valido,
+            "es_canonica": self.es_canonica,
+            "build": self.build,
+            "es_build_exploratorio": self.es_build_exploratorio,
+            "es_probabilidad_1_exacta": self.es_probabilidad_1_exacta,
+            "excluida_tabla_calibracion": self.excluida_tabla_calibracion,
+            "motivo_exclusion_calibracion": self.motivo_exclusion_calibracion,
         }
 
 
@@ -2913,15 +2931,70 @@ def brier_binario(evaluaciones: list[Evaluacion]) -> dict[str, Any]:
     }
 
 
-def tabla_calibracion(evaluaciones: list[Evaluacion]) -> list[dict[str, Any]]:
+def _es_build_exploratorio_nombre(nombre_build: str | None) -> bool:
+    b = str(nombre_build or "").strip().lower()
+    if not b:
+        return False
+    return ("exploratorio" in b) or (b == "importado_historico")
+
+
+def _extraer_build_documento(doc: dict[str, Any]) -> str:
+    if not isinstance(doc, dict):
+        return "desconocido"
+    mod = doc.get("modelo") if isinstance(doc.get("modelo"), dict) else {}
+    met = doc.get("metadatos") if isinstance(doc.get("metadatos"), dict) else {}
+    dc = doc.get("datos_corte") if isinstance(doc.get("datos_corte"), dict) else {}
+    for cand in (
+        doc.get("build"),
+        mod.get("build"),
+        met.get("build"),
+        dc.get("build"),
+    ):
+        if cand and str(cand).strip():
+            return str(cand).strip()
+    nom_mod = str(mod.get("nombre") or "").strip()
+    ver_mod = str(mod.get("version") or "").strip()
+    if "exploratorio" in nom_mod.lower() or "exploratorio" in ver_mod.lower():
+        return f"{nom_mod} {ver_mod}".strip() or "mercados-poisson-exploratorio"
+    if doc.get("origen") == "importado_historico":
+        return f"{nom_mod} {ver_mod}".strip() or "mercados-poisson-exploratorio"
+    if nom_mod or ver_mod:
+        return f"{nom_mod} {ver_mod}".strip()
+    return "sin_build_declarado"
+
+
+def _evaluar_exclusion_tabla_calibracion(e: Evaluacion) -> tuple[bool, str | None]:
+    es_1 = e.probabilidad_original is not None and abs(float(e.probabilidad_original) - 1.0) <= 1e-12
+    es_exp = bool(getattr(e, "es_build_exploratorio", False) or _es_build_exploratorio_nombre(getattr(e, "build", None)))
+    if es_1 and es_exp:
+        return True, "probabilidad_exacta_1.0_y_build_exploratorio"
+    if es_1:
+        return True, "probabilidad_exacta_1.0"
+    if es_exp:
+        return True, "build_exploratorio"
+    return False, None
+
+
+def tabla_calibracion(evaluaciones: list[Evaluacion], *, incluir_excluidas: bool = False) -> list[dict[str, Any]]:
     """
     Probabilidad media anunciada frente a frecuencia observada, con muestra y
     partidos únicos. Es la tabla que responde «¿cuando digo 90%, ocurre 9 de 10?».
+    Excluye por defecto las selecciones marcadas con probabilidad exactamente 1.0
+    o provenientes de snapshots con build exploratorio.
     """
     filas = []
     for nombre, _inf, _sup in BANDAS:
-        grupo = [e for e in evaluaciones
-                 if banda_de(e.probabilidad_original) == nombre and e.evaluable_binario]
+        if nombre == "1.00 exacto" and not incluir_excluidas:
+            continue
+        grupo = []
+        for e in evaluaciones:
+            if not e.evaluable_binario or banda_de(e.probabilidad_original) != nombre:
+                continue
+            if not incluir_excluidas:
+                excl, _ = _evaluar_exclusion_tabla_calibracion(e)
+                if excl or getattr(e, "excluida_tabla_calibracion", False):
+                    continue
+            grupo.append(e)
         if not grupo:
             continue
         n = len(grupo)
@@ -3010,32 +3083,79 @@ def auditar_banda_100(evaluaciones: list[Evaluacion]) -> dict[str, Any]:
 MIN_PARTIDOS_PARA_CALIBRAR = 30
 
 
-def diagnostico_evidencia(evaluaciones: list[Evaluacion]) -> dict[str, Any]:
+def diagnostico_evidencia(
+    evaluaciones: list[Evaluacion],
+    *,
+    partidos_oos_validos: int | None = None,
+    partidos_legacy_sin_fixture: int | None = None,
+    partidos_no_oos: int | None = None,
+) -> dict[str, Any]:
     """
     Determina si hay evidencia suficiente para conclusiones de calibración.
 
-    Un encuentro genera decenas de líneas correlacionadas. Tratar 822 selecciones
-    de 8 partidos como 822 ensayos independientes inflaría la confianza de forma
-    artificial, así que se exige un mínimo de PARTIDOS ÚNICOS.
+    Separa siempre los partidos OOS válidos y canónicos de `legacy_sin_fixture`
+    y `no_oos`. Solo declara «Evidencia suficiente» cuando hay >= 30 partidos
+    OOS válidos y canónicos (`partidos_oos_validos >= MIN_PARTIDOS_PARA_CALIBRAR`).
     """
     binarios = [e for e in evaluaciones if e.evaluable_binario]
-    partidos = {e.id_partido or e.partido for e in binarios}
-    n_partidos = len(partidos)
-    suficiente = n_partidos >= MIN_PARTIDOS_PARA_CALIBRAR
+    partidos_totales = {e.id_partido or e.partido for e in binarios}
+    n_partidos_totales = len(partidos_totales)
+
+    if partidos_oos_validos is None:
+        p_oos = {
+            e.id_partido or e.partido
+            for e in binarios
+            if getattr(e, "clasificacion_oos", "canonica") == "canonica"
+            and bool(getattr(e, "es_oos_valido", True))
+            and bool(getattr(e, "es_canonica", True))
+        }
+        n_oos_validos = len(p_oos)
+    else:
+        n_oos_validos = int(partidos_oos_validos)
+
+    if partidos_legacy_sin_fixture is None:
+        p_leg = {
+            e.id_partido or e.partido
+            for e in binarios
+            if getattr(e, "clasificacion_oos", "") == "legacy_sin_fixture"
+        }
+        n_legacy = len(p_leg)
+    else:
+        n_legacy = int(partidos_legacy_sin_fixture)
+
+    if partidos_no_oos is None:
+        p_no_oos = {
+            e.id_partido or e.partido
+            for e in binarios
+            if getattr(e, "clasificacion_oos", "") in ("no_oos", "no_canonica")
+        }
+        n_no_oos = len(p_no_oos)
+    else:
+        n_no_oos = int(partidos_no_oos)
+
+    suficiente = n_oos_validos >= MIN_PARTIDOS_PARA_CALIBRAR
+    desglose_txt = (
+        f"OOS válidos y canónicos={n_oos_validos}, "
+        f"legacy_sin_fixture={n_legacy}, no_oos={n_no_oos} "
+        f"(total partidos únicos={n_partidos_totales})"
+    )
     return {
-        "partidos_unicos": n_partidos,
+        "partidos_unicos": n_partidos_totales,
+        "partidos_oos_validos": n_oos_validos,
+        "partidos_legacy_sin_fixture": n_legacy,
+        "partidos_no_oos": n_no_oos,
         "selecciones_evaluables": len(binarios),
         "minimo_partidos_exigido": MIN_PARTIDOS_PARA_CALIBRAR,
         "evidencia_suficiente": suficiente,
         "mensaje": (
-            f"Evidencia suficiente ({n_partidos} partidos únicos ≥ "
-            f"{MIN_PARTIDOS_PARA_CALIBRAR})."
+            f"Evidencia suficiente ({n_oos_validos} partidos OOS válidos y canónicos ≥ "
+            f"{MIN_PARTIDOS_PARA_CALIBRAR}; {desglose_txt})."
             if suficiente else
-            f"EVIDENCIA INSUFICIENTE PARA UN INTERVALO ESTABLE: {n_partidos} partidos "
-            f"únicos (mínimo {MIN_PARTIDOS_PARA_CALIBRAR}) para {len(binarios)} "
-            f"selecciones evaluables. Las métricas son descriptivas de esta tanda y "
-            f"no permiten concluir calibración: las líneas de un mismo partido están "
-            f"correlacionadas y no son ensayos independientes."
+            f"EVIDENCIA INSUFICIENTE PARA UN INTERVALO ESTABLE: {n_oos_validos} partidos "
+            f"OOS válidos y canónicos (mínimo {MIN_PARTIDOS_PARA_CALIBRAR}; {desglose_txt}) "
+            f"para {len(binarios)} selecciones evaluables. Las métricas son descriptivas "
+            f"de esta tanda y no permiten concluir calibración: las líneas de un mismo "
+            f"partido están correlacionadas y no son ensayos independientes."
         ),
     }
 
@@ -3067,6 +3187,9 @@ class InformeEvaluacion:
     abstenidos_por_cobertura: int = 0
     versiones: dict[str, Any] = field(default_factory=dict)
     filtro: str | None = None
+    separacion_oos: dict[str, Any] = field(default_factory=dict)
+    exclusiones_calibracion: dict[str, Any] = field(default_factory=dict)
+    desglose_por_build: dict[str, Any] = field(default_factory=dict)
 
     def a_dict(self) -> dict[str, Any]:
         return {
@@ -3086,6 +3209,9 @@ class InformeEvaluacion:
             "bruto_vs_equilibrado": self.bruto_vs_equilibrado,
             "banda_100": self.banda_100,
             "evidencia": self.evidencia,
+            "separacion_oos": self.separacion_oos,
+            "exclusiones_calibracion": self.exclusiones_calibracion,
+            "desglose_por_build": self.desglose_por_build,
             "versiones": self.versiones,
             "faltantes": self.faltantes,
             "limitaciones": self.limitaciones,
@@ -3583,6 +3709,13 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
             estado="no_encontrado", local=equipos.get("local") or "",
             visitante=equipos.get("visitante") or "", consultado_en=_ahora())
 
+        cls_doc = clasificar_oos_entrada_ledger(doc)
+        cls_oos_str = str(cls_doc.get("clasificacion_oos") or "legacy_sin_fixture")
+        es_oos_v = bool(cls_doc.get("es_oos_valido", False))
+        es_can_v = bool(cls_doc.get("es_canonica", False))
+        build_doc = _extraer_build_documento(doc)
+        es_build_exp = _es_build_exploratorio_nombre(build_doc)
+
         selecciones = (por_trabajo.get(str(doc.get("id_trabajo")), [])
                        if aplicar_regla_versiones
                        else (doc.get("selecciones_publicadas") or doc.get("selecciones") or []))
@@ -3601,6 +3734,16 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
                                        "detalle": f"{ev.detalle} | {motivo}"})
                     if motivo not in limitaciones:
                         limitaciones.append(f"{clave}: {motivo}")
+            es_p1 = ev.probabilidad_original is not None and abs(float(ev.probabilidad_original) - 1.0) <= 1e-12
+            ev.clasificacion_oos = cls_oos_str
+            ev.es_oos_valido = es_oos_v
+            ev.es_canonica = es_can_v
+            ev.build = build_doc
+            ev.es_build_exploratorio = es_build_exp
+            ev.es_probabilidad_1_exacta = es_p1
+            excl_cal, mot_excl = _evaluar_exclusion_tabla_calibracion(ev)
+            ev.excluida_tabla_calibracion = excl_cal
+            ev.motivo_exclusion_calibracion = mot_excl
             evaluaciones.append(ev)
 
         if doc.get("origen") == "importado_historico":
@@ -3621,6 +3764,77 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
 
     texto_filtro = " vs ".join(norm_filtro) if norm_filtro else None
 
+    # ── Separación estricta OOS válido y canónico vs legacy_sin_fixture vs no_oos ──
+    def _resumen_subgrupo_oos(sub_ev: list[Evaluacion]) -> dict[str, Any]:
+        bins = [e for e in sub_ev if e.evaluable_binario]
+        p_ids = sorted({str(e.id_partido or e.partido) for e in bins})
+        p_todos = sorted({str(e.id_partido or e.partido) for e in sub_ev})
+        n_b = len(bins)
+        n_ac = sum(1 for e in bins if e.evento_ocurrio == 1)
+        p_med = (sum(float(e.probabilidad_original or 0.0) for e in bins) / n_b) if n_b else None
+        ac_obs = (n_ac / n_b) if n_b else None
+        br_val = brier_binario(bins).get("brier")
+        return {
+            "partidos_unicos": len(p_ids),
+            "partidos_totales_emitidos": len(p_todos),
+            "partidos": p_ids,
+            "selecciones_publicadas": len(sub_ev),
+            "selecciones_evaluables": n_b,
+            "ganadas": n_ac,
+            "perdidas": n_b - n_ac,
+            "acierto_observado": ac_obs,
+            "probabilidad_media": p_med,
+            "brecha_pp": (100.0 * (ac_obs - p_med)) if (ac_obs is not None and p_med is not None) else None,
+            "brier": br_val,
+        }
+
+    ev_oos_canon = [e for e in publicadas if e.clasificacion_oos == "canonica" and e.es_oos_valido and e.es_canonica]
+    ev_legacy = [e for e in publicadas if e.clasificacion_oos == "legacy_sin_fixture"]
+    ev_no_oos = [e for e in publicadas if e.clasificacion_oos in ("no_oos", "no_canonica")]
+    separacion_oos = {
+        "oos_valido_canonico": _resumen_subgrupo_oos(ev_oos_canon),
+        "legacy_sin_fixture": _resumen_subgrupo_oos(ev_legacy),
+        "no_oos": _resumen_subgrupo_oos(ev_no_oos),
+    }
+
+    # ── Exclusiones de la tabla de calibración (p == 1.0 exacto o build exploratorio) ──
+    bins_pub = [e for e in publicadas if e.evaluable_binario]
+    excl_p1 = [e for e in bins_pub if e.es_probabilidad_1_exacta]
+    excl_exp = [e for e in bins_pub if e.es_build_exploratorio]
+    excl_total = [e for e in bins_pub if e.excluida_tabla_calibracion]
+    incl_cal = [e for e in bins_pub if not e.excluida_tabla_calibracion]
+    exclusiones_calibracion = {
+        "n_evaluables_totales": len(bins_pub),
+        "n_incluidas_tabla_calibracion": len(incl_cal),
+        "n_excluidas_total": len(excl_total),
+        "n_excluidas_probabilidad_1_exacta": len(excl_p1),
+        "n_excluidas_build_exploratorio": len(excl_exp),
+        "partidos_incluidos_tabla_calibracion": len({e.id_partido or e.partido for e in incl_cal}),
+    }
+
+    # ── Desglose por build ──
+    por_build_map: dict[str, list[Evaluacion]] = {}
+    for e in publicadas:
+        b_key = str(e.build or "sin_build_declarado")
+        por_build_map.setdefault(b_key, []).append(e)
+    desglose_por_build: dict[str, Any] = {}
+    for b_key, b_evs in sorted(por_build_map.items()):
+        sub_b = _resumen_subgrupo_oos(b_evs)
+        sub_b["es_build_exploratorio"] = _es_build_exploratorio_nombre(b_key)
+        sub_b["partidos_oos_validos"] = len({
+            e.id_partido or e.partido
+            for e in b_evs
+            if e.evaluable_binario and e.clasificacion_oos == "canonica" and e.es_oos_valido and e.es_canonica
+        })
+        desglose_por_build[b_key] = sub_b
+
+    evid = diagnostico_evidencia(
+        publicadas,
+        partidos_oos_validos=separacion_oos["oos_valido_canonico"]["partidos_unicos"],
+        partidos_legacy_sin_fixture=separacion_oos["legacy_sin_fixture"]["partidos_unicos"],
+        partidos_no_oos=separacion_oos["no_oos"]["partidos_unicos"],
+    )
+
     informe = InformeEvaluacion(
         generado_en=_ahora(),
         partidos={k: v.a_dict() for k, v in resultados.items()},
@@ -3637,12 +3851,15 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
         brier=brier_binario(publicadas),
         bruto_vs_equilibrado=desglose_bruto_vs_equilibrado(publicadas),
         banda_100=auditar_banda_100(publicadas),
-        evidencia=diagnostico_evidencia(publicadas),
+        evidencia=evid,
         faltantes=faltantes,
         limitaciones=limitaciones,
         abstenidos_por_cobertura=sum(1 for d in pronosticos if d.get("abstenido")),
         versiones=info_versiones,
         filtro=texto_filtro,
+        separacion_oos=separacion_oos,
+        exclusiones_calibracion=exclusiones_calibracion,
+        desglose_por_build=desglose_por_build,
     )
     avisar(f"evaluación completada: {len(publicadas)} selecciones publicadas evaluadas"
            + (f" (filtro: {texto_filtro})" if texto_filtro else ""))
@@ -3674,7 +3891,23 @@ def resumen_telegram(informe: InformeEvaluacion) -> str:
         L.append(f"AUDITORÍA DE PRONÓSTICOS — {filtro_txt.upper()}")
     else:
         L.append("AUDITORÍA DE PRONÓSTICOS")
-    L.append(f"Partidos únicos: {len(partidos)}")
+    sep_oos = getattr(informe, "separacion_oos", None) or {}
+    s_oos = sep_oos.get("oos_valido_canonico") or {}
+    s_leg = sep_oos.get("legacy_sin_fixture") or {}
+    s_no = sep_oos.get("no_oos") or {}
+    L.append(f"Partidos únicos: {len(partidos)} "
+             f"(OOS válidos y canónicos: {s_oos.get('partidos_unicos', 0)} | "
+             f"legacy_sin_fixture: {s_leg.get('partidos_unicos', 0)} | "
+             f"no_oos: {s_no.get('partidos_unicos', 0)})")
+    L.append(
+        f"Separación OOS (evaluables): "
+        f"OOS válido={s_oos.get('selecciones_evaluables', 0)} "
+        f"(acierto {pct(s_oos.get('acierto_observado'))}, Brier {s_oos.get('brier') if s_oos.get('brier') is not None else 'N/D'}) | "
+        f"legacy_sin_fixture={s_leg.get('selecciones_evaluables', 0)} "
+        f"(acierto {pct(s_leg.get('acierto_observado'))}, Brier {s_leg.get('brier') if s_leg.get('brier') is not None else 'N/D'}) | "
+        f"no_oos={s_no.get('selecciones_evaluables', 0)} "
+        f"(acierto {pct(s_no.get('acierto_observado'))}, Brier {s_no.get('brier') if s_no.get('brier') is not None else 'N/D'})"
+    )
     L.append(f"Selecciones originales >70% publicadas: {len(ev)}")
     L.append(f"Evaluables (binarias comparables): {len(binarios)}")
     pendientes = sum(1 for e in ev if e.estado_liquidacion in ("pendiente", "no_verificable"))
@@ -3686,12 +3919,21 @@ def resumen_telegram(informe: InformeEvaluacion) -> str:
     L.append(f"Devoluciones: {devoluciones} (no cuentan como victoria) | "
              f"regla no definida: {sin_regla}")
     L.append("")
+    excl_cal = getattr(informe, "exclusiones_calibracion", None) or {}
+    if excl_cal:
+        L.append(
+            f"Excluidas de tabla de calibración: {excl_cal.get('n_excluidas_total', 0)} "
+            f"(p=1.0 exacto: {excl_cal.get('n_excluidas_probabilidad_1_exacta', 0)}; "
+            f"build exploratorio: {excl_cal.get('n_excluidas_build_exploratorio', 0)}; "
+            f"incluidas en tabla: {excl_cal.get('n_incluidas_tabla_calibracion', 0)})"
+        )
     L.append("Probabilidad original | Evaluables | Aciertos | Acierto real | Prob. media | Brecha")
     for nombre, _i, _s in BANDAS:
         d = informe.bandas.get(nombre)
         if not d or not d["publicadas"]:
             continue
-        L.append(f"{nombre} | {d['evaluables']} | {d['ganadas']} | "
+        nota_b = " [EXCLUIDA DE CALIBRACIÓN]" if nombre == "1.00 exacto" else ""
+        L.append(f"{nombre}{nota_b} | {d['evaluables']} | {d['ganadas']} | "
                  f"{pct(d['acierto_observado'])} | {pct(d['probabilidad_media'])} | "
                  f"{('%+.1f' % d['brecha_pp']).replace('.', ',') if d['brecha_pp'] is not None else 'sin datos'} pp")
     L.append("")
@@ -3767,6 +4009,19 @@ def resumen_telegram(informe: InformeEvaluacion) -> str:
                  f"Un equipo con ~30 líneas de 1-2 partidos: no es un diagnóstico sobre "
                  f"ese equipo.")
     L.append("")
+    desg_b = getattr(informe, "desglose_por_build", None) or {}
+    if desg_b:
+        L.append("Desglose por build:")
+        for b_nom, b_d in desg_b.items():
+            etq_exp = " [exploratorio: excluido de calibración]" if b_d.get("es_build_exploratorio") else ""
+            L.append(
+                f"  • {b_nom}{etq_exp}: {b_d.get('partidos_unicos', 0)} partido(s) "
+                f"(OOS válidos: {b_d.get('partidos_oos_validos', 0)}), "
+                f"{b_d.get('selecciones_evaluables', 0)} eval., "
+                f"acierto {pct(b_d.get('acierto_observado'))}, "
+                f"Brier {b_d.get('brier') if b_d.get('brier') is not None else 'sin datos'}"
+            )
+        L.append("")
     L.append(f"Brier (n={informe.brier.get('n')}): "
              f"{informe.brier.get('brier') if informe.brier.get('brier') is not None else 'sin datos'}")
     L.append(f"Partidos únicos con eventos evaluables: {informe.evidencia['partidos_unicos']} "
@@ -3952,8 +4207,48 @@ def generar_informe_texto(informe: InformeEvaluacion) -> str:
                      f"acierto {pct(d['acierto_observado'])}, "
                      f"prob. media {pct(d['probabilidad_media'])}")
         L.append("")
+    L.append("## 5.1 Separación OOS válido y canónico vs legacy_sin_fixture vs no_oos")
+    L.append("")
+    L.append("| Cohorte | Partidos únicos | Selecciones evaluables | Aciertos | Acierto real | Prob. media | Brecha (pp) | Brier |")
+    L.append("|---|---|---|---|---|---|---|---|")
+    for k_coh, lbl_coh in (
+        ("oos_valido_canonico", "OOS válido y canónico"),
+        ("legacy_sin_fixture", "legacy_sin_fixture (pre-Regla M)"),
+        ("no_oos", "no_oos / no_canonica (solo descriptivo)"),
+    ):
+        d_c = (getattr(informe, "separacion_oos", None) or {}).get(k_coh) or {}
+        L.append(
+            f"| {lbl_coh} | {d_c.get('partidos_unicos', 0)} | {d_c.get('selecciones_evaluables', 0)} | "
+            f"{d_c.get('ganadas', 0)} | {pct(d_c.get('acierto_observado'))} | "
+            f"{pct(d_c.get('probabilidad_media'))} | {pp(d_c.get('brecha_pp'))} | "
+            f"{d_c.get('brier') if d_c.get('brier') is not None else 'sin datos'} |"
+        )
+    L.append("")
+    L.append("## 5.2 Desglose por build")
+    L.append("")
+    L.append("| Build | Exploratorio | Partidos únicos | Partidos OOS válidos | Evaluables | Aciertos | Acierto real | Prob. media | Brier |")
+    L.append("|---|---|---|---|---|---|---|---|---|")
+    for b_nom, d_b in sorted((getattr(informe, "desglose_por_build", None) or {}).items()):
+        L.append(
+            f"| `{b_nom}` | {'sí (excluido de calibración)' if d_b.get('es_build_exploratorio') else 'no'} | "
+            f"{d_b.get('partidos_unicos', 0)} | {d_b.get('partidos_oos_validos', 0)} | "
+            f"{d_b.get('selecciones_evaluables', 0)} | {d_b.get('ganadas', 0)} | "
+            f"{pct(d_b.get('acierto_observado'))} | {pct(d_b.get('probabilidad_media'))} | "
+            f"{d_b.get('brier') if d_b.get('brier') is not None else 'sin datos'} |"
+        )
+    L.append("")
     L.append("## 6. Tabla de calibración")
     L.append("")
+    excl_c = getattr(informe, "exclusiones_calibracion", None) or {}
+    if excl_c:
+        L.append(
+            f"- **Exclusiones aplicadas a la tabla de calibración**: "
+            f"`{excl_c.get('n_excluidas_total', 0)}` selecciones excluidas de `{excl_c.get('n_evaluables_totales', 0)}` evaluables "
+            f"(`{excl_c.get('n_excluidas_probabilidad_1_exacta', 0)}` con probabilidad exactamente `1.0` y "
+            f"`{excl_c.get('n_excluidas_build_exploratorio', 0)}` de snapshots con build exploratorio; "
+            f"`{excl_c.get('n_incluidas_tabla_calibracion', 0)}` selecciones incluidas)."
+        )
+        L.append("")
     L.append("```")
     L.append(grafico_calibracion_texto(informe.calibracion))
     L.append("```")
