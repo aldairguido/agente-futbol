@@ -62,7 +62,7 @@ BANDERAS_COMPORTAMIENTO_DEFECTO: Dict[str, bool] = {
 _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_filtro_ruido_ic_factores_dcn": False,
     "usar_reescalado_sin_inversion_signo_dcn": False,
-    "usar_tercer_brazo_plano_sombra": False,
+    "usar_tercer_brazo_plano_sombra": True,
     "usar_sin_dato_si_mitades_no_suman_ft": False,
     "usar_unificacion_h_gf_lstm_15": False,
     "usar_corners_reglas_65e377e_diag": False,

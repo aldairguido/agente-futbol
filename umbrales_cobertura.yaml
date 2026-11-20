@@ -83,7 +83,7 @@ flags_comportamiento:
   usar_excluir_primer_gol_top5: false  # regla operativa, sin validación cronológica
   usar_filtro_ruido_ic_factores_dcn: false  # regla operativa, sin validación cronológica
   usar_reescalado_sin_inversion_signo_dcn: false  # regla operativa, sin validación cronológica
-  usar_tercer_brazo_plano_sombra: false  # regla operativa, sin validación cronológica
+  usar_tercer_brazo_plano_sombra: true  # regla operativa, sin validación cronológica
   usar_sin_dato_si_mitades_no_suman_ft: false  # regla operativa, sin validación cronológica
   usar_unificacion_h_gf_lstm_15: false  # unificación directa/viva _partido_fuente(p) tras bandera
   usar_corners_reglas_65e377e_diag: false  # diagnóstico in-sample reglas córneres 65e377e

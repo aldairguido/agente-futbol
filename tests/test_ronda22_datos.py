@@ -129,7 +129,7 @@ def test_b1_liquidacion_extraer_resultado_usa_90_en_penales_y_prorroga():
 def test_b1_firma_motor_actualizada_r22():
     from servicio_mercados import FIRMA_MOTOR
 
-    assert FIRMA_MOTOR == "red-neuronal-recursiva-45-r22"
+    assert FIRMA_MOTOR.startswith("red-neuronal-recursiva-45-r") and int(FIRMA_MOTOR.rsplit("-r", 1)[1]) >= 22
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -102,8 +102,8 @@ def test_r23_p3_clusters_marcador_sin_jugada_optima_en_partido_abierto_437():
     ]
     cl = clusters_marcador(mat, "Orlando City", "FC Cincinnati")
     assert "Menos de 3.5 goles" not in cl["jugada_optima"]
-    assert "No hay jugada óptima para este partido" in cl["jugada_optima"]
-    assert "JUGADA ÓPTIMA TE APUESTO" not in cl["linea_pie"]
+    assert cl["jugada_optima"] == "Sin jugada óptima ≥70%"
+    assert "JUGADA ÓPTIMA" not in cl["linea_pie"]
 
 
 def test_r23_p3_clusters_marcador_bajo_umbral_no_dice_optima_ni_te_apuesto():
@@ -121,9 +121,9 @@ def test_r23_p3_clusters_marcador_bajo_umbral_no_dice_optima_ni_te_apuesto():
         for i in range(10)
     ]
     cl = clusters_marcador(mat, "Local FC", "Visita FC")
-    if "No hay jugada óptima" not in cl["jugada_optima"]:
-        assert "por debajo del umbral, no validado" in cl["linea_pie"]
-        assert "JUGADA ÓPTIMA TE APUESTO" not in cl["linea_pie"]
+    assert cl["jugada_optima"] == "Sin jugada óptima ≥70%"
+    assert "Sin jugada óptima ≥70%" in cl["linea_pie"]
+    assert "JUGADA ÓPTIMA" not in cl["linea_pie"]
 
 
 # ── 4. Veredicto #1 coherente para mercado abierto (gol en ambos tiempos) ──

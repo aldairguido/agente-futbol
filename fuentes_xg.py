@@ -273,10 +273,19 @@ def _normalizar_futuros(fixtures: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not home.get("id") or not away.get("id"):
             continue
         t = f.get("tournament") or {}
+        _ronda_raw = f.get("round") if f.get("round") is not None else (f.get("roundName") if f.get("roundName") is not None else (t.get("round") if t.get("round") is not None else t.get("roundName")))
+        _etapa_raw = f.get("stage") if f.get("stage") is not None else (t.get("stage") if t.get("stage") is not None else t.get("stageName"))
+        _formato_raw = f.get("format") if f.get("format") is not None else (t.get("format") if t.get("format") is not None else t.get("competitionFormat"))
+        _ronda_val = str(_ronda_raw).strip() if _ronda_raw is not None and str(_ronda_raw).strip() else None
+        _etapa_val = str(_etapa_raw).strip() if _etapa_raw is not None and str(_etapa_raw).strip() else None
+        _formato_val = str(_formato_raw).strip() if _formato_raw is not None and str(_formato_raw).strip() else None
         item: dict[str, Any] = {
             "id_partido": str(f.get("id") or ""),
             "fecha": fecha,
             "competicion": str(t.get("name") or ""),
+            "ronda": _ronda_val,
+            "etapa": _etapa_val,
+            "formato": _formato_val,
             "home_id": str(home.get("id")),
             "away_id": str(away.get("id")),
             "home_nombre": str(home.get("name") or ""),

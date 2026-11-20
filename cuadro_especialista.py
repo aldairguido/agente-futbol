@@ -1247,6 +1247,8 @@ def _sanear_para_canvas(texto: str) -> str:
     t = (
         texto.replace("🎯 JUGADA ÓPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
              .replace("🎯 JUGADA OPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
+             .replace("🎯 JUGADA ÓPTIMA:", ">> JUGADA OPTIMA:")
+             .replace("🎯 JUGADA OPTIMA:", ">> JUGADA OPTIMA:")
              .replace("🎯", ">>")
              .replace("⚖️ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
              .replace("⚖ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")

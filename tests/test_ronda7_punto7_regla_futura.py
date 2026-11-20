@@ -108,7 +108,7 @@ def test_punto7_modo_sombra_dual_en_snapshot_y_ledger(tmp_path):
     }
     sombra = ep.adjuntar_modo_sombra_preparado(preparado, banderas_candidatas=cands)
     assert sombra is not None
-    assert sombra["esquema"] == "sombra-v1"
+    assert sombra["esquema"] in ("sombra-v1", "sombra-v2-tribrazo")
     assert sombra["publicado"] == "soloA"
     assert sombra["retroalimenta_modelo"] is False
     assert sombra["n_selecciones_comparables"] >= 20

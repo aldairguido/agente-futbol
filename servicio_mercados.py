@@ -346,6 +346,9 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
             "partido_activo": True,
             "alcance_mercado": "90_minutos_reglamentarios",
             "competicion": f.get("competicion"),
+            "ronda": f.get("ronda"),
+            "etapa": f.get("etapa"),
+            "formato": f.get("formato"),
             "condicion_local": "casa" if es_casa else "fuera",
             "condicion_visitante": "fuera" if es_casa else "casa",
             "local_es": "local" if es_casa else "visitante",
@@ -1311,7 +1314,7 @@ def resolver_enfrentamiento(
 # el snapshot de pronóstico— de una predicción hecha con el motor anterior. Sin
 # esto, el snapshot nuevo se descartaba por "ya existe" y la evaluación seguía
 # midiendo las probabilidades viejas.
-FIRMA_MOTOR = "red-neuronal-recursiva-45-r22"
+FIRMA_MOTOR = "red-neuronal-recursiva-45-r24"
 
 
 def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[str, Any] | None) -> str:
@@ -1650,6 +1653,8 @@ def _sanear_para_canvas(texto: str) -> str:
     t = (
         texto.replace("🎯 JUGADA ÓPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
              .replace("🎯 JUGADA OPTIMA TE APUESTO:", ">> JUGADA OPTIMA TE APUESTO:")
+             .replace("🎯 JUGADA ÓPTIMA:", ">> JUGADA OPTIMA:")
+             .replace("🎯 JUGADA OPTIMA:", ">> JUGADA OPTIMA:")
              .replace("🎯", ">>")
              .replace("⚖️ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
              .replace("⚖ DUELO PAREJO / RIESGO DE EMPATE", "[DUELO PAREJO / RIESGO DE EMPATE]")
@@ -2542,7 +2547,12 @@ def renderizar_ticket_mercados_png(
         clusters_info = getattr(motor, "clusters", None)
         if not clusters_info and hasattr(analisis, "matriz_ft"):
             try:
-                clusters_info = clusters_marcador(getattr(analisis, "matriz_ft"), eq_l, eq_v)
+                clusters_info = clusters_marcador(
+                    getattr(analisis, "matriz_ft"),
+                    eq_l,
+                    eq_v,
+                    selecciones_sec1_2=list(mantiene_raw) + list(sensibles_raw),
+                )
             except Exception:
                 clusters_info = None
 
@@ -3551,9 +3561,11 @@ def preparar_analisis(
     analisis.metadatos["firma_datos"] = _info_f_datos["firma_datos"]
     if ctx.get("advertencia_liga"):
         analisis.metadatos["advertencia_liga"] = ctx["advertencia_liga"]
-    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta"):
+    for _k_fec in ("etiqueta_fecha", "hora_inicio_partido", "hora_inicio_local", "fuente_hora_inicio", "zona_origen_hora_inicio", "hora_inicio_fotmob", "hora_inicio_flashscore", "diferencia_hora_inicio_min", "hora_inicio_discrepante", "id_flashscore_partido", "fixture_confirmado", "fuente_fecha", "es_fecha_analisis", "partido_activo", "datos_hasta_local", "datos_hasta_visitante", "datos_hasta", "ronda", "etapa", "formato"):
         if _k_fec in ctx:
             analisis.metadatos[_k_fec] = ctx.get(_k_fec)
+    for _k_fix_opt in ("ronda", "etapa", "formato"):
+        analisis.metadatos.setdefault(_k_fix_opt, ctx.get(_k_fix_opt) if _k_fix_opt in ctx else None)
     analisis.metadatos.setdefault("datos_hasta_local", _fechas_dh["datos_hasta_local"])
     analisis.metadatos.setdefault("datos_hasta_visitante", _fechas_dh["datos_hasta_visitante"])
     analisis.metadatos.setdefault("datos_hasta", _fechas_dh["datos_hasta"])

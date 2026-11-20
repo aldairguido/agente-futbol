@@ -1095,6 +1095,86 @@ def ponderar_h2h_por_localia(
     return res
 
 
+def calcular_resumen_crudo_h2h(
+    lista_duelos: List[Dict[str, Any]],
+    eq_local: str,
+    eq_visita: str,
+) -> Dict[str, Any]:
+    """
+    Calcula promedios crudos de goles y conteos empíricos (V/E/D desde la perspectiva
+    de `eq_local`, +2.5 y BTTS) sobre los duelos directos sin modificar el cálculo de λ.
+    """
+    loc_norm = _sin_acentos_simple(str(eq_local or "")).lower().strip()
+    vis_norm = _sin_acentos_simple(str(eq_visita or "")).lower().strip()
+    pares: List[Tuple[int, int]] = []
+    for d in lista_duelos or []:
+        if not isinstance(d, dict):
+            continue
+        gl_raw = d.get("goles_local")
+        gv_raw = d.get("goles_visitante")
+        if gl_raw is None or gv_raw is None:
+            continue
+        try:
+            gl_i = int(gl_raw)
+            gv_i = int(gv_raw)
+        except (TypeError, ValueError):
+            continue
+        d_loc = _sin_acentos_simple(str(d.get("local") or "")).lower().strip()
+        d_vis = _sin_acentos_simple(str(d.get("visitante") or "")).lower().strip()
+        if vis_norm and (d_loc == vis_norm or (vis_norm in d_loc and (not loc_norm or loc_norm not in d_loc))):
+            ga, gb = gv_i, gl_i
+        else:
+            ga, gb = gl_i, gv_i
+        pares.append((ga, gb))
+
+    n = len(pares)
+    if n == 0:
+        return {
+            "n": 0,
+            "etiqueta": "exploratorio, n=0",
+            "prom_local": 0.0,
+            "prom_visita": 0.0,
+            "prom_total": 0.0,
+            "v_local": 0,
+            "empates": 0,
+            "d_local": 0,
+            "ved_str": "0/0/0",
+            "over_25": 0,
+            "btts": 0,
+            "texto_crudo": "Prom. crudos (exploratorio, n=0): N/D",
+        }
+    sum_a = sum(ga for ga, _ in pares)
+    sum_b = sum(gb for _, gb in pares)
+    prom_a = sum_a / n
+    prom_b = sum_b / n
+    prom_tot = (sum_a + sum_b) / n
+    v_a = sum(1 for ga, gb in pares if ga > gb)
+    emp = sum(1 for ga, gb in pares if ga == gb)
+    d_a = sum(1 for ga, gb in pares if ga < gb)
+    o25 = sum(1 for ga, gb in pares if (ga + gb) > 2.5)
+    btts = sum(1 for ga, gb in pares if ga > 0 and gb > 0)
+    etq = f"exploratorio, n={n}"
+    ved_str = f"{v_a}/{emp}/{d_a}"
+    txt = (
+        f"Prom. crudos ({etq}): {eq_local} {prom_a:.2f} – {prom_b:.2f} {eq_visita} "
+        f"(total {prom_tot:.2f}) · V/E/D: {ved_str} · +2.5: {o25}/{n} · BTTS: {btts}/{n}"
+    )
+    return {
+        "n": n,
+        "etiqueta": etq,
+        "prom_local": round(prom_a, 4),
+        "prom_visita": round(prom_b, 4),
+        "prom_total": round(prom_tot, 4),
+        "v_local": v_a,
+        "empates": emp,
+        "d_local": d_a,
+        "ved_str": ved_str,
+        "over_25": o25,
+        "btts": btts,
+        "texto_crudo": txt,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDERIZADO DEL CUADRO ESPECIALISTA H2H (2024–2026)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1141,10 +1221,15 @@ def generar_cuadro_visual_h2h_2024_2026(
         f"{eq_L} (Local) vs {eq_V} (Visita)",
         fontsize=20.0, fontweight="bold", color="#0F172A", family="sans-serif"
     )
+    crudo_hdr = calcular_resumen_crudo_h2h(lista_duelos_2024_2026, eq_L, eq_V)
     fig.text(
         0.07, 0.900,
-        f"Goles Esperados H2H (λ): {lam_local_h2h:.2f} – {lam_visita_h2h:.2f}   ·   Muestra H2H: {n_h2h} duelos directos en 2024–2026 ({n_local_en_casa} con {eq_L} en casa y {n_h2h - n_local_en_casa} con {eq_V} en casa)",
-        fontsize=9.6, fontweight="bold", color="#334155", family="sans-serif"
+        f"Goles Esperados H2H (λ): {lam_local_h2h:.2f} – {lam_visita_h2h:.2f}  ·  "
+        f"Crudo (exploratorio, n={n_h2h}): {crudo_hdr['prom_local']:.2f} – {crudo_hdr['prom_visita']:.2f} "
+        f"(tot {crudo_hdr['prom_total']:.2f})  ·  V/E/D: {crudo_hdr['ved_str']}  ·  "
+        f"+2.5: {crudo_hdr['over_25']}/{n_h2h}  ·  BTTS: {crudo_hdr['btts']}/{n_h2h}  "
+        f"({n_local_en_casa} casa / {n_h2h - n_local_en_casa} fuera)",
+        fontsize=8.4, fontweight="bold", color="#334155", family="sans-serif"
     )
 
     ax_top = fig.add_subplot(gs[0])
@@ -1544,6 +1629,12 @@ def generar_cuadro_h2h_desde_analisis(
             f"cuadro_h2h_directo_2024_2026_{_slug(nom_a)}_vs_{_slug(nom_b)}_{sello}.png",
         )
 
+    resumen_crudo = calcular_resumen_crudo_h2h(lista_duelos, nom_a, nom_b)
+    nota_modelo_h2h = (
+        f"{nota_modelo_h2h} · {resumen_crudo['texto_crudo']}"
+        if nota_modelo_h2h else resumen_crudo["texto_crudo"]
+    )
+
     ruta_png = generar_cuadro_visual_h2h_2024_2026(
         perfil_a, perfil_b, lista_duelos,
         lam_a_final, lam_b_final, matriz_h2h,
@@ -1567,6 +1658,7 @@ def generar_cuadro_h2h_desde_analisis(
         "lambda_b_h2h": lam_b_final,
         "lambda_a_h2h_dixon_coles": lam_a_h2h,
         "lambda_b_h2h_dixon_coles": lam_b_h2h,
+        "resumen_crudo": resumen_crudo,
         "motor_recursivo": info_recursivo,
         "nota_modelo": nota_modelo_h2h,
         "perfil_a_h2h": perfil_a,

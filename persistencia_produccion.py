@@ -764,7 +764,7 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
 
     n_pron = 0
     for rel in _listar_archivos_git_ref(ws, ref_full, DIR_PRONOSTICOS_REL):
-        if not rel.endswith(".json"):
+        if not (rel.endswith(".json") or rel.endswith(".json.gz")):
             continue
         dst = ws / rel
         if not dst.exists():
@@ -942,7 +942,7 @@ def sincronizar_y_push_datos(
                     src_dir = ws / d_rel
                     if src_dir.exists():
                         for p in src_dir.glob("*"):
-                            if p.is_file() and (p.suffix in (".json", ".md")) and p.name != "registro_evaluaciones.json":
+                            if p.is_file() and (p.suffix in (".json", ".md", ".gz")) and p.name != "registro_evaluaciones.json":
                                 candidatos_rel.add(p.relative_to(ws).as_posix())
             for r_ex in (archivos_rel or []):
                 candidatos_rel.add(Path(r_ex).as_posix())
