@@ -3310,18 +3310,25 @@ class MotorMercados:
                    ("visitante", self.muestras["visitante_general"],
                     self.muestras["visitante_cond"]))
         partes: list[float] = []
+        n_obs_por_equipo: dict[str, int] = {}
         for _etq, general, cond in equipos:
-            propia = media_ajustada(general.dame(f"{clave}_favor"), cond.dame(f"{clave}_favor"),
+            m_gen = general.dame(f"{clave}_favor")
+            m_cond = cond.dame(f"{clave}_favor")
+            n_obs_por_equipo[_etq] = max(int(getattr(m_gen, "n", 0) or 0), int(getattr(m_cond, "n", 0) or 0))
+            propia = media_ajustada(m_gen, m_cond,
                                     self.p.w_condicion, k_credibilidad)
             if propia is not None:
                 partes.append(propia)
+
+        if not partes:
+            return None
 
         xai = getattr(self, "xai_factores", None) or {}
         rec = getattr(self, "recursivo", None) or {}
         mu_l = xai.get("mu_local_casa") or rec.get("mu_local_casa") or {}
         mu_v = xai.get("mu_visita_fuera") or rec.get("mu_visita_fuera") or {}
-        am_l = _safe_float(mu_l.get("amarillas", mu_l.get("tarjetas_amarillas")), None)
-        am_v = _safe_float(mu_v.get("amarillas", mu_v.get("tarjetas_amarillas")), None)
+        am_l = _safe_float(mu_l.get("amarillas", mu_l.get("tarjetas_amarillas")), None) if n_obs_por_equipo.get("local", 0) > 0 else None
+        am_v = _safe_float(mu_v.get("amarillas", mu_v.get("tarjetas_amarillas")), None) if n_obs_por_equipo.get("visitante", 0) > 0 else None
 
         if tipo == "amarillas" and am_l is not None and am_v is not None and (am_l + am_v) >= 1.0:
             base_tarj = float(am_l + am_v)
@@ -3329,10 +3336,8 @@ class MotorMercados:
             base_tarj = sum(partes)
         elif len(partes) == 1:
             base_tarj = partes[0] * 2.0
-        elif not partes:
-            return None
         else:
-            base_tarj = 3.8
+            return None
 
         if tipo == "amarillas":
             try:

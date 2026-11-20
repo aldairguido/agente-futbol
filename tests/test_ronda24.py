@@ -567,3 +567,71 @@ def test_r24_b6_evaluar_separa_oos_excluye_100_y_exploratorio_y_desglose_build()
     assert "Separación OOS válido y canónico vs legacy_sin_fixture vs no_oos" in txt_md
     assert "Desglose por build" in txt_md
     assert "Exclusiones aplicadas a la tabla de calibración" in txt_md
+
+
+
+def test_r24_b7_none_nunca_es_cero_en_mercados_de_conteo():
+    import motor_mercados as mm
+
+    def _doc_conteos_nulos(nombre: str) -> dict:
+        partidos = []
+        for i in range(1, 16):
+            partidos.append({
+                "id_partido": f"{nombre}_{i}",
+                "fecha": f"2026-10-{i:02d}",
+                "torneo": "Primeira Liga",
+                "equipo": nombre,
+                "rival": f"Rival_{i}",
+                "condicion": "casa" if i % 2 == 1 else "fuera",
+                "marcador": {"equipo": 2, "rival": 1, "texto": "2-1"},
+                "periodos": {
+                    "FT": {
+                        "periodo": "FT",
+                        "filas": [
+                            {"clave": "xg", "equipo": 1.65, "rival": 0.95},
+                            {"clave": "posesion_pct", "equipo": 54.0, "rival": 46.0},
+                            {"clave": "corners", "equipo": None, "rival": None},
+                            {"clave": "tarjetas_amarillas", "equipo": None, "rival": None},
+                            {"clave": "tarjetas_rojas", "equipo": None, "rival": None},
+                            {"clave": "remates_totales", "equipo": None, "rival": None},
+                            {"clave": "remates_puerta", "equipo": None, "rival": None},
+                            {"clave": "faltas", "equipo": None, "rival": None},
+                        ],
+                    }
+                },
+            })
+        return {"equipo": {"nombre": nombre}, "partidos": partidos}
+
+    doc_l = _doc_conteos_nulos("ClubLocalSinConteos")
+    doc_v = _doc_conteos_nulos("ClubVisitaSinConteos")
+
+    # 1. En extraer_muestra: None en córneres, tarjetas, tiros y faltas produce n=0 y media=None (nunca 0.0)
+    m_l = mm.extraer_muestra(doc_l)
+    for met in (
+        "corners_favor", "corners_contra",
+        "amarillas_favor", "amarillas_contra",
+        "rojas_favor", "rojas_contra",
+        "remates_totales_favor", "remates_totales_contra",
+        "remates_puerta_favor", "remates_puerta_contra",
+        "faltas_favor", "faltas_contra",
+    ):
+        obj_m = m_l.dame(met)
+        assert obj_m.n == 0, f"{met} no debe contar None como observación"
+        assert obj_m.media is None, f"{met}.media debe ser None cuando el dato está ausente, no {obj_m.media}"
+        assert obj_m.n_ceros == 0, f"{met}.n_ceros debe ser 0 cuando los valores son None"
+
+    # 2. En MotorMercados con red recursiva activa: _mu_corners y _mu_tarjetas deben devolver None (jamás 0 ni neutrales 3.6)
+    mot = mm.MotorMercados(doc_l, doc_v, "casa", "fuera", "ClubLocalSinConteos", "ClubVisitaSinConteos")
+    mot.preparar()
+    assert mot._mu_corners("local") is None
+    assert mot._mu_corners("visitante") is None
+    assert mot._mu_tarjetas("amarillas") is None
+    assert mot._mu_tarjetas("rojas") is None
+
+    # 3. Los mercados de catálogo de conteos (total_corners, corners_local, corners_visitante, total_tarjetas)
+    #    deben abstenerse con estado == "datos_insuficientes" y 0 selecciones publicadas.
+    catalogo = {r.id_mercado: r for r in mot.evaluar_catalogo()}
+    for id_m in ("total_corners", "corners_local", "corners_visitante", "total_tarjetas"):
+        res_m = catalogo[id_m]
+        assert res_m.estado == "datos_insuficientes", f"{id_m} debía abstenerse con datos_insuficientes y dio {res_m.estado}"
+        assert len(res_m.selecciones) == 0, f"{id_m} no debe emitir selecciones cuando el dato es None"
