@@ -635,3 +635,9 @@ def test_r24_b7_none_nunca_es_cero_en_mercados_de_conteo():
         res_m = catalogo[id_m]
         assert res_m.estado == "datos_insuficientes", f"{id_m} debía abstenerse con datos_insuficientes y dio {res_m.estado}"
         assert len(res_m.selecciones) == 0, f"{id_m} no debe emitir selecciones cuando el dato es None"
+
+
+def test_r24_b9_firma_motor_actualizada_r24():
+    from servicio_mercados import FIRMA_MOTOR
+
+    assert FIRMA_MOTOR == "red-neuronal-recursiva-45-r24"

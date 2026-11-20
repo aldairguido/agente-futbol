@@ -1314,7 +1314,7 @@ def resolver_enfrentamiento(
 # el snapshot de pronóstico— de una predicción hecha con el motor anterior. Sin
 # esto, el snapshot nuevo se descartaba por "ya existe" y la evaluación seguía
 # midiendo las probabilidades viejas.
-FIRMA_MOTOR = "red-neuronal-recursiva-45-r22"
+FIRMA_MOTOR = "red-neuronal-recursiva-45-r24"
 
 
 def calcular_firma_datos(doc_local: dict[str, Any] | None, doc_visitante: dict[str, Any] | None) -> str:
