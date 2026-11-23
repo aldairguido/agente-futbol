@@ -2012,7 +2012,24 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 bot, chat_id,
                 f"📝 *Modo borrador*: análisis listo, nada enviado.\n"
                 f"• Selecciones > {umbral:.0%}: `{len(analisis.selecciones_filtradas)}`\n"
-                f"• Informe: `{preparado['rutas']['informe']}`{ruta_img_txt}{ruta_val_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
+                f"• Informe: `{(preparado.get('rutas') or {}).get('informe') or 'no generado'}`{ruta_img_txt}{ruta_val_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
+            return
+
+        rutas_prep = preparado.get("rutas") if isinstance(preparado.get("rutas"), dict) else {}
+        ruta_img_abs = preparado.get("ruta_imagen") or rutas_prep.get("imagen")
+        if preparado.get("abstenido") and (not ruta_img_abs or not os.path.exists(str(ruta_img_abs))):
+            est_abs = str(preparado.get("estado_cobertura") or "abstenido").strip()
+            mot_abs = str(preparado.get("motivo_abstencion") or "").strip()
+            msg_abs = str(preparado.get("analisis_texto_3_parrafos") or "").strip()
+            if not msg_abs:
+                msg_abs = (
+                    f"🚨 PRONÓSTICO ABSTENIDO ({est_abs.upper()})\n\n"
+                    f"{mot_abs or 'No se cumplen las condiciones de calidad o cobertura para publicar pronósticos.'}"
+                )
+            elif mot_abs and mot_abs not in msg_abs:
+                msg_abs = f"{msg_abs}\n\nMotivo: {mot_abs}"
+            enviar_seguro(bot, chat_id, msg_abs)
+            print(f"[BOT TELEGRAM] 🚨 Abstención enviada como texto ({est_abs}, id {preparado.get('id_trabajo')})")
             return
 
         resultado = servicio.enviar_analisis(
@@ -2022,14 +2039,21 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             nueva_ejecucion=True)
         if not resultado.get("enviado"):
             # Texto plano: la ruta lleva guiones bajos que rompen Markdown
-            ruta_guardada = preparado['rutas'].get('imagen') or preparado['rutas']['informe']
+            ruta_guardada = rutas_prep.get('imagen') or rutas_prep.get('informe') or 'no disponible'
             motivo = resultado.get('motivo', '')
-            if "ya confirmado previamente" in motivo:
+            if preparado.get("abstenido"):
+                est_abs = str(preparado.get("estado_cobertura") or "abstenido").strip()
+                mot_abs = str(preparado.get("motivo_abstencion") or motivo or "").strip()
+                msg_abs = str(preparado.get("analisis_texto_3_parrafos") or "").strip() or (
+                    f"🚨 PRONÓSTICO ABSTENIDO ({est_abs.upper()})\n\n{mot_abs}"
+                )
+                enviar_seguro(bot, chat_id, msg_abs)
+            elif "ya confirmado previamente" in motivo:
                 enviar_seguro(
                     bot, chat_id,
                     f"ℹ️ Este análisis ya fue generado y enviado previamente a Telegram.\n"
-                    f"• Ticket: {preparado['rutas'].get('imagen')}\n"
-                    f"• Informe completo: {preparado['rutas']['informe']}")
+                    f"• Ticket: {rutas_prep.get('imagen') or 'no disponible'}\n"
+                    f"• Informe completo: {rutas_prep.get('informe') or 'no disponible'}")
             else:
                 enviar_seguro(
                     bot, chat_id,
