@@ -144,13 +144,15 @@ def destilar_patrones_ortogonales_dpp(
             "correlacion_media_pares_antes_vs_despues": {"antes": 0.0, "despues": 0.0},
         }
 
-    vec0 = np.asarray(patrones_candidatos[0].get("vector_activacion") or [], dtype=float)
+    _v0 = patrones_candidatos[0].get("vector_activacion")
+    vec0 = np.asarray(_v0 if _v0 is not None else [], dtype=float)
     D = max(int(vec0.size), 1)
     phi_raw = np.zeros((D, N), dtype=float)
     calidades = np.zeros(N, dtype=float)
 
     for idx, pat in enumerate(patrones_candidatos):
-        act = np.asarray(pat.get("vector_activacion") or np.zeros(D), dtype=float)
+        _va = pat.get("vector_activacion")
+        act = np.asarray(_va if _va is not None else np.zeros(D), dtype=float)
         if act.size != D:
             act = np.resize(act, D)
         centrado = act - float(np.mean(act))

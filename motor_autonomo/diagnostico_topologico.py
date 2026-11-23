@@ -274,6 +274,23 @@ def diagnosticar_entrelazamiento_topologico(
         g0 = _construir_grafo_knn_mutuo(pts_0, k=k_g0)
         ciclos_1 = _extraer_ciclos_fundamentales_bfs(g1, min_longitud=4)
         ciclos_0 = _extraer_ciclos_fundamentales_bfs(g0, min_longitud=4)
+        # Si el grafo tiene aristas no-árbol (componente cíclica), añadir también el lazo
+        # macroscópico ordenado angularmente en su plano principal 2D para evitar que
+        # cuerdas locales k-NN fragmenten un anillo global en triángulos de longitud 3.
+        for pts_cls, adj_cls, lista_ciclos in ((pts_1, g1, ciclos_1), (pts_0, g0, ciclos_0)):
+            n_aristas = sum(len(v) for v in adj_cls.values()) // 2
+            if pts_cls.shape[0] >= 6 and n_aristas >= pts_cls.shape[0]:
+                c_mu = np.mean(pts_cls, axis=0, keepdims=True)
+                pts_c = pts_cls - c_mu
+                _, s_vals, vt_c = np.linalg.svd(pts_c, full_matrices=False)
+                # Verificar que no sea un cúmulo esférico colapsado con agujero nulo:
+                # evaluar distancia mínima al centroide en el plano 2D principal
+                proy_2d = pts_c @ vt_c[:2, :].T
+                radios = np.linalg.norm(proy_2d, axis=1)
+                if float(np.min(radios)) > 0.35 * float(np.median(radios)):
+                    angulos = np.arctan2(proy_2d[:, 1], proy_2d[:, 0])
+                    lazo_macro = [int(i) for i in np.argsort(angulos)]
+                    lista_ciclos.insert(0, lazo_macro)
 
     max_abs_link = 0.0
     for c1 in ciclos_1:

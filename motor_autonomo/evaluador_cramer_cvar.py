@@ -128,10 +128,19 @@ def perdida_phi_td_pareto(
     # Ec. 5: promedio directo sobre frecuencias Pareto
     loss_cruda = float(np.mean(diff_sq))
 
-    # Estimador de importancia reescalado por la constante de normalización de Pareto truncada:
-    # int_{x_m}^{omega_max} (1 / w^2) dw = (1 / x_m) - (1 / omega_max)
-    masa_pareto = (1.0 / float(x_m)) - (1.0 / float(omega_max))
-    cramer_estimado = float((masa_pareto / math.pi) * loss_cruda)
+    # Estimador de importancia del Lema 1 en dominio de frecuencia:
+    # Combina el muestreo Pareto en [x_m, omega_max] con malla log-uniforme de importancia
+    # para eliminar la varianza en omega in [0.05, omega_max] más la cola analítica (omega_max, +inf)
+    n_grid = max(256, int(n_frecuencias))
+    w_grid = np.geomspace(max(float(x_m), 1e-5), float(omega_max), n_grid)
+    phi_g = funcion_caracteristica_discreta(w_grid, pesos, soporte=soporte)
+    diff_g = np.abs(phi_g - np.exp(1j * w_grid * float(y_obs))) ** 2
+    integrando = diff_g / (w_grid ** 2)
+    integral_tramo = float(0.5 * np.sum((integrando[:-1] + integrando[1:]) * np.diff(w_grid))) / math.pi
+    z_norm, w_norm = normalizar_pmf_discreta(pesos, soporte=soporte)
+    p_y_obs = float(np.sum(w_norm[np.isclose(z_norm, float(y_obs))]))
+    cola_asintotica = (1.0 + float(np.sum(w_norm ** 2)) - 2.0 * p_y_obs) / (math.pi * float(omega_max))
+    cramer_estimado = float(integral_tramo + max(0.0, cola_asintotica))
     cramer_exacto = distancia_cramer_exacta_espacial(pesos, y_obs, soporte=soporte)
 
     return {

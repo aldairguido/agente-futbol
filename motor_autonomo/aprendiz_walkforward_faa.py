@@ -111,7 +111,8 @@ def ajustar_pesos_walkforward(
     S = np.zeros((n_train, K), dtype=float)
     s_act = np.zeros(K, dtype=float)
     for k_idx, pat in enumerate(patrones_ortogonales):
-        act = np.asarray(pat.get("vector_activacion") or np.zeros(n_train), dtype=float)
+        _va = pat.get("vector_activacion")
+        act = np.asarray(_va if _va is not None else np.zeros(n_train), dtype=float)
         if act.size != n_train:
             act = np.resize(act, n_train)
         p_lap = float(pat.get("prob_suavizada_lap", 0.5))

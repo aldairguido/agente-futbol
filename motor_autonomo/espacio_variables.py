@@ -129,11 +129,14 @@ def parsear_valor_observado(val: Any) -> Optional[float]:
 
 
 def _extraer_timestamp_comparable(partido: dict[str, Any]) -> str:
-    """Devuelve la cadena ISO de fecha/inicio del partido para comparación temporal estricta."""
+    """Devuelve la cadena ISO de fecha/inicio del partido (YYYY-MM-DD...) ignorando 'sin_dato'."""
     for k in ("inicio_utc", "hora_inicio_partido", "fecha_partido", "fecha"):
         v = partido.get(k)
-        if v is not None and str(v).strip():
-            return str(v).strip()
+        if v is None:
+            continue
+        s = str(v).strip()
+        if len(s) >= 10 and s[:4].isdigit() and s[4] == "-" and s[7] == "-":
+            return s
     return ""
 
 
@@ -509,7 +512,11 @@ def cargar_partidos_banco_historico(
         reg: dict[str, Any] = {
             "id_partido": pid,
             "fecha": str(r0_ft.get("fecha") or "").strip(),
-            "inicio_utc": str(r0_ft.get("inicio_utc") or r0_ft.get("fecha") or "").strip(),
+            "inicio_utc": (
+            str(r0_ft.get("inicio_utc")).strip()
+            if str(r0_ft.get("inicio_utc") or "").strip()[:4].isdigit()
+            else str(r0_ft.get("fecha") or "").strip()
+        ),
             "competicion": str(r0_ft.get("competicion") or "").strip(),
             "periodo": per,
             "goles_favor": gf,

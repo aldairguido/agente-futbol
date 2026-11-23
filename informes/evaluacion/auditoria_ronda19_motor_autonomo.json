@@ -1,0 +1,272 @@
+{
+  "cuadro_1_embudo_explorador": {
+    "n_partidos_banco_total": 83,
+    "n_partidos_evaluados_walkforward": 48,
+    "promedio_variables_cobertura_60pct": 38.83,
+    "total_hipotesis_evaluadas": 8851,
+    "promedio_hipotesis_por_partido": 184.4,
+    "total_candidatos_post_poda": 2983,
+    "promedio_candidatos_post_poda": 62.15,
+    "candidatos_por_orden_total": {
+      "1": 1127,
+      "2": 999,
+      "3": 611,
+      "4": 185,
+      "5": 61
+    },
+    "candidatos_por_orden_promedio": {
+      "1": 23.48,
+      "2": 20.81,
+      "3": 12.73,
+      "4": 3.85,
+      "5": 1.27
+    },
+    "promedio_ortogonales_dpp_k10": 10.0,
+    "total_validados_bh_fdr_q005": 0,
+    "promedio_validados_bh_fdr_q005": 0.0
+  },
+  "cuadro_2_eficiencia_dpp": {
+    "patrones_correlacion_media_antes": 0.2839,
+    "patrones_correlacion_media_despues_dpp": 0.1168,
+    "patrones_log_det_gram_medio": -1.0013,
+    "top5_actual_correlacion_media": 0.325,
+    "top5_dpp_correlacion_media": 0.0694,
+    "top5_actual_tasa_caida_bloque_3de5": 0.2917,
+    "top5_dpp_tasa_caida_bloque_3de5": 0.125,
+    "top5_actual_brier": {
+      "media": 0.214719,
+      "ic95_lo": 0.178206,
+      "ic95_hi": 0.252045,
+      "n_partidos": 48
+    },
+    "top5_dpp_brier": {
+      "media": 0.20257,
+      "ic95_lo": 0.180991,
+      "ic95_hi": 0.226664,
+      "n_partidos": 48
+    },
+    "tiempo_medio_computo_dpp_ms": 0.884
+  },
+  "cuadro_3_cramer_y_cvar25": {
+    "verificacion_lema1_goles_poisson": {
+      "loss_phi_td_cruda": 0.0016350179232021826,
+      "cramer_frecuencia_estimado": 0.42310922854864613,
+      "cramer_espacial_exacto": 0.4230704981838104,
+      "error_abs_lema1": 3.8730364835759534e-05
+    },
+    "verificacion_lema1_corners_nb": {
+      "loss_phi_td_cruda": 0.0028952543760876817,
+      "cramer_frecuencia_estimado": 0.8577124923250864,
+      "cramer_espacial_exacto": 0.8576435465341787,
+      "error_abs_lema1": 6.894579090765962e-05
+    },
+    "picks_pasan_cvar25_ge_065": {
+      "n_picks": 73,
+      "brier_medio": 0.092072,
+      "logloss_medio": 0.321761
+    },
+    "picks_rechazados_cvar25_lt_065": {
+      "n_picks": 15,
+      "brier_medio": 0.136712,
+      "logloss_medio": 0.453712
+    }
+  },
+  "cuadro_4_topologia_y_probe": {
+    "representation_probe_por_familia": {
+      "1X2 (Local Gana)": {
+        "objetivo": "Local Gana",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.495591,
+        "tiene_poder_separador": false,
+        "diagnostico": "espacio sin poder separador",
+        "media_d_crit": 1.005823,
+        "media_d_surf": 1.010189,
+        "n_pares_opuestos": 1716,
+        "n_pares_iguales": 1687
+      },
+      "Doble Oportunidad (1X)": {
+        "objetivo": "1X",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.5012,
+        "tiene_poder_separador": false,
+        "diagnostico": "espacio sin poder separador",
+        "media_d_crit": 1.008983,
+        "media_d_surf": 1.007114,
+        "n_pares_opuestos": 1590,
+        "n_pares_iguales": 1813
+      },
+      "Goles FT (+2.5 FT)": {
+        "objetivo": "+2.5 FT",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.546941,
+        "tiene_poder_separador": true,
+        "diagnostico": "espacio con poder separador",
+        "media_d_crit": 1.045002,
+        "media_d_surf": 0.975526,
+        "n_pares_opuestos": 1590,
+        "n_pares_iguales": 1813
+      },
+      "Goles Mitades (+0.5 1T)": {
+        "objetivo": "+0.5 1T",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.508892,
+        "tiene_poder_separador": false,
+        "diagnostico": "espacio sin poder separador",
+        "media_d_crit": 1.014915,
+        "media_d_surf": 1.003914,
+        "n_pares_opuestos": 1260,
+        "n_pares_iguales": 2143
+      },
+      "Córneres FT (+8.5 Córn.)": {
+        "objetivo": "+8.5 Córn.",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.648621,
+        "tiene_poder_separador": true,
+        "diagnostico": "espacio con poder separador",
+        "media_d_crit": 1.123561,
+        "media_d_surf": 0.897137,
+        "n_pares_opuestos": 1666,
+        "n_pares_iguales": 1737
+      },
+      "Tarjetas FT (-4.5 Tarj.)": {
+        "objetivo": "-4.5 Tarj.",
+        "n_partidos": 83,
+        "n_variables": 10,
+        "auc_separacion": 0.597078,
+        "tiene_poder_separador": true,
+        "diagnostico": "espacio con poder separador",
+        "media_d_crit": 1.093347,
+        "media_d_surf": 0.947158,
+        "n_pares_opuestos": 1416,
+        "n_pares_iguales": 1987
+      }
+    },
+    "estratificacion_entrelazamiento_knn": {
+      "bajo_lt_050": {
+        "n_partidos": 6,
+        "brier_medio": 0.177985
+      },
+      "medio_050_a_075": {
+        "n_partidos": 14,
+        "brier_medio": 0.216179
+      },
+      "alto_ge_075": {
+        "n_partidos": 28,
+        "brier_medio": 0.211735
+      }
+    }
+  },
+  "cuadro_5_proyeccion_faa": {
+    "i_base_nucleo_sin_faa": {
+      "brier": {
+        "media": 0.160511,
+        "ic95_lo": 0.141007,
+        "ic95_hi": 0.182921,
+        "n_partidos": 48
+      },
+      "logloss": {
+        "media": 0.490339,
+        "ic95_lo": 0.445522,
+        "ic95_hi": 0.541635,
+        "n_partidos": 48
+      },
+      "cramer": {
+        "media": 0.825857,
+        "ic95_lo": 0.651303,
+        "ic95_hi": 1.05193,
+        "n_partidos": 48
+      }
+    },
+    "ii_nucleo_mas_proyeccion_faa": {
+      "brier": {
+        "media": 0.160511,
+        "ic95_lo": 0.141007,
+        "ic95_hi": 0.182921,
+        "n_partidos": 48
+      },
+      "logloss": {
+        "media": 0.490339,
+        "ic95_lo": 0.445522,
+        "ic95_hi": 0.541635,
+        "n_partidos": 48
+      },
+      "cramer": {
+        "media": 0.825857,
+        "ic95_lo": 0.651303,
+        "ic95_hi": 1.05193,
+        "n_partidos": 48
+      },
+      "delta_brier_vs_base": {
+        "media": 0.0,
+        "ic95_lo": 0.0,
+        "ic95_hi": 0.0,
+        "n_partidos": 48
+      }
+    },
+    "iii_nucleo_mas_dpp_walkforward_l2_mas_faa": {
+      "brier": {
+        "media": 0.160424,
+        "ic95_lo": 0.141173,
+        "ic95_hi": 0.182609,
+        "n_partidos": 48
+      },
+      "logloss": {
+        "media": 0.490116,
+        "ic95_lo": 0.445768,
+        "ic95_hi": 0.540752,
+        "n_partidos": 48
+      },
+      "cramer": {
+        "media": 0.821122,
+        "ic95_lo": 0.652406,
+        "ic95_hi": 1.038691,
+        "n_partidos": 48
+      },
+      "delta_brier_vs_base": {
+        "media": -8.7e-05,
+        "ic95_lo": -0.001996,
+        "ic95_hi": 0.001833,
+        "n_partidos": 48
+      }
+    },
+    "violaciones_monotonicidad_faa": 0,
+    "violaciones_simplex_1x2_faa": 0
+  },
+  "cuadro_6_invariancia_banderas_apagadas": {
+    "banderas_en_false": {
+      "activar_motor_autonomo_dpp": false,
+      "activar_selector_dpp_top5": false,
+      "activar_filtro_cvar25_top5": false,
+      "activar_alerta_entrelazamiento_knn": false,
+      "activar_proyeccion_faa_mercados": false,
+      "activar_pesos_walkforward_oos": false
+    },
+    "todas_apagadas": true,
+    "diff_max_lambda_ft": 0.0,
+    "diff_max_matriz_7x7": 0.0,
+    "diff_max_top5_prob": 0.0,
+    "invariancia_bit_a_bit_ok": true
+  },
+  "cuadro_7_veredicto_gobernanza": {
+    "puerta_regla_futura": {
+      "min_partidos_oos_exigidos": 30,
+      "partidos_oos_prospectivos_en_ledger": 9,
+      "partidos_oos_liquidados_actuales": 3,
+      "cumple_tamano_muestra_prospectiva": false
+    },
+    "componentes": {
+      "activar_motor_autonomo_dpp": "MODO_SOMBRA (acumulando OOS hacia n >= 30)",
+      "activar_selector_dpp_top5": "MODO_SOMBRA (reduce correlación media y caída en bloque; pendiente n >= 30 OOS)",
+      "activar_filtro_cvar25_top5": "MODO_SOMBRA (separa picks estables de frágiles; pendiente n >= 30 OOS)",
+      "activar_alerta_entrelazamiento_knn": "MODO_SOMBRA (diagnóstico topológico activo en sombra)",
+      "activar_proyeccion_faa_mercados": "MODO_SOMBRA (0 violaciones de monotonicidad y simplex; pendiente n >= 30 OOS)",
+      "activar_pesos_walkforward_oos": "MODO_SOMBRA (0 patrones superan BH-FDR q < 0.05 con IC95 < 0; peso en producción = 0.0)"
+    },
+    "veredicto_final": "Las 6 banderas de motor_autonomo_ronda19 permanecen en FALSE (Modo Sombra). La aduana BH-FDR (q < 0.05) y el bootstrap por partido confirman que en una ventana de 83 partidos históricos las conjunciones de orden alto deben mantenerse en observación hasta acumular >= 30 partidos prospectivos OOS en ledger_oos.jsonl."
+  }
+}
