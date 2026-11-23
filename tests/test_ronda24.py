@@ -144,7 +144,7 @@ def test_r24_b3_h2h_promedios_crudos_conteos_y_parrafo2_datos_crudos():
     assert "V/E/D: 0/1/1" in p2
     assert "+2.5: 0/2" in p2
     assert "BTTS: 1/2" in p2
-    assert "CONTRADICE el ritmo goleador del modelo general" in p2
+    assert "difiere (exploratorio) del ritmo goleador del modelo general" in p2
 
 
 
@@ -304,7 +304,7 @@ def test_r24_b5_inputs_gz_sha256_y_reproduccion_ab(tmp_path):
     dl = ln_docs["londrina"]
     dv = ln_docs["nautico"]
 
-    with banderas_comportamiento(activar_todas=False):
+    with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
         an = mm.analizar(
             dl, dv, "Londrina", "Náutico",
             condicion_local="casa", condicion_visitante="fuera",
@@ -426,6 +426,7 @@ def test_r24_b6_evaluar_separa_oos_excluye_100_y_exploratorio_y_desglose_build()
             "hora_inicio_partido": "2026-11-19T22:00:00Z",
             "telegram_message_date": 1795111260,
             "hora_mensaje_utc": "2026-11-19T18:01:00Z",
+            "telegram_envio": {"message_id": 700 + i, "message_date": 1795111260, "message_date_utc": "2026-11-19T18:01:00Z"},
             "es_oos_valido": True,
             "es_canonica": True,
             "estado_canonico": "canonica",

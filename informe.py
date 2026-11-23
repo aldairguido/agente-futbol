@@ -742,20 +742,22 @@ def generar_ticket_valor_png(
         "Valor Esperado (EV)",
         "Recomendación",
     ]
+    import textwrap as _tw_tv
     datos_celdas = [
         [
-            f["mercado"],
+            _tw_tv.fill(str(f["mercado"]), width=26),
             f["prob_bot_str"],
             f["cuota_justa_str"],
             f["cuota_flashscore_str"],
             f["ev_str"],
-            f["recomendacion"],
+            _tw_tv.fill(str(f["recomendacion"]), width=34),
         ]
         for f in filas
     ]
 
     n_filas = len(datos_celdas)
-    alto_fig = max(4.6, 2.3 + n_filas * 0.62)
+    max_lineas_fila = max((max(c.count("\n") + 1 for c in fila) for fila in datos_celdas), default=1)
+    alto_fig = max(4.8, 2.3 + n_filas * (0.58 + 0.18 * max(0, max_lineas_fila - 1)))
     fig, ax = plt.subplots(figsize=(13.5, alto_fig), dpi=160)
     fig.patch.set_facecolor("#F7F9FC")
     ax.set_facecolor("#F7F9FC")
@@ -778,7 +780,7 @@ def generar_ticket_valor_png(
         fontsize=9.5, color="#3B4A6B", family="sans-serif",
     )
 
-    anchos_col = [0.24, 0.10, 0.11, 0.13, 0.14, 0.28]
+    anchos_col = [0.22, 0.09, 0.10, 0.12, 0.13, 0.34]
     tabla = ax.table(
         cellText=datos_celdas,
         colLabels=columnas,
@@ -815,6 +817,9 @@ def generar_ticket_valor_png(
 
             if col_idx == 0:
                 celda._loc = "left"
+            if col_idx == 5:
+                celda.get_text().set_fontsize(8.3)
+                celda.get_text().set_clip_on(True)
 
     sin_cuotas_png = not any(f.get("cuota_flashscore") is not None for f in filas)
     nota_hip_png = "  |  Sin cuotas: todo Stake es hipotético a cuota mínima, sin validar." if sin_cuotas_png else ""
@@ -941,16 +946,21 @@ def redactar_analisis_3_parrafos(
         gen_es_over = (p_o25 >= 0.50)
         h2h_es_over = (prom_goles_h2h >= 2.50)
 
+        es_h2h_peq = (n_eff_h2h < 10)
+        verbo_apoya = "coincide (exploratorio) con el" if es_h2h_peq else "APOYA al"
+        verbo_contra_cautela = "difiere (exploratorio) de la cautela del" if es_h2h_peq else "CONTRADICE la cautela del"
+        verbo_contra_ritmo = "difiere (exploratorio) del ritmo goleador del" if es_h2h_peq else "CONTRADICE el ritmo goleador del"
+
         if gen_es_over and h2h_es_over:
             contraste_txt = (
-                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo APOYA al modelo general: "
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo {verbo_apoya} modelo general: "
                 f"ambos apuntan a un guion abierto de goles (Over 2.5), registrando un promedio crudo de "
                 f"{prom_goles_h2h:.2f} goles por encuentro ({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; "
                 f"+2.5 en {o25_cnt}/{n_eff_h2h}, BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"
             )
         elif (not gen_es_over) and (not h2h_es_over):
             contraste_txt = (
-                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo APOYA al modelo general: "
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo {verbo_apoya} modelo general: "
                 f"mientras la red de 15 partidos apunta al Under 2.5 ({p_u25 * 100:.1f}%), los cruces directos "
                 f"registran un promedio crudo de {prom_goles_h2h:.2f} goles por encuentro "
                 f"({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; +2.5 en {o25_cnt}/{n_eff_h2h}, "
@@ -958,7 +968,7 @@ def redactar_analisis_3_parrafos(
             )
         elif (not gen_es_over) and h2h_es_over:
             contraste_txt = (
-                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo CONTRADICE la cautela del modelo general: "
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo {verbo_contra_cautela} modelo general: "
                 f"aunque la muestra de 15 partidos sugiere Under 2.5 ({p_u25 * 100:.1f}% con {lam_tot:.2f} goles esperados), "
                 f"los enfrentamientos directos registran un promedio crudo de {prom_goles_h2h:.2f} goles "
                 f"({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; +2.5 en {o25_cnt}/{n_eff_h2h}, "
@@ -966,7 +976,7 @@ def redactar_analisis_3_parrafos(
             )
         else:
             contraste_txt = (
-                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo CONTRADICE el ritmo goleador del modelo general: "
+                f"en datos crudos (exploratorio, n={n_eff_h2h}), el historial directo {verbo_contra_ritmo} modelo general: "
                 f"mientras los 15 partidos proyectan Over 2.5 ({p_o25 * 100:.1f}%), los enfrentamientos directos "
                 f"registran un promedio crudo de {prom_goles_h2h:.2f} goles ({eq_l} {prom_crudo_l:.2f} vs {eq_v} {prom_crudo_v:.2f}; "
                 f"+2.5 en {o25_cnt}/{n_eff_h2h}, BTTS en {btts_cnt}/{n_eff_h2h}, V/E/D {ved_txt})"

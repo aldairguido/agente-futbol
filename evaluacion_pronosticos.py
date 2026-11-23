@@ -219,6 +219,7 @@ class SnapshotPronostico:
     lambdas_plano: dict[str, Any] | None = None
     lambdas_base_doble_adn: dict[str, Any] | None = None
     inputs_sha256: str | None = None
+    firma_motor: str | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -293,6 +294,8 @@ class SnapshotPronostico:
             out["lambdas_base_doble_adn"] = self.lambdas_base_doble_adn
         if self.inputs_sha256 is not None:
             out["inputs_sha256"] = self.inputs_sha256
+        if self.firma_motor is not None:
+            out["firma_motor"] = self.firma_motor
         return out
 
 
@@ -368,13 +371,63 @@ def _mismo_partido_oos(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return False
 
 
+_ESTADOS_ABSTENCION_OOS = frozenset({
+    "abstenido",
+    "falso_homonimo_extranjero",
+    "datos_desactualizados",
+    "cobertura_insuficiente",
+    "historial_oficial_incompleto",
+    "identidad_no_verificada",
+    "desajuste_categoria_femenino",
+    "partido_ya_jugado",
+})
+
+
+def _extraer_acuse_telegram_oos(telegram_envio: Any) -> tuple[bool, datetime | None, str | None]:
+    """
+    Valida que exista un acuse explícito de entrega (`telegram_envio`) con marca temporal
+    con zona horaria explícita y sin `enviado=False`.
+    """
+    if not isinstance(telegram_envio, dict) or not telegram_envio:
+        return False, None, None
+    if telegram_envio.get("enviado") is False:
+        return False, None, None
+    dt_env, str_env = _parsear_instante_con_zona_oos(
+        telegram_envio.get("message_date_utc")
+        if telegram_envio.get("message_date_utc") is not None
+        else telegram_envio.get("message_date")
+    )
+    if dt_env is None and telegram_envio.get("message_date") is not None:
+        dt_env, str_env = _parsear_instante_con_zona_oos(telegram_envio.get("message_date"))
+    return (dt_env is not None), dt_env, str_env
+
+
+def _es_registro_abstenido_oos(reg: dict[str, Any] | None) -> bool:
+    if not isinstance(reg, dict):
+        return False
+    if reg.get("abstenido") is True:
+        return True
+    est_c = str(reg.get("estado_canonico") or "").strip().lower()
+    if est_c == "abstenido":
+        return True
+    est_cob = str(reg.get("estado_cobertura") or "").strip().lower()
+    if est_cob in _ESTADOS_ABSTENCION_OOS:
+        return True
+    dc = reg.get("datos_corte")
+    if isinstance(dc, dict) and dc.get("abstenido") is True:
+        return True
+    return False
+
+
 def evaluar_contabilidad_oos_registro(
     *,
     fixture_confirmado: Any,
-    fuente_fecha: Any,
+    fuente_fecha: Any = None,
     hora_inicio_partido: Any,
-    telegram_message_date: Any,
+    telegram_message_date: Any = None,
     hora_mensaje_utc: Any = None,
+    telegram_envio: Any = None,
+    abstenido: bool = False,
     hora_inicio_fotmob: Any = None,
     hora_inicio_flashscore: Any = None,
     diferencia_hora_inicio_min: float | None = None,
@@ -387,21 +440,29 @@ def evaluar_contabilidad_oos_registro(
     registros_existentes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
-    Aplica `REGLA_CONTABILIDAD_OOS`:
-      - `es_oos_valido = True` ssi `fixture_confirmado is True` y
-        `telegram_message_date < hora_inicio_partido` (ambos con zona horaria explícita).
+    Aplica `REGLA_CONTABILIDAD_OOS` (Ronda 25 Bloque 5):
+      - Un snapshot/registro abstenido tiene `es_oos_valido = False`, `es_canonica = False`
+        y `estado_canonico = "abstenido"`.
+      - `es_oos_valido = True` exige `fixture_confirmado is True`, no abstenido,
+        y acuse explícito `telegram_envio` con marca temporal anterior a `hora_inicio_partido`
+        (ambos con zona horaria explícita) sin discrepancia > 15 min.
       - Primera entrada OOS válida del mismo partido -> `canonica` (`es_canonica=True`).
       - Posteriores entradas válidas del mismo partido -> `no_canonica` (`es_canonica=False`).
-      - Inválidas / fallback sin fixture / post-inicio -> `no_oos` (`es_canonica=False`).
+      - Inválidas / fallback sin fixture / sin acuse / post-inicio -> `no_oos` (`es_canonica=False`).
     """
     fx_conf = bool(fixture_confirmado is True)
     f_fec = str(fuente_fecha or ("fixture" if fx_conf else "fallback")).strip() or ("fixture" if fx_conf else "fallback")
     dt_ini, hora_ini_str = _parsear_instante_con_zona_oos(hora_inicio_partido)
+    tiene_acuse_env, dt_env, str_env = _extraer_acuse_telegram_oos(telegram_envio)
     dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(
         hora_mensaje_utc if hora_mensaje_utc is not None else telegram_message_date
     )
     if dt_msg is None and telegram_message_date is not None:
         dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(telegram_message_date)
+    if tiene_acuse_env and str_env is not None:
+        hora_msg_str = str_env
+        if telegram_message_date is None and isinstance(telegram_envio, dict):
+            telegram_message_date = telegram_envio.get("message_date")
 
     dt_fm, h_fm_str = _parsear_instante_con_zona_oos(hora_inicio_fotmob)
     dt_fs, h_fs_str = _parsear_instante_con_zona_oos(hora_inicio_flashscore)
@@ -411,39 +472,48 @@ def evaluar_contabilidad_oos_registro(
     h_discrepante = bool(hora_inicio_discrepante) or (diff_h_min is not None and diff_h_min > 0.0)
     discrepancia_excede_15m = bool(diff_h_min is not None and diff_h_min > 15.0)
 
-    es_oos_valido = bool(
-        fx_conf
-        and dt_ini is not None
-        and dt_msg is not None
-        and dt_msg < dt_ini
-        and not discrepancia_excede_15m
-    )
-    if not es_oos_valido:
+    if abstenido:
+        es_oos_valido = False
         es_canonica = False
-        estado_canonico = "no_oos"
+        estado_canonico = "abstenido"
     else:
-        actual = {
-            "id_partido": str(id_partido or ""),
-            "partido": str(partido or ""),
-            "fecha": str(fecha or ""),
-            "hora_inicio_partido": hora_ini_str,
-        }
-        ya_hay_canonica = False
-        for ex in (registros_existentes or []):
-            if not isinstance(ex, dict):
-                continue
-            if id_trabajo and str(ex.get("id_trabajo") or "") == str(id_trabajo):
-                continue
-            if estado_registro and ex.get("estado_registro") is not None:
-                if str(ex.get("estado_registro") or "liquidado").strip().lower() != str(estado_registro).strip().lower():
+        es_oos_valido = bool(
+            fx_conf
+            and dt_ini is not None
+            and tiene_acuse_env
+            and dt_env is not None
+            and dt_env < dt_ini
+            and not discrepancia_excede_15m
+        )
+        if not es_oos_valido:
+            es_canonica = False
+            estado_canonico = "no_oos"
+        else:
+            actual = {
+                "id_partido": str(id_partido or ""),
+                "partido": str(partido or ""),
+                "fecha": str(fecha or ""),
+                "hora_inicio_partido": hora_ini_str,
+            }
+            ya_hay_canonica = False
+            for ex in (registros_existentes or []):
+                if not isinstance(ex, dict):
                     continue
-            if not _mismo_partido_oos(ex, actual):
-                continue
-            if ex.get("es_canonica") is True or ex.get("es_oos_valido") is True:
-                ya_hay_canonica = True
-                break
-        es_canonica = not ya_hay_canonica
-        estado_canonico = "canonica" if es_canonica else "no_canonica"
+                if _es_registro_abstenido_oos(ex):
+                    continue
+                if id_trabajo and str(ex.get("id_trabajo") or "") == str(id_trabajo):
+                    continue
+                if estado_registro and ex.get("estado_registro") is not None:
+                    if str(ex.get("estado_registro") or "liquidado").strip().lower() != str(estado_registro).strip().lower():
+                        continue
+                if not _mismo_partido_oos(ex, actual):
+                    continue
+                ex_cls = clasificar_oos_entrada_ledger(ex)
+                if ex_cls.get("es_canonica") is True or ex_cls.get("es_oos_valido") is True:
+                    ya_hay_canonica = True
+                    break
+            es_canonica = not ya_hay_canonica
+            estado_canonico = "canonica" if es_canonica else "no_canonica"
 
     res_oos = {
         "fixture_confirmado": fx_conf,
@@ -467,11 +537,62 @@ def evaluar_contabilidad_oos_registro(
     return res_oos
 
 
-def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
+def _cargar_snapshot_para_oos(
+    id_trabajo: str | None,
+    *,
+    directorio_pronosticos: str | None = None,
+    snapshots_por_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Busca el snapshot asociado a `id_trabajo` para resolver `telegram_envio` o `abstenido` en entradas históricas del ledger."""
+    idt = str(id_trabajo or "").strip()
+    if not idt:
+        return None
+    if isinstance(snapshots_por_id, dict) and idt in snapshots_por_id:
+        val = snapshots_por_id.get(idt)
+        return val if isinstance(val, dict) else None
+    dir_p = directorio_pronosticos or PRONOSTICOS_DIR
+    if not dir_p:
+        return None
+    ruta_s = os.path.join(str(dir_p), f"{idt}.json")
+    if not os.path.isfile(ruta_s):
+        return None
+    try:
+        with open(ruta_s, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+        return doc if isinstance(doc, dict) else None
+    except Exception:
+        return None
+
+
+def _resolver_dir_pronosticos_para_ledger(
+    ruta_ledger: str | None,
+    directorio_pronosticos: str | None = None,
+) -> str | None:
+    if directorio_pronosticos:
+        return str(directorio_pronosticos)
+    if ruta_ledger:
+        try:
+            cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(ruta_ledger))), "pronosticos")
+            if os.path.isdir(cand):
+                return cand
+        except Exception:
+            pass
+    return PRONOSTICOS_DIR
+
+
+def clasificar_oos_entrada_ledger(
+    reg: dict[str, Any],
+    *,
+    directorio_pronosticos: str | None = None,
+    snapshots_por_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """
-    Clasifica cualquier entrada del ledger (incluido historial previo a Regla M sin reescribir hashes):
-      - Con campos explícitos de Regla M -> `canonica` | `no_canonica` | `no_oos` | `legacy_sin_fixture`.
+    Clasifica cualquier entrada del ledger o snapshot (sin reescribir entradas históricas):
+      - Snapshot/registro abstenido -> `abstenido` (`es_oos_valido=False`, `es_canonica=False`).
       - Sin `es_oos_valido` y sin `(fixture_confirmado=True y hora_inicio_partido)` -> `legacy_sin_fixture` (no-OOS).
+      - Exige `telegram_envio` (acuse) anterior a `hora_inicio_partido` para `es_oos_valido=True`;
+        si una entrada del ledger no trae `telegram_envio` inline (entradas históricas previas a Ronda 25),
+        lo resuelve desde el snapshot correspondiente en `informes/pronosticos/<id_trabajo>.json`.
     """
     if not isinstance(reg, dict):
         return {
@@ -480,6 +601,41 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
             "es_canonica": False,
             "es_legacy_sin_fixture": True,
         }
+    if _es_registro_abstenido_oos(reg):
+        return {
+            "clasificacion_oos": "abstenido",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": False,
+        }
+    h_ini_raw = reg.get("hora_inicio_partido")
+    if h_ini_raw is None and isinstance(reg.get("partido"), dict):
+        h_ini_raw = reg["partido"].get("hora_inicio_partido")
+    tg_env_eff = reg.get("telegram_envio")
+    if not (isinstance(tg_env_eff, dict) and tg_env_eff):
+        snap_ref = _cargar_snapshot_para_oos(
+            reg.get("id_trabajo"),
+            directorio_pronosticos=directorio_pronosticos,
+            snapshots_por_id=snapshots_por_id,
+        )
+        if isinstance(snap_ref, dict):
+            if _es_registro_abstenido_oos(snap_ref):
+                return {
+                    "clasificacion_oos": "abstenido",
+                    "es_oos_valido": False,
+                    "es_canonica": False,
+                    "es_legacy_sin_fixture": False,
+                }
+            if isinstance(snap_ref.get("telegram_envio"), dict) and snap_ref.get("telegram_envio"):
+                tg_env_eff = snap_ref.get("telegram_envio")
+            if h_ini_raw is None:
+                h_ini_raw = snap_ref.get("hora_inicio_partido")
+                if h_ini_raw is None and isinstance(snap_ref.get("partido"), dict):
+                    h_ini_raw = snap_ref["partido"].get("hora_inicio_partido")
+    dt_ini, _ = _parsear_instante_con_zona_oos(h_ini_raw)
+    tiene_acuse, dt_env, _ = _extraer_acuse_telegram_oos(tg_env_eff)
+    acuse_anterior = bool(tiene_acuse and dt_env is not None and dt_ini is not None and dt_env < dt_ini)
+
     if "es_oos_valido" in reg:
         est_c = str(reg.get("estado_canonico") or "").strip().lower()
         if est_c == "legacy_sin_fixture":
@@ -488,6 +644,13 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
                 "es_oos_valido": False,
                 "es_canonica": False,
                 "es_legacy_sin_fixture": True,
+            }
+        if not acuse_anterior:
+            return {
+                "clasificacion_oos": "no_oos",
+                "es_oos_valido": False,
+                "es_canonica": False,
+                "es_legacy_sin_fixture": False,
             }
         es_v = bool(reg.get("es_oos_valido") is True)
         es_c = bool(es_v and reg.get("es_canonica") is True)
@@ -499,7 +662,7 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
             "es_legacy_sin_fixture": False,
         }
 
-    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(reg.get("hora_inicio_partido"))
+    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(h_ini_raw)
     if not tiene_fx:
         return {
             "clasificacion_oos": "legacy_sin_fixture",
@@ -511,9 +674,11 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
     ev = evaluar_contabilidad_oos_registro(
         fixture_confirmado=reg.get("fixture_confirmado"),
         fuente_fecha=reg.get("fuente_fecha"),
-        hora_inicio_partido=reg.get("hora_inicio_partido"),
+        hora_inicio_partido=h_ini_raw,
         telegram_message_date=reg.get("telegram_message_date"),
         hora_mensaje_utc=reg.get("hora_mensaje_utc"),
+        telegram_envio=tg_env_eff,
+        abstenido=False,
         partido=reg.get("partido"),
         fecha=reg.get("fecha"),
         id_partido=reg.get("id_partido"),
@@ -1063,6 +1228,7 @@ def reproducir_ab_desde_inputs(inputs_doc_o_ruta: str | dict[str, Any]) -> dict[
         str(eq.get("local") or "Local"),
         str(eq.get("visitante") or "Visitante"),
         banderas_candidatas=banderas_ab,
+        banderas_base={"usar_sobredispersion_nb_corners": True},
         **kw,
     )
     res["modo_sombra"]["version_sombra"] = "A+B"
@@ -1101,6 +1267,8 @@ def guardar_snapshot(snapshot: SnapshotPronostico | dict[str, Any],
                 hora_inicio_partido=datos.get("hora_inicio_partido"),
                 telegram_message_date=datos.get("telegram_message_date"),
                 hora_mensaje_utc=datos.get("hora_mensaje_utc"),
+                telegram_envio=datos.get("telegram_envio"),
+                abstenido=bool(datos.get("abstenido")),
                 partido=f"{eq_d.get('local') or ''} vs {eq_d.get('visitante') or ''}",
                 fecha=pt_d.get("fecha"),
                 id_partido=pt_d.get("id_partido") or datos.get("id_partido") or "",
@@ -1195,6 +1363,8 @@ def adjuntar_acuse_telegram_snapshot(
                 hora_inicio_partido=doc.get("hora_inicio_partido"),
                 telegram_message_date=doc.get("telegram_message_date"),
                 hora_mensaje_utc=doc.get("hora_mensaje_utc"),
+                telegram_envio=doc.get("telegram_envio"),
+                abstenido=bool(doc.get("abstenido")),
                 partido=f"{eq_d.get('local') or ''} vs {eq_d.get('visitante') or ''}",
                 fecha=pt_d.get("fecha"),
                 id_partido=pt_d.get("id_partido") or doc.get("id_partido") or "",
@@ -1224,6 +1394,35 @@ def adjuntar_acuse_telegram_snapshot(
         "telegram_message_id": doc.get("telegram_message_id"),
         "telegram_message_date": doc.get("telegram_message_date"),
     }
+
+
+def _extraer_firma_motor(
+    *,
+    preparado: dict[str, Any] | None = None,
+    metadatos: dict[str, Any] | None = None,
+    doc: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+    usar_defecto_modulo: bool = True,
+) -> str | None:
+    """Extrae `firma_motor` (opcional y compatible hacia atrás) de metadatos/snapshot/ledger o servicio_mercados."""
+    for src in (preparado, metadatos, doc, pre_ref):
+        if isinstance(src, dict):
+            fm = src.get("firma_motor")
+            if isinstance(fm, str) and fm.strip():
+                return fm.strip()
+            mod = src.get("modelo")
+            if isinstance(mod, dict):
+                fm_m = mod.get("firma_motor")
+                if isinstance(fm_m, str) and fm_m.strip():
+                    return fm_m.strip()
+    if usar_defecto_modulo:
+        try:
+            from servicio_mercados import FIRMA_MOTOR
+            if isinstance(FIRMA_MOTOR, str) and FIRMA_MOTOR.strip():
+                return FIRMA_MOTOR.strip()
+        except Exception:
+            pass
+    return None
 
 
 def snapshot_desde_analisis(preparado: dict[str, Any],
@@ -1268,12 +1467,16 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     h_disc_snap = metadatos.get("hora_inicio_discrepante")
     if h_disc_snap is None:
         h_disc_snap = ctx_p.get("hora_inicio_discrepante")
+    abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
+    tg_env_snap = preparado.get("telegram_envio") or metadatos.get("telegram_envio")
     contab_snap = evaluar_contabilidad_oos_registro(
         fixture_confirmado=fx_conf,
         fuente_fecha=f_fec,
         hora_inicio_partido=h_ini,
         telegram_message_date=tg_mdt,
         hora_mensaje_utc=tg_mutc,
+        telegram_envio=tg_env_snap,
+        abstenido=abstenido,
         hora_inicio_fotmob=h_fm_snap,
         hora_inicio_flashscore=h_fs_snap,
         diferencia_hora_inicio_min=diff_h_snap,
@@ -1286,7 +1489,6 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         registros_existentes=existentes_snapshots,
     )
     f_info_snap = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=metadatos)
-    abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
     if abstenido:
         dec_cob = metadatos.get("decision_cobertura") or {}
         est_cob = str(dec_cob.get("estado") or metadatos.get("estado_cobertura") or "abstenido")
@@ -1330,11 +1532,13 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             referencia=(preparado.get("rutas") or {}).get("informe") or "",
             abstenido=True,
             estado_cobertura=est_cob,
+            firma_motor=_extraer_firma_motor(preparado=preparado, metadatos=metadatos),
             motivo_abstencion=mot_abs,
             decision_cobertura=dec_cob,
             telegram_message_id=tg_mid,
             telegram_message_date=tg_mdt,
             telegram_origen=tg_org,
+            telegram_envio=dict(tg_env_snap) if isinstance(tg_env_snap, dict) and tg_env_snap else None,
             fixture_confirmado=contab_snap["fixture_confirmado"],
             fuente_fecha=contab_snap["fuente_fecha"],
             hora_inicio_partido=contab_snap["hora_inicio_partido"],
@@ -1453,6 +1657,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         telegram_message_id=tg_mid,
         telegram_message_date=tg_mdt,
         telegram_origen=tg_org,
+        telegram_envio=dict(tg_env_snap) if isinstance(tg_env_snap, dict) and tg_env_snap else None,
         traza_etapa_6=traza_6,
         resumen_etapa_6=resumen_6,
         fixture_confirmado=contab_snap["fixture_confirmado"],
@@ -1477,6 +1682,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         lambdas_plano=lam_plano_snap,
         lambdas_base_doble_adn=lam_base_adn_snap,
         inputs_sha256=inp_sha_snap,
+        firma_motor=_extraer_firma_motor(preparado=preparado, metadatos=metadatos),
     )
 
 
@@ -3565,42 +3771,43 @@ def verificar_resultados(pronosticos: Iterable[dict[str, Any]],
 def _parsear_momento(texto: Any) -> datetime | None:
     """
     Interpreta las marcas de tiempo del proyecto, que llegan en varios formatos:
-        '2026-10-13 10:46:23'        (hora local, sin zona)
+        1795199254                   (epoch unix en segundos, UTC)
+        '2026-10-13 10:46:23'        (sin zona -> UTC, zona del runner)
         '2026-10-13T19:00:00Z'       (UTC)
-        '2026-10-13T19:00:00+00:00'
+        '2026-10-13T19:00:00+00:00'  (desplazamiento explícito)
     Devuelve un datetime CON zona (UTC) o None.
     """
-    if not texto:
+    if texto is None or texto == "" or isinstance(texto, bool):
         return None
-    t = str(texto).strip().replace("T", " ")
+    if isinstance(texto, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(texto), tz=timezone.utc)
+        except Exception:
+            return None
+    raw_s = str(texto).strip()
+    if not raw_s:
+        return None
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw_s):
+        try:
+            return datetime.fromtimestamp(float(raw_s), tz=timezone.utc)
+        except Exception:
+            return None
+    t = raw_s.replace("T", " ")
     zona = timezone.utc
     if t.endswith("Z"):
         t = t[:-1]
-    elif "+" in t[10:]:
+    elif "+" in t[10:] or (len(t) > 19 and "-" in t[19:]):
         # Ya trae desplazamiento explícito
         try:
-            return datetime.fromisoformat(str(texto).replace("Z", "+00:00"))
+            return datetime.fromisoformat(raw_s.replace("Z", "+00:00")).astimezone(timezone.utc)
         except Exception:
             t = t[:19]
-    else:
-        # Sin zona: el proyecto guarda hora local en America/Lima
-        try:
-            import pytz
-            zona = pytz.timezone(config.TIMEZONE)
-        except Exception:
-            zona = timezone.utc
+    # Sin zona: se interpreta como UTC (zona del runner)
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             ingenuo = datetime.strptime(t[:19], fmt)
         except Exception:
             continue
-        # Con pytz hay que usar localize(): `.replace(tzinfo=zona)` aplicaba el
-        # huso LMT histórico (-05:08:36 en Lima) en vez de -05:00, desplazaba las
-        # marcas ~8 min 36 s y hacía que un pronóstico emitido minutos ANTES del
-        # inicio se juzgara posterior (todas sus selecciones pasaban a
-        # «no verificable»). Con datetime.timezone (UTC) no hay localize().
-        if hasattr(zona, "localize"):
-            return zona.localize(ingenuo)
         return ingenuo.replace(tzinfo=zona)
     return None
 
@@ -3610,13 +3817,41 @@ def _comprobar_anterioridad(pronostico: dict[str, Any],
     """
     Comprueba que el pronóstico se emitió ANTES del inicio del partido.
 
-    Ambas marcas se normalizan a UTC antes de comparar (la generación se guarda en
-    hora local del proyecto y el inicio del partido viene en UTC). Si no se puede
-    demostrar la anterioridad, se marca como no resoluble en lugar de asumir lo
-    favorable al modelo.
+    Cuando existen `telegram_message_date` (priorizando acuse `telegram_envio`)
+    y `hora_inicio_partido` (o `resultado.inicio_utc`), compara sus instantes
+    UTC/unix directamente en lugar de `generado_en`. Si faltan, usa `generado_en`
+    interpretado sin zona como UTC (zona del runner) frente a `resultado.inicio_utc`.
     """
+    tg_env = pronostico.get("telegram_envio") if isinstance(pronostico.get("telegram_envio"), dict) else None
+    tg_date = (tg_env.get("message_date") if tg_env and tg_env.get("message_date") is not None else pronostico.get("telegram_message_date"))
+    hora_ini_snap = (
+        pronostico.get("hora_inicio_partido")
+        or (pronostico.get("partido") or {}).get("hora_inicio_partido")
+        if isinstance(pronostico.get("partido"), dict)
+        else pronostico.get("hora_inicio_partido")
+    )
+    inicio_res = getattr(resultado, "inicio_utc", None)
+
+    if tg_date is not None and (hora_ini_snap or inicio_res):
+        ini_ref = hora_ini_snap or inicio_res
+        t_msg = _parsear_momento(tg_date)
+        t_ini = _parsear_momento(ini_ref)
+        if t_msg is not None and t_ini is not None:
+            ts_msg = int(t_msg.timestamp())
+            ts_ini = int(t_ini.timestamp())
+            if ts_msg < ts_ini:
+                horas = (ts_ini - ts_msg) / 3600.0
+                return True, (
+                    f"telegram_message_date {ts_msg} ({t_msg.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC) "
+                    f"anterior al inicio {ini_ref} por {horas:.1f} h"
+                )
+            return False, (
+                f"telegram_message_date {ts_msg} ({t_msg.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC) "
+                f"NO anterior al inicio {ini_ref} (el pronóstico es posterior: no se evalúa como acierto)"
+            )
+
     generado = pronostico.get("generado_en")
-    inicio = resultado.inicio_utc
+    inicio = inicio_res or hora_ini_snap
     if not generado or not inicio:
         return False, ("no se puede demostrar que el pronóstico sea anterior al inicio "
                        "(falta marca de generación o de inicio)")
@@ -4503,19 +4738,47 @@ def enviar_resumen(preparado: dict[str, Any], enviar_fn: Any,
 
     marcar_estado(id_ejecucion, "resumen_preparado",
                   {"rutas": preparado.get("rutas")}, ruta_registro)
+    mensaje_completo = str(preparado.get("mensaje") or "")
     try:
-        resultado = enviar_fn(preparado["mensaje"], chat_id)
-    except Exception as e:
-        marcar_estado(id_ejecucion, "envio_fallido",
-                      {"error": f"{type(e).__name__}: {e}"}, ruta_registro)
-        return {"enviado": False, "estado": "envio_fallido",
-                "motivo": f"{type(e).__name__}: {e}", "id_ejecucion": id_ejecucion}
-    if not isinstance(resultado, dict) or not resultado.get("ok"):
-        marcar_estado(id_ejecucion, "envio_fallido",
-                      {"respuesta": resultado}, ruta_registro)
-        return {"enviado": False, "estado": "envio_fallido",
-                "motivo": (resultado or {}).get("error", "respuesta sin ok"),
-                "id_ejecucion": id_ejecucion}
+        from servicio_mercados import partir_mensaje as _partir_msg_eval
+        partes_msg = _partir_msg_eval(mensaje_completo, limite=3950) or [mensaje_completo]
+    except Exception:
+        partes_msg = [mensaje_completo[i:i + 4000] for i in range(0, len(mensaje_completo), 4000)] or [""]
+
+    message_ids_texto: list[Any] = []
+    resultado: dict[str, Any] = {}
+    max_intentos = 3
+    for idx_parte, trozo in enumerate(partes_msg, start=1):
+        ultimo_err: str | None = None
+        res_parte: Any = None
+        for intento in range(1, max_intentos + 1):
+            try:
+                res_parte = enviar_fn(trozo, chat_id)
+            except Exception as e:
+                ultimo_err = f"{type(e).__name__}: {e}"
+                res_parte = None
+                continue
+            if isinstance(res_parte, dict) and res_parte.get("ok"):
+                ultimo_err = None
+                break
+            ultimo_err = (res_parte or {}).get("error", "respuesta sin ok") if isinstance(res_parte, dict) else "respuesta sin ok"
+        if ultimo_err is not None or not isinstance(res_parte, dict) or not res_parte.get("ok"):
+            marcar_estado(
+                id_ejecucion,
+                "envio_fallido",
+                {"error": ultimo_err or "respuesta sin ok", "parte_fallida": idx_parte, "total_partes": len(partes_msg)},
+                ruta_registro,
+            )
+            return {
+                "enviado": False,
+                "estado": "envio_fallido",
+                "motivo": ultimo_err or "respuesta sin ok",
+                "id_ejecucion": id_ejecucion,
+                "partes_enviadas": len(message_ids_texto),
+                "total_partes": len(partes_msg),
+            }
+        resultado = res_parte
+        message_ids_texto.append(res_parte.get("message_id"))
 
     # Imágenes de las tablas (no bloquean la confirmación del texto)
     ids_imagenes: list[Any] = []
@@ -4553,6 +4816,8 @@ def enviar_resumen(preparado: dict[str, Any], enviar_fn: Any,
                    "rutas": preparado.get("rutas")}, ruta_registro)
     return {"enviado": True, "estado": "envio_confirmado",
             "message_id": resultado.get("message_id"),
+            "message_ids": message_ids_texto,
+            "partes_enviadas": len(partes_msg),
             "imagenes_enviadas": len(ids_imagenes),
             "fallos_imagen": fallos_imagen,
             "id_ejecucion": id_ejecucion}
@@ -5431,6 +5696,8 @@ def registrar_en_ledger_oos(
             hora_inicio_partido=registro.get("hora_inicio_partido"),
             telegram_message_date=registro.get("telegram_message_date"),
             hora_mensaje_utc=registro.get("hora_mensaje_utc"),
+            telegram_envio=registro.get("telegram_envio"),
+            abstenido=bool(registro.get("abstenido")),
             hora_inicio_fotmob=registro.get("hora_inicio_fotmob"),
             hora_inicio_flashscore=registro.get("hora_inicio_flashscore"),
             diferencia_hora_inicio_min=registro.get("diferencia_hora_inicio_min"),
@@ -5574,17 +5841,19 @@ def ejecutar_analisis_modo_sombra(
     equipo_local: str,
     equipo_visitante: str,
     banderas_candidatas: dict[str, bool],
+    banderas_base: dict[str, bool] | None = None,
     **analizar_kwargs: Any,
 ) -> dict[str, Any]:
     """
-    Ejecuta el análisis oficial (`soloA`, banderas apagadas) y una corrida sombra con
-    `banderas_candidatas` activadas en memoria, retornando ambas versiones sin alterar
-    la versión publicada.
+    Ejecuta el análisis oficial (`soloA`, con `banderas_base` si se indican o apagadas)
+    y una corrida sombra con `banderas_candidatas` activadas en memoria, retornando
+    ambas versiones sin alterar la versión publicada.
     """
     from decision_cobertura import banderas_comportamiento
     import motor_mercados as mm
 
-    with banderas_comportamiento(activar_todas=False):
+    base_kw = {k: bool(v) for k, v in (banderas_base or {}).items()}
+    with banderas_comportamiento(activar_todas=False, **base_kw):
         an_base = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)
     with banderas_comportamiento(activar_todas=False, **{k: bool(v) for k, v in banderas_candidatas.items()}):
         an_sombra = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)
@@ -9680,6 +9949,7 @@ def resumen_ledger_oos(
     *,
     incluir_amistosos: bool = False,
     excluir_legacy_sin_fixture: bool = False,
+    directorio_pronosticos: str | None = None,
 ) -> dict[str, Any]:
     """
     Calcula promedios por partido y agregados de calibración desde `ledger_oos.jsonl`,
@@ -9689,6 +9959,7 @@ def resumen_ledger_oos(
     clasifican lógicamente como no-OOS (`legacy_sin_fixture`) sin reescribir hashes.
     """
     ruta = ruta_ledger or LEDGER_OOS_PATH
+    dir_snaps = _resolver_dir_pronosticos_para_ledger(ruta, directorio_pronosticos)
     verif = verificar_cadena_ledger_oos(ruta)
     registros = cargar_ledger_oos(ruta)
     excluidos: list[dict[str, Any]] = []
@@ -9702,7 +9973,7 @@ def resumen_ledger_oos(
     incluidos: list[dict[str, Any]] = []
     for r in registros:
         est_reg = str(r.get("estado_registro") or "liquidado").strip().lower()
-        cls_r = clasificar_oos_entrada_ledger(r)
+        cls_r = clasificar_oos_entrada_ledger(r, directorio_pronosticos=dir_snaps)
         es_leg = bool(cls_r["es_legacy_sin_fixture"])
         if es_leg:
             if est_reg == "pre_partido":
@@ -9726,12 +9997,12 @@ def resumen_ledger_oos(
         if est_reg == "pre_partido":
             continue
         if "es_oos_valido" in r:
-            if r.get("es_oos_valido") is not True:
+            if not cls_r["es_oos_valido"]:
                 excluidos_no_oos += 1
                 if es_leg:
                     excluidos_legacy_sin_fixture += 1
                 continue
-            if r.get("es_canonica") is not True:
+            if not cls_r["es_canonica"]:
                 excluidos_no_canonica += 1
                 continue
         elif es_leg and excluir_legacy_sin_fixture:
@@ -9788,6 +10059,7 @@ def resumen_ledger_oos(
         excluir_contaminados_diseno=False,
         umbral_excl_prob_alta=None,
         excluir_legacy_sin_fixture=True,
+        directorio_pronosticos=dir_snaps,
     )
     return {
         "ruta_ledger": ruta,
@@ -11311,8 +11583,13 @@ def registrar_sombra_prepartido_en_ledger_oos(
     _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)
     if _lp_pre is not None:
         registro["lambdas_plano"] = _lp_pre
+    _fm_pre = _extraer_firma_motor(preparado=preparado, metadatos=meta)
+    if _fm_pre is not None:
+        registro["firma_motor"] = _fm_pre
     if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
         registro["telegram_message_id"] = tg_m.get("message_id")
+    if isinstance(preparado.get("telegram_envio"), dict) and preparado.get("telegram_envio"):
+        registro["telegram_envio"] = dict(preparado["telegram_envio"])
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
     res["estado_registro"] = "pre_partido"
     res["snapshot_sha256"] = snapshot_sha
@@ -11454,6 +11731,7 @@ def liquidar_sombras_en_ledger_oos(
         registro = {
             "estado_registro": "liquidado",
             "id_trabajo": id_trab,
+            **({"firma_motor": _fm_liq} if (_fm_liq := _extraer_firma_motor(doc=doc, pre_ref=pre_ref, usar_defecto_modulo=False)) is not None else {}),
             "id_partido": id_part,
             "partido": partido,
             "fecha": fecha,
@@ -11466,6 +11744,9 @@ def liquidar_sombras_en_ledger_oos(
                 **({"zona_origen_hora_inicio": _z_hini_liq} if _z_hini_liq is not None else {}),
                 "telegram_message_date": _tg_dt_liq,
                 "hora_mensaje_utc": _hm_liq,
+                **({"telegram_envio": doc.get("telegram_envio")} if isinstance(doc.get("telegram_envio"), dict) and doc.get("telegram_envio") else (
+                    {"telegram_envio": pre_ref.get("telegram_envio")} if isinstance(pre_ref, dict) and isinstance(pre_ref.get("telegram_envio"), dict) and pre_ref.get("telegram_envio") else {}
+                )),
             } if (_fx_liq is not None or _hi_liq is not None or _tg_dt_liq is not None) else {}),
             **{
                 k_f: v_f
@@ -11572,7 +11853,7 @@ def extraer_observaciones_sombra_desde_ledger(
                 continue
             if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
                 continue
-            cls_obs = clasificar_oos_entrada_ledger(r)
+            cls_obs = clasificar_oos_entrada_ledger(r, directorio_pronosticos=_resolver_dir_pronosticos_para_ledger(ruta_ledger))
             if r.get("estado_canonico") == "no_canonica":
                 continue
             if r.get("telegram_message_date") is not None and r.get("es_oos_valido") is False:
@@ -11758,6 +12039,7 @@ def _metricas_subconjunto_ledger(
     excluir_contaminados_diseno: bool = False,
     umbral_excl_prob_alta: float | None = None,
     excluir_legacy_sin_fixture: bool = False,
+    directorio_pronosticos: str | None = None,
 ) -> dict[str, Any]:
     """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral y legacy sin fixture."""
     incluidos: list[dict[str, Any]] = []
@@ -11769,14 +12051,14 @@ def _metricas_subconjunto_ledger(
     for r in registros:
         if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
             continue
-        cls_m = clasificar_oos_entrada_ledger(r)
+        cls_m = clasificar_oos_entrada_ledger(r, directorio_pronosticos=directorio_pronosticos)
         if "es_oos_valido" in r:
-            if r.get("es_oos_valido") is not True:
+            if not cls_m["es_oos_valido"]:
                 n_excluidos_no_oos += 1
                 if cls_m["es_legacy_sin_fixture"]:
                     n_excluidos_legacy += 1
                 continue
-            if r.get("es_canonica") is not True:
+            if not cls_m["es_canonica"]:
                 continue
         elif excluir_legacy_sin_fixture and cls_m["es_legacy_sin_fixture"]:
             n_excluidos_no_oos += 1

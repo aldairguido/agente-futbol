@@ -456,6 +456,7 @@ def test_b6_hora_inicio_discrepante_guarda_ambas_y_marca_no_oos_si_mayor_15_min(
         fuente_fecha="fixture",
         hora_inicio_partido="2026-11-19T22:30:00Z",
         telegram_message_date="2026-11-19T09:14:00Z",
+        telegram_envio={"message_id": 1001, "message_date_utc": "2026-11-19T09:14:10Z"},
         hora_inicio_fotmob="2026-11-19T22:30:00Z",
         hora_inicio_flashscore="2026-11-19T22:40:00Z",
     )

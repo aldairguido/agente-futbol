@@ -1287,16 +1287,33 @@ _RE_SUFIJO_FASE_LIGA = re.compile(
 )
 
 
+def _compilar_patron_categoria(keyword: str) -> re.Pattern:
+    kw = (keyword or "").strip().lower()
+    if kw == "femenin":
+        return re.compile(r"(?<!\w)femenin[a-z]*(?!\w)", re.IGNORECASE)
+    return re.compile(r"(?<!\w)" + re.escape(kw) + r"(?!\w)", re.IGNORECASE)
+
+
+_PATRONES_FEMENINO: Tuple[re.Pattern, ...] = tuple(
+    _compilar_patron_categoria(k) for k in _KEYWORDS_FEMENINO
+)
+_PATRONES_JUVENIL: Tuple[re.Pattern, ...] = tuple(
+    _compilar_patron_categoria(k) for k in _KEYWORDS_JUVENIL
+)
+
+
 def detectar_categoria_desde_texto(texto_liga_o_equipo: str) -> Tuple[bool, bool]:
     """
     Detecta si el usuario pidió fútbol Femenino o Juvenil/Sub desde el texto del comando.
+    Usa límites de palabra para evitar falsos positivos por subcadena
+    (ej. "liga f" dentro de "bundesliga fc" o "laliga fc").
     Devuelve (es_femenino_pedido, es_juvenil_pedido).
     """
     low = (texto_liga_o_equipo or "").lower()
     norm = normalizar_texto(texto_liga_o_equipo)
     combinado = f"{low} {norm}"
-    es_femenino_pedido = any(k in combinado for k in _KEYWORDS_FEMENINO)
-    es_juvenil_pedido = any(k in combinado for k in _KEYWORDS_JUVENIL)
+    es_femenino_pedido = any(p.search(combinado) is not None for p in _PATRONES_FEMENINO)
+    es_juvenil_pedido = any(p.search(combinado) is not None for p in _PATRONES_JUVENIL)
     return es_femenino_pedido, es_juvenil_pedido
 
 

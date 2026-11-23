@@ -659,8 +659,20 @@ def cmd_estado(message):
 
     from agente_consciente import obtener_agente_consciente
     conciencia = obtener_agente_consciente()
-    brier_val = (getattr(conciencia, "evaluacion_real", {}) or {}).get("brier")
-    brier_str = f" | Brier: `{brier_val:.4f}`" if isinstance(brier_val, (int, float)) else ""
+    ev_real = getattr(conciencia, "evaluacion_real", {}) or {}
+    n_oos = int(ev_real.get("partidos_oos_validos") or 0)
+    ac_oos = int(ev_real.get("ganadas_oos") or 0)
+    err_oos = int(ev_real.get("perdidas_oos") or 0)
+    wr_oos = float(ev_real.get("win_rate_oos") or (ac_oos / (ac_oos + err_oos) if (ac_oos + err_oos) > 0 else 0.0))
+    brier_val = ev_real.get("brier_oos")
+    brier_str = f" | Brier OOS: `{brier_val:.4f}`" if isinstance(brier_val, (int, float)) else ""
+    cuotas_validadas = bool(ev_real.get("cuotas_reales_validadas", False))
+    if n_oos < 30:
+        estado_emocional_txt = "EN CALIBRACIÓN EMPÍRICA (MUESTRA EN DESARROLLO)"
+    else:
+        estado_emocional_txt = str(getattr(conciencia, "estado_adaptativo", "en calibración empírica (muestra en desarrollo)")).upper()
+        if (not cuotas_validadas) and ("+EV VALIDADO" in estado_emocional_txt):
+            estado_emocional_txt = estado_emocional_txt.replace("+EV VALIDADO", "SIN CUOTAS REALES VALIDADAS")
     pool_modelos = len(getattr(getattr(conciencia, "motor_neuronal", None), "modelos", []) or [1])
 
     texto = (
@@ -670,11 +682,12 @@ def cmd_estado(message):
         f"• *Estado del Demonio:* 🟢 Online (Listener Activo)\n"
         f"• *Núcleo Agéntico:* 🧠 Antigravity ReAct + 4 Sub-Agentes Activos\n"
         f"• *Barrido en curso:* {estado_barrido}\n"
-        f"• *Estado Emocional:* `{conciencia.estado_adaptativo.upper()}`\n"
+        f"• *Estado Emocional:* `{estado_emocional_txt}`\n"
+        f"• *Muestra OOS:* `OOS válidos: {n_oos}/30`\n"
         f"• *Fase Cognitiva:* `{getattr(conciencia, 'fase_cognitiva', 'reposo').upper()}`\n"
         f"• *Nivel de Madurez:* `{conciencia.nivel_madurez} XP`\n"
-        f"• *Memoria Vivencial:* {conciencia.aciertos} aciertos | {conciencia.errores} fallos "
-        f"(Win Rate: `{conciencia.win_rate:.1%}`{brier_str})\n"
+        f"• *Memoria Vivencial (OOS válidos canónicos):* {ac_oos} aciertos | {err_oos} fallos "
+        f"(Win Rate: `{wr_oos:.1%}`{brier_str})\n"
         "• *Modo Fail-Safe:* 🛡️ ACTIVO (Anti-NaN/Inf, Kolmogorov 100%)\n"
         "• *Autenticación:* 🔐 Verificación en tiempo real contra Betsson\n"
         "• *Filtro de Ineficiencia:* 🎯 +EV >= +5.0% (Margen estricto)\n"
@@ -1963,17 +1976,6 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             snapshot = evaluacion.snapshot_desde_analisis(preparado, telegram_meta=telegram_meta)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
             try:
-                res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
-                    preparado, ruta_snapshot=ruta_snap
-                )
-                if res_led_pre.get("registrado"):
-                    print(
-                        f"[BOT TELEGRAM] 🔗 Sombra pre-partido en ledger OOS: "
-                        f"idx={res_led_pre.get('indice')} sha={str(res_led_pre.get('sha256') or '')[:12]}"
-                    )
-            except Exception as _e_led:
-                print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
-            try:
                 rel_snap = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
             except Exception:
                 rel_snap = os.path.relpath(ruta_snap, str(BASE_DIR)).replace("\\", "/")
@@ -2012,7 +2014,24 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 bot, chat_id,
                 f"📝 *Modo borrador*: análisis listo, nada enviado.\n"
                 f"• Selecciones > {umbral:.0%}: `{len(analisis.selecciones_filtradas)}`\n"
-                f"• Informe: `{preparado['rutas']['informe']}`{ruta_img_txt}{ruta_val_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
+                f"• Informe: `{(preparado.get('rutas') or {}).get('informe') or 'no generado'}`{ruta_img_txt}{ruta_val_txt}{ruta_cuadro_txt}{ruta_h2h_txt}")
+            return
+
+        rutas_prep = preparado.get("rutas") if isinstance(preparado.get("rutas"), dict) else {}
+        ruta_img_abs = preparado.get("ruta_imagen") or rutas_prep.get("imagen")
+        if preparado.get("abstenido") and (not ruta_img_abs or not os.path.exists(str(ruta_img_abs))):
+            est_abs = str(preparado.get("estado_cobertura") or "abstenido").strip()
+            mot_abs = str(preparado.get("motivo_abstencion") or "").strip()
+            msg_abs = str(preparado.get("analisis_texto_3_parrafos") or "").strip()
+            if not msg_abs:
+                msg_abs = (
+                    f"🚨 PRONÓSTICO ABSTENIDO ({est_abs.upper()})\n\n"
+                    f"{mot_abs or 'No se cumplen las condiciones de calidad o cobertura para publicar pronósticos.'}"
+                )
+            elif mot_abs and mot_abs not in msg_abs:
+                msg_abs = f"{msg_abs}\n\nMotivo: {mot_abs}"
+            enviar_seguro(bot, chat_id, msg_abs)
+            print(f"[BOT TELEGRAM] 🚨 Abstención enviada como texto ({est_abs}, id {preparado.get('id_trabajo')})")
             return
 
         resultado = servicio.enviar_analisis(
@@ -2022,14 +2041,21 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             nueva_ejecucion=True)
         if not resultado.get("enviado"):
             # Texto plano: la ruta lleva guiones bajos que rompen Markdown
-            ruta_guardada = preparado['rutas'].get('imagen') or preparado['rutas']['informe']
+            ruta_guardada = rutas_prep.get('imagen') or rutas_prep.get('informe') or 'no disponible'
             motivo = resultado.get('motivo', '')
-            if "ya confirmado previamente" in motivo:
+            if preparado.get("abstenido"):
+                est_abs = str(preparado.get("estado_cobertura") or "abstenido").strip()
+                mot_abs = str(preparado.get("motivo_abstencion") or motivo or "").strip()
+                msg_abs = str(preparado.get("analisis_texto_3_parrafos") or "").strip() or (
+                    f"🚨 PRONÓSTICO ABSTENIDO ({est_abs.upper()})\n\n{mot_abs}"
+                )
+                enviar_seguro(bot, chat_id, msg_abs)
+            elif "ya confirmado previamente" in motivo:
                 enviar_seguro(
                     bot, chat_id,
                     f"ℹ️ Este análisis ya fue generado y enviado previamente a Telegram.\n"
-                    f"• Ticket: {preparado['rutas'].get('imagen')}\n"
-                    f"• Informe completo: {preparado['rutas']['informe']}")
+                    f"• Ticket: {rutas_prep.get('imagen') or 'no disponible'}\n"
+                    f"• Informe completo: {rutas_prep.get('informe') or 'no disponible'}")
             else:
                 enviar_seguro(
                     bot, chat_id,
@@ -2045,6 +2071,19 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                         telegram_envio=resultado.get("telegram_envio"),
                         ids_telegram=resultado.get("ids_telegram"),
                     )
+                    if isinstance(resultado.get("telegram_envio"), dict) and resultado.get("telegram_envio"):
+                        preparado["telegram_envio"] = dict(resultado["telegram_envio"])
+                    try:
+                        res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
+                            preparado, ruta_snapshot=ruta_snap
+                        )
+                        if res_led_pre.get("registrado"):
+                            print(
+                                f"[BOT TELEGRAM] 🔗 Sombra pre-partido en ledger OOS (con acuse): "
+                                f"idx={res_led_pre.get('indice')} sha={str(res_led_pre.get('sha256') or '')[:12]}"
+                            )
+                    except Exception as _e_led:
+                        print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
                     try:
                         rel_snap_ack = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
                     except Exception:

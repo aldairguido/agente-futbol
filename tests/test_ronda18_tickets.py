@@ -817,6 +817,7 @@ def test_bloque_m_contabilidad_oos_canonica_y_compatibilidad_ledger(tmp_path) ->
             "contexto": dict(an_c.metadatos),
             "rutas": {"informe": "dummy.md"},
             "telegram_meta": {"message_id": 100, "message_date": tg_ts},
+            "telegram_envio": {"message_id": 101, "message_date": tg_ts},
             "modo_sombra": {
                 "esquema": "sombra-v1",
                 "version_base": "soloA",
@@ -888,12 +889,12 @@ def test_bloque_m_contabilidad_oos_canonica_y_compatibilidad_ledger(tmp_path) ->
     ep.registrar_en_ledger_oos({
         "estado_registro": "liquidado", "id_partido": "P1", "partido": "A vs B", "fecha": "2026-11-18",
         "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
-        "telegram_message_date": ts_pre_1, "resumen": {"aciertos": 4, "fallos": 0, "n_evaluables": 4, "brier": 0.1},
+        "telegram_message_date": ts_pre_1, "telegram_envio": {"message_id": 201, "message_date": ts_pre_1}, "resumen": {"aciertos": 4, "fallos": 0, "n_evaluables": 4, "brier": 0.1},
     }, ruta_ledger=ruta_led_liq)
     ep.registrar_en_ledger_oos({
         "estado_registro": "liquidado", "id_partido": "P2", "partido": "A vs B", "fecha": "2026-11-18",
         "fixture_confirmado": True, "fuente_fecha": "fixture", "hora_inicio_partido": hora_ini,
-        "telegram_message_date": ts_pre_2, "resumen": {"aciertos": 1, "fallos": 3, "n_evaluables": 4, "brier": 0.5},
+        "telegram_message_date": ts_pre_2, "telegram_envio": {"message_id": 202, "message_date": ts_pre_2}, "resumen": {"aciertos": 1, "fallos": 3, "n_evaluables": 4, "brier": 0.5},
     }, ruta_ledger=ruta_led_liq)
     ep.registrar_en_ledger_oos({
         "estado_registro": "liquidado", "id_partido": "P3", "partido": "C vs D", "fecha": "2026-11-18",

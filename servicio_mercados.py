@@ -3248,12 +3248,53 @@ def preparar_analisis(
     contexto["datos_hasta_visitante"] = _fechas_dh["datos_hasta_visitante"]
     contexto["datos_hasta"] = _fechas_dh["datos_hasta"]
 
-    # ── Ronda 22 Bloque 2: Abstención por FALSO HOMÓNIMO EXTRANJERO y datos_desactualizados ──
+    # ── Ronda 22 Bloque 2 + Ronda 25 Bloque 3: Abstención por desajuste femenino, FALSO HOMÓNIMO EXTRANJERO y datos_desactualizados ──
     _abstencion_calidad_estado: str | None = None
     _abstencion_calidad_motivo: str = ""
     _abstencion_calidad_detalle: dict[str, Any] = {}
 
-    _coh_ctx = ctx.get("coherencia_competitiva")
+    # Guarda Ronda 25 (Bloque 3): abstenerse con motivo explícito si se resolvió un equipo (W)/femenino sin pedirlo
+    try:
+        from resolvedor_entidades import detectar_categoria_desde_texto as _det_cat_r25
+        from resolvedor_entidades import _RE_CANDIDATO_FEMENINO as _re_fem_r25
+        _liga_req_txt = liga.get("nombre", "") if isinstance(liga, dict) else str(liga or "")
+        _pedido_cat_txt = f"{_liga_req_txt} {texto_o_equipo_a or ''} {equipo_b or ''}"
+        _es_fem_pedido, _ = _det_cat_r25(_pedido_cat_txt)
+        if not _es_fem_pedido:
+            _equipos_fem_detectados: list[str] = []
+            for _lado_lbl, _nom_ctx_k, _doc_k in (
+                ("local", "equipo_local", "doc_local"),
+                ("visitante", "equipo_visitante", "doc_visitante"),
+            ):
+                _doc_lado = contexto.get(_doc_k) if isinstance(contexto.get(_doc_k), dict) else {}
+                _eq_lado = _doc_lado.get("equipo") if isinstance(_doc_lado.get("equipo"), dict) else {}
+                _nom_res = str(contexto.get(_nom_ctx_k) or _eq_lado.get("nombre") or "").strip()
+                _nom_doc = str(_eq_lado.get("nombre") or "").strip()
+                _liga_doc = str(_eq_lado.get("liga") or "").strip()
+                _es_fem_lado = bool(
+                    _re_fem_r25.search(_nom_res)
+                    or _re_fem_r25.search(_nom_doc)
+                    or (_liga_doc and _det_cat_r25(_liga_doc)[0])
+                )
+                if _es_fem_lado:
+                    _equipos_fem_detectados.append(f"{_lado_lbl}: {_nom_res or _nom_doc}")
+            if _equipos_fem_detectados:
+                _abstencion_calidad_estado = "desajuste_categoria_femenino"
+                _abstencion_calidad_motivo = (
+                    "Desajuste de categoría: se resolvió un equipo femenino ("
+                    + ", ".join(_equipos_fem_detectados)
+                    + ") sin que el usuario solicitara fútbol femenino."
+                )
+                _abstencion_calidad_detalle = {
+                    "desajuste_categoria": {
+                        "equipos_femeninos": _equipos_fem_detectados,
+                        "pedido_femenino": False,
+                    }
+                }
+    except Exception:
+        pass
+
+    _coh_ctx = ctx.get("coherencia_competitiva") if _abstencion_calidad_estado is None else {}
     if not isinstance(_coh_ctx, dict) or not _coh_ctx:
         _pais_coh = str(
             ctx.get("pais_iso")
@@ -3273,7 +3314,8 @@ def preparar_analisis(
             except Exception:
                 _coh_ctx = {}
     if (
-        isinstance(_coh_ctx, dict)
+        _abstencion_calidad_estado is None
+        and isinstance(_coh_ctx, dict)
         and not _coh_ctx.get("coherente", True)
         and str(_coh_ctx.get("estado") or "").strip().upper() == "FALSO HOMÓNIMO EXTRANJERO"
     ):
