@@ -219,6 +219,7 @@ class SnapshotPronostico:
     lambdas_plano: dict[str, Any] | None = None
     lambdas_base_doble_adn: dict[str, Any] | None = None
     inputs_sha256: str | None = None
+    firma_motor: str | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -293,6 +294,8 @@ class SnapshotPronostico:
             out["lambdas_base_doble_adn"] = self.lambdas_base_doble_adn
         if self.inputs_sha256 is not None:
             out["inputs_sha256"] = self.inputs_sha256
+        if self.firma_motor is not None:
+            out["firma_motor"] = self.firma_motor
         return out
 
 
@@ -1319,6 +1322,35 @@ def adjuntar_acuse_telegram_snapshot(
     }
 
 
+def _extraer_firma_motor(
+    *,
+    preparado: dict[str, Any] | None = None,
+    metadatos: dict[str, Any] | None = None,
+    doc: dict[str, Any] | None = None,
+    pre_ref: dict[str, Any] | None = None,
+    usar_defecto_modulo: bool = True,
+) -> str | None:
+    """Extrae `firma_motor` (opcional y compatible hacia atrás) de metadatos/snapshot/ledger o servicio_mercados."""
+    for src in (preparado, metadatos, doc, pre_ref):
+        if isinstance(src, dict):
+            fm = src.get("firma_motor")
+            if isinstance(fm, str) and fm.strip():
+                return fm.strip()
+            mod = src.get("modelo")
+            if isinstance(mod, dict):
+                fm_m = mod.get("firma_motor")
+                if isinstance(fm_m, str) and fm_m.strip():
+                    return fm_m.strip()
+    if usar_defecto_modulo:
+        try:
+            from servicio_mercados import FIRMA_MOTOR
+            if isinstance(FIRMA_MOTOR, str) and FIRMA_MOTOR.strip():
+                return FIRMA_MOTOR.strip()
+        except Exception:
+            pass
+    return None
+
+
 def snapshot_desde_analisis(preparado: dict[str, Any],
                             publicado_en: str | None = None,
                             modo_sombra: dict[str, Any] | None = None,
@@ -1426,6 +1458,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
             referencia=(preparado.get("rutas") or {}).get("informe") or "",
             abstenido=True,
             estado_cobertura=est_cob,
+            firma_motor=_extraer_firma_motor(preparado=preparado, metadatos=metadatos),
             motivo_abstencion=mot_abs,
             decision_cobertura=dec_cob,
             telegram_message_id=tg_mid,
@@ -1573,6 +1606,7 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         lambdas_plano=lam_plano_snap,
         lambdas_base_doble_adn=lam_base_adn_snap,
         inputs_sha256=inp_sha_snap,
+        firma_motor=_extraer_firma_motor(preparado=preparado, metadatos=metadatos),
     )
 
 
@@ -11468,6 +11502,9 @@ def registrar_sombra_prepartido_en_ledger_oos(
     _lp_pre = extraer_lambdas_plano_desde_analisis(analisis, preparado)
     if _lp_pre is not None:
         registro["lambdas_plano"] = _lp_pre
+    _fm_pre = _extraer_firma_motor(preparado=preparado, metadatos=meta)
+    if _fm_pre is not None:
+        registro["firma_motor"] = _fm_pre
     if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
         registro["telegram_message_id"] = tg_m.get("message_id")
     if isinstance(preparado.get("telegram_envio"), dict) and preparado.get("telegram_envio"):
@@ -11613,6 +11650,7 @@ def liquidar_sombras_en_ledger_oos(
         registro = {
             "estado_registro": "liquidado",
             "id_trabajo": id_trab,
+            **({"firma_motor": _fm_liq} if (_fm_liq := _extraer_firma_motor(doc=doc, pre_ref=pre_ref, usar_defecto_modulo=False)) is not None else {}),
             "id_partido": id_part,
             "partido": partido,
             "fecha": fecha,

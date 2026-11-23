@@ -526,3 +526,84 @@ def test_b7_estado_con_35_oos_sin_cuotas_nunca_muestra_ev_validado():
     assert len(enviados) == 1
     assert "OOS válidos: 35/30" in enviados[0]
     assert "+EV VALIDADO" not in enviados[0]
+
+
+# =====================================================================
+# BLOQUE 8: Campo explícito firma_motor en snapshot y ledger (opcional)
+# =====================================================================
+
+def test_b8_firma_motor_en_snapshot_y_ledger_compatible_hacia_atras(tmp_path):
+    import evaluacion_pronosticos as ep
+    from servicio_mercados import FIRMA_MOTOR
+
+    # 1) SnapshotPronostico sin firma_motor omite la clave (retrocompatible)
+    s_old = ep.SnapshotPronostico(
+        id_trabajo="old_1",
+        equipos={"local": "A", "visitante": "B"},
+        partido={"fecha": "2026-11-22"},
+        generado_en="2026-11-22T12:00:00Z",
+        publicado_en=None,
+        modelo={"nombre": "m", "version": "1"},
+        datos_corte={},
+        selecciones=[],
+        selecciones_publicadas=[],
+        umbral_publicado=0.70,
+        referencia="",
+    )
+    assert "firma_motor" not in s_old.a_dict()
+
+    # 2) snapshot_desde_analisis y registrar_sombra_prepartido_en_ledger_oos guardan firma_motor explícito
+    motor_fake = SimpleNamespace(
+        tasas=SimpleNamespace(lambda_local_ft=1.4, lambda_visitante_ft=1.1),
+        muestras={
+            "local_general": SimpleNamespace(partidos_general=15),
+            "visitante_general": SimpleNamespace(partidos_general=15),
+            "local_cond": SimpleNamespace(partidos_condicion=8),
+            "visitante_cond": SimpleNamespace(partidos_condicion=8),
+        },
+        recursivo={},
+    )
+    an_fake = SimpleNamespace(
+        metadatos={
+            "equipo_local": "Club A",
+            "equipo_visitante": "Club B",
+            "fecha_partido": "2026-11-25",
+            "competicion": "LaLiga",
+            "generado_en": "2026-11-22T12:00:00Z",
+            "fixture_confirmado": True,
+            "hora_inicio_partido": "2026-11-25T20:00:00Z",
+        },
+        parametros=SimpleNamespace(umbral=0.70, w_condicion=0.5, w_xg=0.5, distribucion_conteos="poisson"),
+        motor=motor_fake,
+        mercados=[],
+        selecciones_filtradas=[],
+        abstenido=False,
+    )
+    prep = {
+        "id_trabajo": "r25_fm_01",
+        "analisis": an_fake,
+        "contexto": dict(an_fake.metadatos),
+        "rutas": {"informe": "dummy.md"},
+        "telegram_envio": {"message_id": 55, "message_date": 1795350000, "message_date_utc": "2026-11-22T12:20:00Z"},
+        "modo_sombra": {
+            "esquema": "sombra-v2-tribrazo",
+            "publicado": "soloA",
+            "version_base": "soloA",
+            "version_sombra": "A+B",
+            "lambdas_base": {"local": 1.4, "visitante": 1.1},
+            "lambdas_sombra": {"local": 1.4, "visitante": 1.1},
+            "comparaciones": [],
+            "n_selecciones_comparables": 0,
+        },
+    }
+    snap = ep.snapshot_desde_analisis(prep)
+    snap_d = snap.a_dict()
+    assert snap_d["firma_motor"] == FIRMA_MOTOR
+
+    ruta_led = str(tmp_path / "ledger_fm.jsonl")
+    r_pre = ep.registrar_sombra_prepartido_en_ledger_oos(prep, ruta_ledger=ruta_led)
+    assert r_pre["registrado"] is True
+    regs = ep.cargar_ledger_oos(ruta_led)
+    assert len(regs) == 1
+    assert regs[0]["firma_motor"] == FIRMA_MOTOR
+    assert ep.verificar_cadena_ledger_oos(ruta_led)["ok"] is True
