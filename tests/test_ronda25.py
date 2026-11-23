@@ -259,3 +259,49 @@ def test_b3_guarda_abstencion_si_resuelve_equipo_w_sin_pedirlo(monkeypatch):
     assert res["estado_cobertura"] == "desajuste_categoria_femenino"
     assert "femenino" in res["motivo_abstencion"].lower()
     assert res["rutas"] == {}
+
+
+# =====================================================================
+# BLOQUE 4: validar_coherencia_competitiva_local_visita — Barcelona vs Villareal
+# =====================================================================
+
+def test_b4_equipo_sin_historial_ni_ligas_no_es_falso_homonimo_extranjero():
+    from auditoria_historica import validar_coherencia_competitiva_local_visita
+
+    audit_barcelona = {
+        "equipo": {"id": "8634", "nombre": "Barcelona", "liga": "LaLiga", "pais_iso": "ESP"},
+        "partidos": [
+            {"torneo": "LaLiga", "rival": "Real Madrid"},
+            {"torneo": "Champions League", "rival": "PSG"},
+        ],
+    }
+    audit_villareal_sin_resolver = {
+        "equipo": {"id": None, "nombre": "Villareal", "liga": "", "pais_iso": "UNK"},
+        "partidos": [],
+    }
+    res = validar_coherencia_competitiva_local_visita(
+        audit_barcelona, audit_villareal_sin_resolver, pais_iso="ESP"
+    )
+    assert res["estado"] != "FALSO HOMÓNIMO EXTRANJERO"
+    assert res["estado"] == "SIN_HISTORIAL_COMPARABLE"
+    assert res["falso_homonimo"] is None
+    assert res["coherente"] is True
+
+
+def test_b4_falso_homonimo_extranjero_real_sigue_detectandose():
+    from auditoria_historica import validar_coherencia_competitiva_local_visita
+
+    audit_local = {
+        "equipo": {"id": "1", "nombre": "Aurora", "liga": "Division Profesional", "pais_iso": "BOL"},
+        "partidos": [{"torneo": "Division Profesional", "rival": "Bolivar"}],
+    }
+    audit_visita_extranjero = {
+        "equipo": {"id": "2", "nombre": "CD Universitario", "liga": "LPF Apertura", "pais_iso": "PAN"},
+        "partidos": [{"torneo": "LPF Apertura", "rival": "Tauro"}],
+    }
+    res = validar_coherencia_competitiva_local_visita(
+        audit_local, audit_visita_extranjero, pais_iso="BOL"
+    )
+    assert res["coherente"] is False
+    assert res["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
+    assert res["falso_homonimo"] == "visita"

@@ -317,6 +317,27 @@ def validar_coherencia_competitiva_local_visita(
         if iso_eq_v == iso_esp:
             ok_pais_v = True
 
+    # Ronda 25 (Bloque 4): Si uno de los equipos no tiene partidos ni ligas resueltas
+    # (ej. club no resuelto por typo como "Villareal" con id=None y 0 partidos) y no hay
+    # evidencia de país extranjero incompatible, NO es un FALSO HOMÓNIMO EXTRANJERO.
+    sin_datos_local = (len((audit_local.get("partidos") or []) if isinstance(audit_local, dict) else []) == 0 and not ligas_raw_l)
+    sin_datos_visita = (len((audit_visita.get("partidos") or []) if isinstance(audit_visita, dict) else []) == 0 and not ligas_raw_v)
+    if (sin_datos_local or sin_datos_visita) and ok_pais_l and ok_pais_v:
+        return ResultadoCoherenciaCompetitiva({
+            "coherente": True,
+            "estado": "SIN_HISTORIAL_COMPARABLE",
+            "falso_homonimo": None,
+            "equipo_invalido": None,
+            "ligas_local": sorted(ligas_raw_l),
+            "ligas_visita": sorted(ligas_raw_v),
+            "ligas_comunes": sorted(ligas_comunes),
+            "rivales_comunes": sorted(rivales_comunes),
+            "motivo": (
+                "Historial o ligas ausentes en uno de los equipos (sin evidencia extranjera): "
+                "no corresponde clasificar como FALSO HOMÓNIMO EXTRANJERO."
+            ),
+        })
+
     # Condición de rechazo: 0 ligas en común Y 0 rivales en común
     sin_ligas_ni_rivales_comunes = (len(ligas_comunes) == 0 and len(rivales_comunes) == 0)
     # Excepción únicamente para mocks sintéticos vacíos donde ambos equipos son del mismo país y no traen rivales ni torneos en partidos
