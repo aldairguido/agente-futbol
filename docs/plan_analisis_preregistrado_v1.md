@@ -34,3 +34,10 @@ C. Ronda 26 (motor_autonomo): no es brazo del plan. Su informe fue invalidado (f
 D. Sección 1 vs Sección 2 (regla operativa, sin validación): análisis exploratorio. Unidad = píldoras deduplicadas; IC bootstrap por partido de la diferencia de brecha (S1−S2), n mínimo 30 partidos para reportar.
 E. Baseline adicional para píldoras (regla operativa, sin validación): frecuencia histórica de la misma línea en la muestra de 15 partidos de cada club (baseline empírico), además de B0 uniforme.
 --- FIN ---
+--- ENMIENDA 4b (2026-11-23 20:26:24Z; regla operativa, sin validación; reemplaza los marcadores [LIGAS...] y [N] de 4A) ---
+A'. Universo elegible (regla operativa, sin validación): partidos competitivos (no amistosos) de cualquier liga, con fixture confirmado por la fuente de datos (FotMob), masculinos y de categoría absoluta. Femenino y juveniles pueden consultarse, pero cuentan aparte, no en el lote protocolizado.
+B'. Orden (regla operativa, sin validación): por hora de inicio ascendente dentro del día calendario de America/Lima. La tanda de cada día debe ser un prefijo contiguo de esa lista: se puede parar en cualquier punto, pero no saltarse ningún partido elegible anterior al último consultado. No hay tope fijo por día.
+C'. Consulta con al menos 2 horas de antelación al inicio. Todo partido consultado cuenta en el denominador, incluidos abstenidos y fallos técnicos. Solo los OOS válidos y canónicos cuentan para el objetivo n≥30.
+D'. Auditoría de omisiones (regla operativa, sin validación): tras cada jornada se lista (con FotMob) los partidos elegibles con inicio anterior al último consultado y no consultados. Si hay alguno, se reporta como "omitido" y el lote de ese día se marca no protocolizado.
+E'. Esta enmienda rige solo para consultas posteriores a su commit. Lo anterior (lote n=9) sigue como "exploratorio" según 4B.
+--- FIN ---
