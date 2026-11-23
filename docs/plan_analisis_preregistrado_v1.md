@@ -27,3 +27,10 @@ A. Universo y liquidación: el análisis incluye todas las entradas OOS válidas
 B. Línea base: se añade el brazo de referencia B0 (1X2: 1/3 cada resultado; Over/Under 2.5 y BTTS: 0,5). Se reporta la habilidad como 1 − Brier/Brier(B0) para cada brazo y mercado. Un brazo solo se considera con habilidad si su Brier medio es menor que el de B0 en los tres mercados primarios; comparar brazos entre sí no basta.
 C. Selección de partidos: el criterio con el que se eligió cada lote de consultas se registra por escrito antes de ver su resultado; si no se declaró, se reporta como "criterio no declarado".
 D. Lectura intermedia n=9 (2026-11-22): solo descriptiva. Ningún brazo cumple el criterio del punto 5 del plan; no se toma ninguna decisión.
+--- ENMIENDA 4 (2026-11-23 20:20:20Z; regla operativa, sin validación) ---
+A. Protocolo de selección de partidos para los siguientes OOS (regla operativa, sin validación): se consultarán partidos competitivos (no amistosos) de [LIGAS A COMPLETAR POR EL USUARIO], con fixture confirmado, consultados al menos 2 horas antes del inicio, en orden cronológico de inicio, hasta [N] por día. No se elige por confianza del modelo, por resultado esperado ni por equipos favoritos. Todo partido consultado cuenta, incluidos los abstenidos y los que fallen técnicamente (se reportan aparte en el denominador).
+B. Lote previo (n=9, entradas 13, 14, 22–28): criterio de selección no declarado; se marca "lote exploratorio" y se reporta aparte del lote protocolizado.
+C. Ronda 26 (motor_autonomo): no es brazo del plan. Su informe fue invalidado (fuga in-match y datos sintéticos). Cualquier uso futuro requiere otra enmienda y un registro prospectivo propio.
+D. Sección 1 vs Sección 2 (regla operativa, sin validación): análisis exploratorio. Unidad = píldoras deduplicadas; IC bootstrap por partido de la diferencia de brecha (S1−S2), n mínimo 30 partidos para reportar.
+E. Baseline adicional para píldoras (regla operativa, sin validación): frecuencia histórica de la misma línea en la muestra de 15 partidos de cada club (baseline empírico), además de B0 uniforme.
+--- FIN ---
