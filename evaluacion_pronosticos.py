@@ -4628,19 +4628,47 @@ def enviar_resumen(preparado: dict[str, Any], enviar_fn: Any,
 
     marcar_estado(id_ejecucion, "resumen_preparado",
                   {"rutas": preparado.get("rutas")}, ruta_registro)
+    mensaje_completo = str(preparado.get("mensaje") or "")
     try:
-        resultado = enviar_fn(preparado["mensaje"], chat_id)
-    except Exception as e:
-        marcar_estado(id_ejecucion, "envio_fallido",
-                      {"error": f"{type(e).__name__}: {e}"}, ruta_registro)
-        return {"enviado": False, "estado": "envio_fallido",
-                "motivo": f"{type(e).__name__}: {e}", "id_ejecucion": id_ejecucion}
-    if not isinstance(resultado, dict) or not resultado.get("ok"):
-        marcar_estado(id_ejecucion, "envio_fallido",
-                      {"respuesta": resultado}, ruta_registro)
-        return {"enviado": False, "estado": "envio_fallido",
-                "motivo": (resultado or {}).get("error", "respuesta sin ok"),
-                "id_ejecucion": id_ejecucion}
+        from servicio_mercados import partir_mensaje as _partir_msg_eval
+        partes_msg = _partir_msg_eval(mensaje_completo, limite=3950) or [mensaje_completo]
+    except Exception:
+        partes_msg = [mensaje_completo[i:i + 4000] for i in range(0, len(mensaje_completo), 4000)] or [""]
+
+    message_ids_texto: list[Any] = []
+    resultado: dict[str, Any] = {}
+    max_intentos = 3
+    for idx_parte, trozo in enumerate(partes_msg, start=1):
+        ultimo_err: str | None = None
+        res_parte: Any = None
+        for intento in range(1, max_intentos + 1):
+            try:
+                res_parte = enviar_fn(trozo, chat_id)
+            except Exception as e:
+                ultimo_err = f"{type(e).__name__}: {e}"
+                res_parte = None
+                continue
+            if isinstance(res_parte, dict) and res_parte.get("ok"):
+                ultimo_err = None
+                break
+            ultimo_err = (res_parte or {}).get("error", "respuesta sin ok") if isinstance(res_parte, dict) else "respuesta sin ok"
+        if ultimo_err is not None or not isinstance(res_parte, dict) or not res_parte.get("ok"):
+            marcar_estado(
+                id_ejecucion,
+                "envio_fallido",
+                {"error": ultimo_err or "respuesta sin ok", "parte_fallida": idx_parte, "total_partes": len(partes_msg)},
+                ruta_registro,
+            )
+            return {
+                "enviado": False,
+                "estado": "envio_fallido",
+                "motivo": ultimo_err or "respuesta sin ok",
+                "id_ejecucion": id_ejecucion,
+                "partes_enviadas": len(message_ids_texto),
+                "total_partes": len(partes_msg),
+            }
+        resultado = res_parte
+        message_ids_texto.append(res_parte.get("message_id"))
 
     # Imágenes de las tablas (no bloquean la confirmación del texto)
     ids_imagenes: list[Any] = []
@@ -4678,6 +4706,8 @@ def enviar_resumen(preparado: dict[str, Any], enviar_fn: Any,
                    "rutas": preparado.get("rutas")}, ruta_registro)
     return {"enviado": True, "estado": "envio_confirmado",
             "message_id": resultado.get("message_id"),
+            "message_ids": message_ids_texto,
+            "partes_enviadas": len(partes_msg),
             "imagenes_enviadas": len(ids_imagenes),
             "fallos_imagen": fallos_imagen,
             "id_ejecucion": id_ejecucion}

@@ -409,3 +409,43 @@ def test_b5_fcb37345419813b2_abstenido_y_sin_acuse():
     assert cls_sa["es_oos_valido"] is False
     assert cls_sa["es_canonica"] is False
     assert cls_sa["clasificacion_oos"] == "no_oos"
+
+
+# =====================================================================
+# BLOQUE 6: resumen_telegram de /evaluar fragmentado <=4000 con reintento
+# =====================================================================
+
+def test_b6_enviar_resumen_largo_fragmenta_y_reintenta(tmp_path):
+    import evaluacion_pronosticos as ep
+
+    # Resumen > 6000 caracteres con saltos de línea
+    lineas = [f"Partido {i:02d}: Local {i} vs Visitante {i} | Brier=0.1234 | Acierto 80.0% (8/10)" for i in range(1, 120)]
+    resumen_largo = "\n".join(lineas)
+    assert len(resumen_largo) > 6000
+
+    enviados = []
+    intentos_parte_2 = {"n": 0}
+
+    def fake_enviar(texto, chat_id):
+        if len(enviados) == 1 and intentos_parte_2["n"] == 0:
+            intentos_parte_2["n"] += 1
+            raise RuntimeError("timeout transitorio de Telegram")
+        enviados.append(texto)
+        return {"ok": True, "message_id": 1000 + len(enviados)}
+
+    preparado = {
+        "id_ejecucion": "eval_larga_r25",
+        "mensaje": resumen_largo,
+        "imagenes": [],
+        "rutas": {},
+    }
+    ruta_reg = str(tmp_path / "registro_envios.json")
+    res = ep.enviar_resumen(preparado, fake_enviar, chat_id=12345, ruta_registro=ruta_reg)
+
+    assert res["enviado"] is True
+    assert res["estado"] == "envio_confirmado"
+    assert res["partes_enviadas"] >= 2
+    assert len(enviados) == res["partes_enviadas"]
+    assert all(len(t) <= 4000 for t in enviados)
+    assert intentos_parte_2["n"] == 1
+    assert len(res["message_ids"]) == len(enviados)
