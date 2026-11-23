@@ -669,3 +669,66 @@ def test_b9_reproducir_ab_desde_inputs_coincide_323_de_323_prob_base(tmp_path):
     corners_keys = [k for k in comp_prod if "esquina" in k[0].lower() or "córner" in k[0].lower() or "corner" in k[0].lower()]
     assert len(corners_keys) > 0
     assert all(abs(float(comp_prod[k]) - float(comp_rep[k])) <= 1e-9 for k in corners_keys)
+
+
+# =====================================================================
+# BLOQUE 10: Cosméticos — λ base tras Doble ADN, Ticket de Valor PNG, Párrafo 2 H2H n<10
+# =====================================================================
+
+def test_b10_h2h_n_menor_10_usa_difiere_o_coincide_exploratorio():
+    import informe as inf
+
+    an_stub = SimpleNamespace(
+        metadatos={"equipo_local": "Club A", "equipo_visitante": "Club B", "competicion": "LaLiga"},
+        motor=SimpleNamespace(
+            tasas=SimpleNamespace(lambda_local_ft=1.80, lambda_visitante_ft=1.20),
+            matriz_ft=[[0.05 if (i + j) <= 2 else (0.70 if (i, j) == (2, 1) else 0.0) for j in range(5)] for i in range(5)],
+        ),
+        mercados=[],
+        selecciones_filtradas=[],
+        grupos={"mantiene": [], "sensible": []},
+    )
+    # Caso 1: difiere (modelo Over 2.5, H2H n=3 Under) -> "difiere (exploratorio)", NO "CONTRADICE"
+    info_diff = {
+        "n_duelos": 3,
+        "duelos": [
+            {"local": "Club A", "visitante": "Club B", "goles_local": 1, "goles_visitante": 0},
+            {"local": "Club B", "visitante": "Club A", "goles_local": 1, "goles_visitante": 1},
+            {"local": "Club A", "visitante": "Club B", "goles_local": 0, "goles_visitante": 1},
+        ],
+    }
+    txt_diff = inf.redactar_analisis_3_parrafos(an_stub, info_h2h=info_diff, cuotas_flashscore={})
+    p2_diff = [p for p in txt_diff.split("\n\n") if "2. Contraste con el Modelo H2H" in p][0]
+    assert "difiere (exploratorio)" in p2_diff
+    assert "CONTRADICE" not in p2_diff
+
+    # Caso 2: coincide (modelo Over 2.5, H2H n=3 Over) -> "coincide (exploratorio)", NO "APOYA"
+    info_coinc = {
+        "n_duelos": 3,
+        "duelos": [
+            {"local": "Club A", "visitante": "Club B", "goles_local": 2, "goles_visitante": 1},
+            {"local": "Club B", "visitante": "Club A", "goles_local": 2, "goles_visitante": 2},
+            {"local": "Club A", "visitante": "Club B", "goles_local": 3, "goles_visitante": 1},
+        ],
+    }
+    txt_coinc = inf.redactar_analisis_3_parrafos(an_stub, info_h2h=info_coinc, cuotas_flashscore={})
+    p2_coinc = [p for p in txt_coinc.split("\n\n") if "2. Contraste con el Modelo H2H" in p][0]
+    assert "coincide (exploratorio)" in p2_coinc
+    assert "APOYA" not in p2_coinc
+
+
+def test_b10_ticket_valor_png_envuelve_recomendacion_larga_sin_solapar(tmp_path):
+    import informe as inf
+
+    an_stub = SimpleNamespace(
+        metadatos={"equipo_local": "Athletic Club", "equipo_visitante": "Espanyol", "competicion": "LaLiga"},
+        motor=SimpleNamespace(
+            tasas=SimpleNamespace(lambda_local_ft=1.43, lambda_visitante_ft=1.01),
+            matriz_ft=None,
+        ),
+        mercados=[],
+        selecciones_filtradas=[],
+    )
+    out_png = tmp_path / "ticket_valor_test.png"
+    ruta = inf.generar_ticket_valor_png(an_stub, cuotas_flashscore={}, destino=str(out_png))
+    assert Path(ruta).exists() and Path(ruta).stat().st_size > 1000

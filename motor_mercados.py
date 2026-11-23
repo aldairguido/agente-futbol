@@ -2322,7 +2322,7 @@ class MotorMercados:
                     fac_red_v = (lam_v_red_orig / max(0.01, lam_base_v)) - 1.0
                     fac_fin_v = (lam_v_red / max(0.01, lam_v_red_orig)) - 1.0
                     linea_lam = (
-                        f"λ Plano ({lam_base_l:.2f} - {lam_base_v:.2f}) -> "
+                        f"λ base tras Doble ADN ({lam_base_l:.2f} - {lam_base_v:.2f}) -> "
                         f"λ Red ({lam_l_red_orig:.2f} [{fac_red_l:+.1%}] - {lam_v_red_orig:.2f} [{fac_red_v:+.1%}]) -> "
                         f"λ Final ({lam_l_red:.2f} [{fac_fin_l:+.1%}] - {lam_v_red:.2f} [{fac_fin_v:+.1%}])"
                     )

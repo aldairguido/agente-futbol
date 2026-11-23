@@ -144,7 +144,7 @@ def test_r24_b3_h2h_promedios_crudos_conteos_y_parrafo2_datos_crudos():
     assert "V/E/D: 0/1/1" in p2
     assert "+2.5: 0/2" in p2
     assert "BTTS: 1/2" in p2
-    assert "CONTRADICE el ritmo goleador del modelo general" in p2
+    assert "difiere (exploratorio) del ritmo goleador del modelo general" in p2
 
 
 

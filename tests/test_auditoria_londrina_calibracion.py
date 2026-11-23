@@ -253,7 +253,7 @@ def test_7_trazabilidad_lambda_en_sello_verificacion():
             m._aplicar_motor_recursivo()
 
     sello = m.recursivo.get("sello_verificacion_visual", "")
-    assert "λ Plano (" in sello
+    assert "λ base tras Doble ADN (" in sello
     assert "λ Red (" in sello
     assert "λ Final (" in sello
 
