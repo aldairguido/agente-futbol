@@ -199,3 +199,63 @@ def test_b2_anterioridad_casos_reales_athletic_y_puebla():
     }
     ok_post, _ = ep._comprobar_anterioridad(doc_post, res_ath_20)
     assert ok_post is False
+
+
+# =====================================================================
+# BLOQUE 3: Resolutor — límites de palabra y guarda equipo (W)
+# =====================================================================
+
+@pytest.mark.parametrize(
+    "texto,esperado_fem,esperado_juv",
+    [
+        ("bundesliga fc bayern münchen 1. fc köln", False, False),
+        ("laliga fc barcelona vs villarreal", False, False),
+        ("LaLiga FC Barcelona", False, False),
+        ("liga f barcelona vs real madrid", True, False),
+        ("frauen-bundesliga bayern vs wolfsburg", True, False),
+        ("bayern (w) vs chelsea (w)", True, False),
+        ("liga femenina peru", True, False),
+        ("barcelona u19 vs bayern u19", False, True),
+        ("superliga fc copenhagen", False, False),
+    ],
+)
+def test_b3_detectar_categoria_limites_de_palabra(texto, esperado_fem, esperado_juv):
+    from resolvedor_entidades import detectar_categoria_desde_texto
+
+    fem, juv = detectar_categoria_desde_texto(texto)
+    assert fem is esperado_fem, f"Para {texto!r}: fem={fem}, esperado={esperado_fem}"
+    assert juv is esperado_juv, f"Para {texto!r}: juv={juv}, esperado={esperado_juv}"
+
+
+def test_b3_guarda_abstencion_si_resuelve_equipo_w_sin_pedirlo(monkeypatch):
+    import servicio_mercados as sm
+
+    fake_contexto = {
+        "equipo_local": "Bayern München (W)",
+        "equipo_visitante": "1. FC Köln (W)",
+        "doc_local": {
+            "equipo": {"nombre": "Bayern München (W)", "liga": "Frauen-Bundesliga", "pais_iso": "DEU"},
+            "partidos": [],
+        },
+        "doc_visitante": {
+            "equipo": {"nombre": "1. FC Köln (W)", "liga": "Frauen-Bundesliga", "pais_iso": "DEU"},
+            "partidos": [],
+        },
+        "contexto": {
+            "competicion": "Bundesliga",
+            "pais_iso": "DEU",
+            "fecha_partido": "2026-11-25",
+            "fixture_confirmado": False,
+        },
+    }
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **k: fake_contexto)
+
+    res = sm.preparar_analisis(
+        "FC Bayern München",
+        "1. FC Köln",
+        liga={"nombre": "Bundesliga", "pais_iso": "DEU"},
+    )
+    assert res["abstenido"] is True
+    assert res["estado_cobertura"] == "desajuste_categoria_femenino"
+    assert "femenino" in res["motivo_abstencion"].lower()
+    assert res["rutas"] == {}
