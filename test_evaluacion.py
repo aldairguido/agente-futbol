@@ -770,7 +770,7 @@ def prueba_liquidacion_snapshots_sin_red():
     # Comparación directa del huso: sin el arreglo, `.replace(tzinfo=pytz...)`
     # aplicaba LMT (-05:08:36) y desplazaba la marca 8 min 36 s.
     t = ev._parsear_momento("2026-10-14 15:56:41")
-    desplazamiento = (ev.datetime(2026, 10, 14, 20, 56, 41, tzinfo=ev.timezone.utc)
+    desplazamiento = (ev.datetime(2026, 10, 14, 15, 56, 41, tzinfo=ev.timezone.utc)
                       - t).total_seconds()
     assert abs(desplazamiento) < 1.0, \
         f"la marca local debe interpretarse como UTC-5 exacto, no LMT: {t.isoformat()}"

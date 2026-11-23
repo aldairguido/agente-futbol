@@ -3565,42 +3565,43 @@ def verificar_resultados(pronosticos: Iterable[dict[str, Any]],
 def _parsear_momento(texto: Any) -> datetime | None:
     """
     Interpreta las marcas de tiempo del proyecto, que llegan en varios formatos:
-        '2026-10-13 10:46:23'        (hora local, sin zona)
+        1795199254                   (epoch unix en segundos, UTC)
+        '2026-10-13 10:46:23'        (sin zona -> UTC, zona del runner)
         '2026-10-13T19:00:00Z'       (UTC)
-        '2026-10-13T19:00:00+00:00'
+        '2026-10-13T19:00:00+00:00'  (desplazamiento explícito)
     Devuelve un datetime CON zona (UTC) o None.
     """
-    if not texto:
+    if texto is None or texto == "" or isinstance(texto, bool):
         return None
-    t = str(texto).strip().replace("T", " ")
+    if isinstance(texto, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(texto), tz=timezone.utc)
+        except Exception:
+            return None
+    raw_s = str(texto).strip()
+    if not raw_s:
+        return None
+    if re.fullmatch(r"\d+(?:\.\d+)?", raw_s):
+        try:
+            return datetime.fromtimestamp(float(raw_s), tz=timezone.utc)
+        except Exception:
+            return None
+    t = raw_s.replace("T", " ")
     zona = timezone.utc
     if t.endswith("Z"):
         t = t[:-1]
-    elif "+" in t[10:]:
+    elif "+" in t[10:] or (len(t) > 19 and "-" in t[19:]):
         # Ya trae desplazamiento explícito
         try:
-            return datetime.fromisoformat(str(texto).replace("Z", "+00:00"))
+            return datetime.fromisoformat(raw_s.replace("Z", "+00:00")).astimezone(timezone.utc)
         except Exception:
             t = t[:19]
-    else:
-        # Sin zona: el proyecto guarda hora local en America/Lima
-        try:
-            import pytz
-            zona = pytz.timezone(config.TIMEZONE)
-        except Exception:
-            zona = timezone.utc
+    # Sin zona: se interpreta como UTC (zona del runner)
     for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
             ingenuo = datetime.strptime(t[:19], fmt)
         except Exception:
             continue
-        # Con pytz hay que usar localize(): `.replace(tzinfo=zona)` aplicaba el
-        # huso LMT histórico (-05:08:36 en Lima) en vez de -05:00, desplazaba las
-        # marcas ~8 min 36 s y hacía que un pronóstico emitido minutos ANTES del
-        # inicio se juzgara posterior (todas sus selecciones pasaban a
-        # «no verificable»). Con datetime.timezone (UTC) no hay localize().
-        if hasattr(zona, "localize"):
-            return zona.localize(ingenuo)
         return ingenuo.replace(tzinfo=zona)
     return None
 
@@ -3610,13 +3611,41 @@ def _comprobar_anterioridad(pronostico: dict[str, Any],
     """
     Comprueba que el pronóstico se emitió ANTES del inicio del partido.
 
-    Ambas marcas se normalizan a UTC antes de comparar (la generación se guarda en
-    hora local del proyecto y el inicio del partido viene en UTC). Si no se puede
-    demostrar la anterioridad, se marca como no resoluble en lugar de asumir lo
-    favorable al modelo.
+    Cuando existen `telegram_message_date` (priorizando acuse `telegram_envio`)
+    y `hora_inicio_partido` (o `resultado.inicio_utc`), compara sus instantes
+    UTC/unix directamente en lugar de `generado_en`. Si faltan, usa `generado_en`
+    interpretado sin zona como UTC (zona del runner) frente a `resultado.inicio_utc`.
     """
+    tg_env = pronostico.get("telegram_envio") if isinstance(pronostico.get("telegram_envio"), dict) else None
+    tg_date = (tg_env.get("message_date") if tg_env and tg_env.get("message_date") is not None else pronostico.get("telegram_message_date"))
+    hora_ini_snap = (
+        pronostico.get("hora_inicio_partido")
+        or (pronostico.get("partido") or {}).get("hora_inicio_partido")
+        if isinstance(pronostico.get("partido"), dict)
+        else pronostico.get("hora_inicio_partido")
+    )
+    inicio_res = getattr(resultado, "inicio_utc", None)
+
+    if tg_date is not None and (hora_ini_snap or inicio_res):
+        ini_ref = hora_ini_snap or inicio_res
+        t_msg = _parsear_momento(tg_date)
+        t_ini = _parsear_momento(ini_ref)
+        if t_msg is not None and t_ini is not None:
+            ts_msg = int(t_msg.timestamp())
+            ts_ini = int(t_ini.timestamp())
+            if ts_msg < ts_ini:
+                horas = (ts_ini - ts_msg) / 3600.0
+                return True, (
+                    f"telegram_message_date {ts_msg} ({t_msg.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC) "
+                    f"anterior al inicio {ini_ref} por {horas:.1f} h"
+                )
+            return False, (
+                f"telegram_message_date {ts_msg} ({t_msg.astimezone(timezone.utc):%Y-%m-%d %H:%M} UTC) "
+                f"NO anterior al inicio {ini_ref} (el pronóstico es posterior: no se evalúa como acierto)"
+            )
+
     generado = pronostico.get("generado_en")
-    inicio = resultado.inicio_utc
+    inicio = inicio_res or hora_ini_snap
     if not generado or not inicio:
         return False, ("no se puede demostrar que el pronóstico sea anterior al inicio "
                        "(falta marca de generación o de inicio)")

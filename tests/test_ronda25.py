@@ -133,3 +133,69 @@ def test_b1_fallback_envio_fallido_sin_informe_no_lanza_keyerror():
 
     assert any("fallo red" in m and "no disponible" in m for m in enviados)
     assert not any("KeyError" in m for m in enviados)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BLOQUE 2: _parsear_momento / _comprobar_anterioridad (UTC y unix)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def test_b2_parsear_momento_sin_zona_es_utc_y_acepta_unix():
+    import evaluacion_pronosticos as ep
+    from datetime import datetime, timezone
+
+    t_naive = ep._parsear_momento("2026-11-20 18:26:42")
+    assert t_naive == datetime(2026, 11, 20, 18, 26, 42, tzinfo=timezone.utc)
+
+    t_unix = ep._parsear_momento(1795199254)
+    assert t_unix == datetime(2026, 11, 20, 18, 27, 34, tzinfo=timezone.utc)
+
+
+def test_b2_anterioridad_casos_reales_athletic_y_puebla():
+    import evaluacion_pronosticos as ep
+
+    # Caso real 1: Athletic Club vs Espanyol (generado 2026-11-20 18:26:42 UTC, inicio 20:00Z / 21:02:34Z)
+    doc_ath = {
+        "generado_en": "2026-11-20 18:26:42",
+        "hora_inicio_partido": "2026-11-20T20:00:00Z",
+        "telegram_message_date": 1795199254,
+        "telegram_envio": {"message_date": 1795199254, "message_date_utc": "2026-11-20T18:27:34Z"},
+    }
+    res_ath = ep.ResultadoPartido(
+        id_partido="5868132", estado="finalizado", local="Athletic Club", visitante="Espanyol",
+        goles_local=0, goles_visitante=1, inicio_utc="2026-11-20T21:02:34Z",
+    )
+    ok_ath, mot_ath = ep._comprobar_anterioridad(doc_ath, res_ath)
+    assert ok_ath is True, mot_ath
+    assert "telegram_message_date" in mot_ath
+
+    # También sin telegram_message_date: generado_en naive (UTC) < inicio 20:00Z
+    doc_ath_solo_gen = {"generado_en": "2026-11-20 18:26:42"}
+    res_ath_20 = ep.ResultadoPartido(
+        id_partido="5868132", estado="finalizado", local="Athletic Club", visitante="Espanyol",
+        goles_local=0, goles_visitante=1, inicio_utc="2026-11-20T20:00:00Z",
+    )
+    ok_gen, mot_gen = ep._comprobar_anterioridad(doc_ath_solo_gen, res_ath_20)
+    assert ok_gen is True, mot_gen
+
+    # Caso real 2: Puebla vs Atlético de San Luis
+    doc_pue = {
+        "generado_en": "2026-11-20 19:17:26",
+        "hora_inicio_partido": "2026-11-21T01:00:00Z",
+        "telegram_message_date": 1795202298,
+        "telegram_envio": {"message_date": 1795202298, "message_date_utc": "2026-11-20T19:18:18Z"},
+    }
+    res_pue = ep.ResultadoPartido(
+        id_partido="1000014643", estado="finalizado", local="Puebla", visitante="Atlético de San Luis",
+        goles_local=1, goles_visitante=1, inicio_utc="2026-11-21T02:00:50Z",
+    )
+    ok_pue, mot_pue = ep._comprobar_anterioridad(doc_pue, res_pue)
+    assert ok_pue is True, mot_pue
+
+    # Caso post-inicio: telegram_message_date posterior al inicio -> rechazado
+    doc_post = {
+        "generado_en": "2026-11-20 18:00:00",
+        "hora_inicio_partido": "2026-11-20T20:00:00Z",
+        "telegram_message_date": 1795205400,  # 20:10Z > 20:00Z
+    }
+    ok_post, _ = ep._comprobar_anterioridad(doc_post, res_ath_20)
+    assert ok_post is False
