@@ -1976,17 +1976,6 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
             snapshot = evaluacion.snapshot_desde_analisis(preparado, telegram_meta=telegram_meta)
             ruta_snap = evaluacion.guardar_snapshot(snapshot)
             try:
-                res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
-                    preparado, ruta_snapshot=ruta_snap
-                )
-                if res_led_pre.get("registrado"):
-                    print(
-                        f"[BOT TELEGRAM] 🔗 Sombra pre-partido en ledger OOS: "
-                        f"idx={res_led_pre.get('indice')} sha={str(res_led_pre.get('sha256') or '')[:12]}"
-                    )
-            except Exception as _e_led:
-                print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
-            try:
                 rel_snap = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
             except Exception:
                 rel_snap = os.path.relpath(ruta_snap, str(BASE_DIR)).replace("\\", "/")
@@ -2082,6 +2071,19 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                         telegram_envio=resultado.get("telegram_envio"),
                         ids_telegram=resultado.get("ids_telegram"),
                     )
+                    if isinstance(resultado.get("telegram_envio"), dict) and resultado.get("telegram_envio"):
+                        preparado["telegram_envio"] = dict(resultado["telegram_envio"])
+                    try:
+                        res_led_pre = evaluacion.registrar_sombra_prepartido_en_ledger_oos(
+                            preparado, ruta_snapshot=ruta_snap
+                        )
+                        if res_led_pre.get("registrado"):
+                            print(
+                                f"[BOT TELEGRAM] 🔗 Sombra pre-partido en ledger OOS (con acuse): "
+                                f"idx={res_led_pre.get('indice')} sha={str(res_led_pre.get('sha256') or '')[:12]}"
+                            )
+                    except Exception as _e_led:
+                        print(f"[BOT TELEGRAM] ⚠️ Sombra pre-partido en ledger omitida: {_e_led}")
                     try:
                         rel_snap_ack = Path(ruta_snap).resolve().relative_to(BASE_DIR.resolve()).as_posix()
                     except Exception:

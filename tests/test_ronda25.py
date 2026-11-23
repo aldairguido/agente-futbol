@@ -732,3 +732,73 @@ def test_b10_ticket_valor_png_envuelve_recomendacion_larga_sin_solapar(tmp_path)
     out_png = tmp_path / "ticket_valor_test.png"
     ruta = inf.generar_ticket_valor_png(an_stub, cuotas_flashscore={}, destino=str(out_png))
     assert Path(ruta).exists() and Path(ruta).stat().st_size > 1000
+
+
+def test_b5_clasificar_ledger_resuelve_telegram_envio_y_abstenido_desde_snapshot(tmp_path):
+    import json
+    import evaluacion_pronosticos as ep
+
+    snaps_dir = tmp_path / "pronosticos"
+    eval_dir = tmp_path / "evaluacion"
+    snaps_dir.mkdir(parents=True, exist_ok=True)
+    eval_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1) Entrada pre_partido histórica sin telegram_envio inline, pero su snapshot SÍ tiene telegram_envio pre-inicio
+    snap_ok = {
+        "id_trabajo": "hist_13_ok",
+        "fixture_confirmado": True,
+        "hora_inicio_partido": "2026-11-19T22:30:00Z",
+        "telegram_envio": {"message_id": 1668, "message_date": 1795079707, "message_date_utc": "2026-11-19T09:15:07Z"},
+        "es_oos_valido": True,
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    (snaps_dir / "hist_13_ok.json").write_text(json.dumps(snap_ok), encoding="utf-8")
+
+    reg_pre_hist = {
+        "estado_registro": "pre_partido",
+        "id_trabajo": "hist_13_ok",
+        "partido": "Vitória vs RB Bragantino",
+        "fecha": "2026-11-19",
+        "fixture_confirmado": True,
+        "hora_inicio_partido": "2026-11-19T22:30:00Z",
+        "telegram_message_date": 1795079538,
+        "es_oos_valido": True,
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    cls_ok = ep.clasificar_oos_entrada_ledger(reg_pre_hist, directorio_pronosticos=str(snaps_dir))
+    assert cls_ok["clasificacion_oos"] == "canonica"
+    assert cls_ok["es_oos_valido"] is True
+    assert cls_ok["es_canonica"] is True
+
+    # 2) Entrada histórica cuyo snapshot NO tiene telegram_envio -> no_oos
+    snap_sin_ack = {
+        "id_trabajo": "hist_sin_ack",
+        "fixture_confirmado": True,
+        "hora_inicio_partido": "2026-11-19T22:30:00Z",
+        "es_oos_valido": True,
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    (snaps_dir / "hist_sin_ack.json").write_text(json.dumps(snap_sin_ack), encoding="utf-8")
+    reg_sin_ack = {**reg_pre_hist, "id_trabajo": "hist_sin_ack"}
+    cls_no = ep.clasificar_oos_entrada_ledger(reg_sin_ack, directorio_pronosticos=str(snaps_dir))
+    assert cls_no["clasificacion_oos"] == "no_oos"
+    assert cls_no["es_oos_valido"] is False
+    assert cls_no["es_canonica"] is False
+
+    # 3) Entrada histórica cuyo snapshot está abstenido -> abstenido
+    snap_abs = {
+        "id_trabajo": "hist_abs",
+        "abstenido": True,
+        "estado_cobertura": "datos_desactualizados",
+        "es_oos_valido": True,
+        "es_canonica": True,
+    }
+    (snaps_dir / "hist_abs.json").write_text(json.dumps(snap_abs), encoding="utf-8")
+    reg_abs = {**reg_pre_hist, "id_trabajo": "hist_abs"}
+    cls_abs = ep.clasificar_oos_entrada_ledger(reg_abs, directorio_pronosticos=str(snaps_dir))
+    assert cls_abs["clasificacion_oos"] == "abstenido"
+    assert cls_abs["es_oos_valido"] is False
+    assert cls_abs["es_canonica"] is False

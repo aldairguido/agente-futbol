@@ -537,12 +537,62 @@ def evaluar_contabilidad_oos_registro(
     return res_oos
 
 
-def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
+def _cargar_snapshot_para_oos(
+    id_trabajo: str | None,
+    *,
+    directorio_pronosticos: str | None = None,
+    snapshots_por_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Busca el snapshot asociado a `id_trabajo` para resolver `telegram_envio` o `abstenido` en entradas históricas del ledger."""
+    idt = str(id_trabajo or "").strip()
+    if not idt:
+        return None
+    if isinstance(snapshots_por_id, dict) and idt in snapshots_por_id:
+        val = snapshots_por_id.get(idt)
+        return val if isinstance(val, dict) else None
+    dir_p = directorio_pronosticos or PRONOSTICOS_DIR
+    if not dir_p:
+        return None
+    ruta_s = os.path.join(str(dir_p), f"{idt}.json")
+    if not os.path.isfile(ruta_s):
+        return None
+    try:
+        with open(ruta_s, "r", encoding="utf-8") as fh:
+            doc = json.load(fh)
+        return doc if isinstance(doc, dict) else None
+    except Exception:
+        return None
+
+
+def _resolver_dir_pronosticos_para_ledger(
+    ruta_ledger: str | None,
+    directorio_pronosticos: str | None = None,
+) -> str | None:
+    if directorio_pronosticos:
+        return str(directorio_pronosticos)
+    if ruta_ledger:
+        try:
+            cand = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(ruta_ledger))), "pronosticos")
+            if os.path.isdir(cand):
+                return cand
+        except Exception:
+            pass
+    return PRONOSTICOS_DIR
+
+
+def clasificar_oos_entrada_ledger(
+    reg: dict[str, Any],
+    *,
+    directorio_pronosticos: str | None = None,
+    snapshots_por_id: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """
     Clasifica cualquier entrada del ledger o snapshot (sin reescribir entradas históricas):
       - Snapshot/registro abstenido -> `abstenido` (`es_oos_valido=False`, `es_canonica=False`).
       - Sin `es_oos_valido` y sin `(fixture_confirmado=True y hora_inicio_partido)` -> `legacy_sin_fixture` (no-OOS).
-      - Exige `telegram_envio` (acuse) con marca temporal anterior a `hora_inicio_partido` para `es_oos_valido=True`.
+      - Exige `telegram_envio` (acuse) anterior a `hora_inicio_partido` para `es_oos_valido=True`;
+        si una entrada del ledger no trae `telegram_envio` inline (entradas históricas previas a Ronda 25),
+        lo resuelve desde el snapshot correspondiente en `informes/pronosticos/<id_trabajo>.json`.
     """
     if not isinstance(reg, dict):
         return {
@@ -561,8 +611,29 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
     h_ini_raw = reg.get("hora_inicio_partido")
     if h_ini_raw is None and isinstance(reg.get("partido"), dict):
         h_ini_raw = reg["partido"].get("hora_inicio_partido")
+    tg_env_eff = reg.get("telegram_envio")
+    if not (isinstance(tg_env_eff, dict) and tg_env_eff):
+        snap_ref = _cargar_snapshot_para_oos(
+            reg.get("id_trabajo"),
+            directorio_pronosticos=directorio_pronosticos,
+            snapshots_por_id=snapshots_por_id,
+        )
+        if isinstance(snap_ref, dict):
+            if _es_registro_abstenido_oos(snap_ref):
+                return {
+                    "clasificacion_oos": "abstenido",
+                    "es_oos_valido": False,
+                    "es_canonica": False,
+                    "es_legacy_sin_fixture": False,
+                }
+            if isinstance(snap_ref.get("telegram_envio"), dict) and snap_ref.get("telegram_envio"):
+                tg_env_eff = snap_ref.get("telegram_envio")
+            if h_ini_raw is None:
+                h_ini_raw = snap_ref.get("hora_inicio_partido")
+                if h_ini_raw is None and isinstance(snap_ref.get("partido"), dict):
+                    h_ini_raw = snap_ref["partido"].get("hora_inicio_partido")
     dt_ini, _ = _parsear_instante_con_zona_oos(h_ini_raw)
-    tiene_acuse, dt_env, _ = _extraer_acuse_telegram_oos(reg.get("telegram_envio"))
+    tiene_acuse, dt_env, _ = _extraer_acuse_telegram_oos(tg_env_eff)
     acuse_anterior = bool(tiene_acuse and dt_env is not None and dt_ini is not None and dt_env < dt_ini)
 
     if "es_oos_valido" in reg:
@@ -606,7 +677,7 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
         hora_inicio_partido=h_ini_raw,
         telegram_message_date=reg.get("telegram_message_date"),
         hora_mensaje_utc=reg.get("hora_mensaje_utc"),
-        telegram_envio=reg.get("telegram_envio"),
+        telegram_envio=tg_env_eff,
         abstenido=False,
         partido=reg.get("partido"),
         fecha=reg.get("fecha"),
@@ -9878,6 +9949,7 @@ def resumen_ledger_oos(
     *,
     incluir_amistosos: bool = False,
     excluir_legacy_sin_fixture: bool = False,
+    directorio_pronosticos: str | None = None,
 ) -> dict[str, Any]:
     """
     Calcula promedios por partido y agregados de calibración desde `ledger_oos.jsonl`,
@@ -9887,6 +9959,7 @@ def resumen_ledger_oos(
     clasifican lógicamente como no-OOS (`legacy_sin_fixture`) sin reescribir hashes.
     """
     ruta = ruta_ledger or LEDGER_OOS_PATH
+    dir_snaps = _resolver_dir_pronosticos_para_ledger(ruta, directorio_pronosticos)
     verif = verificar_cadena_ledger_oos(ruta)
     registros = cargar_ledger_oos(ruta)
     excluidos: list[dict[str, Any]] = []
@@ -9900,7 +9973,7 @@ def resumen_ledger_oos(
     incluidos: list[dict[str, Any]] = []
     for r in registros:
         est_reg = str(r.get("estado_registro") or "liquidado").strip().lower()
-        cls_r = clasificar_oos_entrada_ledger(r)
+        cls_r = clasificar_oos_entrada_ledger(r, directorio_pronosticos=dir_snaps)
         es_leg = bool(cls_r["es_legacy_sin_fixture"])
         if es_leg:
             if est_reg == "pre_partido":
@@ -9924,12 +9997,12 @@ def resumen_ledger_oos(
         if est_reg == "pre_partido":
             continue
         if "es_oos_valido" in r:
-            if r.get("es_oos_valido") is not True:
+            if not cls_r["es_oos_valido"]:
                 excluidos_no_oos += 1
                 if es_leg:
                     excluidos_legacy_sin_fixture += 1
                 continue
-            if r.get("es_canonica") is not True:
+            if not cls_r["es_canonica"]:
                 excluidos_no_canonica += 1
                 continue
         elif es_leg and excluir_legacy_sin_fixture:
@@ -9986,6 +10059,7 @@ def resumen_ledger_oos(
         excluir_contaminados_diseno=False,
         umbral_excl_prob_alta=None,
         excluir_legacy_sin_fixture=True,
+        directorio_pronosticos=dir_snaps,
     )
     return {
         "ruta_ledger": ruta,
@@ -11779,7 +11853,7 @@ def extraer_observaciones_sombra_desde_ledger(
                 continue
             if excluir_diseno and (ms.get("es_partido_diseno") or es_partido_de_diseno(r.get("partido"), r.get("id_partido"))):
                 continue
-            cls_obs = clasificar_oos_entrada_ledger(r)
+            cls_obs = clasificar_oos_entrada_ledger(r, directorio_pronosticos=_resolver_dir_pronosticos_para_ledger(ruta_ledger))
             if r.get("estado_canonico") == "no_canonica":
                 continue
             if r.get("telegram_message_date") is not None and r.get("es_oos_valido") is False:
@@ -11965,6 +12039,7 @@ def _metricas_subconjunto_ledger(
     excluir_contaminados_diseno: bool = False,
     umbral_excl_prob_alta: float | None = None,
     excluir_legacy_sin_fixture: bool = False,
+    directorio_pronosticos: str | None = None,
 ) -> dict[str, Any]:
     """Calcula métricas del ledger OOS permitiendo filtrar diseño/amistosos/líneas >= umbral y legacy sin fixture."""
     incluidos: list[dict[str, Any]] = []
@@ -11976,14 +12051,14 @@ def _metricas_subconjunto_ledger(
     for r in registros:
         if str(r.get("estado_registro") or "liquidado").strip().lower() == "pre_partido":
             continue
-        cls_m = clasificar_oos_entrada_ledger(r)
+        cls_m = clasificar_oos_entrada_ledger(r, directorio_pronosticos=directorio_pronosticos)
         if "es_oos_valido" in r:
-            if r.get("es_oos_valido") is not True:
+            if not cls_m["es_oos_valido"]:
                 n_excluidos_no_oos += 1
                 if cls_m["es_legacy_sin_fixture"]:
                     n_excluidos_legacy += 1
                 continue
-            if r.get("es_canonica") is not True:
+            if not cls_m["es_canonica"]:
                 continue
         elif excluir_legacy_sin_fixture and cls_m["es_legacy_sin_fixture"]:
             n_excluidos_no_oos += 1
