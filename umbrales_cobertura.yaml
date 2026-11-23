@@ -100,3 +100,55 @@ regla_futura:
   exigir_bandera_apagada_por_defecto: true
   exigir_modo_sombra_dual_en_libro: true
   prohibir_regla_ad_hoc_por_partido: true
+
+# Motor Autónomo de Descubrimiento Jerárquico de Patrones (Conjunto B / Modo Sombra)
+motor_autonomo_ronda19:
+  # Todas las banderas de comportamiento nacen APAGADAS (Conjunto B / Modo Sombra)
+  activar_motor_autonomo_dpp: false          # Maestro del módulo en modo sombra/activo
+  activar_selector_dpp_top5: false           # PoolDPP-MAP (Alg. 2) para diversificar el Top 5
+  activar_filtro_cvar25_top5: false          # Filtro de cola CVaR_25 >= umbral sobre 9 escenarios
+  activar_alerta_entrelazamiento_knn: false  # Semáforo topológico k-NN / Gauss link
+  activar_proyeccion_faa_mercados: false     # Proyección final única FAA al politopo coherente
+  activar_pesos_walkforward_oos: false       # Ajuste logit w <- w - eta * grad(L) en producción
+
+  # Hiperparámetros del Explorador Jerárquico (Capa 1 — regla operativa, sin validación cronológica)
+  orden_maximo_patrones: 5
+  cobertura_minima_variable: 0.60
+  soporte_minimo_por_orden:
+    1: 12
+    2: 10
+    3: 8
+    4: 8
+    5: 8
+  beam_width_por_orden:
+    1: 24
+    2: 120
+    3: 200
+    4: 250
+    5: 250
+  ganancia_marginal_minima_ll: 0.005
+  jaccard_maximo_padre_hijo: 0.95
+  suavizado_laplace_alpha0: 4.0
+
+  # Hiperparámetros PoolDPP-MAP (Capa 2)
+  k_patrones_ortogonales: 10
+  temperatura_global_dpp_patrones: 1.5
+  temperatura_global_dpp_top5: 2.0
+
+  # Hiperparámetros φTD Cramér y CVaR_25 (Capa 3)
+  cramer_n_frecuencias: 128
+  cramer_pareto_xm: 0.001
+  cramer_omega_max: 15.0
+  cramer_semilla_fija: 42
+  cvar25_umbral_minimo_top5: 0.65
+  riesgo_entropico_eta: -4.0
+
+  # Hiperparámetros Topología y Aduana FDR (Capa 4)
+  knn_entrelazamiento_k: 8
+  entrelazamiento_umbral_cautela: 0.75
+  fdr_benjamini_hochberg_q_max: 0.05
+  probe_auc_minimo: 0.52
+
+  # Gobernanza estricta (regla_futura — heredada de Ronda 7)
+  min_partidos_oos_para_encender: 30
+  min_partidos_oos_para_red_gelu: 250
