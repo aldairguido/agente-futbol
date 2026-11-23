@@ -305,3 +305,107 @@ def test_b4_falso_homonimo_extranjero_real_sigue_detectandose():
     assert res["coherente"] is False
     assert res["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
     assert res["falso_homonimo"] == "visita"
+
+
+# =====================================================================
+# BLOQUE 5: Contabilidad OOS — exige telegram_envio (acuse) y abstenido
+# =====================================================================
+
+def test_b5_pre_partido_sin_acuse_no_es_oos_valido():
+    import evaluacion_pronosticos as ep
+
+    reg_sin_acuse = {
+        "estado_registro": "pre_partido",
+        "id_trabajo": "pre_sin_acuse_01",
+        "partido": "Athletic Club vs Espanyol",
+        "fecha": "2026-11-20",
+        "fixture_confirmado": True,
+        "fuente_fecha": "fixture",
+        "hora_inicio_partido": "2026-11-20T20:00:00Z",
+        "telegram_message_date": 1795199220,  # 2026-11-20T18:27:00Z (solo origen, sin telegram_envio)
+        "es_oos_valido": True,  # simulando entrada histórica escrita antes de Ronda 25
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    cls = ep.clasificar_oos_entrada_ledger(reg_sin_acuse)
+    assert cls["es_oos_valido"] is False
+    assert cls["es_canonica"] is False
+    assert cls["clasificacion_oos"] == "no_oos"
+
+    # Al evaluar directamente sin telegram_envio también da False
+    ev = ep.evaluar_contabilidad_oos_registro(
+        fixture_confirmado=True,
+        fuente_fecha="fixture",
+        hora_inicio_partido="2026-11-20T20:00:00Z",
+        telegram_message_date=1795199220,
+        telegram_envio=None,
+    )
+    assert ev["es_oos_valido"] is False
+    assert ev["estado_canonico"] == "no_oos"
+
+    # Con acuse telegram_envio anterior al inicio sí es OOS válido y canónico
+    reg_con_acuse = dict(reg_sin_acuse)
+    reg_con_acuse["telegram_envio"] = {
+        "message_id": 9001,
+        "message_date": 1795199235,
+        "message_date_utc": "2026-11-20T18:27:15Z",
+    }
+    cls_ok = ep.clasificar_oos_entrada_ledger(reg_con_acuse)
+    assert cls_ok["es_oos_valido"] is True
+    assert cls_ok["es_canonica"] is True
+    assert cls_ok["clasificacion_oos"] == "canonica"
+
+
+def test_b5_fcb37345419813b2_abstenido_y_sin_acuse():
+    import evaluacion_pronosticos as ep
+
+    # 1) Snapshot/registro abstenido como fcb37345419813b2 -> es_oos_valido=False, estado='abstenido'
+    reg_fcb_abs = {
+        "id_trabajo": "fcb37345419813b2",
+        "partido": "Bayern München (W) vs 1. FC Köln (W)",
+        "fecha": "2026-11-22",
+        "fixture_confirmado": True,
+        "fuente_fecha": "fixture",
+        "hora_inicio_partido": "2026-11-22T14:30:00Z",
+        "telegram_message_date": 1795350000,
+        "abstenido": True,
+        "estado_cobertura": "desajuste_categoria_femenino",
+        "es_oos_valido": True,  # incluso si un registro histórico tenía True
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    cls_abs = ep.clasificar_oos_entrada_ledger(reg_fcb_abs)
+    assert cls_abs["es_oos_valido"] is False
+    assert cls_abs["es_canonica"] is False
+    assert cls_abs["clasificacion_oos"] == "abstenido"
+
+    ev_abs = ep.evaluar_contabilidad_oos_registro(
+        fixture_confirmado=True,
+        fuente_fecha="fixture",
+        hora_inicio_partido="2026-11-22T14:30:00Z",
+        telegram_message_date=1795350000,
+        telegram_envio={"message_id": 77, "message_date": 1795350010, "message_date_utc": "2026-11-22T12:20:10Z"},
+        abstenido=True,
+    )
+    assert ev_abs["es_oos_valido"] is False
+    assert ev_abs["es_canonica"] is False
+    assert ev_abs["estado_canonico"] == "abstenido"
+
+    # 2) Entrada fcb37345419813b2 pre_partido sin acuse de envío -> es_oos_valido=False
+    reg_fcb_sin_acuse = {
+        "estado_registro": "pre_partido",
+        "id_trabajo": "fcb37345419813b2",
+        "partido": "Bayern München vs 1. FC Köln",
+        "fecha": "2026-11-22",
+        "fixture_confirmado": True,
+        "fuente_fecha": "fixture",
+        "hora_inicio_partido": "2026-11-22T14:30:00Z",
+        "telegram_message_date": 1795350000,
+        "es_oos_valido": True,
+        "es_canonica": True,
+        "estado_canonico": "canonica",
+    }
+    cls_sa = ep.clasificar_oos_entrada_ledger(reg_fcb_sin_acuse)
+    assert cls_sa["es_oos_valido"] is False
+    assert cls_sa["es_canonica"] is False
+    assert cls_sa["clasificacion_oos"] == "no_oos"

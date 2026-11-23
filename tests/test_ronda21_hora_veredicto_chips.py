@@ -181,6 +181,7 @@ def test_punto5_hora_inicio_desde_fotmob_allfixtures_y_flashscore_y_no_oos(tmp_p
         "contexto": ctx_sin_hora,
         "rutas": {"informe": "inf.md"},
         "telegram_meta": {"message_id": 5001, "message_date": 1795066920, "message_date_utc": "2026-11-19T05:42:00Z"},
+        "telegram_envio": {"message_id": 5002, "message_date": 1795066925, "message_date_utc": "2026-11-19T05:42:05Z"},
         "modo_sombra": {
             "esquema": "sombra-v1", "publicado": "soloA", "version_base": "soloA", "version_sombra": "A+B",
             "lambdas_base": {"local": 1.52, "visitante": 1.05}, "lambdas_sombra": {"local": 1.52, "visitante": 1.05},

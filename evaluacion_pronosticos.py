@@ -368,13 +368,63 @@ def _mismo_partido_oos(a: dict[str, Any], b: dict[str, Any]) -> bool:
     return False
 
 
+_ESTADOS_ABSTENCION_OOS = frozenset({
+    "abstenido",
+    "falso_homonimo_extranjero",
+    "datos_desactualizados",
+    "cobertura_insuficiente",
+    "historial_oficial_incompleto",
+    "identidad_no_verificada",
+    "desajuste_categoria_femenino",
+    "partido_ya_jugado",
+})
+
+
+def _extraer_acuse_telegram_oos(telegram_envio: Any) -> tuple[bool, datetime | None, str | None]:
+    """
+    Valida que exista un acuse explícito de entrega (`telegram_envio`) con marca temporal
+    con zona horaria explícita y sin `enviado=False`.
+    """
+    if not isinstance(telegram_envio, dict) or not telegram_envio:
+        return False, None, None
+    if telegram_envio.get("enviado") is False:
+        return False, None, None
+    dt_env, str_env = _parsear_instante_con_zona_oos(
+        telegram_envio.get("message_date_utc")
+        if telegram_envio.get("message_date_utc") is not None
+        else telegram_envio.get("message_date")
+    )
+    if dt_env is None and telegram_envio.get("message_date") is not None:
+        dt_env, str_env = _parsear_instante_con_zona_oos(telegram_envio.get("message_date"))
+    return (dt_env is not None), dt_env, str_env
+
+
+def _es_registro_abstenido_oos(reg: dict[str, Any] | None) -> bool:
+    if not isinstance(reg, dict):
+        return False
+    if reg.get("abstenido") is True:
+        return True
+    est_c = str(reg.get("estado_canonico") or "").strip().lower()
+    if est_c == "abstenido":
+        return True
+    est_cob = str(reg.get("estado_cobertura") or "").strip().lower()
+    if est_cob in _ESTADOS_ABSTENCION_OOS:
+        return True
+    dc = reg.get("datos_corte")
+    if isinstance(dc, dict) and dc.get("abstenido") is True:
+        return True
+    return False
+
+
 def evaluar_contabilidad_oos_registro(
     *,
     fixture_confirmado: Any,
-    fuente_fecha: Any,
+    fuente_fecha: Any = None,
     hora_inicio_partido: Any,
-    telegram_message_date: Any,
+    telegram_message_date: Any = None,
     hora_mensaje_utc: Any = None,
+    telegram_envio: Any = None,
+    abstenido: bool = False,
     hora_inicio_fotmob: Any = None,
     hora_inicio_flashscore: Any = None,
     diferencia_hora_inicio_min: float | None = None,
@@ -387,21 +437,29 @@ def evaluar_contabilidad_oos_registro(
     registros_existentes: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
-    Aplica `REGLA_CONTABILIDAD_OOS`:
-      - `es_oos_valido = True` ssi `fixture_confirmado is True` y
-        `telegram_message_date < hora_inicio_partido` (ambos con zona horaria explícita).
+    Aplica `REGLA_CONTABILIDAD_OOS` (Ronda 25 Bloque 5):
+      - Un snapshot/registro abstenido tiene `es_oos_valido = False`, `es_canonica = False`
+        y `estado_canonico = "abstenido"`.
+      - `es_oos_valido = True` exige `fixture_confirmado is True`, no abstenido,
+        y acuse explícito `telegram_envio` con marca temporal anterior a `hora_inicio_partido`
+        (ambos con zona horaria explícita) sin discrepancia > 15 min.
       - Primera entrada OOS válida del mismo partido -> `canonica` (`es_canonica=True`).
       - Posteriores entradas válidas del mismo partido -> `no_canonica` (`es_canonica=False`).
-      - Inválidas / fallback sin fixture / post-inicio -> `no_oos` (`es_canonica=False`).
+      - Inválidas / fallback sin fixture / sin acuse / post-inicio -> `no_oos` (`es_canonica=False`).
     """
     fx_conf = bool(fixture_confirmado is True)
     f_fec = str(fuente_fecha or ("fixture" if fx_conf else "fallback")).strip() or ("fixture" if fx_conf else "fallback")
     dt_ini, hora_ini_str = _parsear_instante_con_zona_oos(hora_inicio_partido)
+    tiene_acuse_env, dt_env, str_env = _extraer_acuse_telegram_oos(telegram_envio)
     dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(
         hora_mensaje_utc if hora_mensaje_utc is not None else telegram_message_date
     )
     if dt_msg is None and telegram_message_date is not None:
         dt_msg, hora_msg_str = _parsear_instante_con_zona_oos(telegram_message_date)
+    if tiene_acuse_env and str_env is not None:
+        hora_msg_str = str_env
+        if telegram_message_date is None and isinstance(telegram_envio, dict):
+            telegram_message_date = telegram_envio.get("message_date")
 
     dt_fm, h_fm_str = _parsear_instante_con_zona_oos(hora_inicio_fotmob)
     dt_fs, h_fs_str = _parsear_instante_con_zona_oos(hora_inicio_flashscore)
@@ -411,39 +469,48 @@ def evaluar_contabilidad_oos_registro(
     h_discrepante = bool(hora_inicio_discrepante) or (diff_h_min is not None and diff_h_min > 0.0)
     discrepancia_excede_15m = bool(diff_h_min is not None and diff_h_min > 15.0)
 
-    es_oos_valido = bool(
-        fx_conf
-        and dt_ini is not None
-        and dt_msg is not None
-        and dt_msg < dt_ini
-        and not discrepancia_excede_15m
-    )
-    if not es_oos_valido:
+    if abstenido:
+        es_oos_valido = False
         es_canonica = False
-        estado_canonico = "no_oos"
+        estado_canonico = "abstenido"
     else:
-        actual = {
-            "id_partido": str(id_partido or ""),
-            "partido": str(partido or ""),
-            "fecha": str(fecha or ""),
-            "hora_inicio_partido": hora_ini_str,
-        }
-        ya_hay_canonica = False
-        for ex in (registros_existentes or []):
-            if not isinstance(ex, dict):
-                continue
-            if id_trabajo and str(ex.get("id_trabajo") or "") == str(id_trabajo):
-                continue
-            if estado_registro and ex.get("estado_registro") is not None:
-                if str(ex.get("estado_registro") or "liquidado").strip().lower() != str(estado_registro).strip().lower():
+        es_oos_valido = bool(
+            fx_conf
+            and dt_ini is not None
+            and tiene_acuse_env
+            and dt_env is not None
+            and dt_env < dt_ini
+            and not discrepancia_excede_15m
+        )
+        if not es_oos_valido:
+            es_canonica = False
+            estado_canonico = "no_oos"
+        else:
+            actual = {
+                "id_partido": str(id_partido or ""),
+                "partido": str(partido or ""),
+                "fecha": str(fecha or ""),
+                "hora_inicio_partido": hora_ini_str,
+            }
+            ya_hay_canonica = False
+            for ex in (registros_existentes or []):
+                if not isinstance(ex, dict):
                     continue
-            if not _mismo_partido_oos(ex, actual):
-                continue
-            if ex.get("es_canonica") is True or ex.get("es_oos_valido") is True:
-                ya_hay_canonica = True
-                break
-        es_canonica = not ya_hay_canonica
-        estado_canonico = "canonica" if es_canonica else "no_canonica"
+                if _es_registro_abstenido_oos(ex):
+                    continue
+                if id_trabajo and str(ex.get("id_trabajo") or "") == str(id_trabajo):
+                    continue
+                if estado_registro and ex.get("estado_registro") is not None:
+                    if str(ex.get("estado_registro") or "liquidado").strip().lower() != str(estado_registro).strip().lower():
+                        continue
+                if not _mismo_partido_oos(ex, actual):
+                    continue
+                ex_cls = clasificar_oos_entrada_ledger(ex)
+                if ex_cls.get("es_canonica") is True or ex_cls.get("es_oos_valido") is True:
+                    ya_hay_canonica = True
+                    break
+            es_canonica = not ya_hay_canonica
+            estado_canonico = "canonica" if es_canonica else "no_canonica"
 
     res_oos = {
         "fixture_confirmado": fx_conf,
@@ -469,9 +536,10 @@ def evaluar_contabilidad_oos_registro(
 
 def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
     """
-    Clasifica cualquier entrada del ledger (incluido historial previo a Regla M sin reescribir hashes):
-      - Con campos explícitos de Regla M -> `canonica` | `no_canonica` | `no_oos` | `legacy_sin_fixture`.
+    Clasifica cualquier entrada del ledger o snapshot (sin reescribir entradas históricas):
+      - Snapshot/registro abstenido -> `abstenido` (`es_oos_valido=False`, `es_canonica=False`).
       - Sin `es_oos_valido` y sin `(fixture_confirmado=True y hora_inicio_partido)` -> `legacy_sin_fixture` (no-OOS).
+      - Exige `telegram_envio` (acuse) con marca temporal anterior a `hora_inicio_partido` para `es_oos_valido=True`.
     """
     if not isinstance(reg, dict):
         return {
@@ -480,6 +548,20 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
             "es_canonica": False,
             "es_legacy_sin_fixture": True,
         }
+    if _es_registro_abstenido_oos(reg):
+        return {
+            "clasificacion_oos": "abstenido",
+            "es_oos_valido": False,
+            "es_canonica": False,
+            "es_legacy_sin_fixture": False,
+        }
+    h_ini_raw = reg.get("hora_inicio_partido")
+    if h_ini_raw is None and isinstance(reg.get("partido"), dict):
+        h_ini_raw = reg["partido"].get("hora_inicio_partido")
+    dt_ini, _ = _parsear_instante_con_zona_oos(h_ini_raw)
+    tiene_acuse, dt_env, _ = _extraer_acuse_telegram_oos(reg.get("telegram_envio"))
+    acuse_anterior = bool(tiene_acuse and dt_env is not None and dt_ini is not None and dt_env < dt_ini)
+
     if "es_oos_valido" in reg:
         est_c = str(reg.get("estado_canonico") or "").strip().lower()
         if est_c == "legacy_sin_fixture":
@@ -488,6 +570,13 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
                 "es_oos_valido": False,
                 "es_canonica": False,
                 "es_legacy_sin_fixture": True,
+            }
+        if not acuse_anterior:
+            return {
+                "clasificacion_oos": "no_oos",
+                "es_oos_valido": False,
+                "es_canonica": False,
+                "es_legacy_sin_fixture": False,
             }
         es_v = bool(reg.get("es_oos_valido") is True)
         es_c = bool(es_v and reg.get("es_canonica") is True)
@@ -499,7 +588,7 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
             "es_legacy_sin_fixture": False,
         }
 
-    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(reg.get("hora_inicio_partido"))
+    tiene_fx = (reg.get("fixture_confirmado") is True) and bool(h_ini_raw)
     if not tiene_fx:
         return {
             "clasificacion_oos": "legacy_sin_fixture",
@@ -511,9 +600,11 @@ def clasificar_oos_entrada_ledger(reg: dict[str, Any]) -> dict[str, Any]:
     ev = evaluar_contabilidad_oos_registro(
         fixture_confirmado=reg.get("fixture_confirmado"),
         fuente_fecha=reg.get("fuente_fecha"),
-        hora_inicio_partido=reg.get("hora_inicio_partido"),
+        hora_inicio_partido=h_ini_raw,
         telegram_message_date=reg.get("telegram_message_date"),
         hora_mensaje_utc=reg.get("hora_mensaje_utc"),
+        telegram_envio=reg.get("telegram_envio"),
+        abstenido=False,
         partido=reg.get("partido"),
         fecha=reg.get("fecha"),
         id_partido=reg.get("id_partido"),
@@ -1195,6 +1286,8 @@ def adjuntar_acuse_telegram_snapshot(
                 hora_inicio_partido=doc.get("hora_inicio_partido"),
                 telegram_message_date=doc.get("telegram_message_date"),
                 hora_mensaje_utc=doc.get("hora_mensaje_utc"),
+                telegram_envio=doc.get("telegram_envio"),
+                abstenido=bool(doc.get("abstenido")),
                 partido=f"{eq_d.get('local') or ''} vs {eq_d.get('visitante') or ''}",
                 fecha=pt_d.get("fecha"),
                 id_partido=pt_d.get("id_partido") or doc.get("id_partido") or "",
@@ -1268,12 +1361,16 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
     h_disc_snap = metadatos.get("hora_inicio_discrepante")
     if h_disc_snap is None:
         h_disc_snap = ctx_p.get("hora_inicio_discrepante")
+    abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
+    tg_env_snap = preparado.get("telegram_envio") or metadatos.get("telegram_envio")
     contab_snap = evaluar_contabilidad_oos_registro(
         fixture_confirmado=fx_conf,
         fuente_fecha=f_fec,
         hora_inicio_partido=h_ini,
         telegram_message_date=tg_mdt,
         hora_mensaje_utc=tg_mutc,
+        telegram_envio=tg_env_snap,
+        abstenido=abstenido,
         hora_inicio_fotmob=h_fm_snap,
         hora_inicio_flashscore=h_fs_snap,
         diferencia_hora_inicio_min=diff_h_snap,
@@ -1286,7 +1383,6 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         registros_existentes=existentes_snapshots,
     )
     f_info_snap = _extraer_fuentes_y_firma_registro(preparado=preparado, metadatos=metadatos)
-    abstenido = bool(preparado.get("abstenido") or getattr(analisis, "abstenido", False))
     if abstenido:
         dec_cob = metadatos.get("decision_cobertura") or {}
         est_cob = str(dec_cob.get("estado") or metadatos.get("estado_cobertura") or "abstenido")
@@ -5460,6 +5556,8 @@ def registrar_en_ledger_oos(
             hora_inicio_partido=registro.get("hora_inicio_partido"),
             telegram_message_date=registro.get("telegram_message_date"),
             hora_mensaje_utc=registro.get("hora_mensaje_utc"),
+            telegram_envio=registro.get("telegram_envio"),
+            abstenido=bool(registro.get("abstenido")),
             hora_inicio_fotmob=registro.get("hora_inicio_fotmob"),
             hora_inicio_flashscore=registro.get("hora_inicio_flashscore"),
             diferencia_hora_inicio_min=registro.get("diferencia_hora_inicio_min"),
@@ -11342,6 +11440,8 @@ def registrar_sombra_prepartido_en_ledger_oos(
         registro["lambdas_plano"] = _lp_pre
     if isinstance(tg_m, dict) and tg_m.get("message_id") is not None:
         registro["telegram_message_id"] = tg_m.get("message_id")
+    if isinstance(preparado.get("telegram_envio"), dict) and preparado.get("telegram_envio"):
+        registro["telegram_envio"] = dict(preparado["telegram_envio"])
     res = registrar_en_ledger_oos(registro, ruta_ledger=ruta_ledger)
     res["estado_registro"] = "pre_partido"
     res["snapshot_sha256"] = snapshot_sha
@@ -11495,6 +11595,9 @@ def liquidar_sombras_en_ledger_oos(
                 **({"zona_origen_hora_inicio": _z_hini_liq} if _z_hini_liq is not None else {}),
                 "telegram_message_date": _tg_dt_liq,
                 "hora_mensaje_utc": _hm_liq,
+                **({"telegram_envio": doc.get("telegram_envio")} if isinstance(doc.get("telegram_envio"), dict) and doc.get("telegram_envio") else (
+                    {"telegram_envio": pre_ref.get("telegram_envio")} if isinstance(pre_ref, dict) and isinstance(pre_ref.get("telegram_envio"), dict) and pre_ref.get("telegram_envio") else {}
+                )),
             } if (_fx_liq is not None or _hi_liq is not None or _tg_dt_liq is not None) else {}),
             **{
                 k_f: v_f

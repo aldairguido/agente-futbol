@@ -426,6 +426,7 @@ def test_r24_b6_evaluar_separa_oos_excluye_100_y_exploratorio_y_desglose_build()
             "hora_inicio_partido": "2026-11-19T22:00:00Z",
             "telegram_message_date": 1795111260,
             "hora_mensaje_utc": "2026-11-19T18:01:00Z",
+            "telegram_envio": {"message_id": 700 + i, "message_date": 1795111260, "message_date_utc": "2026-11-19T18:01:00Z"},
             "es_oos_valido": True,
             "es_canonica": True,
             "estado_canonico": "canonica",

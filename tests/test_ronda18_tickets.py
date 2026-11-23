@@ -817,6 +817,7 @@ def test_bloque_m_contabilidad_oos_canonica_y_compatibilidad_ledger(tmp_path) ->
             "contexto": dict(an_c.metadatos),
             "rutas": {"informe": "dummy.md"},
             "telegram_meta": {"message_id": 100, "message_date": tg_ts},
+            "telegram_envio": {"message_id": 101, "message_date": tg_ts},
             "modo_sombra": {
                 "esquema": "sombra-v1",
                 "version_base": "soloA",

@@ -820,6 +820,7 @@ def test_bloque_6_legacy_sin_fixture_clasificacion_oos_y_resumen() -> None:
                 "hora_inicio_partido": "2026-11-22T22:00:00Z",
                 "telegram_message_date": 1795200000,
                 "hora_mensaje_utc": "2026-11-20T05:00:00Z",
+                "telegram_envio": {"message_id": 888, "message_date": 1795200000, "message_date_utc": "2026-11-20T05:00:00Z"},
                 "resumen": {"aciertos": 5, "fallos": 0, "n_evaluables": 5, "brier": 0.04},
                 "modo_sombra": {
                     "esquema": "sombra-v1",
