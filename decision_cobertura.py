@@ -224,6 +224,11 @@ def bandera_activa(nombre: str, umbrales: Optional[Dict[str, Any]] = None) -> bo
         if nombre in flags_sub and isinstance(flags_sub.get(nombre), bool):
             return bool(flags_sub[nombre])
         return bool(_BANDERAS_AUXILIARES_DEFECTO[nombre])
+    if nombre.startswith("activar_"):
+        u = umbrales if isinstance(umbrales, dict) else cargar_umbrales_cobertura()
+        if nombre in u and isinstance(u.get(nombre), bool):
+            return bool(u[nombre])
+        return False
     return bool(obtener_banderas_comportamiento(umbrales).get(nombre, False))
 
 
@@ -232,7 +237,7 @@ def establecer_overrides_banderas(overrides: Optional[Dict[str, bool]] = None) -
     _OVERRIDES_BANDERAS.clear()
     if overrides:
         for k, v in overrides.items():
-            if k in BANDERAS_COMPORTAMIENTO_DEFECTO or k in _BANDERAS_AUXILIARES_DEFECTO:
+            if k in BANDERAS_COMPORTAMIENTO_DEFECTO or k in _BANDERAS_AUXILIARES_DEFECTO or k.startswith("activar_"):
                 _OVERRIDES_BANDERAS[k] = bool(v)
 
 
