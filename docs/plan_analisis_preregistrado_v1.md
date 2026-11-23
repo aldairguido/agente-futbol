@@ -41,3 +41,8 @@ C'. Consulta con al menos 2 horas de antelación al inicio. Todo partido consult
 D'. Auditoría de omisiones (regla operativa, sin validación): tras cada jornada se lista (con FotMob) los partidos elegibles con inicio anterior al último consultado y no consultados. Si hay alguno, se reporta como "omitido" y el lote de ese día se marca no protocolizado.
 E'. Esta enmienda rige solo para consultas posteriores a su commit. Lo anterior (lote n=9) sigue como "exploratorio" según 4B.
 --- FIN ---
+--- ENMIENDA 4c (2026-11-23 20:33:53Z; regla operativa, sin validación; modifica B' y D' de 4b) ---
+B''. Ventana diaria (regla operativa, sin validación): la "jornada" va de las 08:00 a las 07:59 (America/Lima) del día siguiente. La lista elegible de la jornada contiene los partidos con inicio dentro de esa ventana, ordenada por hora de inicio ascendente. Se pueden consultar con hasta 24 h de antelación, siempre con ≥2 h antes del inicio. La tanda sigue siendo un prefijo contiguo de esa lista.
+D''. Auditoría de omisiones (regla operativa, sin validación): se compara contra la lista elegible de la ventana publicada por FotMob a las 08:00 de Lima de esa jornada. Los partidos que ya hayan empezado antes de la hora de la consulta no cuentan como omitidos.
+E''. Esta enmienda rige solo para consultas posteriores a su commit.
+--- FIN ---
