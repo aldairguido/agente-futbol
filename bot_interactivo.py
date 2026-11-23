@@ -659,8 +659,20 @@ def cmd_estado(message):
 
     from agente_consciente import obtener_agente_consciente
     conciencia = obtener_agente_consciente()
-    brier_val = (getattr(conciencia, "evaluacion_real", {}) or {}).get("brier")
-    brier_str = f" | Brier: `{brier_val:.4f}`" if isinstance(brier_val, (int, float)) else ""
+    ev_real = getattr(conciencia, "evaluacion_real", {}) or {}
+    n_oos = int(ev_real.get("partidos_oos_validos") or 0)
+    ac_oos = int(ev_real.get("ganadas_oos") or 0)
+    err_oos = int(ev_real.get("perdidas_oos") or 0)
+    wr_oos = float(ev_real.get("win_rate_oos") or (ac_oos / (ac_oos + err_oos) if (ac_oos + err_oos) > 0 else 0.0))
+    brier_val = ev_real.get("brier_oos")
+    brier_str = f" | Brier OOS: `{brier_val:.4f}`" if isinstance(brier_val, (int, float)) else ""
+    cuotas_validadas = bool(ev_real.get("cuotas_reales_validadas", False))
+    if n_oos < 30:
+        estado_emocional_txt = "EN CALIBRACIÓN EMPÍRICA (MUESTRA EN DESARROLLO)"
+    else:
+        estado_emocional_txt = str(getattr(conciencia, "estado_adaptativo", "en calibración empírica (muestra en desarrollo)")).upper()
+        if (not cuotas_validadas) and ("+EV VALIDADO" in estado_emocional_txt):
+            estado_emocional_txt = estado_emocional_txt.replace("+EV VALIDADO", "SIN CUOTAS REALES VALIDADAS")
     pool_modelos = len(getattr(getattr(conciencia, "motor_neuronal", None), "modelos", []) or [1])
 
     texto = (
@@ -670,11 +682,12 @@ def cmd_estado(message):
         f"• *Estado del Demonio:* 🟢 Online (Listener Activo)\n"
         f"• *Núcleo Agéntico:* 🧠 Antigravity ReAct + 4 Sub-Agentes Activos\n"
         f"• *Barrido en curso:* {estado_barrido}\n"
-        f"• *Estado Emocional:* `{conciencia.estado_adaptativo.upper()}`\n"
+        f"• *Estado Emocional:* `{estado_emocional_txt}`\n"
+        f"• *Muestra OOS:* `OOS válidos: {n_oos}/30`\n"
         f"• *Fase Cognitiva:* `{getattr(conciencia, 'fase_cognitiva', 'reposo').upper()}`\n"
         f"• *Nivel de Madurez:* `{conciencia.nivel_madurez} XP`\n"
-        f"• *Memoria Vivencial:* {conciencia.aciertos} aciertos | {conciencia.errores} fallos "
-        f"(Win Rate: `{conciencia.win_rate:.1%}`{brier_str})\n"
+        f"• *Memoria Vivencial (OOS válidos canónicos):* {ac_oos} aciertos | {err_oos} fallos "
+        f"(Win Rate: `{wr_oos:.1%}`{brier_str})\n"
         "• *Modo Fail-Safe:* 🛡️ ACTIVO (Anti-NaN/Inf, Kolmogorov 100%)\n"
         "• *Autenticación:* 🔐 Verificación en tiempo real contra Betsson\n"
         "• *Filtro de Ineficiencia:* 🎯 +EV >= +5.0% (Margen estricto)\n"

@@ -732,6 +732,34 @@ class AgenteConsciente:
         if isinstance(brier_val, (int, float)) and isinstance(brier_clim, (int, float)) and brier_clim > 0:
             brier_skill = 1.0 - (float(brier_val) / float(brier_clim))
 
+        # Ronda 25 (Bloque 7): métricas estrictamente sobre OOS válidos canónicos
+        sep_oos = mejor_datos.get("separacion_oos") or {}
+        oos_can = sep_oos.get("oos_valido_canonico") if isinstance(sep_oos, dict) else None
+        if isinstance(oos_can, dict) and (oos_can.get("partidos_unicos") is not None or oos_can.get("evaluables") is not None):
+            partidos_oos_val = int(oos_can.get("partidos_unicos") or 0)
+            ganadas_oos = int(oos_can.get("ganadas") or 0)
+            perdidas_oos = int(oos_can.get("perdidas") or 0)
+            eval_oos = int(oos_can.get("evaluables") or (ganadas_oos + perdidas_oos))
+            wr_oos = float(oos_can.get("acierto_observado") or (ganadas_oos / eval_oos if eval_oos > 0 else 0.0))
+            brier_oos = oos_can.get("brier")
+        else:
+            oos_rows = [
+                r for r in eval_rows
+                if r.get("es_oos_valido") is True
+                and r.get("es_canonica") is True
+                and str(r.get("clasificacion_oos") or "canonica").strip().lower() == "canonica"
+            ]
+            partidos_oos_val = len({str(r.get("id_partido") or r.get("partido") or "") for r in oos_rows if (r.get("id_partido") or r.get("partido"))})
+            ganadas_oos = sum(1 for r in oos_rows if r.get("estado_liquidacion") == "ganada")
+            perdidas_oos = sum(1 for r in oos_rows if r.get("estado_liquidacion") == "perdida")
+            eval_oos = ganadas_oos + perdidas_oos
+            wr_oos = (ganadas_oos / eval_oos) if eval_oos > 0 else 0.0
+            brier_oos = (
+                sum((float(r.get("probabilidad_original") or r.get("probabilidad") or 0.0) - (1.0 if r.get("estado_liquidacion") == "ganada" else 0.0)) ** 2 for r in oos_rows) / eval_oos
+                if eval_oos > 0 else None
+            )
+        cuotas_reales_val = bool(mejor_datos.get("cuotas_reales_validadas", False))
+
         self.fase_cognitiva = FaseCognitiva.REPOSO
         return {
             "evaluables": int(acum70.get("evaluables") or 0),
@@ -739,6 +767,13 @@ class AgenteConsciente:
             "perdidas": int(acum70.get("perdidas") or 0),
             "devoluciones": int(acum70.get("devoluciones") or 0),
             "win_rate": float(acum70.get("acierto_observado") or 0.0),
+            "partidos_oos_validos": partidos_oos_val,
+            "evaluables_oos": eval_oos,
+            "ganadas_oos": ganadas_oos,
+            "perdidas_oos": perdidas_oos,
+            "win_rate_oos": wr_oos,
+            "brier_oos": brier_oos,
+            "cuotas_reales_validadas": cuotas_reales_val,
             "probabilidad_media_global": float(acum70.get("probabilidad_media") or 0.0),
             "brecha_global_pp": float(acum70.get("brecha_pp") or 0.0),
             "win_rate_85": float(acum85.get("acierto_observado") or 0.0) if acum85 else None,
@@ -855,41 +890,41 @@ class AgenteConsciente:
         """Ajusta el estado cognitivo y la identidad del agente según su calibración real y racha."""
         self.fase_cognitiva = FaseCognitiva.CALIBRANDO
         ev = getattr(self, "evaluacion_real", {}) or {}
-        partidos_unicos = int(ev.get("partidos_unicos") or 0)
-        evidencia_suficiente = bool(ev.get("evidencia_suficiente", False)) or (partidos_unicos >= 30)
+        n_oos_validos = int(ev.get("partidos_oos_validos") or 0)
+        cuotas_reales_val = bool(ev.get("cuotas_reales_validadas", False))
+        evidencia_suficiente = (n_oos_validos >= 30)
+        wr_oos = float(ev.get("win_rate_oos") or 0.0)
+        ac_oos = int(ev.get("ganadas_oos") or 0)
+        err_oos = int(ev.get("perdidas_oos") or 0)
 
-        if not self.memoria_vivencial and not ev:
-            self.estado_adaptativo = "curioso"
-            self.identidad_base = (
-                "Soy un agente cuantitativo en etapa de descubrimiento. "
-                "Busco rentabilidad, pero sigo aprendiendo a interpretar el riesgo."
-            )
-        elif not evidencia_suficiente and (ev.get("ganadas", 0) > 0 or self.memoria_vivencial):
+        if not evidencia_suficiente:
             self.estado_adaptativo = "en calibración empírica (muestra en desarrollo)"
-            wr = self.win_rate if self.win_rate > 0 else float(ev.get("win_rate") or 0.0)
-            brier = ev.get("brier")
+            brier = ev.get("brier_oos") if ev.get("brier_oos") is not None else ev.get("brier")
             brier_clim = ev.get("brier_climatologia")
             txt_brier = (
-                f" Brier Score: {brier:.4f} (climatología base: {brier_clim:.4f})."
+                f" Brier Score OOS: {brier:.4f} (climatología base: {brier_clim:.4f})."
                 if isinstance(brier, (int, float)) and isinstance(brier_clim, (int, float))
                 else ""
             )
             top_mkts = [m["familia"] for m in (ev.get("mercados_estrella") or [])[:2]]
             txt_mkts = f" Especialidad preliminar en {', '.join(top_mkts)}." if top_mkts else ""
             self.identidad_base = (
-                f"Agente cuantitativo en fase de calibración empírica ({partidos_unicos}/30 partidos únicos evaluados, "
-                f"{self.aciertos} aciertos / {self.errores} fallos, win rate {wr:.1%}).{txt_brier}{txt_mkts} "
+                f"Agente cuantitativo en fase de calibración empírica (OOS válidos: {n_oos_validos}/30, "
+                f"{ac_oos} aciertos / {err_oos} fallos, win rate OOS {wr_oos:.1%}).{txt_brier}{txt_mkts} "
                 "Priorizo la rigurosidad matemática y la recolección de muestra antes de atribuirme peritaje consolidado."
             )
-        elif ev.get("ganadas", 0) >= 50 or (self.memoria_vivencial and self.aciertos >= 10):
-            wr = self.win_rate
-            brier = ev.get("brier")
+        elif ac_oos >= 50 or (self.memoria_vivencial and ac_oos >= 10):
+            wr = wr_oos
+            brier = ev.get("brier_oos") if ev.get("brier_oos") is not None else ev.get("brier")
             top_mkts = [m["familia"] for m in (ev.get("mercados_estrella") or [])[:2]]
             txt_mkts = f" Especialista de alta precisión en {', '.join(top_mkts)}." if top_mkts else ""
             txt_brier = f" Brier Score calibrado en {brier:.4f}." if isinstance(brier, (int, float)) else ""
 
             if wr >= 0.80:
-                self.estado_adaptativo = "seguro y calibrado (+EV validado)"
+                if cuotas_reales_val:
+                    self.estado_adaptativo = "seguro y calibrado (+EV validado)"
+                else:
+                    self.estado_adaptativo = "seguro y calibrado (OOS sin cuotas reales validadas)"
                 self.identidad_base = (
                     f"Soy un Trader Cuantitativo Senior respaldado por {self.aciertos}+ selecciones "
                     f"ganadas verificadas ({wr:.1%} de acierto empírico en mercados con p >= 70%)."

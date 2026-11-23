@@ -449,3 +449,80 @@ def test_b6_enviar_resumen_largo_fragmenta_y_reintenta(tmp_path):
     assert all(len(t) <= 4000 for t in enviados)
     assert intentos_parte_2["n"] == 1
     assert len(res["message_ids"]) == len(enviados)
+
+
+# =====================================================================
+# BLOQUE 7: /estado — OOS válidos n/30, calibración y nunca +EV VALIDADO sin cuotas
+# =====================================================================
+
+def test_b7_estado_con_menos_de_30_oos_muestra_calibracion_y_oos_n_de_30():
+    import bot_interactivo as bi
+    from agente_consciente import AgenteConsciente
+
+    ag = AgenteConsciente.__new__(AgenteConsciente)
+    ag.memoria_vivencial = [{"resultado": "exito"}] * 20
+    ag.nivel_madurez = 120
+    ag.evaluacion_real = {
+        "partidos_unicos": 45,  # incluye legacy/no-OOS
+        "ganadas": 100,
+        "perdidas": 10,
+        "win_rate": 0.909,
+        "partidos_oos_validos": 2,
+        "ganadas_oos": 7,
+        "perdidas_oos": 3,
+        "win_rate_oos": 0.70,
+        "brier_oos": 0.195,
+        "cuotas_reales_validadas": False,
+    }
+    ag._calibrar_estado_emocional()
+    assert ag.estado_adaptativo == "en calibración empírica (muestra en desarrollo)"
+    assert "+EV" not in ag.estado_adaptativo.upper()
+
+    enviados = []
+    with (
+        patch("agente_consciente.obtener_agente_consciente", return_value=ag),
+        patch.object(bi, "enviar_seguro", side_effect=lambda b, m, txt, **k: enviados.append(txt)),
+        patch.object(bi, "CHAT_ID_AUTORIZADO", "123"),
+    ):
+        msg = SimpleNamespace(chat=SimpleNamespace(id=123), from_user=SimpleNamespace(id=123))
+        bi.cmd_estado(msg)
+
+    assert len(enviados) == 1
+    out = enviados[0]
+    assert "OOS válidos: 2/30" in out
+    assert "EN CALIBRACIÓN EMPÍRICA (MUESTRA EN DESARROLLO)" in out
+    assert "7 aciertos | 3 fallos" in out
+    assert "70.0%" in out
+    assert "+EV VALIDADO" not in out
+
+
+def test_b7_estado_con_35_oos_sin_cuotas_nunca_muestra_ev_validado():
+    import bot_interactivo as bi
+    from agente_consciente import AgenteConsciente
+
+    ag = AgenteConsciente.__new__(AgenteConsciente)
+    ag.memoria_vivencial = []
+    ag.nivel_madurez = 500
+    ag.evaluacion_real = {
+        "partidos_oos_validos": 35,
+        "ganadas_oos": 90,
+        "perdidas_oos": 10,
+        "win_rate_oos": 0.90,
+        "brier_oos": 0.14,
+        "cuotas_reales_validadas": False,
+    }
+    ag._calibrar_estado_emocional()
+    assert "+EV VALIDADO" not in ag.estado_adaptativo.upper()
+
+    enviados = []
+    with (
+        patch("agente_consciente.obtener_agente_consciente", return_value=ag),
+        patch.object(bi, "enviar_seguro", side_effect=lambda b, m, txt, **k: enviados.append(txt)),
+        patch.object(bi, "CHAT_ID_AUTORIZADO", "123"),
+    ):
+        msg = SimpleNamespace(chat=SimpleNamespace(id=123), from_user=SimpleNamespace(id=123))
+        bi.cmd_estado(msg)
+
+    assert len(enviados) == 1
+    assert "OOS válidos: 35/30" in enviados[0]
+    assert "+EV VALIDADO" not in enviados[0]
