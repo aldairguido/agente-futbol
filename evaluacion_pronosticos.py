@@ -1157,6 +1157,7 @@ def reproducir_ab_desde_inputs(inputs_doc_o_ruta: str | dict[str, Any]) -> dict[
         str(eq.get("local") or "Local"),
         str(eq.get("visitante") or "Visitante"),
         banderas_candidatas=banderas_ab,
+        banderas_base={"usar_sobredispersion_nb_corners": True},
         **kw,
     )
     res["modo_sombra"]["version_sombra"] = "A+B"
@@ -5765,17 +5766,19 @@ def ejecutar_analisis_modo_sombra(
     equipo_local: str,
     equipo_visitante: str,
     banderas_candidatas: dict[str, bool],
+    banderas_base: dict[str, bool] | None = None,
     **analizar_kwargs: Any,
 ) -> dict[str, Any]:
     """
-    Ejecuta el análisis oficial (`soloA`, banderas apagadas) y una corrida sombra con
-    `banderas_candidatas` activadas en memoria, retornando ambas versiones sin alterar
-    la versión publicada.
+    Ejecuta el análisis oficial (`soloA`, con `banderas_base` si se indican o apagadas)
+    y una corrida sombra con `banderas_candidatas` activadas en memoria, retornando
+    ambas versiones sin alterar la versión publicada.
     """
     from decision_cobertura import banderas_comportamiento
     import motor_mercados as mm
 
-    with banderas_comportamiento(activar_todas=False):
+    base_kw = {k: bool(v) for k, v in (banderas_base or {}).items()}
+    with banderas_comportamiento(activar_todas=False, **base_kw):
         an_base = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)
     with banderas_comportamiento(activar_todas=False, **{k: bool(v) for k, v in banderas_candidatas.items()}):
         an_sombra = mm.analizar(doc_local, doc_visitante, equipo_local, equipo_visitante, **analizar_kwargs)

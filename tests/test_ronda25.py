@@ -607,3 +607,65 @@ def test_b8_firma_motor_en_snapshot_y_ledger_compatible_hacia_atras(tmp_path):
     assert len(regs) == 1
     assert regs[0]["firma_motor"] == FIRMA_MOTOR
     assert ep.verificar_cadena_ledger_oos(ruta_led)["ok"] is True
+
+
+# =====================================================================
+# BLOQUE 9: reproducir_ab_desde_inputs — brazo base con NB corners=True (323/323)
+# =====================================================================
+
+def test_b9_reproducir_ab_desde_inputs_coincide_323_de_323_prob_base(tmp_path):
+    import json
+    from pathlib import Path as _P
+    import evaluacion_pronosticos as ep
+    import motor_mercados as mm
+    from decision_cobertura import banderas_comportamiento
+
+    raiz = _P(r"D:\agente_futbol")
+    ln_docs = json.loads((raiz / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    doc_l = ln_docs["londrina"]
+    doc_v = ln_docs["nautico"]
+
+    # Corrida de producción (soloA con usar_sobredispersion_nb_corners=True)
+    with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
+        an_prod = mm.analizar(
+            doc_l, doc_v, "Londrina", "Náutico",
+            condicion_local="casa", condicion_visitante="fuera",
+            competicion="Série C",
+        )
+    an_prod.metadatos["fecha_partido"] = "2026-11-20"
+    an_prod.metadatos["generado_en"] = "2026-11-20T12:00:00Z"
+    preparado = {
+        "id_trabajo": "r25_b9_repro",
+        "analisis": an_prod,
+        "contexto": {
+            "equipo_local": "Londrina",
+            "equipo_visitante": "Náutico",
+            "doc_local": doc_l,
+            "doc_visitante": doc_v,
+            "fecha_partido": "2026-11-20",
+            "competicion": "Série C",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+        },
+        "rutas": {},
+    }
+    ep.adjuntar_modo_sombra_preparado(preparado)
+    res_g = ep.guardar_inputs_reproducibles(preparado, directorio=str(tmp_path))
+    assert res_g["ok"] is True
+
+    rep = ep.reproducir_ab_desde_inputs(res_g["ruta"])
+    comp_prod = {
+        (c["mercado"], c["evento"], c.get("periodo"), c.get("equipo"), c.get("linea")): c["prob_base"]
+        for c in preparado["modo_sombra"]["comparaciones"]
+    }
+    comp_rep = {
+        (c["mercado"], c["evento"], c.get("periodo"), c.get("equipo"), c.get("linea")): c["prob_base"]
+        for c in rep["modo_sombra"]["comparaciones"]
+    }
+    assert len(comp_prod) >= 323
+    assert len(comp_rep) == len(comp_prod)
+    coinciden = sum(1 for k, v in comp_prod.items() if k in comp_rep and abs(float(v) - float(comp_rep[k])) <= 1e-9)
+    assert coinciden == len(comp_prod), f"Solo coincidieron {coinciden}/{len(comp_prod)} en prob_base"
+    corners_keys = [k for k in comp_prod if "esquina" in k[0].lower() or "córner" in k[0].lower() or "corner" in k[0].lower()]
+    assert len(corners_keys) > 0
+    assert all(abs(float(comp_prod[k]) - float(comp_rep[k])) <= 1e-9 for k in corners_keys)

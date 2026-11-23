@@ -304,7 +304,7 @@ def test_r24_b5_inputs_gz_sha256_y_reproduccion_ab(tmp_path):
     dl = ln_docs["londrina"]
     dv = ln_docs["nautico"]
 
-    with banderas_comportamiento(activar_todas=False):
+    with banderas_comportamiento(activar_todas=False, usar_sobredispersion_nb_corners=True):
         an = mm.analizar(
             dl, dv, "Londrina", "Náutico",
             condicion_local="casa", condicion_visitante="fuera",
