@@ -815,14 +815,428 @@ class ClienteFlashscore:
             salida = self._estadisticas_graphql_dts(id_flashscore)
         return salida
 
-    def extraer_cuotas(self, id_flashscore: str, id_fotmob: str | int | None = None) -> dict[str, Any]:
+    _CACHE_FEED_DIARIO: dict[int, tuple[float, list[dict[str, Any]]]] = {}
+
+    def _obtener_feed_diario_cacheado(
+        self,
+        dia_offset: int = 0,
+        *,
+        ttl_seg: float = 600.0,
+    ) -> list[dict[str, Any]]:
         """
-        Extrae las cuotas 1X2 (local, empate, visitante) del feed de cuotas de Flashscore.
-        Soporta:
-          - Feed nuevo `/203/x/feed/df_od_1_{id_flashscore}` y tradicional `d_od_{id_flashscore}_es_1_eu`
-          - Soporte de casas de apuestas (Betsson, Betano, Bet365)
-          - Detección de Dropping Odds >= 10%
-          - Fallback a cuotas de FotMob si no hay cuotas vivas en Flashscore
+        Descarga y parsea el feed diario público de Flashscore (`f_1_{dia}_-5_es_1`)
+        con caché en memoria de 10 min. Cada entrada trae `id_flashscore` (`AA`),
+        `home_participant_id` (`JA`), `away_participant_id` (`JB`), `local` (`AE`),
+        `visitante` (`AF`), `liga` (`ZA`), `estado` (`AB`) e `inicio_unix` (`AD`).
+        """
+        import time
+
+        ahora = time.time()
+        hit = self._CACHE_FEED_DIARIO.get(int(dia_offset))
+        if hit and (ahora - hit[0]) < ttl_seg:
+            return hit[1]
+
+        url = f"https://2.flashscore.ninja/2/x/feed/f_1_{int(dia_offset)}_-5_es_1"
+        eventos: list[dict[str, Any]] = []
+        try:
+            r = self._get(url)
+            txt = getattr(r, "text", "") or ""
+            if getattr(r, "status_code", 0) == 200 and len(txt) > 200 and "AA÷" in txt:
+                liga_actual = ""
+                for blk in txt.split("~"):
+                    campos: dict[str, str] = {}
+                    for parte in blk.split("¬"):
+                        if "÷" in parte:
+                            k, v = parte.split("÷", 1)
+                            campos[k] = v
+                    if "ZA" in campos:
+                        liga_actual = campos["ZA"]
+                    if "AA" in campos and "AE" in campos and "AF" in campos:
+                        eventos.append({
+                            "id_flashscore": campos["AA"].strip(),
+                            "home_participant_id": (campos.get("JA") or "").strip() or None,
+                            "away_participant_id": (campos.get("JB") or "").strip() or None,
+                            "local": campos["AE"].strip(),
+                            "visitante": campos["AF"].strip(),
+                            "liga": liga_actual,
+                            "estado": (campos.get("AB") or "").strip(),
+                            "inicio_unix": _int_o_none(campos.get("AD") or ""),
+                        })
+        except Exception:
+            eventos = []
+        self._CACHE_FEED_DIARIO[int(dia_offset)] = (ahora, eventos)
+        return eventos
+
+    def buscar_evento_programado_feed_diario(
+        self,
+        equipo_local: str,
+        equipo_visitante: str,
+        *,
+        dias: tuple[int, ...] = (0, 1),
+    ) -> dict[str, Any] | None:
+        """
+        Busca un partido programado (en cualquier liga del mundo) dentro del feed
+        diario de Flashscore (`dias=(0, 1)` = hoy y mañana) y devuelve su `id_flashscore`
+        junto con los IDs exactos de participante (`home_participant_id`, `away_participant_id`).
+        """
+        import unicodedata
+
+        def _norm(s: str) -> str:
+            t = str(s or "").lower()
+            for src_c, dst_c in (("ø", "o"), ("ł", "l"), ("đ", "d"), ("ß", "ss"), ("æ", "ae"), ("œ", "oe"), ("ı", "i")):
+                t = t.replace(src_c, dst_c)
+            t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode("ascii")
+            t = re.sub(r"[^a-z0-9]+", " ", t).strip()
+            toks = [w for w in t.split() if w not in ("fc", "cf", "sc", "cd", "ac", "as", "fk", "sk", "de", "la", "el", "club", "atletico", "sporting")]
+            return " ".join(toks) if toks else t
+
+        nl = _norm(equipo_local)
+        nv = _norm(equipo_visitante)
+        if not nl or not nv:
+            return None
+        tl = set(nl.split())
+        tv = set(nv.split())
+
+        mejor: tuple[float, dict[str, Any]] | None = None
+        for d_off in dias:
+            for ev in self._obtener_feed_diario_cacheado(d_off):
+                # Preferir partidos programados (AB=1) o en juego (AB=2); evitar finalizados viejos si hay programado
+                el = _norm(ev["local"])
+                ev_n = _norm(ev["visitante"])
+                if not el or not ev_n:
+                    continue
+                tel = set(el.split())
+                tev = set(ev_n.split())
+                sl = len(tl & tel) / max(1, min(len(tl), len(tel))) if (tl and tel) else 0.0
+                sv = len(tv & tev) / max(1, min(len(tv), len(tev))) if (tv and tev) else 0.0
+                if nl in el or el in nl:
+                    sl = max(sl, 0.90)
+                if nv in ev_n or ev_n in nv:
+                    sv = max(sv, 0.90)
+                if sl >= 0.60 and sv >= 0.60:
+                    score = sl + sv + (0.25 if ev.get("estado") == "1" else 0.0)
+                    if mejor is None or score > mejor[0]:
+                        mejor = (score, ev)
+        return mejor[1] if mejor else None
+
+    def _resolver_participantes_flashscore(
+        self,
+        id_flashscore: str,
+        *,
+        dias: tuple[int, ...] = (0, 1, -1),
+    ) -> tuple[str | None, str | None]:
+        """Resuelve `(home_participant_id, away_participant_id)` (`JA`, `JB`) desde el feed diario."""
+        eid = str(id_flashscore or "").strip()
+        if not eid:
+            return None, None
+        for d_off in dias:
+            for ev in self._obtener_feed_diario_cacheado(d_off):
+                if ev.get("id_flashscore") == eid:
+                    return ev.get("home_participant_id"), ev.get("away_participant_id")
+        return None, None
+
+    def _extraer_cuotas_graphql_flashscore(
+        self,
+        id_flashscore: str,
+        *,
+        home_participant_id: str | None = None,
+        away_participant_id: str | None = None,
+        geo_ip: str = "PE",
+        geo_sub: str = "PELMA",
+    ) -> dict[str, Any] | None:
+        """
+        Consulta el endpoint público GraphQL de cuotas de Flashscore
+        (`global.ds.lsapp.eu/odds/pq_graphql?_hash=oce`) sin login ni API key.
+        Devuelve cuotas reales de la casa prioritaria (Betsson > bet365 > Betano > 1xBet...),
+        consenso mediano de todas las casas disponibles y probabilidades sin margen (`de-vigged`).
+        """
+        import statistics
+        from datetime import datetime, timezone
+
+        eid = str(id_flashscore or "").strip()
+        if not eid:
+            return None
+        gql_url = (
+            f"https://global.ds.lsapp.eu/odds/pq_graphql?_hash=oce"
+            f"&eventId={eid}&projectId=2&geoIpCode={geo_ip}&geoIpSubdivisionCode={geo_sub}"
+        )
+        try:
+            r = self._get(gql_url)
+            if getattr(r, "status_code", 0) != 200:
+                return None
+            txt = getattr(r, "text", "") or ""
+            if not txt.lstrip().startswith("{"):
+                return None
+            payload = json.loads(txt)
+        except Exception:
+            return None
+
+        fo = ((payload.get("data") or {}).get("findOddsByEventId") or {})
+        odds_blocks = fo.get("odds") or []
+        if not odds_blocks:
+            return None
+
+        bks_by_id: dict[str, str] = {}
+        for b in ((fo.get("settings") or {}).get("bookmakers") or []):
+            if isinstance(b, dict) and isinstance(b.get("bookmaker"), dict):
+                bid = str(b["bookmaker"].get("id") or "")
+                bnom = str(b["bookmaker"].get("name") or "").strip()
+                if bid and bnom:
+                    bks_by_id[bid] = bnom
+
+        # Resolver home_participant_id y away_participant_id si no se pasaron
+        h_pid = home_participant_id
+        a_pid = away_participant_id
+        if not h_pid or not a_pid:
+            rh, ra = self._resolver_participantes_flashscore(eid)
+            h_pid = h_pid or rh
+            a_pid = a_pid or ra
+
+        def _f_odd(v: Any) -> float | None:
+            try:
+                f = float(v)
+                return round(f, 3) if f > 1.0 else None
+            except (TypeError, ValueError):
+                return None
+
+        # Si aún no tenemos JA/JB, inferir orden [primero, segundo] solo si hay 2 participantes distintos
+        if not h_pid or not a_pid:
+            for blk in odds_blocks:
+                if blk.get("bettingScope") == "FULL_TIME" and blk.get("bettingType") == "HOME_DRAW_AWAY":
+                    pids = [str(it.get("eventParticipantId")) for it in (blk.get("odds") or []) if it.get("eventParticipantId")]
+                    if len(pids) >= 2:
+                        h_pid = h_pid or pids[0]
+                        a_pid = a_pid or pids[1]
+                        break
+
+        # Agrupar mercados FT por bookmaker
+        por_casa: dict[str, dict[str, Any]] = {}
+        for blk in odds_blocks:
+            if blk.get("bettingScope") != "FULL_TIME":
+                continue
+            bt = str(blk.get("bettingType") or "")
+            if bt not in ("HOME_DRAW_AWAY", "OVER_UNDER", "BOTH_TEAMS_TO_SCORE", "DOUBLE_CHANCE", "DRAW_NO_BET"):
+                continue
+            bid = str(blk.get("bookmakerId") or "")
+            bnom = bks_by_id.get(bid, f"bk_{bid}")
+            entry = por_casa.setdefault(bnom, {"mercados": {}, "opening": {}})
+            mkts = entry["mercados"]
+            opens = entry["opening"]
+            for it in (blk.get("odds") or []):
+                if it.get("active") is False:
+                    continue
+                val = _f_odd(it.get("value"))
+                if val is None:
+                    continue
+                op = _f_odd(it.get("opening"))
+                pid = it.get("eventParticipantId")
+                clave: str | None = None
+                if bt == "HOME_DRAW_AWAY":
+                    if pid is None:
+                        clave = "empate"
+                    elif h_pid and pid == h_pid:
+                        clave = "local"
+                    elif a_pid and pid == a_pid:
+                        clave = "visitante"
+                elif bt == "DOUBLE_CHANCE":
+                    if pid is None:
+                        clave = "12"
+                    elif h_pid and pid == h_pid:
+                        clave = "1x"
+                    elif a_pid and pid == a_pid:
+                        clave = "x2"
+                elif bt == "DRAW_NO_BET":
+                    if h_pid and pid == h_pid:
+                        clave = "dnb_local"
+                    elif a_pid and pid == a_pid:
+                        clave = "dnb_visitante"
+                elif bt == "BOTH_TEAMS_TO_SCORE":
+                    btts_flag = it.get("bothTeamsToScore")
+                    if btts_flag is True:
+                        clave = "btts_si"
+                    elif btts_flag is False:
+                        clave = "btts_no"
+                elif bt == "OVER_UNDER":
+                    sel = str(it.get("selection") or "").upper()
+                    h_val = (it.get("handicap") or {}).get("value")
+                    if sel in ("OVER", "UNDER") and h_val is not None:
+                        try:
+                            linea_str = f"{float(h_val):.1f}"
+                        except (TypeError, ValueError):
+                            linea_str = str(h_val).strip()
+                        if linea_str in ("0.5", "1.5", "2.5", "3.5", "4.5", "5.5"):
+                            clave = f"{sel.lower()}_{linea_str}"
+                if clave:
+                    mkts[clave] = val
+                    if op is not None:
+                        opens[clave] = op
+
+        if not por_casa:
+            return None
+
+        # Prioridad de casa ejecutable (Betsson primero, luego bet365, Betano, 1xBet...)
+        prioridad = ("betsson", "bet365", "betano", "1xbet", "caliente", "doradobet", "stake")
+
+        def _rank_casa(nombre: str) -> tuple[int, int, str]:
+            nl = nombre.lower()
+            has_1x2 = 0 if all(k in por_casa[nombre]["mercados"] for k in ("local", "empate", "visitante")) else 1
+            prio_idx = len(prioridad)
+            for idx_p, tok in enumerate(prioridad):
+                if tok in nl:
+                    prio_idx = idx_p
+                    break
+            return (has_1x2, prio_idx, nl)
+
+        casa_sel = sorted(por_casa.keys(), key=_rank_casa)[0]
+        mkts_sel = dict(por_casa[casa_sel]["mercados"])
+        opens_sel = dict(por_casa[casa_sel]["opening"])
+
+        # Consenso mediano entre todas las casas disponibles por clave
+        valores_por_clave: dict[str, list[float]] = {}
+        for info_c in por_casa.values():
+            for k, v in info_c["mercados"].items():
+                valores_por_clave.setdefault(k, []).append(v)
+        consenso = {
+            k: round(float(statistics.median(vs)), 3)
+            for k, vs in valores_por_clave.items()
+            if vs
+        }
+
+        # Dropping odds >= 10% sobre 1X2 (apertura -> actual)
+        max_drop = 0.0
+        for k_1x2 in ("local", "empate", "visitante"):
+            c_now = mkts_sel.get(k_1x2)
+            c_op = opens_sel.get(k_1x2)
+            if c_now and c_op and c_op > c_now:
+                pct = ((c_op - c_now) / c_op) * 100.0
+                if pct > max_drop:
+                    max_drop = pct
+
+        # Probabilidades implícitas sin margen (de-vigged) usando consenso de mercado
+        base_devig = consenso if len(por_casa) >= 2 else mkts_sel
+        prob_devig: dict[str, Any] = {}
+        if all(k in base_devig for k in ("local", "empate", "visitante")):
+            prob_devig["1x2"] = devig_probabilidades({
+                "1": base_devig["local"],
+                "X": base_devig["empate"],
+                "2": base_devig["visitante"],
+            })
+        if all(k in base_devig for k in ("over_2.5", "under_2.5")):
+            prob_devig["ou_2.5"] = devig_probabilidades({
+                "over_2.5": base_devig["over_2.5"],
+                "under_2.5": base_devig["under_2.5"],
+            })
+        if all(k in base_devig for k in ("btts_si", "btts_no")):
+            prob_devig["btts"] = devig_probabilidades({
+                "btts_si": base_devig["btts_si"],
+                "btts_no": base_devig["btts_no"],
+            })
+
+        return {
+            "local": mkts_sel.get("local") or consenso.get("local"),
+            "empate": mkts_sel.get("empate") or consenso.get("empate"),
+            "visitante": mkts_sel.get("visitante") or consenso.get("visitante"),
+            "1x": mkts_sel.get("1x") or consenso.get("1x"),
+            "x2": mkts_sel.get("x2") or consenso.get("x2"),
+            "12": mkts_sel.get("12") or consenso.get("12"),
+            "casa": casa_sel,
+            "fuente_cuotas": "flashscore_graphql",
+            "id_flashscore_cuotas": eid,
+            "n_casas": len(por_casa),
+            "casas_disponibles": sorted(por_casa.keys()),
+            "capturado_en_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "dropping_odds": bool(max_drop >= 10.0),
+            "pct_drop": round(max_drop, 2),
+            "mercados": mkts_sel,
+            "opening": opens_sel,
+            "consenso_mercado": consenso,
+            "prob_mercado_devig": prob_devig,
+        }
+
+    def _extraer_cuotas_fotmob_match_odds(self, id_fotmob: str | int) -> dict[str, Any] | None:
+        """
+        Respaldo gratuito de cuotas 1X2 vía `/api/data/matchOdds?matchId={id}&ccode3=PER`
+        de FotMob (cobertura global en todas las ligas).
+        """
+        import urllib.request
+        from datetime import datetime, timezone
+
+        fid = str(id_fotmob or "").strip()
+        if not fid:
+            return None
+        url = f"https://www.fotmob.com/api/data/matchOdds?matchId={fid}&ccode3=PER"
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+        odds_obj = data.get("odds") or {}
+        mkts = odds_obj.get("matchfactMarkets") or []
+        for mkt in mkts:
+            choices = mkt.get("selections") or mkt.get("choices") or []
+            mapa: dict[str, float] = {}
+            for ch in choices:
+                nm = str(ch.get("name") or ch.get("label") or "").strip().lower()
+                raw_v = ch.get("decimal") or ch.get("oddsDecimal") or ch.get("value")
+                try:
+                    fv = float(raw_v)
+                except (TypeError, ValueError):
+                    continue
+                if fv <= 1.0:
+                    continue
+                if nm == "1":
+                    mapa["local"] = round(fv, 3)
+                elif nm == "x":
+                    mapa["empate"] = round(fv, 3)
+                elif nm == "2":
+                    mapa["visitante"] = round(fv, 3)
+            if all(k in mapa for k in ("local", "empate", "visitante")):
+                prob_devig = {
+                    "1x2": devig_probabilidades({
+                        "1": mapa["local"],
+                        "X": mapa["empate"],
+                        "2": mapa["visitante"],
+                    })
+                }
+                return {
+                    "local": mapa["local"],
+                    "empate": mapa["empate"],
+                    "visitante": mapa["visitante"],
+                    "casa": "FotMob Odds",
+                    "fuente_cuotas": "fotmob_match_odds",
+                    "id_fotmob_cuotas": fid,
+                    "n_casas": 1,
+                    "capturado_en_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "dropping_odds": False,
+                    "pct_drop": 0.0,
+                    "mercados": dict(mapa),
+                    "consenso_mercado": dict(mapa),
+                    "prob_mercado_devig": prob_devig,
+                }
+        return None
+
+    def extraer_cuotas(
+        self,
+        id_flashscore: str,
+        id_fotmob: str | int | None = None,
+        *,
+        home_participant_id: str | None = None,
+        away_participant_id: str | None = None,
+        equipo_local: str | None = None,
+        equipo_visitante: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Extrae las cuotas reales de mercado para un partido programado (sin login):
+          1. API pública GraphQL de Flashscore (`global.ds.lsapp.eu/odds/pq_graphql`, `geoIpCode=PE`)
+             con Betsson, Betano, Bet365, 1xBet, consenso mediano y probabilidades sin margen (`de-vigged`)
+             para 1X2, Over/Under, BTTS, Doble Oportunidad y DNB.
+          2. Fallback al feed HTML clásico de Flashscore (`df_od_1_` / `d_od_`).
+          3. Fallback a FotMob `/api/data/matchOdds` si `id_fotmob` está disponible.
         """
         from bs4 import BeautifulSoup
         import re
@@ -837,6 +1251,28 @@ class ClienteFlashscore:
         }
 
         id_limpio = str(id_flashscore or "").strip()
+        h_pid = home_participant_id
+        a_pid = away_participant_id
+
+        # Si no tenemos id_flashscore pero sí nombres de equipos, buscar en el feed diario global
+        if not id_limpio and equipo_local and equipo_visitante:
+            ev_prog = self.buscar_evento_programado_feed_diario(equipo_local, equipo_visitante)
+            if ev_prog:
+                id_limpio = ev_prog["id_flashscore"]
+                h_pid = h_pid or ev_prog.get("home_participant_id")
+                a_pid = a_pid or ev_prog.get("away_participant_id")
+
+        # 1) Principal: GraphQL público de Flashscore (Betsson + consenso + 10 tipos de mercado)
+        if id_limpio:
+            res_gql = self._extraer_cuotas_graphql_flashscore(
+                id_limpio,
+                home_participant_id=h_pid,
+                away_participant_id=a_pid,
+            )
+            if res_gql and any(res_gql.get(k) is not None for k in ("local", "empate", "visitante")):
+                return res_gql
+
+        # 2) Fallback: feed HTML tradicional (mantiene compatibilidad con tests existentes)
         urls_candidatas = []
         if id_limpio:
             urls_candidatas = [
@@ -939,48 +1375,35 @@ class ClienteFlashscore:
                         "pct_drop": 12.0 if any(p[1] for p in todos_parsed[:3]) else 0.0,
                     }
 
-        # Fallback a cuotas de FotMob si id_fotmob está disponible
+        # 3) Fallback a cuotas de FotMob (`/api/data/matchOdds`) si `id_fotmob` está disponible
         if id_fotmob:
-            try:
-                import urllib.request
-                import json
-                fm_urls = [
-                    f"https://www.fotmob.com/api/data/matchDetails?matchId={id_fotmob}",
-                    f"https://www.fotmob.com/api/matchDetails?matchId={id_fotmob}",
-                ]
-                for fm_url in fm_urls:
-                    try:
-                        req = urllib.request.Request(fm_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                        with urllib.request.urlopen(req, timeout=4) as resp:
-                            data = json.loads(resp.read().decode("utf-8"))
-                        content_sec = data.get("content") or {}
-                        bet_sec = content_sec.get("betting") or {}
-                        odds_list = bet_sec.get("odds") or []
-                        for mkt in odds_list:
-                            if "1x2" in str(mkt.get("title") or "").lower() or "full time" in str(mkt.get("title") or "").lower():
-                                choices = mkt.get("choices") or []
-                                if len(choices) >= 3:
-                                    try:
-                                        c_l = float(choices[0].get("fractional") or choices[0].get("decimal") or choices[0].get("value"))
-                                        c_x = float(choices[1].get("fractional") or choices[1].get("decimal") or choices[1].get("value"))
-                                        c_v = float(choices[2].get("fractional") or choices[2].get("decimal") or choices[2].get("value"))
-                                        if c_l > 1.0 and c_x > 1.0 and c_v > 1.0:
-                                            return {
-                                                "local": c_l,
-                                                "empate": c_x,
-                                                "visitante": c_v,
-                                                "casa": "FotMob Odds",
-                                                "dropping_odds": False,
-                                                "pct_drop": 0.0,
-                                            }
-                                    except Exception:
-                                        pass
-                    except Exception:
-                        continue
-            except Exception:
-                pass
+            res_fm = self._extraer_cuotas_fotmob_match_odds(id_fotmob)
+            if res_fm:
+                return res_fm
 
         return res_defecto
+
+
+def devig_probabilidades(cuotas_grupo: dict[str, float]) -> dict[str, Any]:
+    """
+    Elimina el margen (overround) de un conjunto mutuamente excluyente de cuotas
+    decimales mediante normalización multiplicativa: p_i = (1/o_i) / sum_j(1/o_j).
+    """
+    inv: dict[str, float] = {}
+    for k, v in (cuotas_grupo or {}).items():
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 1.0:
+            inv[str(k)] = 1.0 / fv
+    suma = sum(inv.values())
+    if suma <= 0.0 or len(inv) < 2:
+        return {"probs": {}, "overround_pct": None}
+    return {
+        "probs": {k: round(v / suma, 6) for k, v in inv.items()},
+        "overround_pct": round((suma - 1.0) * 100.0, 2),
+    }
 
 
 def _int_o_none(texto: str) -> int | None:

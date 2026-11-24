@@ -220,6 +220,7 @@ class SnapshotPronostico:
     lambdas_base_doble_adn: dict[str, Any] | None = None
     inputs_sha256: str | None = None
     firma_motor: str | None = None
+    cuotas_mercado: dict[str, Any] | None = None
 
     def a_dict(self) -> dict[str, Any]:
         out = {
@@ -296,6 +297,8 @@ class SnapshotPronostico:
             out["inputs_sha256"] = self.inputs_sha256
         if self.firma_motor is not None:
             out["firma_motor"] = self.firma_motor
+        if self.cuotas_mercado is not None:
+            out["cuotas_mercado"] = self.cuotas_mercado
         return out
 
 
@@ -1683,6 +1686,15 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
         lambdas_base_doble_adn=lam_base_adn_snap,
         inputs_sha256=inp_sha_snap,
         firma_motor=_extraer_firma_motor(preparado=preparado, metadatos=metadatos),
+        cuotas_mercado=(
+            dict(metadatos.get("cuotas_mercado"))
+            if isinstance(metadatos.get("cuotas_mercado"), dict) and metadatos.get("cuotas_mercado")
+            else (
+                dict(preparado.get("cuotas_mercado"))
+                if isinstance(preparado.get("cuotas_mercado"), dict) and preparado.get("cuotas_mercado")
+                else None
+            )
+        ),
     )
 
 
