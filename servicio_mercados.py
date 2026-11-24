@@ -3820,36 +3820,44 @@ def preparar_analisis(
         import informe as informe_mod
 
         cliente_fs = ClienteFlashscore()
-        # 1) Priorizar id_flashscore del encuentro programado; luego duelos o historial conocido
+        # 1) Usar únicamente el partido programado real (NUNCA IDs de partidos pasados del H2H)
         id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
+        home_pid_fs: str | None = None
+        away_pid_fs: str | None = None
         if id_fs_prog and id_fs_prog not in ("N/D", "None", ""):
             id_fs_partido = id_fs_prog
-        if not id_fs_partido:
-            for p_cand in (info_h2h_2024_2026.get("duelos") or []) + (contexto["doc_local"].get("partidos") or []):
-                sec = p_cand.get("fuente_secundaria") or {}
-                mid_cand = str(sec.get("id_flashscore") or p_cand.get("id_flashscore") or "").strip()
-                if mid_cand and mid_cand not in ("N/D", "None", ""):
-                    id_fs_partido = mid_cand
-                    break
+        else:
+            ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                str(contexto.get("equipo_local") or ""),
+                str(contexto.get("equipo_visitante") or ""),
+            )
+            if ev_fs_prog:
+                id_fs_partido = ev_fs_prog["id_flashscore"]
+                home_pid_fs = ev_fs_prog.get("home_participant_id")
+                away_pid_fs = ev_fs_prog.get("away_participant_id")
 
-        if id_fs_partido:
-            # Intentar extraer cuotas del partido o de los candidatos H2H
-            cuotas_try = cliente_fs.extraer_cuotas(id_fs_partido)
-            if any(v is not None for v in cuotas_try.values()):
+        id_fotmob_prog = (
+            ctx.get("id_partido_fotmob")
+            or ctx.get("id_partido")
+            or ctx.get("match_id")
+            or None
+        )
+        if str(id_fotmob_prog or "").strip() in ("", "N/D", "None"):
+            id_fotmob_prog = None
+
+        if id_fs_partido or id_fotmob_prog:
+            cuotas_try = cliente_fs.extraer_cuotas(
+                id_fs_partido or "",
+                id_fotmob=id_fotmob_prog,
+                home_participant_id=home_pid_fs,
+                away_participant_id=away_pid_fs,
+                equipo_local=str(contexto.get("equipo_local") or ""),
+                equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+            )
+            if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
                 cuotas_flashscore = cuotas_try
-            else:
-                try:
-                    cands_hh = candidatos_desde_feed_hh(id_fs_partido, cliente=cliente_fs)
-                    for ch in cands_hh[:5]:
-                        cid = str(ch.get("id") or "").strip()
-                        if cid and cid != id_fs_partido:
-                            c_alt = cliente_fs.extraer_cuotas(cid)
-                            if any(v is not None for v in c_alt.values()):
-                                cuotas_flashscore = c_alt
-                                id_fs_partido = cid
-                                break
-                except Exception:
-                    pass
+                if isinstance(getattr(analisis, "metadatos", None), dict):
+                    analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
 
         destino_ticket_valor = os.path.join(
             base_dir,
