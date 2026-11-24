@@ -3459,6 +3459,15 @@ def calcular_metricas_clv_y_mercado(
     if not isinstance(cuotas, dict) or not cuotas:
         return {"disponible": False, "motivo": "sin_cuotas_mercado_prepartido"}
 
+    # Guarda temporal estricta: rechazar cuotas capturadas en o después del inicio del partido
+    cap_utc = _parsear_momento(cuotas.get("capturado_en_utc"))
+    ini_utc = _parsear_momento(
+        pronostico_doc.get("hora_inicio_partido")
+        or (getattr(resultado, "inicio_utc", None) if not isinstance(resultado, dict) else resultado.get("inicio_utc"))
+    )
+    if cap_utc is not None and ini_utc is not None and cap_utc >= ini_utc:
+        return {"disponible": False, "motivo": "cuotas_capturadas_post_inicio"}
+
     if isinstance(resultado, dict):
         g_l = resultado.get("goles_local")
         g_v = resultado.get("goles_visitante")
@@ -3567,8 +3576,7 @@ def calcular_metricas_clv_y_mercado(
             "overround_pct": (devig.get("btts") or {}).get("overround_pct"),
         }
 
-    # 4) CLV real y EV/ROI real (1u plana en selecciones primarias con EV_consulta > 0)
-    ev_apuestas: list[dict[str, Any]] = []
+    # 4) CLV sin margen (de-vigged CLV: p_cierre_devig * cuota_consulta - 1) y movimiento de cuota
     clv_items: list[dict[str, Any]] = []
     mapa_cuota_consulta = {
         "1": cuotas.get("local") or mkts_q.get("local"),
@@ -3578,15 +3586,6 @@ def calcular_metricas_clv_y_mercado(
         "under_2.5": mkts_q.get("under_2.5"),
         "btts_si": mkts_q.get("btts_si"),
         "btts_no": mkts_q.get("btts_no"),
-    }
-    mapa_gano = {
-        "1": y_1x2 == "1",
-        "X": y_1x2 == "X",
-        "2": y_1x2 == "2",
-        "over_2.5": y_o25 == 1,
-        "under_2.5": y_o25 == 0,
-        "btts_si": y_btts == 1,
-        "btts_no": y_btts == 0,
     }
     cierre_mkts = dict((cuotas_cierre or {}).get("mercados") or {})
     mapa_cuota_cierre = {
@@ -3598,26 +3597,38 @@ def calcular_metricas_clv_y_mercado(
         "btts_si": cierre_mkts.get("btts_si"),
         "btts_no": cierre_mkts.get("btts_no"),
     }
+
+    # Probabilidades de cierre sin margen (consenso si existe, si no casa de cierre)
+    devig_cierre = dict((cuotas_cierre or {}).get("prob_mercado_devig") or {})
+    if cuotas_cierre:
+        if "1x2" not in devig_cierre and all(mapa_cuota_cierre.get(k) for k in ("1", "X", "2")):
+            devig_cierre["1x2"] = devig_probabilidades({k: float(mapa_cuota_cierre[k]) for k in ("1", "X", "2")})
+        if "ou_2.5" not in devig_cierre and all(mapa_cuota_cierre.get(k) for k in ("over_2.5", "under_2.5")):
+            devig_cierre["ou_2.5"] = devig_probabilidades({k: float(mapa_cuota_cierre[k]) for k in ("over_2.5", "under_2.5")})
+        if "btts" not in devig_cierre and all(mapa_cuota_cierre.get(k) for k in ("btts_si", "btts_no")):
+            devig_cierre["btts"] = devig_probabilidades({k: float(mapa_cuota_cierre[k]) for k in ("btts_si", "btts_no")})
+
+    p_cierre_map: dict[str, float] = {}
+    for grp_k in ("1x2", "ou_2.5", "btts"):
+        for sk, pv in ((devig_cierre.get(grp_k) or {}).get("probs") or {}).items():
+            p_cierre_map[sk] = float(pv)
+
     for sel_k, o_q in mapa_cuota_consulta.items():
         if o_q is None or float(o_q) <= 1.0 or sel_k not in p_mod:
             continue
         oq_f = float(o_q)
-        ev_pct = ((p_mod[sel_k] * oq_f) - 1.0) * 100.0
-        clv_pct = None
         o_c = mapa_cuota_cierre.get(sel_k)
-        if o_c is not None and float(o_c) > 1.0:
-            clv_pct = ((oq_f / float(o_c)) - 1.0) * 100.0
-            clv_items.append({"seleccion": sel_k, "cuota_consulta": oq_f, "cuota_cierre": float(o_c), "clv_pct": round(clv_pct, 2)})
-        if ev_pct > 0.0:
-            ganancia_1u = (oq_f - 1.0) if mapa_gano[sel_k] else -1.0
-            ev_apuestas.append({
+        p_c_dv = p_cierre_map.get(sel_k)
+        if p_c_dv is not None and p_c_dv > 0.0:
+            clv_devig_pct = ((p_c_dv * oq_f) - 1.0) * 100.0
+            mov_pct = (((oq_f / float(o_c)) - 1.0) * 100.0) if (o_c is not None and float(o_c) > 1.0) else None
+            clv_items.append({
                 "seleccion": sel_k,
-                "prob_modelo": round(p_mod[sel_k], 6),
                 "cuota_consulta": oq_f,
-                "ev_pct": round(ev_pct, 2),
-                "gano": bool(mapa_gano[sel_k]),
-                "ganancia_1u": round(ganancia_1u, 4),
-                "clv_pct": round(clv_pct, 2) if clv_pct is not None else None,
+                "cuota_cierre": float(o_c) if o_c is not None else None,
+                "prob_cierre_devig": round(p_c_dv, 6),
+                "clv_devig_pct": round(clv_devig_pct, 2),
+                "movimiento_cuota_pct": round(mov_pct, 2) if mov_pct is not None else None,
             })
 
     return {
@@ -3625,9 +3636,9 @@ def calcular_metricas_clv_y_mercado(
         "casa": cuotas.get("casa"),
         "fuente_cuotas": cuotas.get("fuente_cuotas"),
         "capturado_en_utc": cuotas.get("capturado_en_utc"),
+        "fuente_cierre": (cuotas_cierre or {}).get("origen_temporal_cuotas") if cuotas_cierre else None,
         "mercados": mercados_out,
         "clv_selecciones": clv_items,
-        "apuestas_ev_positivo": ev_apuestas,
     }
 
 
@@ -3636,26 +3647,31 @@ def agregar_resumen_mercado_y_clv(
     resultados: dict[str, ResultadoPartido],
     *,
     cuotas_cierre_por_id: dict[str, dict[str, Any]] | None = None,
+    consultar_cierre_remoto: bool = False,
 ) -> dict[str, Any]:
     """
     Agrega el desempeño del modelo frente al baseline de mercado sin margen (`de-vigged`)
-    y el CLV real EXCLUSIVAMENTE sobre entradas OOS válidas y canónicas con `cuotas_mercado`.
+    y el CLV sin margen (`clv_devig_pct`) EXCLUSIVAMENTE sobre entradas OOS válidas y
+    canónicas con `cuotas_mercado` capturadas antes del inicio.
+    No reporta ROI sobre selecciones EV>0 para evitar sesgo del ganador en muestras chicas.
     """
     por_mkt: dict[str, dict[str, list[float]]] = {
         m: {"b_mod": [], "b_mkt": [], "ll_mod": [], "ll_mkt": []}
         for m in ("1x2", "ou_2.5", "btts")
     }
-    clv_vals: list[float] = []
-    ev_ganancias: list[float] = []
+    clv_devig_vals: list[float] = []
+    mov_cuota_vals: list[float] = []
     n_oos_con_cuotas = 0
     n_oos_con_clv = 0
     casas: set[str] = set()
+    cli_fs = None
 
     for doc in pronosticos:
         cls = clasificar_oos_entrada_ledger(doc)
         if not (cls.get("es_oos_valido") and cls.get("es_canonica")):
             continue
-        if not isinstance(doc.get("cuotas_mercado"), dict) or not doc.get("cuotas_mercado"):
+        cm_doc = doc.get("cuotas_mercado")
+        if not isinstance(cm_doc, dict) or not cm_doc:
             continue
         pinfo = doc.get("partido") or {}
         nom = (
@@ -3667,6 +3683,22 @@ def agregar_resumen_mercado_y_clv(
             continue
         idt = str(doc.get("id_trabajo") or "")
         c_cierre = (cuotas_cierre_por_id or {}).get(idt) or doc.get("cuotas_cierre")
+        if c_cierre is None and consultar_cierre_remoto and cm_doc.get("id_flashscore_cuotas"):
+            try:
+                if cli_fs is None:
+                    from fuente_flashscore import ClienteFlashscore
+                    cli_fs = ClienteFlashscore()
+                c_try = cli_fs.extraer_cuotas(
+                    str(cm_doc["id_flashscore_cuotas"]),
+                    home_participant_id=cm_doc.get("home_participant_id"),
+                    away_participant_id=cm_doc.get("away_participant_id"),
+                    modo_cierre_archivado=True,
+                )
+                if any(c_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                    c_cierre = c_try
+            except Exception:
+                c_cierre = None
+
         met = calcular_metricas_clv_y_mercado(doc, res, cuotas_cierre=c_cierre)
         if not met.get("disponible"):
             continue
@@ -3682,9 +3714,9 @@ def agregar_resumen_mercado_y_clv(
         if met.get("clv_selecciones"):
             n_oos_con_clv += 1
             for it in met["clv_selecciones"]:
-                clv_vals.append(float(it["clv_pct"]))
-        for ap in (met.get("apuestas_ev_positivo") or []):
-            ev_ganancias.append(float(ap["ganancia_1u"]))
+                clv_devig_vals.append(float(it["clv_devig_pct"]))
+                if it.get("movimiento_cuota_pct") is not None:
+                    mov_cuota_vals.append(float(it["movimiento_cuota_pct"]))
 
     resumen_mkts: dict[str, Any] = {}
     for m_k, acc in por_mkt.items():
@@ -3711,9 +3743,13 @@ def agregar_resumen_mercado_y_clv(
         "n_partidos_oos_con_clv": n_oos_con_clv,
         "casas": sorted(casas),
         "mercados_primarios": resumen_mkts,
-        "clv_medio_pct": round(sum(clv_vals) / len(clv_vals), 2) if clv_vals else None,
-        "n_selecciones_ev_positivo": len(ev_ganancias),
-        "roi_1u_ev_positivo_pct": round((sum(ev_ganancias) / len(ev_ganancias)) * 100.0, 2) if ev_ganancias else None,
+        "clv_devig_medio_pct": round(sum(clv_devig_vals) / len(clv_devig_vals), 2) if clv_devig_vals else None,
+        "movimiento_cuota_medio_pct": round(sum(mov_cuota_vals) / len(mov_cuota_vals), 2) if mov_cuota_vals else None,
+        "fuente_cierre": "archivo_postpartido_flashscore_oce" if n_oos_con_clv > 0 else None,
+        "nota_metodologica": (
+            "No se reporta ROI sobre selecciones EV>0 (sujeto a sesgo del ganador y alta varianza en muestras pequeñas). "
+            "El cierre proviene del archivo post-partido de Flashscore (_hash=oce)."
+        ),
     }
 
 
@@ -4388,7 +4424,11 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
         exclusiones_calibracion=exclusiones_calibracion,
         desglose_por_build=desglose_por_build,
         bandas_oos=calcular_bandas(ev_oos_canon),
-        resumen_mercado_y_clv=agregar_resumen_mercado_y_clv(pronosticos, resultados),
+        resumen_mercado_y_clv=agregar_resumen_mercado_y_clv(
+            pronosticos,
+            resultados,
+            consultar_cierre_remoto=True,
+        ),
     )
     avisar(f"evaluación completada: {len(publicadas)} selecciones publicadas evaluadas"
            + (f" (filtro: {texto_filtro})" if texto_filtro else ""))
@@ -4493,12 +4533,10 @@ def resumen_telegram(informe: InformeEvaluacion) -> str:
                     f"  {mk_lbl} (n={dm['n']}): Brier mod={dm['brier_modelo']:.4f} vs mkt={dm['brier_mercado_devig']:.4f} "
                     f"(Δ={dm['delta_brier_vs_mercado']:+.4f})"
                 )
-        if res_mkt.get("clv_medio_pct") is not None:
-            L.append(f"  CLV medio real: {res_mkt['clv_medio_pct']:+.2f}% ({res_mkt.get('n_partidos_oos_con_clv', 0)} partidos)")
-        if res_mkt.get("roi_1u_ev_positivo_pct") is not None:
+        if res_mkt.get("clv_devig_medio_pct") is not None:
             L.append(
-                f"  EV+ real (1u plana, n={res_mkt.get('n_selecciones_ev_positivo', 0)}): "
-                f"ROI {res_mkt['roi_1u_ev_positivo_pct']:+.2f}%"
+                f"  CLV sin margen (archivo post-partido): {res_mkt['clv_devig_medio_pct']:+.2f}% "
+                f"({res_mkt.get('n_partidos_oos_con_clv', 0)} partidos)"
             )
         L.append("")
     L.append("Histórico global mezclado (incluye legacy_sin_fixture y no_oos — solo referencia):")
@@ -4833,13 +4871,13 @@ def generar_informe_texto(informe: InformeEvaluacion) -> str:
                     f"{dm['delta_brier_vs_mercado']:+.6f} | {sk_str} |"
                 )
         L.append("")
-        if res_mkt_md.get("clv_medio_pct") is not None:
-            L.append(f"- **CLV medio real:** `{res_mkt_md['clv_medio_pct']:+.2f}%`")
-        if res_mkt_md.get("roi_1u_ev_positivo_pct") is not None:
+        if res_mkt_md.get("clv_devig_medio_pct") is not None:
             L.append(
-                f"- **ROI real 1u plana (selecciones primarias con EV>0, n={res_mkt_md.get('n_selecciones_ev_positivo', 0)}):** "
-                f"`{res_mkt_md['roi_1u_ev_positivo_pct']:+.2f}%`"
+                f"- **CLV medio sin margen (`p_cierre_devig * cuota_consulta - 1`, archivo post-partido `_hash=oce`):** "
+                f"`{res_mkt_md['clv_devig_medio_pct']:+.2f}%`"
             )
+        if res_mkt_md.get("nota_metodologica"):
+            L.append(f"- *Nota:* {res_mkt_md['nota_metodologica']}")
     else:
         L.append("- Sin partidos OOS liquidados con cuotas reales pre-partido todavía (`n = 0`).")
     L.append("")

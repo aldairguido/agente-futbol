@@ -3845,7 +3845,18 @@ def preparar_analisis(
         if str(id_fotmob_prog or "").strip() in ("", "N/D", "None"):
             id_fotmob_prog = None
 
-        if id_fs_partido or id_fotmob_prog:
+        # Guarda estricta pre-inicio: nunca adjuntar cuotas_mercado si el partido ya comenzó
+        _ya_inicio_cuotas = False
+        _h_ini_ctx = str(ctx.get("hora_inicio_partido") or "").strip()
+        if _h_ini_ctx:
+            try:
+                _dt_ini_c = datetime.fromisoformat(_h_ini_ctx.replace("Z", "+00:00"))
+                if _dt_ini_c.tzinfo is not None and datetime.now(timezone.utc) >= _dt_ini_c.astimezone(timezone.utc):
+                    _ya_inicio_cuotas = True
+            except Exception:
+                pass
+
+        if (id_fs_partido or id_fotmob_prog) and not _ya_inicio_cuotas:
             cuotas_try = cliente_fs.extraer_cuotas(
                 id_fs_partido or "",
                 id_fotmob=id_fotmob_prog,
