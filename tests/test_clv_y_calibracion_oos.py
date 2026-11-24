@@ -2,21 +2,29 @@
 tests/test_clv_y_calibracion_oos.py
 ───────────────────────────────────────────────────────────────────────────────
 Pruebas unitarias offline para:
-  1. Baseline de mercado sin margen (de-vig) + CLV real + EV/ROI 1u plana (SOLO OOS).
-  2. Separación explícita de la calibración SOLO OOS válido y canónico vs histórico
-     global mezclado en /evaluar (`bandas_oos`, `resumen_telegram`, Markdown).
+  1. Guarda anti-fuga pre-partido (rechazo de cuotas in-play AB=2 o liquidadas WON/LOST,
+     y rechazo de capturado_en_utc >= hora_inicio_partido).
+  2. Lectura de cierre archivado post-partido (`modo_cierre_archivado=True`) incluyendo
+     bloques con `active=False` y etiquetado explícito de procedencia.
+  3. Cálculo de CLV sin margen (`clv_devig_pct = p_cierre_devig * cuota_consulta - 1`)
+     sin autoengaño por overround, y eliminación del ROI de muestra pequeña.
+  4. Separación de calibración SOLO OOS válido y canónico en /evaluar.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import evaluacion_pronosticos as ep
+from fuente_flashscore import ClienteFlashscore
 
 
 def _snapshot_oos_con_cuotas(
@@ -24,6 +32,7 @@ def _snapshot_oos_con_cuotas(
     local: str = "Bodø/Glimt",
     visitante: str = "LASK",
     es_oos: bool = True,
+    capturado_en_utc: str = "2026-11-24T06:00:00Z",
 ) -> dict:
     return {
         "id_trabajo": id_trabajo,
@@ -46,14 +55,17 @@ def _snapshot_oos_con_cuotas(
             ]
         },
         "cuotas_mercado": {
-            "local": 1.60,
+            "local": 1.65,
             "empate": 4.50,
             "visitante": 5.50,
             "casa": "Betsson",
             "fuente_cuotas": "flashscore_graphql",
-            "capturado_en_utc": "2026-11-24T06:00:00Z",
+            "id_flashscore_cuotas": "pItlFEBk",
+            "home_participant_id": "b94Fok0s",
+            "away_participant_id": "jHMMqTUg",
+            "capturado_en_utc": capturado_en_utc,
             "mercados": {
-                "local": 1.60,
+                "local": 1.65,
                 "empate": 4.50,
                 "visitante": 5.50,
                 "over_2.5": 1.50,
@@ -65,62 +77,83 @@ def _snapshot_oos_con_cuotas(
     }
 
 
-def test_calcular_metricas_clv_y_mercado_exacto():
+def test_graphql_prepartido_rechaza_liquidados_y_modo_cierre_acepta_active_false():
+    cli = ClienteFlashscore()
+    cli._CACHE_FEED_DIARIO.clear()
+    payload_cerrado = {
+        "data": {
+            "findOddsByEventId": {
+                "eventId": "rwA1cHoQ",
+                "settings": {"bookmakers": [{"bookmaker": {"id": 43, "name": "Betsson"}}]},
+                "odds": [
+                    {
+                        "bookmakerId": 43,
+                        "bettingType": "HOME_DRAW_AWAY",
+                        "bettingScope": "FULL_TIME",
+                        "odds": [
+                            {"eventParticipantId": "WQv7amJa", "value": "5.25", "opening": "5.00", "active": False, "result": "LOST"},
+                            {"eventParticipantId": "virFcRmC", "value": "1.62", "opening": "1.65", "active": False, "result": "LOST"},
+                            {"eventParticipantId": None, "value": "3.45", "opening": "3.40", "active": False, "result": "WON"},
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+
+    def fake_get(url, **kwargs):
+        if "pq_graphql" in url:
+            return SimpleNamespace(status_code=200, text=json.dumps(payload_cerrado))
+        return SimpleNamespace(status_code=200, text="")
+
+    with patch.object(cli, "_get", side_effect=fake_get):
+        # En modo pre-partido DEBE rechazarse porque ya tiene result WON/LOST y active=False
+        res_pre = cli.extraer_cuotas("rwA1cHoQ", home_participant_id="WQv7amJa", away_participant_id="virFcRmC", modo_cierre_archivado=False)
+        assert res_pre["local"] is None
+
+        # En modo cierre archivado SÍ recupera el cierre pre-partido y declara origen_temporal_cuotas
+        res_cie = cli.extraer_cuotas("rwA1cHoQ", home_participant_id="WQv7amJa", away_participant_id="virFcRmC", modo_cierre_archivado=True)
+        assert res_cie["local"] == 5.25
+        assert res_cie["empate"] == 3.45
+        assert res_cie["visitante"] == 1.62
+        assert res_cie["origen_temporal_cuotas"] == "archivo_postpartido_flashscore_oce"
+
+
+def test_clv_devig_no_confunde_overround_con_equilibrio_y_rechaza_post_inicio():
+    # Si consultas over_2.5 a 1.90 y cierra a 1.90 / 1.90 (p_cierre_devig = 0.50),
+    # el movimiento bruto es 0.0%, pero el CLV real sin margen es 0.50 * 1.90 - 1 = -5.00%!
     snap = _snapshot_oos_con_cuotas()
-    res = ep.ResultadoPartido(
-        id_partido="6106317",
-        estado="finalizado",
-        local="Bodø/Glimt",
-        visitante="LASK",
-        goles_local=2,
-        goles_visitante=1,
-    )
-    cuotas_cierre = {
+    snap["cuotas_mercado"]["mercados"]["over_2.5"] = 1.90
+    snap["cuotas_mercado"]["mercados"]["under_2.5"] = 1.90
+    res = ep.ResultadoPartido(id_partido="6106317", estado="finalizado", local="Bodø/Glimt", visitante="LASK", goles_local=2, goles_visitante=1)
+    cierre = {
         "local": 1.45,
         "empate": 5.00,
         "visitante": 6.20,
+        "origen_temporal_cuotas": "archivo_postpartido_flashscore_oce",
         "mercados": {
             "local": 1.45,
             "empate": 5.00,
             "visitante": 6.20,
-            "over_2.5": 1.40,
-            "under_2.5": 2.90,
-            "btts_si": 1.55,
-            "btts_no": 2.40,
+            "over_2.5": 1.90,
+            "under_2.5": 1.90,
         },
     }
-
-    met = ep.calcular_metricas_clv_y_mercado(snap, res, cuotas_cierre=cuotas_cierre)
+    met = ep.calcular_metricas_clv_y_mercado(snap, res, cuotas_cierre=cierre)
     assert met["disponible"] is True
-    assert met["casa"] == "Betsson"
-    assert set(met["mercados"].keys()) == {"1x2", "ou_2.5", "btts"}
+    assert met["fuente_cierre"] == "archivo_postpartido_flashscore_oce"
+    clv_o25 = next(x for x in met["clv_selecciones"] if x["seleccion"] == "over_2.5")
+    assert clv_o25["movimiento_cuota_pct"] == 0.0
+    assert abs(clv_o25["clv_devig_pct"] - (-5.00)) < 0.05
 
-    # Brier 1X2 = suma de 3 clases (0.68-1)^2 + 0.17^2 + 0.15^2 = 0.1024 + 0.0289 + 0.0225 = 0.1538
-    assert abs(met["mercados"]["1x2"]["brier_modelo"] - 0.1538) < 1e-5
-    # Modelo dio 0.68 al ganador vs mercado ~0.607 -> modelo vence al mercado en 1X2 (delta < 0)
-    assert met["mercados"]["1x2"]["delta_brier_vs_mercado"] < 0.0
-    assert met["mercados"]["1x2"]["skill_vs_mercado"] > 0.0
-
-    # CLV en "1": 1.60 / 1.45 - 1 = +10.34%
-    clv_1 = next(x for x in met["clv_selecciones"] if x["seleccion"] == "1")
-    assert abs(clv_1["clv_pct"] - 10.34) < 0.05
-
-    # EV+ apuestas: 1 (0.68*1.60=1.088 > 1 -> ganó +0.60u), over_2.5 (0.72*1.50=1.08 > 1 -> ganó +0.50u), btts_si (0.65*1.65=1.0725 > 1 -> ganó +0.65u)
-    sels_ev = {x["seleccion"]: x for x in met["apuestas_ev_positivo"]}
-    assert "1" in sels_ev and sels_ev["1"]["gano"] is True
-    assert "over_2.5" in sels_ev and sels_ev["over_2.5"]["gano"] is True
-    assert "btts_si" in sels_ev and sels_ev["btts_si"]["gano"] is True
+    # Si las cuotas se capturaron después del inicio, se rechazan estrictamente
+    snap_post = _snapshot_oos_con_cuotas(capturado_en_utc="2026-11-24T18:05:00Z")
+    met_post = ep.calcular_metricas_clv_y_mercado(snap_post, res, cuotas_cierre=cierre)
+    assert met_post["disponible"] is False
+    assert met_post["motivo"] == "cuotas_capturadas_post_inicio"
 
 
-def test_calcular_metricas_sin_cuotas_no_alucina():
-    snap_sin = _snapshot_oos_con_cuotas()
-    snap_sin.pop("cuotas_mercado")
-    res = ep.ResultadoPartido(id_partido="1", estado="finalizado", local="A", visitante="B", goles_local=1, goles_visitante=0)
-    met = ep.calcular_metricas_clv_y_mercado(snap_sin, res)
-    assert met["disponible"] is False
-
-
-def test_agregar_resumen_mercado_y_clv_excluye_legacy():
+def test_resumen_mercado_excluye_legacy_y_no_muestra_roi_enganoso():
     snap_oos = _snapshot_oos_con_cuotas("oos_1", "Bodø/Glimt", "LASK", es_oos=True)
     snap_leg = _snapshot_oos_con_cuotas("leg_1", "Club X", "Club Y", es_oos=False)
     resultados = {
@@ -130,16 +163,15 @@ def test_agregar_resumen_mercado_y_clv_excluye_legacy():
     resumen = ep.agregar_resumen_mercado_y_clv(
         [snap_oos, snap_leg],
         resultados,
-        cuotas_cierre_por_id={"oos_1": {"local": 1.45, "empate": 5.00, "visitante": 6.20}},
+        cuotas_cierre_por_id={"oos_1": {"local": 1.45, "empate": 5.00, "visitante": 6.20, "origen_temporal_cuotas": "archivo_postpartido_flashscore_oce"}},
     )
     assert resumen["n_partidos_oos_con_cuotas"] == 1
     assert resumen["n_partidos_oos_con_clv"] == 1
-    assert resumen["mercados_primarios"]["1x2"]["n"] == 1
-    assert resumen["clv_medio_pct"] is not None
-    assert resumen["roi_1u_ev_positivo_pct"] is not None
+    assert resumen["clv_devig_medio_pct"] is not None
+    assert "roi_1u_ev_positivo_pct" not in resumen
 
 
-def test_resumen_telegram_muestra_calibracion_solo_oos_primero_y_etiqueta_mezclado():
+def test_resumen_telegram_muestra_calibracion_solo_oos_primero_sin_roi_chico():
     ev_oos = ep.Evaluacion(
         id_trabajo="oos_1",
         partido="Bodø/Glimt vs LASK",
@@ -218,15 +250,10 @@ def test_resumen_telegram_muestra_calibracion_solo_oos_primero_y_etiqueta_mezcla
                 "ou_2.5": {"n": 0},
                 "btts": {"n": 0},
             },
-            "clv_medio_pct": 10.34,
-            "n_selecciones_ev_positivo": 3,
-            "roi_1u_ev_positivo_pct": 58.33,
+            "clv_devig_medio_pct": 4.25,
         },
     )
     txt = ep.resumen_telegram(inf)
-    idx_oos = txt.index("Calibración SOLO OOS válido y canónico")
-    idx_mix = txt.index("Histórico global mezclado")
-    assert idx_oos < idx_mix
-    assert "Baseline de Mercado sin margen" in txt
-    assert "CLV medio real: +10.34%" in txt
-    assert "ROI +58.33%" in txt
+    assert txt.index("Calibración SOLO OOS válido y canónico") < txt.index("Histórico global mezclado")
+    assert "CLV sin margen (archivo post-partido): +4.25%" in txt
+    assert "ROI" not in txt

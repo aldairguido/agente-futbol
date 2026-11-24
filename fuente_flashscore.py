@@ -873,11 +873,14 @@ class ClienteFlashscore:
         equipo_visitante: str,
         *,
         dias: tuple[int, ...] = (0, 1),
+        solo_programados: bool = True,
     ) -> dict[str, Any] | None:
         """
         Busca un partido programado (en cualquier liga del mundo) dentro del feed
         diario de Flashscore (`dias=(0, 1)` = hoy y mañana) y devuelve su `id_flashscore`
         junto con los IDs exactos de participante (`home_participant_id`, `away_participant_id`).
+        Con `solo_programados=True` descarta estrictamente partidos en vivo (`AB=2`) o
+        finalizados (`AB=3`) para evitar contaminar cuotas pre-partido con cuotas in-play.
         """
         import unicodedata
 
@@ -900,7 +903,8 @@ class ClienteFlashscore:
         mejor: tuple[float, dict[str, Any]] | None = None
         for d_off in dias:
             for ev in self._obtener_feed_diario_cacheado(d_off):
-                # Preferir partidos programados (AB=1) o en juego (AB=2); evitar finalizados viejos si hay programado
+                if solo_programados and ev.get("estado") not in ("1", ""):
+                    continue
                 el = _norm(ev["local"])
                 ev_n = _norm(ev["visitante"])
                 if not el or not ev_n:
@@ -924,16 +928,16 @@ class ClienteFlashscore:
         id_flashscore: str,
         *,
         dias: tuple[int, ...] = (0, 1, -1),
-    ) -> tuple[str | None, str | None]:
-        """Resuelve `(home_participant_id, away_participant_id)` (`JA`, `JB`) desde el feed diario."""
+    ) -> tuple[str | None, str | None, str | None]:
+        """Resuelve `(home_participant_id, away_participant_id, estado)` desde el feed diario."""
         eid = str(id_flashscore or "").strip()
         if not eid:
-            return None, None
+            return None, None, None
         for d_off in dias:
             for ev in self._obtener_feed_diario_cacheado(d_off):
                 if ev.get("id_flashscore") == eid:
-                    return ev.get("home_participant_id"), ev.get("away_participant_id")
-        return None, None
+                    return ev.get("home_participant_id"), ev.get("away_participant_id"), ev.get("estado")
+        return None, None, None
 
     def _extraer_cuotas_graphql_flashscore(
         self,
@@ -943,6 +947,7 @@ class ClienteFlashscore:
         away_participant_id: str | None = None,
         geo_ip: str = "PE",
         geo_sub: str = "PELMA",
+        modo_cierre_archivado: bool = False,
     ) -> dict[str, Any] | None:
         """
         Consulta el endpoint público GraphQL de cuotas de Flashscore
@@ -984,13 +989,27 @@ class ClienteFlashscore:
                 if bid and bnom:
                     bks_by_id[bid] = bnom
 
-        # Resolver home_participant_id y away_participant_id si no se pasaron
+        # Resolver home_participant_id, away_participant_id y estado del evento en el feed
         h_pid = home_participant_id
         a_pid = away_participant_id
-        if not h_pid or not a_pid:
-            rh, ra = self._resolver_participantes_flashscore(eid)
-            h_pid = h_pid or rh
-            a_pid = a_pid or ra
+        rh, ra, est_feed = self._resolver_participantes_flashscore(eid)
+        h_pid = h_pid or rh
+        a_pid = a_pid or ra
+
+        # Guarda estricta anti-contaminación:
+        # - En vivo (AB=2): NUNCA aceptar cuotas (son in-play post-inicio).
+        # - En modo pre-partido: rechazar también partidos ya finalizados (AB=3 o result WON/LOST).
+        if est_feed == "2":
+            return None
+        if not modo_cierre_archivado and est_feed == "3":
+            return None
+        tiene_liquidacion = any(
+            str(it.get("result") or "NONE").upper() in ("WON", "LOST", "VOID", "HALF_WON", "HALF_LOST")
+            for blk in odds_blocks
+            for it in (blk.get("odds") or [])
+        )
+        if not modo_cierre_archivado and tiene_liquidacion:
+            return None
 
         def _f_odd(v: Any) -> float | None:
             try:
@@ -1023,7 +1042,7 @@ class ClienteFlashscore:
             mkts = entry["mercados"]
             opens = entry["opening"]
             for it in (blk.get("odds") or []):
-                if it.get("active") is False:
+                if not modo_cierre_archivado and it.get("active") is False:
                     continue
                 val = _f_odd(it.get("value"))
                 if val is None:
@@ -1141,7 +1160,10 @@ class ClienteFlashscore:
             "12": mkts_sel.get("12") or consenso.get("12"),
             "casa": casa_sel,
             "fuente_cuotas": "flashscore_graphql",
+            "origen_temporal_cuotas": "archivo_postpartido_flashscore_oce" if modo_cierre_archivado else "pre_partido",
             "id_flashscore_cuotas": eid,
+            "home_participant_id": h_pid,
+            "away_participant_id": a_pid,
             "n_casas": len(por_casa),
             "casas_disponibles": sorted(por_casa.keys()),
             "capturado_en_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1229,6 +1251,7 @@ class ClienteFlashscore:
         away_participant_id: str | None = None,
         equipo_local: str | None = None,
         equipo_visitante: str | None = None,
+        modo_cierre_archivado: bool = False,
     ) -> dict[str, Any]:
         """
         Extrae las cuotas reales de mercado para un partido programado (sin login):
@@ -1255,8 +1278,8 @@ class ClienteFlashscore:
         a_pid = away_participant_id
 
         # Si no tenemos id_flashscore pero sí nombres de equipos, buscar en el feed diario global
-        if not id_limpio and equipo_local and equipo_visitante:
-            ev_prog = self.buscar_evento_programado_feed_diario(equipo_local, equipo_visitante)
+        if not id_limpio and equipo_local and equipo_visitante and not modo_cierre_archivado:
+            ev_prog = self.buscar_evento_programado_feed_diario(equipo_local, equipo_visitante, solo_programados=True)
             if ev_prog:
                 id_limpio = ev_prog["id_flashscore"]
                 h_pid = h_pid or ev_prog.get("home_participant_id")
@@ -1268,9 +1291,12 @@ class ClienteFlashscore:
                 id_limpio,
                 home_participant_id=h_pid,
                 away_participant_id=a_pid,
+                modo_cierre_archivado=modo_cierre_archivado,
             )
             if res_gql and any(res_gql.get(k) is not None for k in ("local", "empate", "visitante")):
                 return res_gql
+        if modo_cierre_archivado:
+            return res_defecto
 
         # 2) Fallback: feed HTML tradicional (mantiene compatibilidad con tests existentes)
         urls_candidatas = []
