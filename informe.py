@@ -487,21 +487,32 @@ def _construir_filas_ticket_valor_legacy_5e8(
     dropping_odds = bool(cuotas.get("dropping_odds"))
     alerta_drop = " [ALERTA DROPPING ODDS]" if dropping_odds else ""
 
-    mkts_cuotas = cuotas.get("mercados") if isinstance(cuotas.get("mercados"), dict) else {}
-    c_loc = cuotas.get("local") or mkts_cuotas.get("local")
-    c_emp = cuotas.get("empate") or mkts_cuotas.get("empate")
-    c_vis = cuotas.get("visitante") or mkts_cuotas.get("visitante")
-
-    # Preferir cuotas reales de Doble Oportunidad (Betsson/Flashscore) y derivar solo si faltan
-    c_1x = (cuotas.get("1x") or mkts_cuotas.get("1x")
-            or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
-                if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else None))
-    c_x2 = (cuotas.get("x2") or mkts_cuotas.get("x2")
-            or (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
-                if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else None))
-    c_12 = (cuotas.get("12") or mkts_cuotas.get("12")
-            or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
-                if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else None))
+    from decision_cobertura import bandera_activa as _ba_tv_leg
+    _usar_ct_leg = bool(_ba_tv_leg("usar_cuotas_en_ticket"))
+    mkts_cuotas = (cuotas.get("mercados") if isinstance(cuotas.get("mercados"), dict) else {}) if _usar_ct_leg else {}
+    if _usar_ct_leg:
+        c_loc = cuotas.get("local") or mkts_cuotas.get("local")
+        c_emp = cuotas.get("empate") or mkts_cuotas.get("empate")
+        c_vis = cuotas.get("visitante") or mkts_cuotas.get("visitante")
+        c_1x = (cuotas.get("1x") or mkts_cuotas.get("1x")
+                or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+                    if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else None))
+        c_x2 = (cuotas.get("x2") or mkts_cuotas.get("x2")
+                or (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+                    if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else None))
+        c_12 = (cuotas.get("12") or mkts_cuotas.get("12")
+                or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+                    if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else None))
+    else:
+        c_loc = cuotas.get("local")
+        c_emp = cuotas.get("empate")
+        c_vis = cuotas.get("visitante")
+        c_1x = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+                if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else cuotas.get("1x"))
+        c_x2 = (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+                if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else cuotas.get("x2"))
+        c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+                if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
 
     from motor_mercados import es_seleccion_competitiva_ticket as _es_comp_tv
     _p_1x2_tv = (info["p_local"], info["p_empate"], info["p_visitante"])
@@ -514,9 +525,9 @@ def _construir_filas_ticket_valor_legacy_5e8(
         (f"X2 — Empate o {eq_v}", "Doble oportunidad", "x2", info["p_x2"], c_x2),
         (f"12 — {eq_l} o {eq_v}", "Doble oportunidad", "12", info["p_12"], c_12),
     ]
-    # Añadir O/U 2.5 y BTTS al Ticket de Valor cuando haya cuotas reales de mercado
+    # Añadir O/U 2.5 y BTTS al Ticket de Valor únicamente cuando usar_cuotas_en_ticket=True
     _mat_tv = getattr(_mot_tv, "matriz_ft", None) if _mot_tv is not None else None
-    if _mat_tv and mkts_cuotas:
+    if _usar_ct_leg and _mat_tv and mkts_cuotas:
         try:
             _p_o25 = sum(float(_mat_tv[i][j]) for i in range(len(_mat_tv)) for j in range(len(_mat_tv[0])) if (i + j) > 2)
             _p_u25 = max(0.001, 1.0 - _p_o25)
@@ -606,23 +617,33 @@ def construir_filas_ticket_valor(
     dropping_odds = bool(cuotas.get("dropping_odds"))
     alerta_drop = " [ALERTA DROPPING ODDS]" if dropping_odds else ""
 
-    mkts_cuotas = cuotas.get("mercados") if isinstance(cuotas.get("mercados"), dict) else {}
-    c_loc = cuotas.get("local") or mkts_cuotas.get("local")
-    c_emp = cuotas.get("empate") or mkts_cuotas.get("empate")
-    c_vis = cuotas.get("visitante") or mkts_cuotas.get("visitante")
-
-    # Preferir cuotas reales de Doble Oportunidad (Betsson/Flashscore) y derivar solo si faltan
-    c_1x = (cuotas.get("1x") or mkts_cuotas.get("1x")
-            or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
-                if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else None))
-    c_x2 = (cuotas.get("x2") or mkts_cuotas.get("x2")
-            or (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
-                if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else None))
-    c_12 = (cuotas.get("12") or mkts_cuotas.get("12")
-            or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
-                if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else None))
-
     from decision_cobertura import bandera_activa as _ba_inf
+    _usar_ct_inf = bool(_ba_inf("usar_cuotas_en_ticket"))
+    mkts_cuotas = (cuotas.get("mercados") if isinstance(cuotas.get("mercados"), dict) else {}) if _usar_ct_inf else {}
+    if _usar_ct_inf:
+        c_loc = cuotas.get("local") or mkts_cuotas.get("local")
+        c_emp = cuotas.get("empate") or mkts_cuotas.get("empate")
+        c_vis = cuotas.get("visitante") or mkts_cuotas.get("visitante")
+        c_1x = (cuotas.get("1x") or mkts_cuotas.get("1x")
+                or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+                    if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else None))
+        c_x2 = (cuotas.get("x2") or mkts_cuotas.get("x2")
+                or (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+                    if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else None))
+        c_12 = (cuotas.get("12") or mkts_cuotas.get("12")
+                or (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+                    if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else None))
+    else:
+        c_loc = cuotas.get("local")
+        c_emp = cuotas.get("empate")
+        c_vis = cuotas.get("visitante")
+        c_1x = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_emp)), 2)
+                if c_loc and c_emp and c_loc > 1.0 and c_emp > 1.0 else cuotas.get("1x"))
+        c_x2 = (round(1.0 / ((1.0 / c_emp) + (1.0 / c_vis)), 2)
+                if c_emp and c_vis and c_emp > 1.0 and c_vis > 1.0 else cuotas.get("x2"))
+        c_12 = (round(1.0 / ((1.0 / c_loc) + (1.0 / c_vis)), 2)
+                if c_loc and c_vis and c_loc > 1.0 and c_vis > 1.0 else cuotas.get("12"))
+
     if not _ba_inf("usar_calibracion_y_veto_conciencia"):
         return _construir_filas_ticket_valor_legacy_5e8(analisis, cuotas_flashscore)
     from motor_mercados import calcular_ev_y_stake_calibrado
@@ -790,9 +811,13 @@ def generar_ticket_valor_png(
     ax.axis("off")
 
     # Encabezado editorial
-    casa_lbl = str((cuotas_flashscore or {}).get("casa") or "Flashscore")
-    n_casas_lbl = (cuotas_flashscore or {}).get("n_casas")
-    casa_info = f"{casa_lbl} ({n_casas_lbl} casas)" if isinstance(n_casas_lbl, int) and n_casas_lbl > 1 else casa_lbl
+    from decision_cobertura import bandera_activa as _ba_png_tv
+    if bool(_ba_png_tv("usar_cuotas_en_ticket")):
+        casa_lbl = str((cuotas_flashscore or {}).get("casa") or "Flashscore")
+        n_casas_lbl = (cuotas_flashscore or {}).get("n_casas")
+        casa_info = f"{casa_lbl} ({n_casas_lbl} casas)" if isinstance(n_casas_lbl, int) and n_casas_lbl > 1 else casa_lbl
+    else:
+        casa_info = "Flashscore"
     titulo = f"TICKET DE VALOR (+EV)  |  {eq_l.upper()} vs {eq_v.upper()}"
     id_fs_txt = f"  •  ID Flashscore: {id_flashscore}" if id_flashscore else ""
     subtitulo = (

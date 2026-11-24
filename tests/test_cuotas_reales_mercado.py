@@ -220,6 +220,7 @@ def test_buscar_evento_programado_feed_diario_resuelve_ja_jb():
 
 
 def test_ticket_valor_y_snapshot_usan_cuotas_reales_sin_nd(tmp_path):
+    import decision_cobertura as dc
     import informe
     import evaluacion_pronosticos as ep
 
@@ -268,15 +269,22 @@ def test_ticket_valor_y_snapshot_usan_cuotas_reales_sin_nd(tmp_path):
         },
     }
 
-    filas = informe.construir_filas_ticket_valor(analisis_fake, cuotas_reales)
-    assert len(filas) >= 6
-    assert all(f["cuota_flashscore_str"] != "N/D" for f in filas)
-    assert any("2.5 goles" in f["mercado"] for f in filas)
-    assert any("Ambos anotan" in f["mercado"] for f in filas)
+    # Por defecto (usar_cuotas_en_ticket=False): no añade O/U 2.5 ni BTTS (idéntico a ebbe25e)
+    filas_def = informe.construir_filas_ticket_valor(analisis_fake, cuotas_reales)
+    assert not any("2.5 goles" in f["mercado"] for f in filas_def)
+    assert not any("Ambos anotan" in f["mercado"] for f in filas_def)
 
-    png_out = str(tmp_path / "ticket_valor_test.png")
-    ruta = informe.generar_ticket_valor_png(analisis_fake, cuotas_reales, destino=png_out, id_flashscore="pItlFEBk")
-    assert Path(ruta).exists() and Path(ruta).stat().st_size > 1000
+    # Con usar_cuotas_en_ticket=True: expone O/U 2.5 y BTTS y subtítulo con casa real
+    with dc.banderas_comportamiento(usar_cuotas_en_ticket=True):
+        filas = informe.construir_filas_ticket_valor(analisis_fake, cuotas_reales)
+        assert len(filas) >= 6
+        assert all(f["cuota_flashscore_str"] != "N/D" for f in filas)
+        assert any("2.5 goles" in f["mercado"] for f in filas)
+        assert any("Ambos anotan" in f["mercado"] for f in filas)
+
+        png_out = str(tmp_path / "ticket_valor_test.png")
+        ruta = informe.generar_ticket_valor_png(analisis_fake, cuotas_reales, destino=png_out, id_flashscore="pItlFEBk")
+        assert Path(ruta).exists() and Path(ruta).stat().st_size > 1000
 
     # Snapshot compatibilidad hacia atrás y hacia adelante
     snap_con = ep.SnapshotPronostico(

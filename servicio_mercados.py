@@ -3816,59 +3816,73 @@ def preparar_analisis(
     id_fs_partido: str | None = None
     analisis_texto_3_parrafos = ""
     try:
-        from fuente_flashscore import ClienteFlashscore, candidatos_desde_feed_hh
+        from decision_cobertura import bandera_activa as _ba_cuotas
         import informe as informe_mod
 
-        cliente_fs = ClienteFlashscore()
-        # 1) Usar únicamente el partido programado real (NUNCA IDs de partidos pasados del H2H)
+        usar_captura_cuotas = bool(_ba_cuotas("usar_cuotas_mercado_captura"))
+        usar_cuotas_ticket = bool(_ba_cuotas("usar_cuotas_en_ticket"))
         id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
-        home_pid_fs: str | None = None
-        away_pid_fs: str | None = None
-        if id_fs_prog and id_fs_prog not in ("N/D", "None", ""):
-            id_fs_partido = id_fs_prog
+        id_fs_prog_val = id_fs_prog if (id_fs_prog and id_fs_prog not in ("N/D", "None", "")) else None
+        id_fs_partido = id_fs_prog_val
+        cuotas_capturadas: dict[str, Any] | None = None
+
+        if usar_captura_cuotas:
+            from fuente_flashscore import ClienteFlashscore
+
+            cliente_fs = ClienteFlashscore(timeout=3.5)
+            home_pid_fs: str | None = None
+            away_pid_fs: str | None = None
+            if not id_fs_partido:
+                ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                    str(contexto.get("equipo_local") or ""),
+                    str(contexto.get("equipo_visitante") or ""),
+                )
+                if ev_fs_prog:
+                    id_fs_partido = ev_fs_prog["id_flashscore"]
+                    home_pid_fs = ev_fs_prog.get("home_participant_id")
+                    away_pid_fs = ev_fs_prog.get("away_participant_id")
+
+            id_fotmob_prog = (
+                ctx.get("id_partido_fotmob")
+                or ctx.get("id_partido")
+                or ctx.get("match_id")
+                or None
+            )
+            if str(id_fotmob_prog or "").strip() in ("", "N/D", "None"):
+                id_fotmob_prog = None
+
+            # Guarda estricta pre-inicio: nunca adjuntar cuotas_mercado si el partido ya comenzó
+            _ya_inicio_cuotas = False
+            _h_ini_ctx = str(ctx.get("hora_inicio_partido") or "").strip()
+            if _h_ini_ctx:
+                try:
+                    _dt_ini_c = datetime.fromisoformat(_h_ini_ctx.replace("Z", "+00:00"))
+                    if _dt_ini_c.tzinfo is not None and datetime.now(timezone.utc) >= _dt_ini_c.astimezone(timezone.utc):
+                        _ya_inicio_cuotas = True
+                except Exception:
+                    pass
+
+            if (id_fs_partido or id_fotmob_prog) and not _ya_inicio_cuotas:
+                cuotas_try = cliente_fs.extraer_cuotas(
+                    id_fs_partido or "",
+                    id_fotmob=id_fotmob_prog,
+                    home_participant_id=home_pid_fs,
+                    away_participant_id=away_pid_fs,
+                    equipo_local=str(contexto.get("equipo_local") or ""),
+                    equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+                )
+                if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                    cuotas_capturadas = cuotas_try
+                    if isinstance(getattr(analisis, "metadatos", None), dict):
+                        analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+
+        # Solo exponer cuotas reales e ID descubierto al Ticket / párrafo de valor cuando usar_cuotas_en_ticket=True
+        if usar_cuotas_ticket and cuotas_capturadas is not None:
+            cuotas_flashscore = cuotas_capturadas
+            id_fs_para_ticket = id_fs_partido
         else:
-            ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
-                str(contexto.get("equipo_local") or ""),
-                str(contexto.get("equipo_visitante") or ""),
-            )
-            if ev_fs_prog:
-                id_fs_partido = ev_fs_prog["id_flashscore"]
-                home_pid_fs = ev_fs_prog.get("home_participant_id")
-                away_pid_fs = ev_fs_prog.get("away_participant_id")
-
-        id_fotmob_prog = (
-            ctx.get("id_partido_fotmob")
-            or ctx.get("id_partido")
-            or ctx.get("match_id")
-            or None
-        )
-        if str(id_fotmob_prog or "").strip() in ("", "N/D", "None"):
-            id_fotmob_prog = None
-
-        # Guarda estricta pre-inicio: nunca adjuntar cuotas_mercado si el partido ya comenzó
-        _ya_inicio_cuotas = False
-        _h_ini_ctx = str(ctx.get("hora_inicio_partido") or "").strip()
-        if _h_ini_ctx:
-            try:
-                _dt_ini_c = datetime.fromisoformat(_h_ini_ctx.replace("Z", "+00:00"))
-                if _dt_ini_c.tzinfo is not None and datetime.now(timezone.utc) >= _dt_ini_c.astimezone(timezone.utc):
-                    _ya_inicio_cuotas = True
-            except Exception:
-                pass
-
-        if (id_fs_partido or id_fotmob_prog) and not _ya_inicio_cuotas:
-            cuotas_try = cliente_fs.extraer_cuotas(
-                id_fs_partido or "",
-                id_fotmob=id_fotmob_prog,
-                home_participant_id=home_pid_fs,
-                away_participant_id=away_pid_fs,
-                equipo_local=str(contexto.get("equipo_local") or ""),
-                equipo_visitante=str(contexto.get("equipo_visitante") or ""),
-            )
-            if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
-                cuotas_flashscore = cuotas_try
-                if isinstance(getattr(analisis, "metadatos", None), dict):
-                    analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+            cuotas_flashscore = None
+            id_fs_para_ticket = id_fs_prog_val
 
         destino_ticket_valor = os.path.join(
             base_dir,
@@ -3879,7 +3893,7 @@ def preparar_analisis(
             analisis,
             cuotas_flashscore=cuotas_flashscore,
             destino=destino_ticket_valor,
-            id_flashscore=id_fs_partido,
+            id_flashscore=id_fs_para_ticket,
         )
         if ruta_ticket_valor:
             rutas["ticket_valor"] = ruta_ticket_valor
