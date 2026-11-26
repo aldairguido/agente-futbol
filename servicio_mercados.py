@@ -1061,6 +1061,28 @@ def resolver_enfrentamiento(
         if par_b.get("id"):
             ctx_rival_para_b.setdefault("pares_misma_liga", []).insert(0, par_b)
 
+    from resolvedor_entidades import _guardian_r29_activo, es_competicion_internacional
+    if _guardian_r29_activo():
+        par_es_int = bool(
+            par_b
+            and es_competicion_internacional(
+                par_b.get("leagueName") or par_b.get("liga"),
+                id_liga=par_b.get("leagueId") or par_b.get("id_liga"),
+            )
+        )
+        if getattr(res_puente, "es_internacional", False) or par_es_int:
+            ctx_rival_para_b["pais_iso"] = (
+                getattr(res_puente, "pais_visita", "")
+                or (par_b.get("pais_iso") if par_b else "")
+                or "INT"
+            )
+            ctx_rival_para_b["pais"] = ""
+            ctx_rival_para_b["liga"] = (
+                (par_b.get("liga") or par_b.get("leagueName")) if par_b and par_es_int else (nombre_liga_txt or "INT")
+            )
+            ctx_rival_para_b["id_liga"] = None
+            ctx_rival_para_b["es_internacional"] = True
+
     # Si no se pasó cutoff explícito, detectar próximo cruce en calendario del local
     # para garantizar cero lookahead en doc_b y filtrar fugas en ambos documentos.
     if fecha_corte is None and cutoff_timestamp is None and id_partido_excluir is None:
@@ -1102,16 +1124,33 @@ def resolver_enfrentamiento(
         meta_b = {}
 
     # PASO #3 OBLIGATORIO: Auditoría de coherencia de liga y rivales comunes antes de generar el ticket
-    pais_iso_esperado = (
-        res_puente.pais_iso
-        or (liga_final.get("pais_iso") if isinstance(liga_final, dict) else "")
-        or (doc_a.get("equipo") or {}).get("pais_iso")
-        or "INT"
-    )
+    nombre_a_pre = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
+    nombre_b_pre = (doc_b.get("equipo") or {}).get("nombre") or equipo_visitante
+    if _guardian_r29_activo():
+        ctx_prelim = _metadatos_del_encuentro(doc_a, doc_b, nombre_a_pre, nombre_b_pre)
+        comp_prelim = str(ctx_prelim.get("competicion") or nombre_liga_txt or "").strip()
+        if getattr(res_puente, "es_internacional", False) or es_competicion_internacional(comp_prelim):
+            pais_iso_esperado = "INT"
+            liga_coh_eff: Any = liga_final or comp_prelim or "INT"
+        else:
+            pais_iso_esperado = (
+                res_puente.pais_iso
+                or (liga_final.get("pais_iso") if isinstance(liga_final, dict) else "")
+                or "INT"
+            )
+            liga_coh_eff = liga_final or comp_prelim
+    else:
+        pais_iso_esperado = (
+            res_puente.pais_iso
+            or (liga_final.get("pais_iso") if isinstance(liga_final, dict) else "")
+            or (doc_a.get("equipo") or {}).get("pais_iso")
+            or "INT"
+        )
+        liga_coh_eff = liga_final
     coherencia = validar_coherencia_competitiva_local_visita(
-        doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_final
+        doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_coh_eff
     )
-    if not coherencia.get("coherente", True):
+    if not coherencia.get("coherente", True) and coherencia.get("falso_homonimo") in ("visita", "local"):
         avisar(f"⚠️ {coherencia.get('motivo')}")
         kwargs_reintento = {**kwargs, "forzar": True}
         if coherencia.get("falso_homonimo") == "visita":
@@ -1165,7 +1204,7 @@ def resolver_enfrentamiento(
         # Re-evaluar coherencia tras el reintento: si persiste FALSO HOMÓNIMO EXTRANJERO,
         # se propaga en el contexto para abstener en preparar_analisis_mercados.
         coherencia = validar_coherencia_competitiva_local_visita(
-            doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_final
+            doc_a, doc_b, pais_iso=str(pais_iso_esperado), liga_pref=liga_coh_eff
         )
 
     nombre_a = (doc_a.get("equipo") or {}).get("nombre") or equipo_local
@@ -3296,19 +3335,21 @@ def preparar_analisis(
 
     _coh_ctx = ctx.get("coherencia_competitiva") if _abstencion_calidad_estado is None else {}
     if not isinstance(_coh_ctx, dict) or not _coh_ctx:
+        from resolvedor_entidades import _guardian_r29_activo as _g29_prep
         _pais_coh = str(
             ctx.get("pais_iso")
             or (liga.get("pais_iso") if isinstance(liga, dict) else "")
             or ""
         ).strip()
-        if _pais_coh and _pais_coh.upper() != "INT":
+        _liga_coh_prep = liga if liga is not None else ctx.get("competicion")
+        if (_pais_coh and _pais_coh.upper() != "INT") or (_g29_prep() and (_pais_coh or _liga_coh_prep)):
             try:
                 _coh_ctx = dict(
                     validar_coherencia_competitiva_local_visita(
                         contexto["doc_local"],
                         contexto["doc_visitante"],
-                        pais_iso=_pais_coh,
-                        liga_pref=liga,
+                        pais_iso=_pais_coh or "INT",
+                        liga_pref=_liga_coh_prep,
                     )
                 )
             except Exception:
@@ -3323,6 +3364,18 @@ def preparar_analisis(
         _abstencion_calidad_motivo = str(
             _coh_ctx.get("motivo")
             or "FALSO HOMÓNIMO EXTRANJERO detectado: los historiales no pertenecen a la misma liga ni país."
+        )
+        _abstencion_calidad_detalle = {"coherencia_competitiva": _coh_ctx}
+    elif (
+        _abstencion_calidad_estado is None
+        and isinstance(_coh_ctx, dict)
+        and not _coh_ctx.get("coherente", True)
+        and str(_coh_ctx.get("estado") or "").strip().upper() in ("PAIS_AMBIGUO", "PAÍS AMBIGUO")
+    ):
+        _abstencion_calidad_estado = "pais_ambiguo"
+        _abstencion_calidad_motivo = str(
+            _coh_ctx.get("motivo")
+            or "PAIS_AMBIGUO: no se pudo confirmar el país a partir de un nombre de liga ambiguo."
         )
         _abstencion_calidad_detalle = {"coherencia_competitiva": _coh_ctx}
 

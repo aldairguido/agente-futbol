@@ -66,6 +66,7 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_sin_dato_si_mitades_no_suman_ft": False,
     "usar_unificacion_h_gf_lstm_15": False,
     "usar_corners_reglas_65e377e_diag": False,
+    "usar_guardian_homonimo_por_competicion": True,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -81,6 +82,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_sin_dato_si_mitades_no_suman_ft",
     "usar_unificacion_h_gf_lstm_15",
     "usar_corners_reglas_65e377e_diag",
+    "usar_guardian_homonimo_por_competicion",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
@@ -141,50 +143,73 @@ CATALOGO_MERCADOS = [
 ]
 
 
+_CACHE_UMBRALES_ARCHIVO: Dict[Tuple[str, Optional[float]], Tuple[Dict[str, Any], Dict[str, bool]]] = {}
+
+
 def cargar_umbrales_cobertura(ruta: Optional[str] = None) -> Dict[str, Any]:
     """
     Carga umbrales_cobertura.yaml sin dependencias externas (soporta enteros/decimales
     negativos, booleanos, bloque flags_comportamiento y overrides de sesión).
     """
     path = ruta or RUTA_UMBRALES_COBERTURA
-    umbrales = dict(DEFAULTS_UMBRALES)
-    umbrales["flags_comportamiento"] = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
-    if os.path.isfile(path):
-        with open(path, "r", encoding="utf-8") as f:
-            contenido = f.read()
+    existe = os.path.isfile(path)
+    mtime: Optional[float] = None
+    if existe:
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            mtime = None
+    cache_key = (path, mtime)
+    cached = _CACHE_UMBRALES_ARCHIVO.get(cache_key)
+    if cached is not None:
+        base_u, base_f = cached
+        umbrales = dict(base_u)
+        umbrales["flags_comportamiento"] = dict(base_f)
+    else:
+        umbrales = dict(DEFAULTS_UMBRALES)
+        umbrales["flags_comportamiento"] = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
+        if existe:
+            with open(path, "r", encoding="utf-8") as f:
+                contenido = f.read()
 
-        en_flags = False
-        for linea in contenido.splitlines():
-            raw_no_comment = linea.split("#")[0].rstrip()
-            if not raw_no_comment.strip():
-                continue
-            indent = len(raw_no_comment) - len(raw_no_comment.lstrip(" "))
-            linea_limpia = raw_no_comment.strip()
-            if linea_limpia == "flags_comportamiento:":
-                en_flags = True
-                continue
-            if indent == 0 and ":" in linea_limpia:
-                en_flags = False
-            if ":" not in linea_limpia:
-                continue
-            k, v = linea_limpia.split(":", 1)
-            k = k.strip()
-            v = v.strip()
-            if v == "":
-                continue
-            val_parsed: Any = None
-            if re.match(r"^-?\d+$", v):
-                val_parsed = int(v)
-            elif re.match(r"^-?\d+\.\d+$", v):
-                val_parsed = float(v)
-            elif v.lower() in ("true", "false"):
-                val_parsed = v.lower() == "true"
-            if val_parsed is not None:
-                if en_flags or k in BANDERAS_COMPORTAMIENTO_DEFECTO:
-                    umbrales["flags_comportamiento"][k] = bool(val_parsed)
-                    umbrales[k] = bool(val_parsed)
-                else:
-                    umbrales[k] = val_parsed
+            en_flags = False
+            for linea in contenido.splitlines():
+                raw_no_comment = linea.split("#")[0].rstrip()
+                if not raw_no_comment.strip():
+                    continue
+                indent = len(raw_no_comment) - len(raw_no_comment.lstrip(" "))
+                linea_limpia = raw_no_comment.strip()
+                if linea_limpia == "flags_comportamiento:":
+                    en_flags = True
+                    continue
+                if indent == 0 and ":" in linea_limpia:
+                    en_flags = False
+                if ":" not in linea_limpia:
+                    continue
+                k, v = linea_limpia.split(":", 1)
+                k = k.strip()
+                v = v.strip()
+                if v == "":
+                    continue
+                val_parsed: Any = None
+                if re.match(r"^-?\d+$", v):
+                    val_parsed = int(v)
+                elif re.match(r"^-?\d+\.\d+$", v):
+                    val_parsed = float(v)
+                elif v.lower() in ("true", "false"):
+                    val_parsed = v.lower() == "true"
+                if val_parsed is not None:
+                    if en_flags or k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                        umbrales["flags_comportamiento"][k] = bool(val_parsed)
+                        umbrales[k] = bool(val_parsed)
+                    else:
+                        umbrales[k] = val_parsed
+        if mtime is not None:
+            _CACHE_UMBRALES_ARCHIVO.clear()
+            _CACHE_UMBRALES_ARCHIVO[cache_key] = (
+                dict(umbrales),
+                dict(umbrales["flags_comportamiento"]),
+            )
 
     if _OVERRIDES_BANDERAS:
         for fk, fv in _OVERRIDES_BANDERAS.items():

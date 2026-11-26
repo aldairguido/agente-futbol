@@ -710,6 +710,49 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "veneza": ("Venezia", "ITA"),
     "venecia": ("Venezia", "ITA"),
     "venezia": ("Venezia", "ITA"),
+    "pisa": ("Pisa", "ITA"),
+    "pisa sc": ("Pisa", "ITA"),
+    "cremonese": ("Cremonese", "ITA"),
+    "us cremonese": ("Cremonese", "ITA"),
+    "cesena": ("Cesena", "ITA"),
+    "cesena fc": ("Cesena", "ITA"),
+    "torres": ("Torres", "ITA"),
+    "sef torres": ("Torres", "ITA"),
+    "padova": ("Padova", "ITA"),
+    "calcio padova": ("Padova", "ITA"),
+    "vicenza": ("LR Vicenza", "ITA"),
+    "lr vicenza": ("LR Vicenza", "ITA"),
+    "parma": ("Parma", "ITA"),
+    "como": ("Como", "ITA"),
+    "monza": ("Monza", "ITA"),
+    "lecce": ("Lecce", "ITA"),
+    "empoli": ("Empoli", "ITA"),
+    "cagliari": ("Cagliari", "ITA"),
+    "hellas verona": ("Hellas Verona", "ITA"),
+    "verona": ("Hellas Verona", "ITA"),
+    "udinese": ("Udinese", "ITA"),
+    "genoa": ("Genoa", "ITA"),
+    "bologna": ("Bologna", "ITA"),
+    "napoli": ("Napoli", "ITA"),
+    "milan": ("AC Milan", "ITA"),
+    "ac milan": ("AC Milan", "ITA"),
+    "sampdoria": ("Sampdoria", "ITA"),
+    "palermo": ("Palermo", "ITA"),
+    "bari": ("Bari", "ITA"),
+    "brescia": ("Brescia", "ITA"),
+    "spezia": ("Spezia", "ITA"),
+    "sassuolo": ("Sassuolo", "ITA"),
+    "frosinone": ("Frosinone", "ITA"),
+    "salernitana": ("Salernitana", "ITA"),
+    "catanzaro": ("Catanzaro", "ITA"),
+    "modena": ("Modena", "ITA"),
+    "reggiana": ("Reggiana", "ITA"),
+    "sudtirol": ("Südtirol", "ITA"),
+    "cittadella": ("Cittadella", "ITA"),
+    "cosenza": ("Cosenza", "ITA"),
+    "mantova": ("Mantova", "ITA"),
+    "juve stabia": ("Juve Stabia", "ITA"),
+    "carrarese": ("Carrarese", "ITA"),
     # FRANCIA
     "marsella": ("Olympique de Marseille", "FRA"),
     "olympique marsella": ("Olympique de Marseille", "FRA"),
@@ -800,15 +843,111 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "fenerbahce": ("Fenerbahçe", "TUR"),
     "galatasaray": ("Galatasaray", "TUR"),
     "besiktas": ("Beşiktaş", "TUR"),
+    "trabzonspor": ("Trabzonspor", "TUR"),
+    "konyaspor": ("Konyaspor", "TUR"),
+    "kasimpasa": ("Kasımpaşa", "TUR"),
+    "basaksehir": ("Başakşehir", "TUR"),
+    "goztepe": ("Göztepe", "TUR"),
+    "genclerbirligi": ("Gençlerbirliği", "TUR"),
+    "kocaelispor": ("Kocaelispor", "TUR"),
+    "erzurumspor fk": ("Erzurumspor FK", "TUR"),
+    "corum fk": ("Çorum FK", "TUR"),
     "olympiacos": ("Olympiacos", "GRC"),
     "panathinaikos": ("Panathinaikos", "GRC"),
     "paok": ("PAOK", "GRC"),
+    # NORUEGA (Eliteserien)
+    "bodo/glimt": ("Bodø/Glimt", "NOR"),
+    "bodo glimt": ("Bodø/Glimt", "NOR"),
+    "bodø/glimt": ("Bodø/Glimt", "NOR"),
+    "fk bodo/glimt": ("Bodø/Glimt", "NOR"),
+    "viking": ("Viking", "NOR"),
+    "valerenga": ("Vålerenga", "NOR"),
+    "hamkam": ("HamKam", "NOR"),
+    "kristiansund": ("Kristiansund", "NOR"),
+    "brann": ("Brann", "NOR"),
+    "sk brann": ("Brann", "NOR"),
+    "sandefjord": ("Sandefjord", "NOR"),
+    "fredrikstad": ("Fredrikstad", "NOR"),
+    "rosenborg": ("Rosenborg", "NOR"),
+    "molde": ("Molde", "NOR"),
+    "rana fk": ("Rana FK", "NOR"),
+    "fauske/sprint": ("Fauske/Sprint", "NOR"),
+    # AUSTRIA (Bundesliga Austria)
+    "lask": ("LASK", "AUT"),
+    "lask linz": ("LASK", "AUT"),
+    "rapid wien": ("Rapid Wien", "AUT"),
+    "sk rapid": ("Rapid Wien", "AUT"),
+    "rapid viena": ("Rapid Wien", "AUT"),
+    "sturm graz": ("Sturm Graz", "AUT"),
+    "sk sturm graz": ("Sturm Graz", "AUT"),
+    "red bull salzburg": ("Red Bull Salzburg", "AUT"),
+    "rb salzburg": ("Red Bull Salzburg", "AUT"),
+    "fc salzburg": ("Red Bull Salzburg", "AUT"),
+    "austria wien": ("Austria Wien", "AUT"),
+    "fk austria wien": ("Austria Wien", "AUT"),
+    "hartberg": ("TSV Hartberg", "AUT"),
+    "tsv hartberg": ("TSV Hartberg", "AUT"),
+    "wolfsberger ac": ("Wolfsberger AC", "AUT"),
+    "wac": ("Wolfsberger AC", "AUT"),
+    "blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
+    "fc blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
+    "grazer ak": ("Grazer AK", "AUT"),
+    "gak": ("Grazer AK", "AUT"),
+    "scr altach": ("SCR Altach", "AUT"),
+    "altach": ("SCR Altach", "AUT"),
+    "wsg tirol": ("WSG Tirol", "AUT"),
+    "austria klagenfurt": ("Austria Klagenfurt", "AUT"),
+    # AZERBAIYÁN (Premyer Liqa / Premier League Azerbaiyán)
+    "sabah fk": ("Sabah FK", "AZE"),
+    "sabah": ("Sabah FK", "AZE"),
+    "sabah baku": ("Sabah FK", "AZE"),
+    "qarabag": ("Qarabağ FK", "AZE"),
+    "qarabag fk": ("Qarabağ FK", "AZE"),
+    "fk qabala": ("FK Qabala", "AZE"),
+    "qabala": ("FK Qabala", "AZE"),
+    "fk neftchi": ("FK Neftchi", "AZE"),
+    "neftchi baku": ("FK Neftchi", "AZE"),
+    "imisli fk": ("Imisli FK", "AZE"),
+    "shafa": ("Shafa", "AZE"),
+    "zira": ("Zira FK", "AZE"),
+    "zira fk": ("Zira FK", "AZE"),
+    "araz pfk": ("Araz-Naxçıvan", "AZE"),
+    "araz-naxcivan": ("Araz-Naxçıvan", "AZE"),
+    "fc kapaz": ("Kəpəz PFK", "AZE"),
+    "kapaz": ("Kəpəz PFK", "AZE"),
+    "sumqayit": ("Sumqayıt FK", "AZE"),
+    "turan tovuz": ("Turan Tovuz", "AZE"),
+    "sabail": ("Səbail FK", "AZE"),
     # BRASIL (Série A, Série B, Série C)
     "londrina": ("Londrina", "BRA"),
     "londrina ec": ("Londrina", "BRA"),
     "nautico": ("Náutico", "BRA"),
     "clube nautico capibaribe": ("Náutico", "BRA"),
     "nautico pe": ("Náutico", "BRA"),
+    "corinthians": ("Corinthians", "BRA"),
+    "flamengo": ("Flamengo", "BRA"),
+    "palmeiras": ("Palmeiras", "BRA"),
+    "bahia": ("Bahia", "BRA"),
+    "botafogo": ("Botafogo", "BRA"),
+    "fluminense": ("Fluminense", "BRA"),
+    "sao paulo": ("São Paulo", "BRA"),
+    "gremio": ("Grêmio", "BRA"),
+    "internacional": ("Internacional", "BRA"),
+    "atletico mineiro": ("Atlético Mineiro", "BRA"),
+    "cruzeiro": ("Cruzeiro", "BRA"),
+    "vasco da gama": ("Vasco da Gama", "BRA"),
+    "fortaleza": ("Fortaleza", "BRA"),
+    "athletico paranaense": ("Athletico Paranaense", "BRA"),
+    # ECUADOR (LigaPro)
+    "barcelona sc": ("Barcelona SC", "ECU"),
+    "emelec": ("CS Emelec", "ECU"),
+    "ldu quito": ("LDU Quito", "ECU"),
+    "independiente del valle": ("Independiente del Valle", "ECU"),
+    "aucas": ("SD Aucas", "ECU"),
+    # CAMERÚN (Elite One)
+    "coton sport": ("Coton Sport", "CMR"),
+    "canon yaounde": ("Canon Yaoundé", "CMR"),
+    "apejes": ("APEJES Academy", "CMR"),
     # SUDAMÉRICA Y MÉXICO
     "platense": ("CA Platense", "ARG"),
     "ca platense": ("CA Platense", "ARG"),
@@ -934,6 +1073,18 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "agmk": ("FC AGMK", "UZB"),
     "sogdiana": ("Sogdiana Jizzakh", "UZB"),
     "bunyodkor": ("FC Bunyodkor", "UZB"),
+    # HONDURAS (Liga Nacional)
+    "olancho": ("Olancho FC", "HND"),
+    "olancho fc": ("Olancho FC", "HND"),
+    "juticalpa": ("Juticalpa FC", "HND"),
+    "juticalpa fc": ("Juticalpa FC", "HND"),
+    "real espana": ("Real España", "HND"),
+    "rcd espana": ("Real España", "HND"),
+    "cd olimpia": ("CD Olimpia", "HND"),
+    "fc motagua": ("FC Motagua", "HND"),
+    "motagua": ("FC Motagua", "HND"),
+    "cd marathon": ("CD Marathón", "HND"),
+    "marathon": ("CD Marathón", "HND"),
 }
 
 # IDs oficiales conocidos en FotMob para indexar caché de forma determinista incluso antes de llamada HTTP
@@ -981,7 +1132,13 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Once Caldas", "COL"): "10091",
     ("Atlético Nacional", "COL"): "10093",
     ("Valencia", "ESP"): "10205",
+    ("Villarreal", "ESP"): "10205",
     ("UD Tavernes", "ESP"): "1543888",
+    ("Bodø/Glimt", "NOR"): "8402",
+    ("LASK", "AUT"): "9977",
+    ("Galatasaray", "TUR"): "8637",
+    ("Aston Villa", "ENG"): "10252",
+    ("Sabah FK", "AZE"): "951893",
 }
 
 # Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
@@ -1317,11 +1474,352 @@ def detectar_categoria_desde_texto(texto_liga_o_equipo: str) -> Tuple[bool, bool
     return es_femenino_pedido, es_juvenil_pedido
 
 
-def normalizar_pais_iso(pais_o_liga: Optional[str]) -> str:
-    """Convierte un nombre de país, código FIFA o nombre de liga en su código ISO-3 (ej. 'DEU', 'ESP', 'ARG')."""
-    if not pais_o_liga:
+# ───────────────────────────────────────────────────────────────────────────────
+# RONDA 29: DESAMBIGUACIÓN ESTRICTA DE LIGAS CON NOMBRE AMBIGUO Y MAPEO FOTMOB IDs
+# ───────────────────────────────────────────────────────────────────────────────
+PAISES_CANDIDATOS_LIGA_AMBIGUA: Dict[str, frozenset[str]] = {
+    "premier league": frozenset({"ENG", "AZE", "RUS", "UKR", "EGY", "SCO", "GHA", "KEN", "UGA", "JAM", "MLT", "HKG", "CAN", "ARM", "KAZ", "ISR", "BHR", "SIN", "THA", "ZAF", "NGA", "ETH", "TZA", "BDI", "RWA"}),
+    "bundesliga": frozenset({"DEU", "AUT"}),
+    "1. bundesliga": frozenset({"DEU", "AUT"}),
+    "2. bundesliga": frozenset({"DEU", "AUT"}),
+    "2 bundesliga": frozenset({"DEU", "AUT"}),
+    "super league": frozenset({"CHE", "GRC", "CHN", "TUR", "SRB", "MYS", "UZB", "IND", "MDA", "KOS", "ZMB"}),
+    "superliga": frozenset({"DNK", "ROU", "SRB", "KOS", "ARG", "CHE", "SVK", "ALB", "TUR", "COL"}),
+    "super ligue": frozenset({"NER"}),
+    "primera division": frozenset({"URY", "ESP", "CHL", "PRY", "CRI", "SLV", "ARG", "PER", "COL", "VEN", "BOL", "AND", "NIC"}),
+    "primera divisio": frozenset({"AND", "ESP"}),
+    "primera": frozenset({"URY", "ESP", "CHL", "PRY", "CRI", "SLV", "ARG", "PER", "COL", "VEN", "BOL"}),
+    "segunda division": frozenset({"ESP", "CHL", "URY", "PER", "VEN", "PRY", "CRI"}),
+    "primera a": frozenset({"COL", "ECU"}),
+    "primera b": frozenset({"CHL", "COL", "ARG"}),
+    "division profesional": frozenset({"BOL", "PRY"}),
+    "serie a": frozenset({"ITA", "BRA", "ECU"}),
+    "serie b": frozenset({"ITA", "BRA", "ECU"}),
+    "serie c": frozenset({"ITA", "BRA"}),
+    "serie d": frozenset({"ITA", "BRA"}),
+    "ligue 1": frozenset({"FRA", "DZA", "TUN", "CIV", "SEN", "MLI", "COD"}),
+    "ligue 2": frozenset({"FRA", "DZA", "TUN"}),
+    "liga 1": frozenset({"PER", "ROU", "IDN"}),
+    "liga 2": frozenset({"PER", "ROU", "IDN"}),
+    "primera nacional": frozenset({"ARG", "CHL"}),
+    "liga nacional": frozenset({"HND", "GTM"}),
+    "1. liga": frozenset({"CHE", "CZE", "POL", "SVK", "SVN", "TUR", "LVA"}),
+    "2. liga": frozenset({"AUT", "SVK", "POL", "HRV", "SVN", "TUR"}),
+    "3. liga": frozenset({"DEU", "SVK", "CZE", "POL"}),
+    "prva liga": frozenset({"SVN", "SRB", "MKD", "BIH", "HRV", "MNE"}),
+    "first division": frozenset({"CYP", "IRL", "DNK", "NLD", "BEL", "SAU", "MLT", "GIB", "AZE"}),
+    "premier division": frozenset({"IRL", "GIB", "ZAF"}),
+    "national league": frozenset({"ENG", "GIB", "ISR"}),
+    "championship": frozenset({"ENG", "SCO", "USA"}),
+    "premiership": frozenset({"SCO", "ZAF"}),
+    "cup": frozenset({"NOR", "AUT", "ENG", "DEU", "ESP", "ITA", "FRA", "DNK", "SWE", "FIN", "CHE", "POL", "CZE", "TUR", "AZE", "RUS", "UKR", "BEL", "NLD", "PRT", "SCO", "GRC", "HRV", "SRB", "ROU", "HUN", "BGR", "SVK", "SVN", "CYP", "ISR", "USA"}),
+    "copa": frozenset({"ESP", "ARG", "BRA", "COL", "CHL", "URY", "PRY", "PER", "BOL", "ECU", "MEX", "VEN"}),
+    "supercopa": frozenset({"ESP", "ITA", "PRT", "BRA", "ARG", "CHL", "COL"}),
+    "super cup": frozenset({"ENG", "DEU", "ITA", "ESP", "TUR", "GRC", "CYP", "AUT", "AZE", "NOR"}),
+}
+NOMBRES_LIGA_AMBIGUOS: frozenset[str] = frozenset(PAISES_CANDIDATOS_LIGA_AMBIGUA.keys())
+
+MAPA_FOTMOB_LEAGUE_ID_A_ISO3: Dict[int, str] = {
+    47: "ENG", 48: "ENG", 108: "ENG", 109: "ENG", 132: "ENG", 133: "ENG", 9292: "ENG",
+    262: "AZE",
+    54: "DEU", 146: "DEU", 208: "DEU", 209: "DEU", 9675: "DEU",
+    38: "AUT", 122: "AUT", 139: "AUT",
+    87: "ESP", 140: "ESP", 138: "ESP", 9475: "ESP",
+    55: "ITA", 86: "ITA", 141: "ITA",
+    53: "FRA", 110: "FRA", 134: "FRA",
+    61: "PRT", 186: "PRT",
+    57: "NLD", 111: "NLD",
+    40: "BEL",
+    71: "TUR", 129: "TUR",
+    59: "NOR", 121: "NOR", 137: "NOR",
+    67: "SWE", 123: "SWE",
+    46: "DNK",
+    69: "CHE", 124: "CHE",
+    135: "GRC",
+    64: "SCO",
+    196: "CZE",
+    66: "POL",
+    63: "RUS",
+    271: "UKR",
+    189: "ROU",
+    182: "SRB",
+    252: "HRV",
+    212: "HUN",
+    176: "BGR",
+    197: "SVK",
+    218: "SVN",
+    126: "IRL",
+    267: "CYP",
+    127: "ISR",
+    130: "USA", 9170: "USA", 8972: "USA",
+    230: "MEX",
+    112: "ARG", 9177: "ARG", 10007: "ARG",
+    268: "BRA", 8814: "BRA", 8971: "BRA", 9067: "BRA",
+    273: "CHL",
+    274: "COL",
+    246: "ECU",
+    131: "PER",
+    301: "BOL",
+    161: "URY",
+    199: "PRY",
+    265: "VEN",
+    120: "CHN",
+    223: "JPN",
+    9080: "KOR",
+    113: "AUS",
+    536: "SAU",
+    524: "EGY",
+    525: "MAR",
+    522: "ZAF",
+    # Competiciones internacionales
+    42: "INT", 73: "INT", 10216: "INT", 45: "INT", 299: "INT", 77: "INT", 44: "INT", 50: "INT", 9806: "INT",
+}
+
+MAPA_FOTMOB_TEAM_ID_A_ISO3: Dict[str, str] = {
+    str(tid): iso for (_nom, iso), tid in FOTMOB_IDS_CONOCIDOS.items() if tid and iso and iso != "INT"
+}
+MAPA_FOTMOB_TEAM_ID_A_ISO3.update({
+    "8402": "NOR",    # Bodø/Glimt
+    "9977": "AUT",    # LASK
+    "8637": "TUR",    # Galatasaray
+    "10252": "ENG",   # Aston Villa
+    "951893": "AZE",  # Sabah FK
+    "8634": "ESP",    # Barcelona
+    "10205": "ESP",   # Villarreal
+    "10267": "ESP",   # Valencia
+})
+
+PAISES_UEFA_ISO3: frozenset[str] = frozenset({
+    "ALB", "AND", "ARM", "AUT", "AZE", "BEL", "BGR", "BIH", "BLR", "CHE",
+    "CYP", "CZE", "DEU", "DNK", "ENG", "ESP", "EST", "FIN", "FRA", "FRO",
+    "GEO", "GIB", "GRC", "HRV", "HUN", "IRL", "ISL", "ISR", "ITA", "KAZ",
+    "KOS", "LIE", "LTU", "LUX", "LVA", "MDA", "MKD", "MLT", "MNE", "NIR",
+    "NLD", "NOR", "POL", "PRT", "ROU", "RUS", "SCO", "SMR", "SRB", "SVK",
+    "SVN", "SWE", "TUR", "UKR", "WAL",
+})
+
+PAISES_CONMEBOL_ISO3: frozenset[str] = frozenset({
+    "ARG", "BOL", "BRA", "CHL", "COL", "ECU", "PER", "PRY", "URY", "VEN", "MEX",
+})
+
+_TOKENS_PAIS_EXPLICITO_EN_LIGA: Dict[str, str] = {
+    **{k: v for k, v in MAPA_PAIS_A_ISO3.items() if len(k) >= 4 and v != "INT"},
+    "english": "ENG",
+    "austrian": "AUT",
+    "german": "DEU",
+    "spanish": "ESP",
+    "italian": "ITA",
+    "french": "FRA",
+    "scottish": "SCO",
+    "swiss": "CHE",
+    "greek": "GRC",
+    "turkish": "TUR",
+    "norwegian": "NOR",
+    "azerbaijani": "AZE",
+    "brazilian": "BRA",
+    "brasileirao": "BRA",
+    "brasileiro": "BRA",
+    "uruguaya": "URY",
+    "uruguayo": "URY",
+    "chileno": "CHL",
+    "chilena": "CHL",
+    "argentino": "ARG",
+    "argentina": "ARG",
+    "colombiano": "COL",
+    "colombiana": "COL",
+    "peruano": "PER",
+    "peruana": "PER",
+    "ecuatoriano": "ECU",
+    "ecuatoriana": "ECU",
+    "boliviano": "BOL",
+    "boliviana": "BOL",
+    "paraguayo": "PRY",
+    "paraguaya": "PRY",
+    "venezolano": "VEN",
+    "venezolana": "VEN",
+    "mexicano": "MEX",
+    "mexicana": "MEX",
+}
+
+
+_RE_LIMPIAR_BASE_LIGA = re.compile(
+    r"\b(?:femenin[oa]|women|fem|u19|u20|u21|u23|sub-(?:19|20|21|23)|clausura|apertura|grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|playoffs?)\b"
+)
+_RE_SEPARADORES_LIGA = re.compile(r"[\-–—:|·]+")
+_RE_ESPACIOS_MULT = re.compile(r"\s+")
+_TOKENS_PAIS_EXPLICITO_ORDENADOS: Tuple[Tuple[str, str], ...] = tuple(
+    sorted(_TOKENS_PAIS_EXPLICITO_EN_LIGA.items(), key=lambda x: len(x[0]), reverse=True)
+)
+_RE_TOKENS_PAIS_EXPLICITO = re.compile(
+    r"\b(" + "|".join(re.escape(k) for k, _ in _TOKENS_PAIS_EXPLICITO_ORDENADOS) + r")\b"
+)
+
+
+def _guardian_r29_activo() -> bool:
+    try:
+        from decision_cobertura import bandera_activa
+        return bool(bandera_activa("usar_guardian_homonimo_por_competicion"))
+    except Exception:
+        return True
+
+
+def _limpiar_base_nombre_liga(nombre_liga: Any) -> str:
+    norm = normalizar_texto(str(nombre_liga or ""))
+    if not norm:
         return ""
-    raw = str(pais_o_liga).strip()
+    norm = _RE_LIMPIAR_BASE_LIGA.sub(" ", norm)
+    norm = _RE_SEPARADORES_LIGA.sub(" ", norm)
+    return _RE_ESPACIOS_MULT.sub(" ", norm).strip()
+
+
+def _extraer_pais_explicito_de_texto_liga(nombre_liga: Any) -> str:
+    norm = normalizar_texto(str(nombre_liga or ""))
+    if not norm:
+        return ""
+    m = _RE_TOKENS_PAIS_EXPLICITO.search(norm)
+    if m:
+        return _TOKENS_PAIS_EXPLICITO_EN_LIGA.get(m.group(1), "")
+    return ""
+
+
+def es_competicion_internacional(nombre_liga: Any, id_liga: Any = None) -> bool:
+    if id_liga is not None:
+        try:
+            lid_i = int(str(id_liga).strip())
+            if MAPA_FOTMOB_LEAGUE_ID_A_ISO3.get(lid_i) == "INT":
+                return True
+        except (ValueError, TypeError):
+            pass
+    norm = normalizar_texto(str(nombre_liga or ""))
+    if not norm:
+        return False
+    if norm in ("int", "internacional", "europa", "sudamerica"):
+        return True
+    if CATALOGO_LIGAS_FLASHSCORE.get(norm) == "INT":
+        return True
+    return any(
+        k in norm
+        for k in (
+            "champions league", "uefa champions", "ucl",
+            "europa league", "uefa europa", "uel",
+            "conference league", "uefa conference", "uecl",
+            "copa libertadores", "conmebol libertadores", "libertadores",
+            "copa sudamericana", "conmebol sudamericana", "sudamericana",
+            "concacaf champions", "afc champions", "caf champions",
+            "club world cup", "mundial de clubes", "intercontinental",
+            "uefa super cup", "supercopa de europa", "recopa sudamericana",
+            "nations league", "liga de naciones", "eurocopa", "uefa euro",
+            "copa america", "eliminatorias", "clasificacion mundial",
+            "world cup", "copa mundial", "mundial", "copa oro", "gold cup",
+            "africa cup", "afcon", "copa africa", "asian cup", "copa asiatica",
+            "amistosos internacionales", "international friendlies",
+        )
+    )
+
+
+def es_nombre_liga_ambiguo(nombre_liga: Any) -> bool:
+    """
+    Devuelve True cuando el nombre de liga existe en múltiples países
+    ('Premier League', 'Bundesliga', 'Super League', 'Primera División', 'Serie A', etc.)
+    y no incluye ningún calificador explícito de país.
+    """
+    if not nombre_liga:
+        return False
+    raw = str(nombre_liga).strip()
+    norm = normalizar_texto(raw)
+    if raw.upper() in MAPA_ISO3_A_PAIS_INTERNO or norm in MAPA_PAIS_A_ISO3:
+        return False
+    base = _limpiar_base_nombre_liga(raw)
+    if base not in NOMBRES_LIGA_AMBIGUOS and norm not in NOMBRES_LIGA_AMBIGUOS:
+        return False
+    if es_competicion_internacional(raw):
+        return False
+    if _extraer_pais_explicito_de_texto_liga(raw):
+        return False
+    return True
+
+
+def candidatos_pais_para_liga_ambigua(nombre_liga: Any) -> frozenset[str]:
+    base = _limpiar_base_nombre_liga(nombre_liga)
+    if base in PAISES_CANDIDATOS_LIGA_AMBIGUA:
+        return PAISES_CANDIDATOS_LIGA_AMBIGUA[base]
+    norm = normalizar_texto(str(nombre_liga or ""))
+    if norm in PAISES_CANDIDATOS_LIGA_AMBIGUA:
+        return PAISES_CANDIDATOS_LIGA_AMBIGUA[norm]
+    for k, isos in PAISES_CANDIDATOS_LIGA_AMBIGUA.items():
+        if k in base or base in k:
+            return isos
+    return frozenset()
+
+
+def resolver_pais_desde_liga(
+    nombre_liga: Any,
+    *,
+    ccode: Any = None,
+    id_liga: Any = None,
+    id_equipo: Any = None,
+    paises_confirmacion: Any = None,
+) -> str:
+    """
+    Resuelve el código ISO-3 de país para una liga/equipo exigiendo confirmación
+    adicional (`ccode`, `id_liga`, `id_equipo` o `paises_confirmacion`) cuando el
+    nombre de la liga es ambiguo.
+    """
+    # 1. ccode / country explícito de FotMob
+    if ccode is not None and str(ccode).strip():
+        cc_raw = str(ccode).strip()
+        if cc_raw.upper() in MAPA_ISO3_A_PAIS_INTERNO and cc_raw.upper() != "INT":
+            return cc_raw.upper()
+        cc_norm = normalizar_texto(cc_raw)
+        if cc_norm in MAPA_PAIS_A_ISO3 and MAPA_PAIS_A_ISO3[cc_norm] != "INT":
+            return MAPA_PAIS_A_ISO3[cc_norm]
+
+    # 2. id_liga numérico de FotMob
+    if id_liga is not None and str(id_liga).strip():
+        try:
+            lid_int = int(str(id_liga).strip())
+            if lid_int in MAPA_FOTMOB_LEAGUE_ID_A_ISO3:
+                return MAPA_FOTMOB_LEAGUE_ID_A_ISO3[lid_int]
+        except (ValueError, TypeError):
+            pass
+
+    # 3. id_equipo numérico de FotMob
+    if id_equipo is not None and str(id_equipo).strip():
+        tid_s = str(id_equipo).strip()
+        if tid_s in MAPA_FOTMOB_TEAM_ID_A_ISO3:
+            return MAPA_FOTMOB_TEAM_ID_A_ISO3[tid_s]
+
+    if not nombre_liga or not str(nombre_liga).strip():
+        return ""
+
+    if es_competicion_internacional(nombre_liga, id_liga=id_liga):
+        return "INT"
+
+    iso_exp = _extraer_pais_explicito_de_texto_liga(nombre_liga)
+    if iso_exp:
+        return iso_exp
+
+    if _guardian_r29_activo() and es_nombre_liga_ambiguo(nombre_liga):
+        if paises_confirmacion:
+            if isinstance(paises_confirmacion, str):
+                conf_set = {paises_confirmacion.strip().upper()} if paises_confirmacion.strip() else set()
+            else:
+                conf_set = {str(x).strip().upper() for x in paises_confirmacion if x and str(x).strip()}
+            conf_set.discard("INT")
+            conf_set.discard("UNK")
+            cands_liga = candidatos_pais_para_liga_ambigua(nombre_liga)
+            inter = (conf_set & cands_liga) if cands_liga else conf_set
+            if len(inter) == 1:
+                return next(iter(inter))
+        return ""
+
+    return _normalizar_pais_iso_catalogo(str(nombre_liga))
+
+
+def _normalizar_pais_iso_catalogo(pais_o_liga: str) -> str:
+    raw = str(pais_o_liga or "").strip()
+    if not raw:
+        return ""
     if raw.upper() in MAPA_ISO3_A_PAIS_INTERNO:
         return raw.upper()
     norm = normalizar_texto(raw)
@@ -1331,7 +1829,6 @@ def normalizar_pais_iso(pais_o_liga: Optional[str]) -> str:
         return CATALOGO_LIGAS_FLASHSCORE[norm]
     for clave_liga, iso in _CLAVES_LIGAS_ORDENADAS:
         if clave_liga == norm or (len(clave_liga) >= 5 and re.search(rf"\b{re.escape(clave_liga)}\b", norm)):
-            # Evitar falsos positivos de "serie a" en "serie a brazil" o "serie a ecuador"
             if clave_liga in ("serie a", "serie b"):
                 if "bra" in norm:
                     return "BRA"
@@ -1344,6 +1841,8 @@ def normalizar_pais_iso(pais_o_liga: Optional[str]) -> str:
                     return "RUS"
                 if "egy" in norm or "egipto" in norm:
                     return "EGY"
+                if "aze" in norm:
+                    return "AZE"
             if clave_liga == "liga nacional":
                 if "gtm" in norm or "guatemala" in norm:
                     return "GTM"
@@ -1356,6 +1855,69 @@ def normalizar_pais_iso(pais_o_liga: Optional[str]) -> str:
     if "argentina" in norm or "liga profesional" in norm:
         return "ARG"
     return ""
+
+
+def normalizar_pais_iso(
+    pais_o_liga: Optional[str],
+    *,
+    ccode: Any = None,
+    id_liga: Any = None,
+    id_equipo: Any = None,
+    paises_confirmacion: Any = None,
+) -> str:
+    """
+    Convierte un nombre de país, código FIFA o nombre de liga en su código ISO-3 (ej. 'DEU', 'ESP', 'ARG').
+    Con `usar_guardian_homonimo_por_competicion=True`, ningún nombre de liga ambiguo
+    ('Premier League', 'Bundesliga', 'Super League', 'Primera División', etc.) asigna país
+    sin otro dato que lo confirme (`ccode`, `id_liga`, `id_equipo` o `paises_confirmacion`).
+    """
+    if ccode is not None or id_liga is not None or id_equipo is not None or paises_confirmacion is not None:
+        res_conf = resolver_pais_desde_liga(
+            pais_o_liga,
+            ccode=ccode,
+            id_liga=id_liga,
+            id_equipo=id_equipo,
+            paises_confirmacion=paises_confirmacion,
+        )
+        if res_conf:
+            return res_conf
+        if _guardian_r29_activo() and es_nombre_liga_ambiguo(pais_o_liga):
+            return ""
+    if not pais_o_liga:
+        return ""
+    raw = str(pais_o_liga).strip()
+    if raw.upper() in MAPA_ISO3_A_PAIS_INTERNO:
+        return raw.upper()
+    norm = normalizar_texto(raw)
+    if norm in MAPA_PAIS_A_ISO3:
+        return MAPA_PAIS_A_ISO3[norm]
+    if _guardian_r29_activo() and es_nombre_liga_ambiguo(raw):
+        return ""
+    return _normalizar_pais_iso_catalogo(raw)
+
+
+def _confirmar_pais_liga_con_resto(
+    liga_raw: str,
+    patron_norm: str,
+    pais_iso_cat: str,
+    resto_texto: str,
+) -> Tuple[str, bool]:
+    if not _guardian_r29_activo() or not es_nombre_liga_ambiguo(liga_raw):
+        return pais_iso_cat, False
+    paises_resto: set[str] = set()
+    partes = re.split(r"\s+(?:vs\.?|v|contra|h2h|x|@|[-–—])\s+", str(resto_texto or "").strip(), maxsplit=1, flags=re.IGNORECASE)
+    for p_eq in partes:
+        p_limpio = p_eq.strip()
+        if not p_limpio:
+            continue
+        paises_resto |= _paises_posibles_para_club(p_limpio)
+        iso_exp_eq = _extraer_pais_explicito_de_texto_liga(p_limpio)
+        if iso_exp_eq:
+            paises_resto.add(iso_exp_eq)
+    iso_conf = resolver_pais_desde_liga(liga_raw, paises_confirmacion=paises_resto)
+    if iso_conf:
+        return iso_conf, False
+    return "", True
 
 
 def extraer_liga_flashscore(texto: str) -> Tuple[Optional[Dict[str, Any]], str]:
@@ -1386,12 +1948,14 @@ def extraer_liga_flashscore(texto: str) -> Tuple[Optional[Dict[str, Any]], str]:
         for patron_norm, pais_iso in _CLAVES_LIGAS_ORDENADOS_SIN_ALIAS():
             if posible_norm == patron_norm or posible_norm.startswith(patron_norm + " "):
                 es_fem, es_juv = detectar_categoria_desde_texto(posible_liga_raw)
+                iso_eff, es_amb = _confirmar_pais_liga_con_resto(posible_liga_raw, patron_norm, pais_iso, resto_b)
                 return {
                     "nombre": posible_liga_raw,
                     "liga": posible_liga_raw,
                     "liga_norm": patron_norm,
-                    "pais_iso": pais_iso,
-                    "pais": MAPA_ISO3_A_PAIS_INTERNO.get(pais_iso, pais_iso.lower()),
+                    "pais_iso": iso_eff,
+                    "pais": MAPA_ISO3_A_PAIS_INTERNO.get(iso_eff, iso_eff.lower()) if iso_eff else "",
+                    "pais_ambiguo": es_amb,
                     "es_femenino": es_fem,
                     "es_juvenil": es_juv,
                     "liga_forzada": True,
@@ -1430,12 +1994,14 @@ def extraer_liga_flashscore(texto: str) -> Tuple[Optional[Dict[str, Any]], str]:
 
         liga_raw = trabajo[:fin_liga].strip(" :-–—|")
         es_fem, es_juv = detectar_categoria_desde_texto(liga_raw)
+        iso_eff, es_amb = _confirmar_pais_liga_con_resto(liga_raw, patron_norm, pais_iso, resto_limpio)
         return {
             "nombre": liga_raw,
             "liga": liga_raw,
             "liga_norm": patron_norm,
-            "pais_iso": pais_iso,
-            "pais": MAPA_ISO3_A_PAIS_INTERNO.get(pais_iso, pais_iso.lower()),
+            "pais_iso": iso_eff,
+            "pais": MAPA_ISO3_A_PAIS_INTERNO.get(iso_eff, iso_eff.lower()) if iso_eff else "",
+            "pais_ambiguo": es_amb,
             "es_femenino": es_fem,
             "es_juvenil": es_juv,
             "liga_forzada": True,
@@ -1900,7 +2466,44 @@ def resolver(
         if info_l2 and loc_limpio2:
             loc_str = loc_limpio2
 
-    pais_iso_liga = normalizar_pais_iso(liga_str)
+    # Paso conjunto: analizar calificadores y países posibles
+    _, calif_l = extraer_calificadores_nombre(loc_str)
+    _, calif_v = extraer_calificadores_nombre(vis_str)
+    iso_calif_l = calif_l.get("pais_iso")
+    iso_calif_v = calif_v.get("pais_iso")
+
+    cands_paises_l = _paises_posibles_para_club(loc_str)
+    for c in (candidatos_local or []):
+        iso_c = (
+            resolver_pais_desde_liga(
+                c.get("leagueName") or c.get("liga"),
+                ccode=c.get("pais_iso") or c.get("ccode") or c.get("country"),
+                id_liga=c.get("leagueId") or c.get("id_liga"),
+                id_equipo=c.get("id"),
+            )
+            if _guardian_r29_activo()
+            else (c.get("pais_iso") or c.get("country"))
+        )
+        if iso_c and iso_c != "INT":
+            cands_paises_l.add(iso_c)
+
+    cands_paises_v = _paises_posibles_para_club(vis_str)
+    for c in (candidatos_visita or []):
+        iso_c = (
+            resolver_pais_desde_liga(
+                c.get("leagueName") or c.get("liga"),
+                ccode=c.get("pais_iso") or c.get("ccode") or c.get("country"),
+                id_liga=c.get("leagueId") or c.get("id_liga"),
+                id_equipo=c.get("id"),
+            )
+            if _guardian_r29_activo()
+            else (c.get("pais_iso") or c.get("country"))
+        )
+        if iso_c and iso_c != "INT":
+            cands_paises_v.add(iso_c)
+
+    paises_conf_cruce = (cands_paises_l & cands_paises_v) or (cands_paises_l | cands_paises_v)
+    pais_iso_liga = normalizar_pais_iso(liga_str, paises_confirmacion=paises_conf_cruce)
     liga_norm = normalizar_texto(liga_str)
     es_fem, es_juv = detectar_categoria_desde_texto(f"{liga_str} {loc_str} {vis_str}")
 
@@ -1925,36 +2528,24 @@ def resolver(
         for k in ("copa", "cup", "pokal", "beker", "taca", "supercopa", "superliga")
     )
 
-    # Paso conjunto: analizar calificadores y países posibles
-    _, calif_l = extraer_calificadores_nombre(loc_str)
-    _, calif_v = extraer_calificadores_nombre(vis_str)
-    iso_calif_l = calif_l.get("pais_iso")
-    iso_calif_v = calif_v.get("pais_iso")
-
-    cands_paises_l = _paises_posibles_para_club(loc_str)
-    for c in (candidatos_local or []):
-        iso_c = c.get("pais_iso") or c.get("country")
-        if iso_c:
-            cands_paises_l.add(iso_c)
-
-    cands_paises_v = _paises_posibles_para_club(vis_str)
-    for c in (candidatos_visita or []):
-        iso_c = c.get("pais_iso") or c.get("country")
-        if iso_c:
-            cands_paises_v.add(iso_c)
-
     criterio_desempate = ""
     pais_conjunto = ""
+    liga_ambigua_sin_confirmar = bool(
+        _guardian_r29_activo() and liga_str and es_nombre_liga_ambiguo(liga_str) and not pais_iso_liga
+    )
 
     if not es_internacional and not es_duelo_selecciones:
         if pais_iso_liga and pais_iso_liga != "INT":
             inter = cands_paises_l & cands_paises_v
-            if inter and pais_iso_liga not in inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter:
+            if inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter and "ITA" not in inter:
                 pais_conjunto = "BRA"
                 criterio_desempate = "liga_declarada (serie_b_c_brasil)"
             else:
                 pais_conjunto = pais_iso_liga
                 criterio_desempate = f"liga_declarada ({pais_iso_liga})"
+        elif liga_ambigua_sin_confirmar:
+            pais_conjunto = ""
+            criterio_desempate = "pais_ambiguo"
         elif iso_calif_l:
             pais_conjunto = iso_calif_l
             criterio_desempate = f"calificador_local ({loc_str})"
@@ -1966,6 +2557,12 @@ def resolver(
             if inter:
                 pais_conjunto = sorted(inter)[0]
                 criterio_desempate = f"interseccion_cruzada_rival ({pais_conjunto})"
+            elif _guardian_r29_activo() and cands_paises_l and cands_paises_v and not (cands_paises_l & cands_paises_v):
+                # Ambos equipos tienen país(es) conocidos pero disjuntos (ej. Bodø/Glimt [NOR] vs LASK [AUT],
+                # Galatasaray [TUR] vs Aston Villa [ENG], Sabah FK [AZE] vs Barcelona [ESP]):
+                # nunca imponer el país del local al visitante.
+                pais_conjunto = ""
+                criterio_desempate = "cruce_internacional_paises_distintos"
             elif len(cands_paises_l) == 1:
                 pais_conjunto = list(cands_paises_l)[0]
                 criterio_desempate = f"pais_unico_local ({pais_conjunto})"
@@ -1980,9 +2577,15 @@ def resolver(
         ctx_vis = pais_conjunto or None
         nom_loc, iso_loc = resolver_equipo_individual(loc_str, pais_iso_contexto=ctx_loc, es_femenino=es_fem, es_juvenil=es_juv)
         nom_vis, iso_vis = resolver_equipo_individual(vis_str, pais_iso_contexto=ctx_vis, es_femenino=es_fem, es_juvenil=es_juv)
-        pais_final = pais_conjunto or iso_loc or iso_vis or ""
-        pais_local = iso_loc or pais_final
-        pais_visita = iso_vis or pais_final
+        if _guardian_r29_activo() and not pais_conjunto and iso_loc and iso_vis and iso_loc != iso_vis:
+            pais_final = "INT"
+            pais_local = iso_loc
+            pais_visita = iso_vis
+            es_internacional = True
+        else:
+            pais_final = pais_conjunto or iso_loc or iso_vis or ""
+            pais_local = iso_loc or pais_final
+            pais_visita = iso_vis or pais_final
     else:
         criterio_desempate = "duelo_selecciones_nacionales" if es_duelo_selecciones else "cruce_internacional"
         nom_loc, iso_loc = resolver_equipo_individual(loc_str, es_femenino=es_fem, es_juvenil=es_juv)
@@ -2002,7 +2605,14 @@ def resolver(
     es_homonimo_ambiguo_l = bool(len(cands_l_paises) > 1 and not pais_iso_liga and not iso_calif_l and not pais_conjunto and not sel_l)
     es_homonimo_ambiguo_v = bool(len(cands_v_paises) > 1 and not pais_iso_liga and not iso_calif_v and not pais_conjunto and not sel_v)
 
-    if (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis) or (criterio_desempate == "sin_desempate_claro" and not es_duelo_selecciones) or es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
+    if liga_ambigua_sin_confirmar:
+        identidad_verificada = False
+        estado_identidad = "pais_ambiguo"
+        motivo_identidad = (
+            f"PAIS_AMBIGUO: la liga '{liga_str}' es ambigua y no existe ccode, id_liga ni clubes que confirmen el país."
+        )
+        nivel_confianza = "nula"
+    elif (not cand_l_known and not iso_loc) or (not cand_v_known and not iso_vis) or (criterio_desempate == "sin_desempate_claro" and not es_duelo_selecciones) or es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
         identidad_verificada = False
         estado_identidad = "identidad_no_verificada"
         if es_homonimo_ambiguo_l or es_homonimo_ambiguo_v:
@@ -2128,10 +2738,21 @@ def validar_y_puntuar_candidato_fotmob(
     if sel_buscada:
         iso_esperado = sel_buscada[1]
     else:
-        iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
+        iso_esperado = normalizar_pais_iso(
+            pais_iso_esperado or texto_liga_o_contexto,
+            paises_confirmacion=_paises_posibles_para_club(texto_buscado),
+        )
     cand_liga_id = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
     liga_cand_norm = normalizar_texto(liga_cand)
-    if (cand_liga_id is not None and str(cand_liga_id) in ("8971", "8814", "268")) or (liga_cand_norm in ("serie c", "serie b", "serie a") and iso_esperado == "BRA"):
+    if _guardian_r29_activo():
+        iso_cand = resolver_pais_desde_liga(
+            liga_cand,
+            ccode=ccode_cand,
+            id_liga=cand_liga_id,
+            id_equipo=candidato.get("id"),
+            paises_confirmacion=iso_esperado if (iso_esperado and iso_esperado != "INT") else None,
+        )
+    elif (cand_liga_id is not None and str(cand_liga_id) in ("8971", "8814", "268")) or (liga_cand_norm in ("serie c", "serie b", "serie a") and iso_esperado == "BRA"):
         iso_cand = "BRA"
     else:
         iso_cand = normalizar_pais_iso(ccode_cand) or normalizar_pais_iso(liga_cand)
