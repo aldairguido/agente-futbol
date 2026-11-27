@@ -563,3 +563,116 @@ def test_r29_invariancia_partidos_domesticos_frente_a_477525a():
         ]
         assert len(s1_new) == len(s1_ref)
         assert sf_new == sf_ref
+
+
+def test_r29_contador_abstenciones_por_motivo_en_log_de_consultas(monkeypatch, tmp_path):
+    _aislar_entorno_offline(monkeypatch)
+    sm.reiniciar_contador_abstenciones_consultas()
+
+    doc_barca_esp = _rejuvenecer_fechas(_cargar_json_auditoria("informes/auditorias/2026-11-23/auditoria_barcelona_2026-11-23_140609.json"))
+    doc_villarreal_esp = copy.deepcopy(doc_barca_esp)
+    doc_villarreal_esp["equipo"] = {"id": "10205", "nombre": "Villarreal", "liga": "LaLiga", "id_liga": 87, "pais_iso": "ESP"}
+
+    # 1) Consulta doméstica legítima (LaLiga): 0 abstenciones
+    coh_ok = validar_coherencia_competitiva_local_visita(doc_barca_esp, doc_villarreal_esp, pais_iso="ESP", liga_pref="LaLiga")
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Barcelona",
+            "equipo_visitante": "Villarreal",
+            "doc_local": doc_barca_esp,
+            "doc_visitante": doc_villarreal_esp,
+            "contexto": {
+                "competicion": "LaLiga",
+                "pais_iso": "ESP",
+                "condicion_local": "casa",
+                "condicion_visitante": "fuera",
+                "fecha_partido": "2026-11-25",
+                "fecha_corte": "2026-11-25",
+                "hora_inicio_partido": "2026-11-25T20:00:00Z",
+                "fixture_confirmado": True,
+                "coherencia_competitiva": dict(coh_ok),
+            },
+        },
+    )
+    res_ok = sm.preparar_analisis("Barcelona", "Villarreal", directorio_salida=str(tmp_path / "c1"))
+    assert res_ok.get("abstenido") is not True
+    cont1 = sm.obtener_contador_abstenciones_consultas()
+    assert cont1["total_consultas"] == 1
+    assert cont1["total_ok"] == 1
+    assert cont1["domesticas"]["ok"] == 1
+    assert cont1["domesticas"]["PAIS_AMBIGUO"] == 0
+    assert cont1["domesticas"]["FALSO_HOMONIMO"] == 0
+
+    # 2) Abstención por PAIS_AMBIGUO (club con liga ambigua sin ccode ni id_liga)
+    doc_amb = {
+        "equipo": {"id": None, "nombre": "Athletic Unido", "liga": "Primera División"},
+        "partidos": [
+            {"fecha": f"2026-11-{20 - i:02d}", "torneo": "Primera División", "rival": f"Deportivo Sin Catalogar {i}"}
+            for i in range(15)
+        ],
+    }
+    coh_amb = validar_coherencia_competitiva_local_visita(doc_amb, doc_barca_esp, pais_iso="INT", liga_pref="Champions League")
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Athletic Unido",
+            "equipo_visitante": "Barcelona",
+            "doc_local": doc_amb,
+            "doc_visitante": doc_barca_esp,
+            "contexto": {
+                "competicion": "Champions League",
+                "pais_iso": "INT",
+                "fecha_partido": "2026-11-25",
+                "coherencia_competitiva": dict(coh_amb),
+            },
+        },
+    )
+    res_amb = sm.preparar_analisis("Athletic Unido", "Barcelona", directorio_salida=str(tmp_path / "c2"))
+    assert res_amb["abstenido"] is True
+    assert res_amb["estado_cobertura"] == "pais_ambiguo"
+    cont2 = sm.obtener_contador_abstenciones_consultas()
+    assert cont2["por_motivo"]["PAIS_AMBIGUO"] == 1
+    assert cont2["por_motivo"]["FALSO_HOMONIMO"] == 0
+    assert cont2["internacionales"]["PAIS_AMBIGUO"] == 1
+    assert cont2["domesticas"]["PAIS_AMBIGUO"] == 0
+
+    # 3) Abstención por FALSO_HOMONIMO (Barcelona SC de Ecuador contra equipo español)
+    doc_bsc_ecu = {
+        "equipo": {"id": "555002", "nombre": "Barcelona SC", "liga": "LigaPro", "id_liga": 246, "pais_iso": "ECU"},
+        "partidos": [
+            {"fecha": f"2026-11-{20 - i:02d}", "torneo": "LigaPro", "rival": "Emelec" if i % 2 == 0 else "LDU Quito"}
+            for i in range(15)
+        ],
+    }
+    coh_fh = validar_coherencia_competitiva_local_visita(doc_villarreal_esp, doc_bsc_ecu, pais_iso="ESP", liga_pref="LaLiga")
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Villarreal",
+            "equipo_visitante": "Barcelona SC",
+            "doc_local": doc_villarreal_esp,
+            "doc_visitante": doc_bsc_ecu,
+            "contexto": {
+                "competicion": "LaLiga",
+                "pais_iso": "ESP",
+                "fecha_partido": "2026-11-25",
+                "coherencia_competitiva": dict(coh_fh),
+            },
+        },
+    )
+    res_fh = sm.preparar_analisis("Villarreal", "Barcelona SC", directorio_salida=str(tmp_path / "c3"))
+    assert res_fh["abstenido"] is True
+    assert res_fh["estado_cobertura"] == "falso_homonimo_extranjero"
+    cont3 = sm.obtener_contador_abstenciones_consultas()
+    assert cont3["total_consultas"] == 3
+    assert cont3["por_motivo"]["PAIS_AMBIGUO"] == 1
+    assert cont3["por_motivo"]["FALSO_HOMONIMO"] == 1
+    assert cont3["domesticas"]["FALSO_HOMONIMO"] == 1
+    assert (tmp_path / "c3" / "log_consultas_abstenciones.json").exists()
+    resumen_txt = sm.formatear_resumen_abstenciones_consultas(cont3)
+    assert "PAIS_AMBIGUO=1" in resumen_txt
+    assert "FALSO_HOMONIMO=1" in resumen_txt

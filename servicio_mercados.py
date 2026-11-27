@@ -1658,6 +1658,167 @@ def marcar_estado(id_trabajo: str, estado: str, extra: dict[str, Any] | None = N
     _escribir_registro(registro)
 
 
+LOG_CONSULTAS_ABSTENCIONES = str(Path(MERCADOS_DIR) / "log_consultas_abstenciones.json")
+_lock_log_consultas = threading.Lock()
+
+
+def _crear_estructura_contador_abstenciones() -> dict[str, Any]:
+    return {
+        "total_consultas": 0,
+        "total_ok": 0,
+        "total_abstenidas": 0,
+        "por_motivo": {
+            "PAIS_AMBIGUO": 0,
+            "FALSO_HOMONIMO": 0,
+            "OTRO_MOTIVO": 0,
+        },
+        "domesticas": {
+            "total_consultas": 0,
+            "ok": 0,
+            "abstenidas": 0,
+            "PAIS_AMBIGUO": 0,
+            "FALSO_HOMONIMO": 0,
+            "OTRO_MOTIVO": 0,
+        },
+        "internacionales": {
+            "total_consultas": 0,
+            "ok": 0,
+            "abstenidas": 0,
+            "PAIS_AMBIGUO": 0,
+            "FALSO_HOMONIMO": 0,
+            "OTRO_MOTIVO": 0,
+        },
+        "por_estado_cobertura": {},
+        "ultimas_consultas": [],
+    }
+
+
+_CONTADOR_ABSTENCIONES_CONSULTAS: dict[str, Any] = _crear_estructura_contador_abstenciones()
+
+
+def reiniciar_contador_abstenciones_consultas() -> dict[str, Any]:
+    """Reinicia en memoria el contador de abstenciones por motivo en el log de consultas."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS
+    with _lock_log_consultas:
+        _CONTADOR_ABSTENCIONES_CONSULTAS = _crear_estructura_contador_abstenciones()
+        return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
+
+
+def obtener_contador_abstenciones_consultas() -> dict[str, Any]:
+    """Devuelve copia instantánea del contador de abstenciones por motivo (PAIS_AMBIGUO y FALSO_HOMONIMO)."""
+    with _lock_log_consultas:
+        return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
+
+
+def formatear_resumen_abstenciones_consultas(contador: dict[str, Any] | None = None) -> str:
+    c = contador if isinstance(contador, dict) else obtener_contador_abstenciones_consultas()
+    pm = c.get("por_motivo") or {}
+    dom = c.get("domesticas") or {}
+    inter = c.get("internacionales") or {}
+    return (
+        f"PAIS_AMBIGUO={int(pm.get('PAIS_AMBIGUO', 0))} "
+        f"(dom={int(dom.get('PAIS_AMBIGUO', 0))}, int={int(inter.get('PAIS_AMBIGUO', 0))}) | "
+        f"FALSO_HOMONIMO={int(pm.get('FALSO_HOMONIMO', 0))} "
+        f"(dom={int(dom.get('FALSO_HOMONIMO', 0))}, int={int(inter.get('FALSO_HOMONIMO', 0))}) | "
+        f"consultas={int(c.get('total_consultas', 0))} (dom_ok={int(dom.get('ok', 0))}/{int(dom.get('total_consultas', 0))})"
+    )
+
+
+def registrar_consulta_log_abstenciones(
+    *,
+    equipo_local: str,
+    equipo_visitante: str,
+    competicion: str | None = None,
+    pais_iso: str | None = None,
+    abstenido: bool = False,
+    estado_cobertura: str | None = None,
+    motivo_abstencion: str | None = None,
+    id_trabajo: str | None = None,
+    directorio_salida: str | None = None,
+) -> dict[str, Any]:
+    """
+    Registra cada consulta en el log de consultas y actualiza el contador de abstenciones
+    por motivo (PAIS_AMBIGUO y FALSO_HOMONIMO), desglosado entre ligas domésticas e
+    internacionales para auditar que no sube la abstención en ligas domésticas.
+    """
+    from resolvedor_entidades import es_competicion_internacional
+
+    comp_txt = str(competicion or "Competición oficial").strip()
+    iso_txt = str(pais_iso or "").strip().upper()
+    es_int = bool(iso_txt == "INT" or es_competicion_internacional(comp_txt))
+    ambito = "internacional" if es_int else "domestica"
+    clave_ambito = "internacionales" if es_int else "domesticas"
+
+    est_low = str(estado_cobertura or ("abstenido" if abstenido else "cobertura_suficiente")).strip().lower()
+    mot_up = str(motivo_abstencion or "").strip().upper()
+
+    if not abstenido:
+        motivo_clave = "OK"
+    elif est_low == "pais_ambiguo" or "PAIS_AMBIGUO" in mot_up or "PAÍS AMBIGUO" in mot_up:
+        motivo_clave = "PAIS_AMBIGUO"
+    elif (
+        est_low == "falso_homonimo_extranjero"
+        or "FALSO HOMÓNIMO" in mot_up
+        or "FALSO HOMONIMO" in mot_up
+        or "FALSO_HOMONIMO" in mot_up
+    ):
+        motivo_clave = "FALSO_HOMONIMO"
+    else:
+        motivo_clave = "OTRO_MOTIVO"
+
+    with _lock_log_consultas:
+        _CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"]) + 1
+        bucket_amb = _CONTADOR_ABSTENCIONES_CONSULTAS[clave_ambito]
+        bucket_amb["total_consultas"] = int(bucket_amb["total_consultas"]) + 1
+        if not abstenido:
+            _CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"]) + 1
+            bucket_amb["ok"] = int(bucket_amb["ok"]) + 1
+        else:
+            _CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"]) + 1
+            bucket_amb["abstenidas"] = int(bucket_amb["abstenidas"]) + 1
+            pm = _CONTADOR_ABSTENCIONES_CONSULTAS["por_motivo"]
+            pm[motivo_clave] = int(pm.get(motivo_clave, 0)) + 1
+            bucket_amb[motivo_clave] = int(bucket_amb.get(motivo_clave, 0)) + 1
+
+        por_est = _CONTADOR_ABSTENCIONES_CONSULTAS["por_estado_cobertura"]
+        por_est[est_low] = int(por_est.get(est_low, 0)) + 1
+
+        ult = _CONTADOR_ABSTENCIONES_CONSULTAS["ultimas_consultas"]
+        ult.append({
+            "en": _ahora(),
+            "id_trabajo": str(id_trabajo or ""),
+            "partido": f"{equipo_local} vs {equipo_visitante}",
+            "competicion": comp_txt,
+            "ambito": ambito,
+            "abstenido": bool(abstenido),
+            "motivo_clave": motivo_clave,
+            "estado_cobertura": est_low,
+        })
+        if len(ult) > 100:
+            del ult[:-100]
+
+        snap = json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
+
+        ruta_log = (
+            os.path.join(directorio_salida, "log_consultas_abstenciones.json")
+            if directorio_salida
+            else LOG_CONSULTAS_ABSTENCIONES
+        )
+        try:
+            os.makedirs(os.path.dirname(ruta_log), exist_ok=True)
+            with open(ruta_log, "w", encoding="utf-8") as fh_log:
+                json.dump(snap, fh_log, ensure_ascii=False, indent=1)
+        except Exception:
+            pass
+
+    resumen_txt = formatear_resumen_abstenciones_consultas(snap)
+    print(
+        f"[LOG CONSULTAS] {equipo_local} vs {equipo_visitante} "
+        f"({comp_txt}, ambito={ambito}) -> {motivo_clave} ({est_low}) | {resumen_txt}"
+    )
+    return snap
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # RENDERIZADO DE TICKET GRÁFICO (PNG) PARA /mercados
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3459,6 +3620,17 @@ def preparar_analisis(
             "grupos": {"mantiene": [], "sensible": []},
         })()
         id_trabajo_cal = identificar_trabajo(meta_abs_cal, contexto["doc_local"], contexto["doc_visitante"])
+        cont_abs_cal = registrar_consulta_log_abstenciones(
+            equipo_local=contexto["equipo_local"],
+            equipo_visitante=contexto["equipo_visitante"],
+            competicion=ctx.get("competicion"),
+            pais_iso=ctx.get("pais_iso"),
+            abstenido=True,
+            estado_cobertura=_abstencion_calidad_estado,
+            motivo_abstencion=_abstencion_calidad_motivo,
+            id_trabajo=id_trabajo_cal,
+            directorio_salida=directorio_salida,
+        )
         return {
             "analisis": analisis_abs_cal,
             "id_trabajo": id_trabajo_cal,
@@ -3470,6 +3642,7 @@ def preparar_analisis(
             "decision_cobertura": meta_abs_cal["decision_cobertura"],
             "analisis_texto_3_parrafos": texto_cal,
             "ruta_imagen": None,
+            "contador_abstenciones_consultas": cont_abs_cal,
         }
 
     # ── Puntos 44 y 45: Decisión de Cobertura Comparable y Precedencia D.1 ──
@@ -3624,6 +3797,17 @@ def preparar_analisis(
             f"🏷️ {__import__('utilidades_seguridad').obtener_sello_build()}"
         )
 
+        cont_abs_cob = registrar_consulta_log_abstenciones(
+            equipo_local=contexto["equipo_local"],
+            equipo_visitante=contexto["equipo_visitante"],
+            competicion=ctx.get("competicion"),
+            pais_iso=ctx.get("pais_iso"),
+            abstenido=True,
+            estado_cobertura=decision_cob.estado,
+            motivo_abstencion=decision_cob.alerta_descriptiva,
+            id_trabajo=id_trabajo,
+            directorio_salida=directorio_salida,
+        )
         return {
             "analisis": analisis_abstenido,
             "id_trabajo": id_trabajo,
@@ -3635,6 +3819,7 @@ def preparar_analisis(
             "decision_cobertura": decision_cob.a_dict(),
             "analisis_texto_3_parrafos": texto_alerta,
             "ruta_imagen": ruta_imagen,
+            "contador_abstenciones_consultas": cont_abs_cob,
         }
 
     analisis: Analisis = analizar(
@@ -3999,6 +4184,18 @@ def preparar_analisis(
                                        .get("aplicado") else "no aplicado"),
                    "indice_confianza_cognitiva": diagnostico_conciencia.get("indice_confianza_cognitiva")})
 
+    cont_abs_ok = registrar_consulta_log_abstenciones(
+        equipo_local=contexto["equipo_local"],
+        equipo_visitante=contexto["equipo_visitante"],
+        competicion=ctx.get("competicion"),
+        pais_iso=ctx.get("pais_iso"),
+        abstenido=False,
+        estado_cobertura=decision_cob.estado,
+        motivo_abstencion=None,
+        id_trabajo=id_trabajo,
+        directorio_salida=directorio_salida,
+    )
+
     return {
         "id_trabajo": id_trabajo,
         "analisis": analisis,
@@ -4017,6 +4214,7 @@ def preparar_analisis(
         "diagnostico_conciencia": diagnostico_conciencia,
         "contexto": contexto,
         "mensaje": analisis.mensaje,
+        "contador_abstenciones_consultas": cont_abs_ok,
     }
 
 

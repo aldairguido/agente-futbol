@@ -698,6 +698,7 @@ def cmd_estado(message):
         f"(Pool rotativo: {pool_modelos} modelos)\n"
         "• *Modo Operativo:* 🧪 Paper Trading (Simulación de Capital)\n"
         f"• *Persistencia:* {formatear_linea_estado_persistencia()}\n"
+        f"• *Abstenciones Consultas:* `{servicio.formatear_resumen_abstenciones_consultas()}`\n"
         f"• *Zona Horaria:* 🕒 `{config.TIMEZONE}`\n"
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
         "💡 Envía /agente <consulta o duelo> para activar el razonamiento multi-agente.\n"
@@ -1954,6 +1955,7 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
         preparado = servicio.preparar_analisis(
             equipo_a, equipo_b, limite=limite, umbral=umbral, progreso=progreso, liga=liga)
         analisis = preparado["analisis"]
+        print(f"[BOT TELEGRAM] 📊 Contador abstenciones consultas: {servicio.formatear_resumen_abstenciones_consultas()}")
 
         if preparado.get("partido_ya_jugado"):
             enviar_seguro(bot, chat_id, preparado.get("analisis_texto_3_parrafos") or "⚠️ Partido ya jugado, usa /evaluar")
