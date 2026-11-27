@@ -838,6 +838,7 @@ class ClienteFlashscore:
 
         url = f"https://2.flashscore.ninja/2/x/feed/f_1_{int(dia_offset)}_-5_es_1"
         eventos: list[dict[str, Any]] = []
+        self._ultimo_error_red = False
         try:
             r = self._get(url)
             txt = getattr(r, "text", "") or ""
@@ -862,9 +863,10 @@ class ClienteFlashscore:
                             "estado": (campos.get("AB") or "").strip(),
                             "inicio_unix": _int_o_none(campos.get("AD") or ""),
                         })
+            self._CACHE_FEED_DIARIO[int(dia_offset)] = (ahora, eventos)
         except Exception:
+            self._ultimo_error_red = True
             eventos = []
-        self._CACHE_FEED_DIARIO[int(dia_offset)] = (ahora, eventos)
         return eventos
 
     def buscar_evento_programado_feed_diario(
@@ -902,7 +904,10 @@ class ClienteFlashscore:
 
         mejor: tuple[float, dict[str, Any]] | None = None
         for d_off in dias:
-            for ev in self._obtener_feed_diario_cacheado(d_off):
+            evs_dia = self._obtener_feed_diario_cacheado(d_off)
+            if getattr(self, "_ultimo_error_red", False):
+                break
+            for ev in evs_dia:
                 if solo_programados and ev.get("estado") not in ("1", ""):
                     continue
                 el = _norm(ev["local"])
@@ -934,7 +939,10 @@ class ClienteFlashscore:
         if not eid:
             return None, None, None
         for d_off in dias:
-            for ev in self._obtener_feed_diario_cacheado(d_off):
+            evs_dia = self._obtener_feed_diario_cacheado(d_off)
+            if getattr(self, "_ultimo_error_red", False):
+                break
+            for ev in evs_dia:
                 if ev.get("id_flashscore") == eid:
                     return ev.get("home_participant_id"), ev.get("away_participant_id"), ev.get("estado")
         return None, None, None
@@ -965,6 +973,7 @@ class ClienteFlashscore:
             f"https://global.ds.lsapp.eu/odds/pq_graphql?_hash=oce"
             f"&eventId={eid}&projectId=2&geoIpCode={geo_ip}&geoIpSubdivisionCode={geo_sub}"
         )
+        self._ultimo_error_red = False
         try:
             r = self._get(gql_url)
             if getattr(r, "status_code", 0) != 200:
@@ -973,7 +982,10 @@ class ClienteFlashscore:
             if not txt.lstrip().startswith("{"):
                 return None
             payload = json.loads(txt)
+        except json.JSONDecodeError:
+            return None
         except Exception:
+            self._ultimo_error_red = True
             return None
 
         fo = ((payload.get("data") or {}).get("findOddsByEventId") or {})
@@ -1192,7 +1204,7 @@ class ClienteFlashscore:
                 url,
                 headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=6) as resp:
+            with urllib.request.urlopen(req, timeout=3.5) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="replace"))
         except Exception:
             return None
@@ -1298,9 +1310,9 @@ class ClienteFlashscore:
         if modo_cierre_archivado:
             return res_defecto
 
-        # 2) Fallback: feed HTML tradicional (mantiene compatibilidad con tests existentes)
+        # 2) Fallback: feed HTML tradicional (se omite si ya hubo fallo de red/timeout contra Flashscore)
         urls_candidatas = []
-        if id_limpio:
+        if id_limpio and not getattr(self, "_ultimo_error_red", False):
             urls_candidatas = [
                 f"https://d.flashscore.com/x/feed/df_od_1_{id_limpio}",
                 f"https://d.flashscore.com/x/feed/d_od_{id_limpio}_es_1_eu",
@@ -1317,7 +1329,7 @@ class ClienteFlashscore:
                         html = txt
                         break
             except Exception:
-                continue
+                break
 
         if html:
             soup = BeautifulSoup(html, "html.parser")

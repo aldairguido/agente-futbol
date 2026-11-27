@@ -3648,13 +3648,24 @@ def agregar_resumen_mercado_y_clv(
     *,
     cuotas_cierre_por_id: dict[str, dict[str, Any]] | None = None,
     consultar_cierre_remoto: bool = False,
+    incluir_clv: bool | None = None,
 ) -> dict[str, Any]:
     """
     Agrega el desempeño del modelo frente al baseline de mercado sin margen (`de-vigged`)
-    y el CLV sin margen (`clv_devig_pct`) EXCLUSIVAMENTE sobre entradas OOS válidas y
-    canónicas con `cuotas_mercado` capturadas antes del inicio.
-    No reporta ROI sobre selecciones EV>0 para evitar sesgo del ganador en muestras chicas.
+    y, solo cuando `incluir_clv` / `usar_cierre_remoto_cuotas_en_evaluar` está activo,
+    el CLV sin margen (`clv_devig_pct`) sobre entradas OOS válidas y canónicas.
     """
+    from decision_cobertura import bandera_activa as _ba_clv_ev
+
+    permitir_clv = (
+        bool(incluir_clv)
+        if incluir_clv is not None
+        else (
+            (cuotas_cierre_por_id is not None)
+            or bool(consultar_cierre_remoto)
+            or bool(_ba_clv_ev("usar_cierre_remoto_cuotas_en_evaluar"))
+        )
+    )
     por_mkt: dict[str, dict[str, list[float]]] = {
         m: {"b_mod": [], "b_mkt": [], "ll_mod": [], "ll_mkt": []}
         for m in ("1x2", "ou_2.5", "btts")
@@ -3682,22 +3693,24 @@ def agregar_resumen_mercado_y_clv(
         if res is None or getattr(res, "estado", None) != "finalizado":
             continue
         idt = str(doc.get("id_trabajo") or "")
-        c_cierre = (cuotas_cierre_por_id or {}).get(idt) or doc.get("cuotas_cierre")
-        if c_cierre is None and consultar_cierre_remoto and cm_doc.get("id_flashscore_cuotas"):
-            try:
-                if cli_fs is None:
-                    from fuente_flashscore import ClienteFlashscore
-                    cli_fs = ClienteFlashscore()
-                c_try = cli_fs.extraer_cuotas(
-                    str(cm_doc["id_flashscore_cuotas"]),
-                    home_participant_id=cm_doc.get("home_participant_id"),
-                    away_participant_id=cm_doc.get("away_participant_id"),
-                    modo_cierre_archivado=True,
-                )
-                if any(c_try.get(k) is not None for k in ("local", "empate", "visitante")):
-                    c_cierre = c_try
-            except Exception:
-                c_cierre = None
+        c_cierre = None
+        if permitir_clv:
+            c_cierre = (cuotas_cierre_por_id or {}).get(idt) or doc.get("cuotas_cierre")
+            if c_cierre is None and consultar_cierre_remoto and cm_doc.get("id_flashscore_cuotas"):
+                try:
+                    if cli_fs is None:
+                        from fuente_flashscore import ClienteFlashscore
+                        cli_fs = ClienteFlashscore(timeout=3.5)
+                    c_try = cli_fs.extraer_cuotas(
+                        str(cm_doc["id_flashscore_cuotas"]),
+                        home_participant_id=cm_doc.get("home_participant_id"),
+                        away_participant_id=cm_doc.get("away_participant_id"),
+                        modo_cierre_archivado=True,
+                    )
+                    if any(c_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                        c_cierre = c_try
+                except Exception:
+                    c_cierre = None
 
         met = calcular_metricas_clv_y_mercado(doc, res, cuotas_cierre=c_cierre)
         if not met.get("disponible"):
@@ -3748,7 +3761,11 @@ def agregar_resumen_mercado_y_clv(
         "fuente_cierre": "archivo_postpartido_flashscore_oce" if n_oos_con_clv > 0 else None,
         "nota_metodologica": (
             "No se reporta ROI sobre selecciones EV>0 (sujeto a sesgo del ganador y alta varianza en muestras pequeñas). "
-            "El cierre proviene del archivo post-partido de Flashscore (_hash=oce)."
+            + (
+                "El cierre proviene del archivo post-partido de Flashscore (_hash=oce)."
+                if permitir_clv
+                else "Cierre remoto y CLV desactivados (usar_cierre_remoto_cuotas_en_evaluar=False)."
+            )
         ),
     }
 
@@ -4398,6 +4415,9 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
         partidos_no_oos=separacion_oos["no_oos"]["partidos_unicos"],
     )
 
+    from decision_cobertura import bandera_activa as _ba_eval_tanda
+
+    _usar_cierre_eval = bool(_ba_eval_tanda("usar_cierre_remoto_cuotas_en_evaluar"))
     informe = InformeEvaluacion(
         generado_en=_ahora(),
         partidos={k: v.a_dict() for k, v in resultados.items()},
@@ -4427,7 +4447,8 @@ def evaluar_tanda(pronosticos: list[dict[str, Any]],
         resumen_mercado_y_clv=agregar_resumen_mercado_y_clv(
             pronosticos,
             resultados,
-            consultar_cierre_remoto=True,
+            consultar_cierre_remoto=_usar_cierre_eval,
+            incluir_clv=_usar_cierre_eval,
         ),
     )
     avisar(f"evaluación completada: {len(publicadas)} selecciones publicadas evaluadas"

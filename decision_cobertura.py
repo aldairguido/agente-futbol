@@ -66,6 +66,9 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_sin_dato_si_mitades_no_suman_ft": False,
     "usar_unificacion_h_gf_lstm_15": False,
     "usar_corners_reglas_65e377e_diag": False,
+    "usar_cuotas_mercado_captura": True,
+    "usar_cuotas_en_ticket": False,
+    "usar_cierre_remoto_cuotas_en_evaluar": False,
     "usar_guardian_homonimo_por_competicion": True,
 }
 
@@ -82,6 +85,9 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_sin_dato_si_mitades_no_suman_ft",
     "usar_unificacion_h_gf_lstm_15",
     "usar_corners_reglas_65e377e_diag",
+    "usar_cuotas_mercado_captura",
+    "usar_cuotas_en_ticket",
+    "usar_cierre_remoto_cuotas_en_evaluar",
     "usar_guardian_homonimo_por_competicion",
 })
 
