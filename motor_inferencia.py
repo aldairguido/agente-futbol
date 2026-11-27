@@ -1117,7 +1117,12 @@ def generar_reporte_xai_telegram(
         umbral_pct=_umbral_pct_xai,
     )
 
+    from decision_cobertura import bandera_activa as _ba_xai_fb
+    _sin_fb_xai = bool(_ba_xai_fb("usar_sin_dato_sin_fallbacks_veredicto"))
+
     def _cnt_b(d: Dict[str, Any], *claves: str) -> int:
+        if not isinstance(d, dict):
+            return 0
         for k in claves:
             v = d.get(k)
             if isinstance(v, dict):
@@ -1127,17 +1132,22 @@ def generar_reporte_xai_telegram(
         return 0
 
     def _fmt_b(d: Dict[str, Any], *claves: str) -> str:
+        if not isinstance(d, dict):
+            return "sin dato" if _sin_fb_xai else "0/0"
         for k in claves:
             v = d.get(k)
             if hasattr(v, "_meta") and isinstance(v._meta, dict) and "str" in v._meta:
                 return str(v._meta["str"])
-            if isinstance(v, dict) and "str" in v:
-                return str(v["str"])
-            if isinstance(v, dict) and "conteo" in v and "total" in v:
-                return f"{v['conteo']}/{v['total']}"
+            if isinstance(v, dict):
+                if _sin_fb_xai and (v.get("sin_dato") or (v.get("total") is not None and int(v.get("total") or 0) <= 0)):
+                    return "sin dato"
+                if "str" in v:
+                    return str(v["str"])
+                if "conteo" in v and "total" in v:
+                    return f"{v['conteo']}/{v['total']}"
             if isinstance(v, (int, float)):
                 return f"{int(v)}/15"
-        return "0/0" 
+        return "sin dato" if _sin_fb_xai else "0/0"
 
     def _cnt_c(d: Dict[str, Any], fr1: str, fr2: str, campo: str) -> int:
         if not isinstance(d, dict):
@@ -1151,8 +1161,14 @@ def generar_reporte_xai_telegram(
                 return int(v) if v is not None else 0
         return 0
 
-    rem_por_gol_loc = float(patrones_loc.get("remates_totales") or 0.0) / max(0.3, float(patrones_loc.get("goles_favor") or 0.0))
-    rem_por_gol_vis = float(patrones_vis.get("remates_totales") or 0.0) / max(0.3, float(patrones_vis.get("goles_favor") or 0.0))
+    _rem_l_raw = patrones_loc.get("remates_totales")
+    _gf_l_raw = patrones_loc.get("goles_favor")
+    _rem_v_raw = patrones_vis.get("remates_totales")
+    _gf_v_raw = patrones_vis.get("goles_favor")
+    rem_por_gol_loc = float(_rem_l_raw or 0.0) / max(0.3, float(_gf_l_raw or 0.0))
+    rem_por_gol_vis = float(_rem_v_raw or 0.0) / max(0.3, float(_gf_v_raw or 0.0))
+    txt_rem_gol_loc = "sin dato" if (_sin_fb_xai and (_rem_l_raw is None or _gf_l_raw is None)) else f"{rem_por_gol_loc:.1f}"
+    txt_rem_gol_vis = "sin dato" if (_sin_fb_xai and (_rem_v_raw is None or _gf_v_raw is None)) else f"{rem_por_gol_vis:.1f}"
     goles_tardios_loc_rec = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "recibidos")
     goles_tardios_vis_anot = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "anotados")
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
@@ -1213,7 +1229,7 @@ def generar_reporte_xai_telegram(
         f"• *Patrón #01 - Calidad por Disparo:* {nombre_local} promedia {_fmt_p(patrones_loc, 'posesion_pct', 1.0, 1, '%')} de posesión con {_fmt_p(patrones_loc, 'P01_xG_por_Remate', 1.0, 2)} xG/remate vs {_fmt_p(patrones_vis, 'P01_xG_por_Remate', 1.0, 2)} xG/remate de {nombre_visita}.",
         f"• *Patrón #02/#03 - Peligro Real (xG y xGOT):* {nombre_local} registra {_fmt_p(patrones_loc, 'xg')} xG ({_fmt_p(patrones_loc, 'xgot')} xGOT) frente a {_fmt_p(patrones_vis, 'xg')} xG ({_fmt_p(patrones_vis, 'xgot')} xGOT) de {nombre_visita}.",
         f"• *Patrón #04 - Eficiencia sin Penaltis (npxG):* {nombre_local} genera {_fmt_p(patrones_loc, 'npxg')} npxG vs {_fmt_p(patrones_vis, 'npxg')} npxG de {nombre_visita} en jugada abierta.",
-        f"• *Patrón #05/#06 - Conversión y Desperdicio:* {nombre_local} necesita {rem_por_gol_loc:.1f} tiros por gol (falla el {_fmt_p(patrones_loc, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} de grandes ocasiones) vs {rem_por_gol_vis:.1f} tiros por gol de {nombre_visita} ({_fmt_p(patrones_vis, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} falladas).",
+        f"• *Patrón #05/#06 - Conversión y Desperdicio:* {nombre_local} necesita {txt_rem_gol_loc} tiros por gol (falla el {_fmt_p(patrones_loc, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} de grandes ocasiones) vs {txt_rem_gol_vis} tiros por gol de {nombre_visita} ({_fmt_p(patrones_vis, 'P06_Desperdicio_Ocasiones', 100.0, 0, '%')} falladas).",
         "",
         "*2. La Muralla Defensiva y Portería*",
         f"• *Patrón #13 - Rendimiento de Porteros (Goles Evitados):* El arquero de {nombre_local} registra {_fmt_ge(patrones_loc, 'P13_Portero_Goles_Evitados')} frente a {_fmt_ge(patrones_vis, 'P13_Portero_Goles_Evitados')} del arquero de {nombre_visita}.",
@@ -1494,13 +1510,21 @@ def generar_veredicto_tactico_partido(
     pat_riv = patrones_vis if es_fav_local else patrones_loc
     cb_fav = cuadro_b_loc if es_fav_local else cuadro_b_vis
 
-    def _cnt_b(d: Dict[str, Any], *claves: str) -> int:
+    from decision_cobertura import bandera_activa as _ba_ver_fb
+    _sin_fb_ver = bool(_ba_ver_fb("usar_sin_dato_sin_fallbacks_veredicto"))
+
+    def _cnt_b(d: Dict[str, Any], *claves: str) -> Optional[int]:
         if not isinstance(d, dict):
-            return 8
+            return None if _sin_fb_ver else 8
         for k in claves:
             v = d.get(k)
             if isinstance(v, dict):
-                return int(v.get("conteo", v.get("cumple", 8)))
+                if _sin_fb_ver and (v.get("sin_dato") or (v.get("total") is not None and int(v.get("total") or 0) <= 0)):
+                    return None
+                if _sin_fb_ver and ("conteo" not in v and "cumple" not in v):
+                    return None
+                raw_c = v.get("conteo", v.get("cumple", None if _sin_fb_ver else 8))
+                return int(raw_c) if raw_c is not None else None
             if isinstance(v, (int, float)):
                 return int(v)
         filas_d = d.get("filas")
@@ -1508,22 +1532,62 @@ def generar_veredicto_tactico_partido(
             for k in claves:
                 v = filas_d.get(k)
                 if isinstance(v, dict):
-                    return int(v.get("conteo", v.get("cumple", 8)))
-        return 8
+                    if _sin_fb_ver and (v.get("sin_dato") or (v.get("total") is not None and int(v.get("total") or 0) <= 0)):
+                        return None
+                    if _sin_fb_ver and ("conteo" not in v and "cumple" not in v):
+                        return None
+                    raw_c = v.get("conteo", v.get("cumple", None if _sin_fb_ver else 8))
+                    return int(raw_c) if raw_c is not None else None
+        return None if _sin_fb_ver else 8
 
     # 1. Favorito, Attack Rating y Jugada #1
     r_fav = ratings_loc if es_fav_local else ratings_vis
     r_riv = ratings_vis if es_fav_local else ratings_loc
     atk_fav = _safe_float((r_fav or {}).get("Final_Attack_Strength"), 0.0)
     atk_riv = _safe_float((r_riv or {}).get("Final_Attack_Strength"), 0.0)
-    if atk_fav <= 0.1:
-        atk_fav = round(min(96.0, max(45.0, _safe_float(pat_fav.get("xg"), 1.45) * 34.0 + _safe_float(pat_fav.get("remates_puerta"), 4.5) * 4.2)), 1)
-    if atk_riv <= 0.1:
-        atk_riv = round(min(96.0, max(42.0, _safe_float(pat_riv.get("xg"), 1.10) * 34.0 + _safe_float(pat_riv.get("remates_puerta"), 3.5) * 4.2)), 1)
+    if _sin_fb_ver:
+        if atk_fav > 0.1:
+            atk_fav_txt = f"{atk_fav:.1f}"
+        elif pat_fav.get("xg") is not None and pat_fav.get("remates_puerta") is not None:
+            atk_fav = round(min(96.0, max(45.0, float(pat_fav["xg"]) * 34.0 + float(pat_fav["remates_puerta"]) * 4.2)), 1)
+            atk_fav_txt = f"{atk_fav:.1f}"
+        else:
+            atk_fav_txt = "sin dato"
+
+        if atk_riv > 0.1:
+            atk_riv_txt = f"{atk_riv:.1f}"
+        elif pat_riv.get("xg") is not None and pat_riv.get("remates_puerta") is not None:
+            atk_riv = round(min(96.0, max(42.0, float(pat_riv["xg"]) * 34.0 + float(pat_riv["remates_puerta"]) * 4.2)), 1)
+            atk_riv_txt = f"{atk_riv:.1f}"
+        else:
+            atk_riv_txt = "sin dato"
+    else:
+        if atk_fav <= 0.1:
+            atk_fav = round(min(96.0, max(45.0, _safe_float(pat_fav.get("xg"), 1.45) * 34.0 + _safe_float(pat_fav.get("remates_puerta"), 4.5) * 4.2)), 1)
+        if atk_riv <= 0.1:
+            atk_riv = round(min(96.0, max(42.0, _safe_float(pat_riv.get("xg"), 1.10) * 34.0 + _safe_float(pat_riv.get("remates_puerta"), 3.5) * 4.2)), 1)
+        atk_fav_txt = f"{atk_fav:.1f}"
+        atk_riv_txt = f"{atk_riv:.1f}"
 
     vic_fav = _cnt_b(cb_fav, "victorias")
     inv_fav = _cnt_b(cb_fav, "sin_derrotas")
-    n_tot_fav = int(cb_fav.get("n_partidos", cb_fav.get("total_partidos", 15)) or 15) if isinstance(cb_fav, dict) else 15
+    if _sin_fb_ver:
+        _n_tot_raw = (cb_fav.get("n_partidos") if cb_fav.get("n_partidos") is not None else cb_fav.get("total_partidos")) if isinstance(cb_fav, dict) else None
+        if _n_tot_raw is None and isinstance(cb_fav, dict):
+            for _k_b in ("sin_derrotas", "victorias"):
+                _v_b = cb_fav.get(_k_b) or (cb_fav.get("filas") or {}).get(_k_b) if isinstance(cb_fav.get("filas"), dict) else cb_fav.get(_k_b)
+                if isinstance(_v_b, dict) and _v_b.get("total"):
+                    _n_tot_raw = _v_b.get("total")
+                    break
+        if _n_tot_raw is None and (vic_fav is not None or inv_fav is not None):
+            _n_tot_raw = 15
+        n_tot_fav = int(_n_tot_raw) if (_n_tot_raw is not None and int(_n_tot_raw) > 0) else None
+        txt_inv_fav = f"{inv_fav}/{n_tot_fav}" if (inv_fav is not None and n_tot_fav is not None) else "sin dato"
+        txt_vic_fav = f"{vic_fav} victorias en {n_tot_fav} partidos" if (vic_fav is not None and n_tot_fav is not None) else "sin dato de victorias"
+    else:
+        n_tot_fav = int(cb_fav.get("n_partidos", cb_fav.get("total_partidos", 15)) or 15) if isinstance(cb_fav, dict) else 15
+        txt_inv_fav = f"{inv_fav}/{n_tot_fav}"
+        txt_vic_fav = f"{vic_fav} victorias en {n_tot_fav} partidos"
 
     dc_code = "1X" if es_fav_local else "X2"
     p_dc_base = (p_loc + p_emp) * 100.0 if es_fav_local else (p_emp + p_vis) * 100.0
@@ -1610,15 +1674,30 @@ def generar_veredicto_tactico_partido(
     )
 
     # 3. Ritmo y Tarjetas
-    pos_l = float(patrones_loc.get("posesion_pct") or 50.0)
-    pos_v = float(patrones_vis.get("posesion_pct") or 50.0)
-    eq_control = nombre_local if pos_l >= pos_v else nombre_visita
-    riv_control = nombre_visita if pos_l >= pos_v else nombre_local
-    pos_control = max(pos_l, pos_v)
-    r_ctrl = ratings_loc if pos_l >= pos_v else ratings_vis
-    press_ctrl = float((r_ctrl or {}).get("Pressing_Intensity_Score", 0.0) or 0.0)
-    if press_ctrl <= 0.1:
-        press_ctrl = round(min(92.0, max(45.0, pos_control * 0.95 + 15.0)), 1)
+    _pos_l_raw = patrones_loc.get("posesion_pct")
+    _pos_v_raw = patrones_vis.get("posesion_pct")
+    if _sin_fb_ver:
+        pos_l = float(_pos_l_raw) if _pos_l_raw is not None else -1.0
+        pos_v = float(_pos_v_raw) if _pos_v_raw is not None else -1.0
+        eq_control = nombre_local if pos_l >= pos_v else nombre_visita
+        riv_control = nombre_visita if pos_l >= pos_v else nombre_local
+        pos_control = max(pos_l, pos_v)
+        pos_control_txt = f"{pos_control:.1f}%" if pos_control >= 0.0 else "sin dato"
+        r_ctrl = ratings_loc if pos_l >= pos_v else ratings_vis
+        press_ctrl = float((r_ctrl or {}).get("Pressing_Intensity_Score", 0.0) or 0.0)
+        press_ctrl_txt = f"{press_ctrl:.1f}" if press_ctrl > 0.1 else "sin dato"
+    else:
+        pos_l = float(_pos_l_raw or 50.0)
+        pos_v = float(_pos_v_raw or 50.0)
+        eq_control = nombre_local if pos_l >= pos_v else nombre_visita
+        riv_control = nombre_visita if pos_l >= pos_v else nombre_local
+        pos_control = max(pos_l, pos_v)
+        pos_control_txt = f"{pos_control:.1f}%"
+        r_ctrl = ratings_loc if pos_l >= pos_v else ratings_vis
+        press_ctrl = float((r_ctrl or {}).get("Pressing_Intensity_Score", 0.0) or 0.0)
+        if press_ctrl <= 0.1:
+            press_ctrl = round(min(92.0, max(45.0, pos_control * 0.95 + 15.0)), 1)
+        press_ctrl_txt = f"{press_ctrl:.1f}"
 
     toq_l_v = patrones_loc.get("toques_area_rival")
     toq_v_v = patrones_vis.get("toques_area_rival")
@@ -1629,9 +1708,25 @@ def generar_veredicto_tactico_partido(
         or (pos_v >= 57.0 and toq_v_v is not None and float(toq_v_v) >= 22.0)
     )
 
-    fal_l = float(patrones_loc.get("faltas") or 11.0)
-    fal_v = float(patrones_vis.get("faltas") or 11.5)
-    am_tot = float(patrones_loc.get("amarillas", patrones_loc.get("tarjetas_amarillas", 1.8)) or 1.8) + float(patrones_vis.get("amarillas", patrones_vis.get("tarjetas_amarillas", 1.9)) or 1.9)
+    _fal_l_raw = patrones_loc.get("faltas")
+    _fal_v_raw = patrones_vis.get("faltas")
+    _am_l_raw = patrones_loc.get("amarillas") if patrones_loc.get("amarillas") is not None else patrones_loc.get("tarjetas_amarillas")
+    _am_v_raw = patrones_vis.get("amarillas") if patrones_vis.get("amarillas") is not None else patrones_vis.get("tarjetas_amarillas")
+    if _sin_fb_ver:
+        fal_l_txt = f"{float(_fal_l_raw):.1f}" if _fal_l_raw is not None else "sin dato"
+        fal_v_txt = f"{float(_fal_v_raw):.1f}" if _fal_v_raw is not None else "sin dato"
+        am_tot_txt = (
+            f"{(float(_am_l_raw) + float(_am_v_raw)):.1f}"
+            if (_am_l_raw is not None and _am_v_raw is not None)
+            else "sin dato"
+        )
+    else:
+        fal_l = float(_fal_l_raw or 11.0)
+        fal_v = float(_fal_v_raw or 11.5)
+        am_tot = float(_am_l_raw or 1.8) + float(_am_v_raw or 1.9)
+        fal_l_txt = f"{fal_l:.1f}"
+        fal_v_txt = f"{fal_v:.1f}"
+        am_tot_txt = f"{am_tot:.1f}"
     # 3. Ritmo y Tarjetas: exclusivamente desde mercado en Top 5 / Sección 1
     mkt_tarjetas = None
     prob_tarjetas = 0.0
@@ -1680,9 +1775,18 @@ def generar_veredicto_tactico_partido(
     if _l2t_l is not None and _l2t_v is not None:
         xg_2t_comb = float(_l2t_l) + float(_l2t_v)
         etq_vol_2t = "λ 2T proyectado"
+        txt_vol_2t = f"{xg_2t_comb:.2f} {etq_vol_2t}"
     else:
-        xg_2t_comb = float(patrones_loc.get("xg_2t") or 0.75) + float(patrones_vis.get("xg_2t") or 0.75)
-        etq_vol_2t = "xG 2T histórico"
+        _xg2_l = patrones_loc.get("xg_2t")
+        _xg2_v = patrones_vis.get("xg_2t")
+        if _sin_fb_ver and (_xg2_l is None or _xg2_v is None):
+            xg_2t_comb = None
+            etq_vol_2t = "xG 2T histórico"
+            txt_vol_2t = "sin dato xG 2T histórico"
+        else:
+            xg_2t_comb = float(_xg2_l or 0.75) + float(_xg2_v or 0.75)
+            etq_vol_2t = "xG 2T histórico"
+            txt_vol_2t = f"{xg_2t_comb:.2f} {etq_vol_2t}"
     def _clasificar_mkt_2t_o_ft(item: Any) -> tuple[str | None, float]:
         import re as _re_2t
         et_i = str((item.get("etiqueta") if isinstance(item, dict) else getattr(item, "etiqueta", "")) or "")
@@ -1864,21 +1968,21 @@ def generar_veredicto_tactico_partido(
             _txt_lam = f" ({_lam_tot_ver:.2f} goles esperados)" if _lam_tot_ver > 0 else ""
             c1 = (
                 f"{c1_tit} El modelo acota el techo anotador{_txt_lam} "
-                f"(Attack {atk_fav:.1f} de {eq_fav} vs {atk_riv:.1f} de {eq_riv}), "
-                f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+                f"(Attack {atk_fav_txt} de {eq_fav} vs {atk_riv_txt} de {eq_riv}), "
+                f"con {eq_fav} registrando {txt_inv_fav} sin derrotas en el Cuadro B. {accion_ticket}"
             )
         else:
             c1_tit = f"1. Partido cerrado / Tendencia baja en goles ('{jugada_1_nombre}'):"
             c1 = (
                 f"{c1_tit} Las métricas ofensivas proyectan contención "
-                f"(Attack {atk_fav:.1f} de {eq_fav} vs {atk_riv:.1f} de {eq_riv}), "
-                f"con {eq_fav} registrando {inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B. {accion_ticket}"
+                f"(Attack {atk_fav_txt} de {eq_fav} vs {atk_riv_txt} de {eq_riv}), "
+                f"con {eq_fav} registrando {txt_inv_fav} sin derrotas en el Cuadro B. {accion_ticket}"
             )
     else:
         c1 = (
-            f"{c1_tit} El agente otorga {atk_fav:.1f} de Attack a {eq_fav} frente a "
-            f"{atk_riv:.1f} de {eq_riv}. Además, {eq_fav} registra {vic_fav} victorias en {n_tot_fav} partidos "
-            f"({inv_fav}/{n_tot_fav} sin derrotas en el Cuadro B). {accion_ticket}"
+            f"{c1_tit} El agente otorga {atk_fav_txt} de Attack a {eq_fav} frente a "
+            f"{atk_riv_txt} de {eq_riv}. Además, {eq_fav} registra {txt_vic_fav} "
+            f"({txt_inv_fav} sin derrotas en el Cuadro B). {accion_ticket}"
         )
 
     _sd_l_ver = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
@@ -1921,14 +2025,14 @@ def generar_veredicto_tactico_partido(
         )
 
     etq_muestra = str(patrones_loc.get("_muestra_etiqueta") or patrones_vis.get("_muestra_etiqueta") or "15P general")
-    txt_faltas_eq = f"{nombre_local} {fal_l:.1f} vs {nombre_visita} {fal_v:.1f} faltas [{etq_muestra}]"
+    txt_faltas_eq = f"{nombre_local} {fal_l_txt} vs {nombre_visita} {fal_v_txt} faltas [{etq_muestra}]"
     if mkt_tarjetas is None:
         titulo_ritmo = "Disciplina y fricción táctica"
         c3 = (
             f"3. {titulo_ritmo}: Sin líneas de tarjetas validadas >= 70% en el Ticket. "
-            f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}), "
+            f"{eq_control} registra {pos_control_txt} de posesión [{etq_muestra}] (Pressing {press_ctrl_txt}), "
             f"frente a {riv_control} con fricción de {txt_faltas_eq} "
-            f"y {am_tot:.1f} tarjetas combinadas esperadas."
+            f"y {am_tot_txt} tarjetas combinadas esperadas."
         )
     else:
         titulo_ritmo = (
@@ -1943,7 +2047,7 @@ def generar_veredicto_tactico_partido(
         )
         c3 = (
             f"3. {titulo_ritmo}: {_txt_tarj_pick}. Es coherente con el guion: "
-            f"{eq_control} registra {pos_control:.1f}% de posesión [{etq_muestra}] (Pressing {press_ctrl:.1f}) y "
+            f"{eq_control} registra {pos_control_txt} de posesión [{etq_muestra}] (Pressing {press_ctrl_txt}) y "
             f"fricción de {txt_faltas_eq}."
         )
 
@@ -1968,7 +2072,7 @@ def generar_veredicto_tactico_partido(
         _txt_ft_coh = f", como '{mkt_ft_coh}' al {prob_ft_coh:.0f}%" if mkt_ft_coh else ""
         c4 = (
             f"4. Segundo Tiempo (2T): Sin líneas de 2T validadas >= 70% en el Top {n_top_filas}. "
-            f"Estimación de volumen de 2T: {xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}"
+            f"Estimación de volumen de 2T: {txt_vol_2t} y {txt_p26}"
             f"{txt_cron_obs} (el modelo prioriza líneas de goles totales FT{_txt_ft_coh})."
         )
     elif mkt_2t_tipo == "2t_under":
@@ -1979,7 +2083,7 @@ def generar_veredicto_tactico_partido(
         )
         c4 = (
             f"4. Contención proyectada en la segunda mitad (2T): {_txt_2t_u} "
-            f"({xg_2t_comb:.2f} {etq_vol_2t} y {txt_p26}){txt_cron_obs}."
+            f"({txt_vol_2t} y {txt_p26}){txt_cron_obs}."
         )
     else:
         if k_eval_ver < k_min_cron:
@@ -1989,8 +2093,8 @@ def generar_veredicto_tactico_partido(
                 else f"{mkt_2t} al {prob_2t:.0f}%"
             )
             c4 = (
-                f"4. Dinámica de la segunda mitad: {_txt_2t_nc} ({xg_2t_comb:.2f} "
-                f"{etq_vol_2t} y {txt_p26}) [reparto mitades no validado en Sección 1/Top 5 por "
+                f"4. Dinámica de la segunda mitad: {_txt_2t_nc} ({txt_vol_2t} "
+                f"y {txt_p26}) [reparto mitades no validado en Sección 1/Top 5 por "
                 f"cronología verificada {k_eval_ver}/15 < {k_min_cron}/15]."
             )
         else:
@@ -2004,8 +2108,8 @@ def generar_veredicto_tactico_partido(
                 else f"El modelo valida '{mkt_2t}' al {prob_2t:.0f}%"
             )
             c4 = (
-                f"4. La segunda mitad tendrá goles: {_txt_2t_ok} ({xg_2t_comb:.2f} "
-                f"{etq_vol_2t} y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
+                f"4. La segunda mitad tendrá goles: {_txt_2t_ok} ({txt_vol_2t} "
+                f"y {txt_p26}). {_txt_flujo_final}, es una selección con respaldo estadístico."
             )
     from decision_cobertura import bandera_activa as _ba_mi_mp
     mp_ver = None
@@ -2034,12 +2138,23 @@ def calcular_cuadro_b_tendencias_15p(
     tendencias_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Envuelve calcular_cuadro_b_tendencias con formato enriquecido para el renderizador PNG."""
+    from decision_cobertura import bandera_activa as _ba_cb_fb
+    _sin_fb_cb = bool(_ba_cb_fb("usar_sin_dato_sin_fallbacks_veredicto"))
+
     if tendencias_override:
-        n_tot = int(tendencias_override.get("n_partidos", 15) or 15)
         raw = tendencias_override
+        if _sin_fb_cb:
+            _n_ov = tendencias_override.get("n_partidos")
+            n_tot = int(_n_ov) if _n_ov is not None else 0
+        else:
+            n_tot = int(tendencias_override.get("n_partidos", 15) or 15)
     else:
         raw = calcular_cuadro_b_tendencias(partidos_15, nombre_equipo, metricas_resumen)
-        n_tot = int(raw.get("n_partidos", 15) or 15)
+        if _sin_fb_cb:
+            _n_r = raw.get("n_partidos")
+            n_tot = int(_n_r) if _n_r is not None else (len(partidos_15) if isinstance(partidos_15, list) else 0)
+        else:
+            n_tot = int(raw.get("n_partidos", 15) or 15)
 
     mapa_claves = [
         ("victorias", "victorias", "Victorias"),
@@ -2055,16 +2170,29 @@ def calcular_cuadro_b_tendencias_15p(
     res["n_partidos"] = n_tot
     res["filas"] = {}
     for k_vis, k_raw, titulo in mapa_claves:
-        val = raw.get(k_raw, raw.get(k_vis, 8))
-        if isinstance(val, dict) or hasattr(val, "get"):
-            cnt = int(val.get("cumple", val.get("conteo", 8)))
-            tot_raw = val.get("total", val.get("n_con_dato", n_tot))
-            tot = int(tot_raw) if tot_raw is not None else n_tot
-            es_sd = bool(val.get("sin_dato", False)) or (tot == 0 and k_raw in ("ganador_1t", "primero_marcar", "primero_en_marcar"))
+        if _sin_fb_cb and (k_raw not in raw and k_vis not in raw):
+            cnt, tot, es_sd = 0, 0, True
         else:
-            cnt = int(val)
-            tot = n_tot
-            es_sd = False
+            val = raw.get(k_raw, raw.get(k_vis, None if _sin_fb_cb else 8))
+            if val is None:
+                cnt, tot, es_sd = 0, 0, True
+            elif isinstance(val, dict) or hasattr(val, "get"):
+                if _sin_fb_cb and ("cumple" not in val and "conteo" not in val):
+                    cnt, tot, es_sd = 0, 0, True
+                else:
+                    raw_c = val.get("cumple", val.get("conteo", None if _sin_fb_cb else 8))
+                    cnt = int(raw_c) if raw_c is not None else 0
+                    tot_raw = val.get("total", val.get("n_con_dato", n_tot))
+                    tot = int(tot_raw) if tot_raw is not None else n_tot
+                    es_sd = (
+                        bool(val.get("sin_dato", False))
+                        or (_sin_fb_cb and raw_c is None)
+                        or (tot == 0 and k_raw in ("ganador_1t", "primero_marcar", "primero_en_marcar"))
+                    )
+            else:
+                cnt = int(val)
+                tot = n_tot
+                es_sd = False
         if es_sd or tot <= 0:
             nodo = {
                 "titulo": titulo,

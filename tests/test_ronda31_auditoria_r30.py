@@ -209,3 +209,75 @@ def test_r31_bloque1_motor_mercados_e_inferencia_sin_subcadenas():
     )
     tasa = mm.calcular_frecuencia_observada(sel_vis_corners, doc_inter, doc_intl, "Inter", "Internacional")
     assert tasa == 0.0
+
+
+def test_r31_bloque2_veredicto_sin_fallbacks_numericos_y_tope_099_solo_presentacion():
+    import informe
+
+    ver_vacio = mi.generar_veredicto_tactico_partido(
+        nombre_local="EqA",
+        nombre_visita="EqB",
+        patrones_loc={},
+        patrones_vis={},
+        probs={"local": 0.45, "empate": 0.25, "visita": 0.30},
+        cuadro_b_loc={},
+        cuadro_b_vis={},
+        cuadro_c_loc={},
+        cuadro_c_vis={},
+        ratings_loc={},
+        ratings_vis={},
+    )
+    prohibidos = ("68.2", "52.1", "8/15", "8 victorias", "50.0%", "62.5", "11.0", "11.5", "3.7", "1.50")
+    for tok in prohibidos:
+        assert tok not in ver_vacio, f"Fallback numérico {tok!r} apareció en Veredicto vacío:\n{ver_vacio}"
+    assert "sin dato" in ver_vacio
+
+    rep_xai_vacio = mi.generar_reporte_xai_telegram(
+        nombre_local="EqA",
+        nombre_visita="EqB",
+        patrones_loc={},
+        patrones_vis={},
+        probs={"local": 0.45, "empate": 0.25, "visita": 0.30},
+        alertas=[],
+        cuadro_b_loc={},
+        cuadro_b_vis={},
+        cuadro_c_loc={},
+        cuadro_c_vis={},
+        ratings_loc={},
+        ratings_vis={},
+    )
+    for tok in (*prohibidos, "0/0", "0.0 tiros por gol"):
+        assert tok not in rep_xai_vacio, f"Fallback {tok!r} apareció en reporte XAI vacío:\n{rep_xai_vacio}"
+    assert "sin dato" in rep_xai_vacio
+
+    cb_vacio = mi.calcular_cuadro_b_tendencias_15p([], "SinDatos")
+    assert cb_vacio["n_partidos"] == 0
+    assert cb_vacio["victorias"]["sin_dato"] is True
+    assert cb_vacio["victorias"]["str"] == "sin dato"
+
+    # Con bandera False restaura los fallbacks antiguos
+    with dc.banderas_comportamiento(usar_sin_dato_sin_fallbacks_veredicto=False):
+        ver_leg = mi.generar_veredicto_tactico_partido(
+            "EqA", "EqB", {}, {}, {"local": 0.45, "empate": 0.25, "visita": 0.30}, {}, {}, {}, {}
+        )
+        assert "68.2" in ver_leg and "50.0%" in ver_leg and "3.7" in ver_leg and "1.50" in ver_leg
+
+    # Demostración de que el tope 0.99 de informe._extraer_probabilidades_red_general es solo de presentación
+    # y no altera las probabilidades reales del catálogo de mercados del motor (doble_oportunidad).
+    mat_extrema = [[0.0] * 5 for _ in range(5)]
+    mat_extrema[2][0] = 0.90
+    mat_extrema[1][1] = 0.095
+    mat_extrema[0][2] = 0.005
+    r1x2 = mm.resultado_1x2(mat_extrema)
+    assert abs((r1x2["1"] + r1x2["X"]) - 0.995) < 1e-9  # sin recorte 0.99 en el motor
+
+    an_stub = SimpleNamespace(
+        metadatos={"equipo_local": "EqA", "equipo_visitante": "EqB", "competicion": "LaLiga"},
+        motor=SimpleNamespace(matriz_ft=mat_extrema, tasas=SimpleNamespace(lambda_local_ft=2.5, lambda_visitante_ft=0.2)),
+        mercados=[],
+        selecciones_filtradas=[],
+    )
+    info_pres = informe._extraer_probabilidades_red_general(an_stub)
+    assert info_pres["p_1x"] == 0.99
+    assert abs((r1x2["1"] + r1x2["X"]) - 0.995) < 1e-9
+
