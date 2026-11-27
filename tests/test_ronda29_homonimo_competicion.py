@@ -70,26 +70,27 @@ def _construir_doc_lask_desde_plantilla(plantilla: dict) -> dict:
         "nombre_solicitado": "LASK",
         "liga": "Bundesliga",
         "id_liga": 38,
+        "pais_iso": "DEU",
         "alternativas": ["LASK Linz"],
-        "variante_busqueda": "LASK",
+        "variante_busqueda": "tabla_comun:LASK",
         "ambiguous": False,
     }
     torneos_rivales = [
-        ("Bundesliga", "Rapid Wien"),
-        ("Champions League", "Sporting CP"),
-        ("Bundesliga", "Sturm Graz"),
-        ("Bundesliga", "Red Bull Salzburg"),
-        ("Cup", "Austria Wien"),
-        ("Bundesliga", "TSV Hartberg"),
-        ("Champions League", "PSV Eindhoven"),
-        ("Bundesliga", "Wolfsberger AC"),
-        ("Bundesliga", "FC Blau-Weiß Linz"),
-        ("Bundesliga", "Grazer AK"),
-        ("Champions League", "Feyenoord"),
-        ("Bundesliga", "SCR Altach"),
+        ("Bundesliga", "Hartberg"),
+        ("Bundesliga", "Ried"),
+        ("Champions League", "Slovan Bratislava"),
         ("Bundesliga", "WSG Tirol"),
-        ("Cup", "Austria Klagenfurt"),
+        ("Cup", "Ried"),
+        ("Bundesliga", "Salzburg"),
+        ("Champions League", "Sporting CP"),
+        ("Bundesliga", "Austria Lustenau"),
+        ("Champions League", "Liverpool"),
         ("Bundesliga", "Rapid Wien"),
+        ("Bundesliga", "Hartberg"),
+        ("Bundesliga", "Sturm Graz"),
+        ("Champions League", "AEK Athens"),
+        ("Cup", "Deutschlandsberger SC"),
+        ("Bundesliga", "Wolfsberger AC"),
     ]
     for idx, p in enumerate((doc.get("partidos") or [])[:15]):
         t_nom, r_nom = torneos_rivales[idx % len(torneos_rivales)]
@@ -251,6 +252,34 @@ def test_r29_tres_partidos_champions_ya_no_abstienen_por_guardian_y_producen_pro
             assert coh_antes["coherente"] is False
             assert coh_antes["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
 
+            out_sub_false = tmp_path / f"false_{eq_l}_{eq_v}".replace("/", "_")
+            out_sub_false.mkdir(parents=True, exist_ok=True)
+            monkeypatch.setattr(
+                sm,
+                "resolver_enfrentamiento",
+                lambda *a, _el=eq_l, _ev=eq_v, _dl=dl, _dv=dv, _coh=coh_antes, **k: {
+                    "equipo_local": _el,
+                    "equipo_visitante": _ev,
+                    "doc_local": _dl,
+                    "doc_visitante": _dv,
+                    "contexto": {
+                        "competicion": "Champions League",
+                        "pais_iso": "INT",
+                        "condicion_local": "casa",
+                        "condicion_visitante": "fuera",
+                        "fecha_partido": "2026-11-25",
+                        "fecha_corte": "2026-11-25",
+                        "hora_inicio_partido": "2026-11-25T20:00:00Z",
+                        "fixture_confirmado": True,
+                        "coherencia_competitiva": dict(_coh),
+                    },
+                },
+            )
+            prep_false = sm.preparar_analisis(eq_l, eq_v, directorio_salida=str(out_sub_false))
+            assert prep_false.get("abstenido") is True, f"{eq_l} vs {eq_v} con bandera=False debe volver a abstenerse"
+            assert prep_false.get("estado_cobertura") == "falso_homonimo_extranjero"
+            assert "FALSO HOMÓNIMO EXTRANJERO" in str(prep_false.get("motivo_abstencion") or "")
+
         # 2) Con la bandera encendida por defecto (Ronda 29): coherente=True, cada equipo validado en su propio país
         coh_despues = validar_coherencia_competitiva_local_visita(dl, dv, pais_iso="INT", liga_pref="Champions League")
         assert coh_despues["coherente"] is True, f"{eq_l} vs {eq_v} no debe abstener: {coh_despues}"
@@ -378,6 +407,131 @@ def test_r29_homonimos_reales_siguen_absteniendose_incluido_villarreal(monkeypat
     )
     res_vil_vacio = sm.preparar_analisis("Barcelona", "Villareal", directorio_salida=str(tmp_path / "vil_vacio"))
     assert res_vil_vacio["abstenido"] is True
+
+    # 5) Caso explícito Ronda 29b: Barcelona SC de Ecuador contra un equipo español (Villarreal / Real Madrid)
+    rivales_ecu = ["Emelec", "LDU Quito", "Independiente del Valle", "El Nacional", "Aucas"]
+    doc_barcelona_sc_ecu = {
+        "equipo": {"id": "555002", "nombre": "Barcelona SC", "liga": "LigaPro", "id_liga": 246, "pais_iso": "ECU"},
+        "partidos": [
+            {"fecha": f"2026-11-{20 - i:02d}", "torneo": "LigaPro", "rival": rivales_ecu[i % len(rivales_ecu)]}
+            for i in range(15)
+        ],
+    }
+    coh_bsc_vs_esp = validar_coherencia_competitiva_local_visita(
+        doc_villarreal_esp, doc_barcelona_sc_ecu, pais_iso="ESP", liga_pref="LaLiga"
+    )
+    assert coh_bsc_vs_esp["coherente"] is False
+    assert coh_bsc_vs_esp["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
+    assert coh_bsc_vs_esp["falso_homonimo"] == "visita"
+
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Villarreal",
+            "equipo_visitante": "Barcelona SC",
+            "doc_local": doc_villarreal_esp,
+            "doc_visitante": doc_barcelona_sc_ecu,
+            "contexto": {"competicion": "LaLiga", "pais_iso": "ESP", "fecha_partido": "2026-11-24"},
+        },
+    )
+    res_bsc_esp = sm.preparar_analisis("Villarreal", "Barcelona SC", directorio_salida=str(tmp_path / "bsc_esp"))
+    assert res_bsc_esp["abstenido"] is True
+    assert res_bsc_esp["estado_cobertura"] == "falso_homonimo_extranjero"
+
+    # 6) Caso explícito Ronda 29b: Villarreal con historial brasileño contra un equipo español
+    rivales_bra = ["Flamengo", "Palmeiras", "Corinthians", "São Paulo", "Londrina", "Náutico"]
+    doc_villarreal_historial_bra = copy.deepcopy(doc_barca_esp)
+    doc_villarreal_historial_bra["equipo"] = {
+        "id": "777002",
+        "nombre": "Villarreal",
+        "liga": "Brasileirão Série A",
+        "pais_iso": "BRA",
+    }
+    for idx, p in enumerate((doc_villarreal_historial_bra.get("partidos") or [])[:15]):
+        p["fecha"] = f"2026-11-{20 - idx:02d}"
+        p["torneo"] = "Brasileirão Série A" if idx % 3 != 0 else "Copa do Brasil"
+        p["equipo"] = "Villarreal"
+        p["rival"] = rivales_bra[idx % len(rivales_bra)]
+
+    coh_vil_bra = validar_coherencia_competitiva_local_visita(
+        doc_barca_esp, doc_villarreal_historial_bra, pais_iso="ESP", liga_pref="LaLiga"
+    )
+    assert coh_vil_bra["coherente"] is False
+    assert coh_vil_bra["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
+    assert coh_vil_bra["falso_homonimo"] == "visita"
+
+    # Incluso si el encabezado del Villarreal brasileño fingiera ser de LaLiga [ESP] en Champions League,
+    # su historial brasileño de 15 partidos es incoherente con ESP y el guardián lo abstiene:
+    doc_villarreal_bra_camuflado = copy.deepcopy(doc_villarreal_historial_bra)
+    doc_villarreal_bra_camuflado["equipo"] = {
+        "id": "777003",
+        "nombre": "Villarreal",
+        "liga": "LaLiga",
+        "id_liga": 87,
+        "pais_iso": "ESP",
+    }
+    coh_vil_bra_ucl = validar_coherencia_competitiva_local_visita(
+        doc_sabah_aze, doc_villarreal_bra_camuflado, pais_iso="INT", liga_pref="Champions League"
+    )
+    assert coh_vil_bra_ucl["coherente"] is False
+    assert coh_vil_bra_ucl["estado"] == "FALSO HOMÓNIMO EXTRANJERO"
+    assert coh_vil_bra_ucl["falso_homonimo"] == "visita"
+
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Barcelona",
+            "equipo_visitante": "Villarreal",
+            "doc_local": doc_barca_esp,
+            "doc_visitante": doc_villarreal_historial_bra,
+            "contexto": {"competicion": "LaLiga", "pais_iso": "ESP", "fecha_partido": "2026-11-24"},
+        },
+    )
+    res_vil_bra = sm.preparar_analisis("Barcelona", "Villarreal", directorio_salida=str(tmp_path / "vil_bra"))
+    assert res_vil_bra["abstenido"] is True
+    assert res_vil_bra["estado_cobertura"] == "falso_homonimo_extranjero"
+
+    # 7) Caso explícito Ronda 29b: Club con liga ambigua y sin ccode ni id de liga -> PAIS_AMBIGUO
+    doc_club_liga_ambigua_sin_ids = {
+        "equipo": {"id": None, "nombre": "Athletic Unido", "liga": "Primera División"},
+        "partidos": [
+            {"fecha": f"2026-11-{20 - i:02d}", "torneo": "Primera División", "rival": f"Deportivo Sin Catalogar {i}"}
+            for i in range(15)
+        ],
+    }
+    res_pais_amb = resolver_pais_equipo_auditado(doc_club_liga_ambigua_sin_ids)
+    assert res_pais_amb["pais_iso"] == ""
+    assert res_pais_amb["ambiguo"] is True
+
+    coh_club_amb_ucl = validar_coherencia_competitiva_local_visita(
+        doc_club_liga_ambigua_sin_ids, doc_barca_esp, pais_iso="INT", liga_pref="Champions League"
+    )
+    assert coh_club_amb_ucl["coherente"] is False
+    assert coh_club_amb_ucl["estado"] == "PAIS_AMBIGUO"
+    assert coh_club_amb_ucl["falso_homonimo"] is None
+
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Athletic Unido",
+            "equipo_visitante": "Barcelona",
+            "doc_local": doc_club_liga_ambigua_sin_ids,
+            "doc_visitante": doc_barca_esp,
+            "contexto": {
+                "competicion": "Champions League",
+                "pais_iso": "INT",
+                "fecha_partido": "2026-11-24",
+                "coherencia_competitiva": dict(coh_club_amb_ucl),
+            },
+        },
+    )
+    res_club_amb = sm.preparar_analisis("Athletic Unido", "Barcelona", directorio_salida=str(tmp_path / "club_amb"))
+    assert res_club_amb["abstenido"] is True
+    assert res_club_amb["estado_cobertura"] == "pais_ambiguo"
+    assert "PAIS_AMBIGUO" in str(res_club_amb.get("motivo_abstencion") or "")
 
 
 def test_r29_invariancia_partidos_domesticos_frente_a_477525a():

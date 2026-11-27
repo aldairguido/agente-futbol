@@ -2142,10 +2142,11 @@ def _pais_de_liga(
         if cc in _MAPA_CCODE_PAIS:
             return _MAPA_CCODE_PAIS[cc]
         try:
-            from resolvedor_entidades import MAPA_ISO3_A_PAIS_INTERNO, MAPA_PAIS_A_ISO3
-            iso_cc = cc.upper() if cc.upper() in MAPA_ISO3_A_PAIS_INTERNO else MAPA_PAIS_A_ISO3.get(cc, "")
-            if iso_cc and iso_cc in MAPA_ISO3_A_PAIS_INTERNO:
-                return MAPA_ISO3_A_PAIS_INTERNO[iso_cc]
+            from resolvedor_entidades import MAPA_ISO3_A_PAIS_INTERNO, MAPA_PAIS_A_ISO3, _guardian_r29_activo
+            if _guardian_r29_activo():
+                iso_cc = cc.upper() if cc.upper() in MAPA_ISO3_A_PAIS_INTERNO else MAPA_PAIS_A_ISO3.get(cc, "")
+                if iso_cc and iso_cc in MAPA_ISO3_A_PAIS_INTERNO:
+                    return MAPA_ISO3_A_PAIS_INTERNO[iso_cc]
         except Exception:
             pass
     try:
@@ -3063,27 +3064,31 @@ def validar_coherencia_nacional_15_partidos(
                     p_eq = str(meta_eq.get("pais") or "")
             partidos = doc_or_list.get("partidos") or []
 
+        try:
+            from resolvedor_entidades import _guardian_r29_activo, _paises_posibles_para_club
+            r29_on = _guardian_r29_activo()
+        except Exception:
+            r29_on = False
+            _paises_posibles_para_club = lambda _x: set()
+
         paises: list[str] = []
         for p in partidos[:15]:
             comp = str(p.get("competicion") or p.get("torneo") or p.get("liga") or "")
-            riv_raw = p.get("rival")
-            nom_riv = (
-                str(riv_raw.get("nombre") or riv_raw.get("name") or "")
-                if isinstance(riv_raw, dict)
-                else str(riv_raw or "")
-            ).strip()
-            paises_riv: set[str] = set()
-            if nom_riv:
-                try:
-                    from resolvedor_entidades import _paises_posibles_para_club
-                    paises_riv = set(_paises_posibles_para_club(nom_riv))
-                except Exception:
-                    paises_riv = set()
-            pc = _pais_de_liga(comp, paises_confirmacion=paises_riv or None)
-            if not pc and nom_riv:
-                meta_riv = _inferir_meta_rival_desde_texto(nom_riv)
-                if meta_riv and meta_riv.get("pais"):
-                    pc = str(meta_riv["pais"])
+            if r29_on:
+                riv_raw = p.get("rival")
+                nom_riv = (
+                    str(riv_raw.get("nombre") or riv_raw.get("name") or "")
+                    if isinstance(riv_raw, dict)
+                    else str(riv_raw or "")
+                ).strip()
+                paises_riv: set[str] = set(_paises_posibles_para_club(nom_riv)) if nom_riv else set()
+                pc = _pais_de_liga(comp, paises_confirmacion=paises_riv or None)
+                if not pc and nom_riv:
+                    meta_riv = _inferir_meta_rival_desde_texto(nom_riv)
+                    if meta_riv and meta_riv.get("pais"):
+                        pc = str(meta_riv["pais"])
+            else:
+                pc = _pais_de_liga(comp)
             if pc in ("", "europa", "sudamerica") and p_eq:
                 pc = p_eq
             if pc:

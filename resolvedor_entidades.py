@@ -710,49 +710,6 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "veneza": ("Venezia", "ITA"),
     "venecia": ("Venezia", "ITA"),
     "venezia": ("Venezia", "ITA"),
-    "pisa": ("Pisa", "ITA"),
-    "pisa sc": ("Pisa", "ITA"),
-    "cremonese": ("Cremonese", "ITA"),
-    "us cremonese": ("Cremonese", "ITA"),
-    "cesena": ("Cesena", "ITA"),
-    "cesena fc": ("Cesena", "ITA"),
-    "torres": ("Torres", "ITA"),
-    "sef torres": ("Torres", "ITA"),
-    "padova": ("Padova", "ITA"),
-    "calcio padova": ("Padova", "ITA"),
-    "vicenza": ("LR Vicenza", "ITA"),
-    "lr vicenza": ("LR Vicenza", "ITA"),
-    "parma": ("Parma", "ITA"),
-    "como": ("Como", "ITA"),
-    "monza": ("Monza", "ITA"),
-    "lecce": ("Lecce", "ITA"),
-    "empoli": ("Empoli", "ITA"),
-    "cagliari": ("Cagliari", "ITA"),
-    "hellas verona": ("Hellas Verona", "ITA"),
-    "verona": ("Hellas Verona", "ITA"),
-    "udinese": ("Udinese", "ITA"),
-    "genoa": ("Genoa", "ITA"),
-    "bologna": ("Bologna", "ITA"),
-    "napoli": ("Napoli", "ITA"),
-    "milan": ("AC Milan", "ITA"),
-    "ac milan": ("AC Milan", "ITA"),
-    "sampdoria": ("Sampdoria", "ITA"),
-    "palermo": ("Palermo", "ITA"),
-    "bari": ("Bari", "ITA"),
-    "brescia": ("Brescia", "ITA"),
-    "spezia": ("Spezia", "ITA"),
-    "sassuolo": ("Sassuolo", "ITA"),
-    "frosinone": ("Frosinone", "ITA"),
-    "salernitana": ("Salernitana", "ITA"),
-    "catanzaro": ("Catanzaro", "ITA"),
-    "modena": ("Modena", "ITA"),
-    "reggiana": ("Reggiana", "ITA"),
-    "sudtirol": ("Südtirol", "ITA"),
-    "cittadella": ("Cittadella", "ITA"),
-    "cosenza": ("Cosenza", "ITA"),
-    "mantova": ("Mantova", "ITA"),
-    "juve stabia": ("Juve Stabia", "ITA"),
-    "carrarese": ("Carrarese", "ITA"),
     # FRANCIA
     "marsella": ("Olympique de Marseille", "FRA"),
     "olympique marsella": ("Olympique de Marseille", "FRA"),
@@ -843,81 +800,9 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "fenerbahce": ("Fenerbahçe", "TUR"),
     "galatasaray": ("Galatasaray", "TUR"),
     "besiktas": ("Beşiktaş", "TUR"),
-    "trabzonspor": ("Trabzonspor", "TUR"),
-    "konyaspor": ("Konyaspor", "TUR"),
-    "kasimpasa": ("Kasımpaşa", "TUR"),
-    "basaksehir": ("Başakşehir", "TUR"),
-    "goztepe": ("Göztepe", "TUR"),
-    "genclerbirligi": ("Gençlerbirliği", "TUR"),
-    "kocaelispor": ("Kocaelispor", "TUR"),
-    "erzurumspor fk": ("Erzurumspor FK", "TUR"),
-    "corum fk": ("Çorum FK", "TUR"),
     "olympiacos": ("Olympiacos", "GRC"),
     "panathinaikos": ("Panathinaikos", "GRC"),
     "paok": ("PAOK", "GRC"),
-    # NORUEGA (Eliteserien)
-    "bodo/glimt": ("Bodø/Glimt", "NOR"),
-    "bodo glimt": ("Bodø/Glimt", "NOR"),
-    "bodø/glimt": ("Bodø/Glimt", "NOR"),
-    "fk bodo/glimt": ("Bodø/Glimt", "NOR"),
-    "viking": ("Viking", "NOR"),
-    "valerenga": ("Vålerenga", "NOR"),
-    "hamkam": ("HamKam", "NOR"),
-    "kristiansund": ("Kristiansund", "NOR"),
-    "brann": ("Brann", "NOR"),
-    "sk brann": ("Brann", "NOR"),
-    "sandefjord": ("Sandefjord", "NOR"),
-    "fredrikstad": ("Fredrikstad", "NOR"),
-    "rosenborg": ("Rosenborg", "NOR"),
-    "molde": ("Molde", "NOR"),
-    "rana fk": ("Rana FK", "NOR"),
-    "fauske/sprint": ("Fauske/Sprint", "NOR"),
-    # AUSTRIA (Bundesliga Austria)
-    "lask": ("LASK", "AUT"),
-    "lask linz": ("LASK", "AUT"),
-    "rapid wien": ("Rapid Wien", "AUT"),
-    "sk rapid": ("Rapid Wien", "AUT"),
-    "rapid viena": ("Rapid Wien", "AUT"),
-    "sturm graz": ("Sturm Graz", "AUT"),
-    "sk sturm graz": ("Sturm Graz", "AUT"),
-    "red bull salzburg": ("Red Bull Salzburg", "AUT"),
-    "rb salzburg": ("Red Bull Salzburg", "AUT"),
-    "fc salzburg": ("Red Bull Salzburg", "AUT"),
-    "austria wien": ("Austria Wien", "AUT"),
-    "fk austria wien": ("Austria Wien", "AUT"),
-    "hartberg": ("TSV Hartberg", "AUT"),
-    "tsv hartberg": ("TSV Hartberg", "AUT"),
-    "wolfsberger ac": ("Wolfsberger AC", "AUT"),
-    "wac": ("Wolfsberger AC", "AUT"),
-    "blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
-    "fc blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
-    "grazer ak": ("Grazer AK", "AUT"),
-    "gak": ("Grazer AK", "AUT"),
-    "scr altach": ("SCR Altach", "AUT"),
-    "altach": ("SCR Altach", "AUT"),
-    "wsg tirol": ("WSG Tirol", "AUT"),
-    "austria klagenfurt": ("Austria Klagenfurt", "AUT"),
-    # AZERBAIYÁN (Premyer Liqa / Premier League Azerbaiyán)
-    "sabah fk": ("Sabah FK", "AZE"),
-    "sabah": ("Sabah FK", "AZE"),
-    "sabah baku": ("Sabah FK", "AZE"),
-    "qarabag": ("Qarabağ FK", "AZE"),
-    "qarabag fk": ("Qarabağ FK", "AZE"),
-    "fk qabala": ("FK Qabala", "AZE"),
-    "qabala": ("FK Qabala", "AZE"),
-    "fk neftchi": ("FK Neftchi", "AZE"),
-    "neftchi baku": ("FK Neftchi", "AZE"),
-    "imisli fk": ("Imisli FK", "AZE"),
-    "shafa": ("Shafa", "AZE"),
-    "zira": ("Zira FK", "AZE"),
-    "zira fk": ("Zira FK", "AZE"),
-    "araz pfk": ("Araz-Naxçıvan", "AZE"),
-    "araz-naxcivan": ("Araz-Naxçıvan", "AZE"),
-    "fc kapaz": ("Kəpəz PFK", "AZE"),
-    "kapaz": ("Kəpəz PFK", "AZE"),
-    "sumqayit": ("Sumqayıt FK", "AZE"),
-    "turan tovuz": ("Turan Tovuz", "AZE"),
-    "sabail": ("Səbail FK", "AZE"),
     # BRASIL (Série A, Série B, Série C)
     "londrina": ("Londrina", "BRA"),
     "londrina ec": ("Londrina", "BRA"),
@@ -1073,18 +958,6 @@ DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB: Dict[str, Tuple[str, str]] = {
     "agmk": ("FC AGMK", "UZB"),
     "sogdiana": ("Sogdiana Jizzakh", "UZB"),
     "bunyodkor": ("FC Bunyodkor", "UZB"),
-    # HONDURAS (Liga Nacional)
-    "olancho": ("Olancho FC", "HND"),
-    "olancho fc": ("Olancho FC", "HND"),
-    "juticalpa": ("Juticalpa FC", "HND"),
-    "juticalpa fc": ("Juticalpa FC", "HND"),
-    "real espana": ("Real España", "HND"),
-    "rcd espana": ("Real España", "HND"),
-    "cd olimpia": ("CD Olimpia", "HND"),
-    "fc motagua": ("FC Motagua", "HND"),
-    "motagua": ("FC Motagua", "HND"),
-    "cd marathon": ("CD Marathón", "HND"),
-    "marathon": ("CD Marathón", "HND"),
 }
 
 # IDs oficiales conocidos en FotMob para indexar caché de forma determinista incluso antes de llamada HTTP
@@ -1134,11 +1007,8 @@ FOTMOB_IDS_CONOCIDOS: Dict[Tuple[str, str], str] = {
     ("Valencia", "ESP"): "10205",
     ("Villarreal", "ESP"): "10205",
     ("UD Tavernes", "ESP"): "1543888",
-    ("Bodø/Glimt", "NOR"): "8402",
-    ("LASK", "AUT"): "9977",
     ("Galatasaray", "TUR"): "8637",
     ("Aston Villa", "ENG"): "10252",
-    ("Sabah FK", "AZE"): "951893",
 }
 
 # Tabla de Desambiguación para Clubes con Nombres Homónimos o Multi-País
@@ -1484,6 +1354,8 @@ PAISES_CANDIDATOS_LIGA_AMBIGUA: Dict[str, frozenset[str]] = {
     "2. bundesliga": frozenset({"DEU", "AUT"}),
     "2 bundesliga": frozenset({"DEU", "AUT"}),
     "super league": frozenset({"CHE", "GRC", "CHN", "TUR", "SRB", "MYS", "UZB", "IND", "MDA", "KOS", "ZMB"}),
+    "super league 1": frozenset({"GRC", "CHE"}),
+    "super league 2": frozenset({"GRC"}),
     "superliga": frozenset({"DNK", "ROU", "SRB", "KOS", "ARG", "CHE", "SVK", "ALB", "TUR", "COL"}),
     "super ligue": frozenset({"NER"}),
     "primera division": frozenset({"URY", "ESP", "CHL", "PRY", "CRI", "SLV", "ARG", "PER", "COL", "VEN", "BOL", "AND", "NIC"}),
@@ -1513,11 +1385,187 @@ PAISES_CANDIDATOS_LIGA_AMBIGUA: Dict[str, frozenset[str]] = {
     "championship": frozenset({"ENG", "SCO", "USA"}),
     "premiership": frozenset({"SCO", "ZAF"}),
     "cup": frozenset({"NOR", "AUT", "ENG", "DEU", "ESP", "ITA", "FRA", "DNK", "SWE", "FIN", "CHE", "POL", "CZE", "TUR", "AZE", "RUS", "UKR", "BEL", "NLD", "PRT", "SCO", "GRC", "HRV", "SRB", "ROU", "HUN", "BGR", "SVK", "SVN", "CYP", "ISR", "USA"}),
+    "cup group stage": frozenset({"GRC", "TUR", "NOR", "AUT", "ENG", "DEU", "ESP", "ITA", "FRA", "DNK", "SWE", "CHE", "PRT", "ROU"}),
     "copa": frozenset({"ESP", "ARG", "BRA", "COL", "CHL", "URY", "PRY", "PER", "BOL", "ECU", "MEX", "VEN"}),
     "supercopa": frozenset({"ESP", "ITA", "PRT", "BRA", "ARG", "CHL", "COL"}),
     "super cup": frozenset({"ENG", "DEU", "ITA", "ESP", "TUR", "GRC", "CYP", "AUT", "AZE", "NOR"}),
 }
 NOMBRES_LIGA_AMBIGUOS: frozenset[str] = frozenset(PAISES_CANDIDATOS_LIGA_AMBIGUA.keys())
+
+_DICCIONARIO_EQUIPOS_R29: Dict[str, Tuple[str, str]] = {
+    # ITALIA (Serie A / Serie B / Serie C)
+    "pisa": ("Pisa", "ITA"),
+    "pisa sc": ("Pisa", "ITA"),
+    "cremonese": ("Cremonese", "ITA"),
+    "us cremonese": ("Cremonese", "ITA"),
+    "cesena": ("Cesena", "ITA"),
+    "cesena fc": ("Cesena", "ITA"),
+    "torres": ("Torres", "ITA"),
+    "sef torres": ("Torres", "ITA"),
+    "padova": ("Padova", "ITA"),
+    "calcio padova": ("Padova", "ITA"),
+    "vicenza": ("LR Vicenza", "ITA"),
+    "lr vicenza": ("LR Vicenza", "ITA"),
+    "parma": ("Parma", "ITA"),
+    "como": ("Como", "ITA"),
+    "monza": ("Monza", "ITA"),
+    "lecce": ("Lecce", "ITA"),
+    "empoli": ("Empoli", "ITA"),
+    "cagliari": ("Cagliari", "ITA"),
+    "hellas verona": ("Hellas Verona", "ITA"),
+    "verona": ("Hellas Verona", "ITA"),
+    "udinese": ("Udinese", "ITA"),
+    "genoa": ("Genoa", "ITA"),
+    "bologna": ("Bologna", "ITA"),
+    "napoli": ("Napoli", "ITA"),
+    "milan": ("AC Milan", "ITA"),
+    "ac milan": ("AC Milan", "ITA"),
+    "sampdoria": ("Sampdoria", "ITA"),
+    "palermo": ("Palermo", "ITA"),
+    "bari": ("Bari", "ITA"),
+    "brescia": ("Brescia", "ITA"),
+    "spezia": ("Spezia", "ITA"),
+    "sassuolo": ("Sassuolo", "ITA"),
+    "frosinone": ("Frosinone", "ITA"),
+    "salernitana": ("Salernitana", "ITA"),
+    "catanzaro": ("Catanzaro", "ITA"),
+    "modena": ("Modena", "ITA"),
+    "reggiana": ("Reggiana", "ITA"),
+    "sudtirol": ("Südtirol", "ITA"),
+    "cittadella": ("Cittadella", "ITA"),
+    "cosenza": ("Cosenza", "ITA"),
+    "mantova": ("Mantova", "ITA"),
+    "juve stabia": ("Juve Stabia", "ITA"),
+    "carrarese": ("Carrarese", "ITA"),
+    # TURQUÍA (Süper Lig / 1. Lig / Cup)
+    "trabzonspor": ("Trabzonspor", "TUR"),
+    "konyaspor": ("Konyaspor", "TUR"),
+    "kasimpasa": ("Kasımpaşa", "TUR"),
+    "basaksehir": ("Başakşehir", "TUR"),
+    "goztepe": ("Göztepe", "TUR"),
+    "genclerbirligi": ("Gençlerbirliği", "TUR"),
+    "kocaelispor": ("Kocaelispor", "TUR"),
+    "erzurumspor fk": ("Erzurumspor FK", "TUR"),
+    "corum fk": ("Çorum FK", "TUR"),
+    # GRECIA (Super League 1 / Cup)
+    "aek athens": ("AEK Athens", "GRC"),
+    "aris": ("Aris Thessaloniki", "GRC"),
+    "aris thessaloniki": ("Aris Thessaloniki", "GRC"),
+    "asteras tripolis": ("Asteras Tripolis", "GRC"),
+    "ofi crete": ("OFI Crete", "GRC"),
+    "atromitos": ("Atromitos", "GRC"),
+    "levadiakos": ("Levadiakos", "GRC"),
+    "panserraikos": ("Panserraikos", "GRC"),
+    "volos": ("Volos NFC", "GRC"),
+    "volos nfc": ("Volos NFC", "GRC"),
+    "kallithea": ("Athens Kallithea", "GRC"),
+    "athens kallithea": ("Athens Kallithea", "GRC"),
+    "lamia": ("PAS Lamia", "GRC"),
+    "pas lamia": ("PAS Lamia", "GRC"),
+    "panetolikos": ("Panetolikos", "GRC"),
+    # NORUEGA (Eliteserien)
+    "bodo/glimt": ("Bodø/Glimt", "NOR"),
+    "bodo glimt": ("Bodø/Glimt", "NOR"),
+    "bodø/glimt": ("Bodø/Glimt", "NOR"),
+    "fk bodo/glimt": ("Bodø/Glimt", "NOR"),
+    "viking": ("Viking", "NOR"),
+    "valerenga": ("Vålerenga", "NOR"),
+    "hamkam": ("HamKam", "NOR"),
+    "kristiansund": ("Kristiansund", "NOR"),
+    "brann": ("Brann", "NOR"),
+    "sk brann": ("Brann", "NOR"),
+    "sandefjord": ("Sandefjord", "NOR"),
+    "fredrikstad": ("Fredrikstad", "NOR"),
+    "rosenborg": ("Rosenborg", "NOR"),
+    "molde": ("Molde", "NOR"),
+    "rana fk": ("Rana FK", "NOR"),
+    "fauske/sprint": ("Fauske/Sprint", "NOR"),
+    # AUSTRIA (Bundesliga Austria)
+    "lask": ("LASK", "AUT"),
+    "lask linz": ("LASK", "AUT"),
+    "rapid wien": ("Rapid Wien", "AUT"),
+    "sk rapid": ("Rapid Wien", "AUT"),
+    "rapid viena": ("Rapid Wien", "AUT"),
+    "sturm graz": ("Sturm Graz", "AUT"),
+    "sk sturm graz": ("Sturm Graz", "AUT"),
+    "red bull salzburg": ("Red Bull Salzburg", "AUT"),
+    "rb salzburg": ("Red Bull Salzburg", "AUT"),
+    "fc salzburg": ("Red Bull Salzburg", "AUT"),
+    "austria wien": ("Austria Wien", "AUT"),
+    "fk austria wien": ("Austria Wien", "AUT"),
+    "hartberg": ("TSV Hartberg", "AUT"),
+    "tsv hartberg": ("TSV Hartberg", "AUT"),
+    "wolfsberger ac": ("Wolfsberger AC", "AUT"),
+    "wac": ("Wolfsberger AC", "AUT"),
+    "blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
+    "fc blau-weiss linz": ("FC Blau-Weiß Linz", "AUT"),
+    "grazer ak": ("Grazer AK", "AUT"),
+    "gak": ("Grazer AK", "AUT"),
+    "scr altach": ("SCR Altach", "AUT"),
+    "altach": ("SCR Altach", "AUT"),
+    "wsg tirol": ("WSG Tirol", "AUT"),
+    "austria klagenfurt": ("Austria Klagenfurt", "AUT"),
+    # AZERBAIYÁN (Premyer Liqa / Premier League Azerbaiyán)
+    "sabah fk": ("Sabah FK", "AZE"),
+    "sabah": ("Sabah FK", "AZE"),
+    "sabah baku": ("Sabah FK", "AZE"),
+    "qarabag": ("Qarabağ FK", "AZE"),
+    "qarabag fk": ("Qarabağ FK", "AZE"),
+    "fk qabala": ("FK Qabala", "AZE"),
+    "qabala": ("FK Qabala", "AZE"),
+    "fk neftchi": ("FK Neftchi", "AZE"),
+    "neftchi baku": ("FK Neftchi", "AZE"),
+    "imisli fk": ("Imisli FK", "AZE"),
+    "shafa": ("Shafa", "AZE"),
+    "zira": ("Zira FK", "AZE"),
+    "zira fk": ("Zira FK", "AZE"),
+    "araz pfk": ("Araz-Naxçıvan", "AZE"),
+    "araz-naxcivan": ("Araz-Naxçıvan", "AZE"),
+    "fc kapaz": ("Kəpəz PFK", "AZE"),
+    "kapaz": ("Kəpəz PFK", "AZE"),
+    "sumqayit": ("Sumqayıt FK", "AZE"),
+    "turan tovuz": ("Turan Tovuz", "AZE"),
+    "sabail": ("Səbail FK", "AZE"),
+    # HONDURAS (Liga Nacional)
+    "olancho": ("Olancho FC", "HND"),
+    "olancho fc": ("Olancho FC", "HND"),
+    "juticalpa": ("Juticalpa FC", "HND"),
+    "juticalpa fc": ("Juticalpa FC", "HND"),
+    "real espana": ("Real España", "HND"),
+    "rcd espana": ("Real España", "HND"),
+    "cd olimpia": ("CD Olimpia", "HND"),
+    "fc motagua": ("FC Motagua", "HND"),
+    "motagua": ("FC Motagua", "HND"),
+    "cd marathon": ("CD Marathón", "HND"),
+    "marathon": ("CD Marathón", "HND"),
+}
+_DICCIONARIO_EQUIPOS_CON_R29: Dict[str, Tuple[str, str]] = {
+    **DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB,
+    **_DICCIONARIO_EQUIPOS_R29,
+}
+
+_FOTMOB_IDS_R29: Dict[Tuple[str, str], str] = {
+    ("Bodø/Glimt", "NOR"): "8402",
+    ("LASK", "AUT"): "9977",
+    ("Sabah FK", "AZE"): "951893",
+    ("Olympiacos", "GRC"): "8638",
+}
+_FOTMOB_IDS_CON_R29: Dict[Tuple[str, str], str] = {
+    **FOTMOB_IDS_CONOCIDOS,
+    **_FOTMOB_IDS_R29,
+}
+
+
+def _diccionario_equipos_efectivo() -> Dict[str, Tuple[str, str]]:
+    if _guardian_r29_activo():
+        return _DICCIONARIO_EQUIPOS_CON_R29
+    return DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB
+
+
+def _fotmob_ids_conocidos_efectivo() -> Dict[Tuple[str, str], str]:
+    if _guardian_r29_activo():
+        return _FOTMOB_IDS_CON_R29
+    return FOTMOB_IDS_CONOCIDOS
 
 MAPA_FOTMOB_LEAGUE_ID_A_ISO3: Dict[int, str] = {
     47: "ENG", 48: "ENG", 108: "ENG", 109: "ENG", 132: "ENG", 133: "ENG", 9292: "ENG",
@@ -1576,7 +1624,7 @@ MAPA_FOTMOB_LEAGUE_ID_A_ISO3: Dict[int, str] = {
 }
 
 MAPA_FOTMOB_TEAM_ID_A_ISO3: Dict[str, str] = {
-    str(tid): iso for (_nom, iso), tid in FOTMOB_IDS_CONOCIDOS.items() if tid and iso and iso != "INT"
+    str(tid): iso for (_nom, iso), tid in _FOTMOB_IDS_CON_R29.items() if tid and iso and iso != "INT"
 }
 MAPA_FOTMOB_TEAM_ID_A_ISO3.update({
     "8402": "NOR",    # Bodø/Glimt
@@ -1587,6 +1635,7 @@ MAPA_FOTMOB_TEAM_ID_A_ISO3.update({
     "8634": "ESP",    # Barcelona
     "10205": "ESP",   # Villarreal
     "10267": "ESP",   # Valencia
+    "8638": "GRC",    # Olympiacos
 })
 
 PAISES_UEFA_ISO3: frozenset[str] = frozenset({
@@ -1642,19 +1691,6 @@ _TOKENS_PAIS_EXPLICITO_EN_LIGA: Dict[str, str] = {
 }
 
 
-_RE_LIMPIAR_BASE_LIGA = re.compile(
-    r"\b(?:femenin[oa]|women|fem|u19|u20|u21|u23|sub-(?:19|20|21|23)|clausura|apertura|grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|playoffs?)\b"
-)
-_RE_SEPARADORES_LIGA = re.compile(r"[\-–—:|·]+")
-_RE_ESPACIOS_MULT = re.compile(r"\s+")
-_TOKENS_PAIS_EXPLICITO_ORDENADOS: Tuple[Tuple[str, str], ...] = tuple(
-    sorted(_TOKENS_PAIS_EXPLICITO_EN_LIGA.items(), key=lambda x: len(x[0]), reverse=True)
-)
-_RE_TOKENS_PAIS_EXPLICITO = re.compile(
-    r"\b(" + "|".join(re.escape(k) for k, _ in _TOKENS_PAIS_EXPLICITO_ORDENADOS) + r")\b"
-)
-
-
 def _guardian_r29_activo() -> bool:
     try:
         from decision_cobertura import bandera_activa
@@ -1667,18 +1703,22 @@ def _limpiar_base_nombre_liga(nombre_liga: Any) -> str:
     norm = normalizar_texto(str(nombre_liga or ""))
     if not norm:
         return ""
-    norm = _RE_LIMPIAR_BASE_LIGA.sub(" ", norm)
-    norm = _RE_SEPARADORES_LIGA.sub(" ", norm)
-    return _RE_ESPACIOS_MULT.sub(" ", norm).strip()
+    norm = re.sub(
+        r"\b(?:femenin[oa]|women|fem|u19|u20|u21|u23|sub-(?:19|20|21|23)|clausura|apertura|grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|playoffs?)\b",
+        " ",
+        norm,
+    )
+    norm = re.sub(r"[\-–—:|·]+", " ", norm)
+    return re.sub(r"\s+", " ", norm).strip()
 
 
 def _extraer_pais_explicito_de_texto_liga(nombre_liga: Any) -> str:
     norm = normalizar_texto(str(nombre_liga or ""))
     if not norm:
         return ""
-    m = _RE_TOKENS_PAIS_EXPLICITO.search(norm)
-    if m:
-        return _TOKENS_PAIS_EXPLICITO_EN_LIGA.get(m.group(1), "")
+    for tok_p, iso_p in sorted(_TOKENS_PAIS_EXPLICITO_EN_LIGA.items(), key=lambda x: len(x[0]), reverse=True):
+        if re.search(rf"\b{re.escape(tok_p)}\b", norm):
+            return iso_p
     return ""
 
 
@@ -1827,8 +1867,11 @@ def _normalizar_pais_iso_catalogo(pais_o_liga: str) -> str:
         return MAPA_PAIS_A_ISO3[norm]
     if norm in CATALOGO_LIGAS_FLASHSCORE:
         return CATALOGO_LIGAS_FLASHSCORE[norm]
+    r29_on = _guardian_r29_activo()
     for clave_liga, iso in _CLAVES_LIGAS_ORDENADAS:
         if clave_liga == norm or (len(clave_liga) >= 5 and re.search(rf"\b{re.escape(clave_liga)}\b", norm)):
+            if r29_on and clave_liga != norm and clave_liga in NOMBRES_LIGA_AMBIGUOS:
+                continue
             if clave_liga in ("serie a", "serie b"):
                 if "bra" in norm:
                     return "BRA"
@@ -1841,14 +1884,14 @@ def _normalizar_pais_iso_catalogo(pais_o_liga: str) -> str:
                     return "RUS"
                 if "egy" in norm or "egipto" in norm:
                     return "EGY"
-                if "aze" in norm:
+                if r29_on and "aze" in norm:
                     return "AZE"
             if clave_liga == "liga nacional":
                 if "gtm" in norm or "guatemala" in norm:
                     return "GTM"
                 return "HND"
             return iso
-    if "honduras" in norm or "liga nacional" in norm:
+    if "honduras" in norm or (not r29_on and "liga nacional" in norm):
         return "HND"
     if "uruguay" in norm or "liga auf" in norm:
         return "URY"
@@ -1871,6 +1914,8 @@ def normalizar_pais_iso(
     ('Premier League', 'Bundesliga', 'Super League', 'Primera División', etc.) asigna país
     sin otro dato que lo confirme (`ccode`, `id_liga`, `id_equipo` o `paises_confirmacion`).
     """
+    if not _guardian_r29_activo():
+        return _normalizar_pais_iso_catalogo(str(pais_o_liga or ""))
     if ccode is not None or id_liga is not None or id_equipo is not None or paises_confirmacion is not None:
         res_conf = resolver_pais_desde_liga(
             pais_o_liga,
@@ -1881,7 +1926,7 @@ def normalizar_pais_iso(
         )
         if res_conf:
             return res_conf
-        if _guardian_r29_activo() and es_nombre_liga_ambiguo(pais_o_liga):
+        if es_nombre_liga_ambiguo(pais_o_liga):
             return ""
     if not pais_o_liga:
         return ""
@@ -1891,7 +1936,7 @@ def normalizar_pais_iso(
     norm = normalizar_texto(raw)
     if norm in MAPA_PAIS_A_ISO3:
         return MAPA_PAIS_A_ISO3[norm]
-    if _guardian_r29_activo() and es_nombre_liga_ambiguo(raw):
+    if es_nombre_liga_ambiguo(raw):
         return ""
     return _normalizar_pais_iso_catalogo(raw)
 
@@ -2100,12 +2145,13 @@ def _paises_posibles_para_club(nombre: str) -> set[str]:
     if sel:
         paises.add(sel[1])
 
+    dic_eq = _diccionario_equipos_efectivo()
     for k in (norm, norm_sin_siglas):
         if k in CLUBES_HOMONIMOS:
             for _, iso in CLUBES_HOMONIMOS[k]:
                 paises.add(iso)
-        if k in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB:
-            paises.add(DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB[k][1])
+        if k in dic_eq:
+            paises.add(dic_eq[k][1])
 
     return paises
 
@@ -2152,19 +2198,20 @@ def resolver_equipo_individual(
                     if iso_cand == pais_iso_contexto:
                         return nom_cand, iso_cand
 
-    # Buscar en DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB
+    dic_eq = _diccionario_equipos_efectivo()
+    # Buscar en diccionario efectivo
     for clave_busqueda in (norm, norm_sin_siglas, nom_base):
-        if clave_busqueda in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB:
-            nom_fotmob, iso_eq = DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB[clave_busqueda]
+        if clave_busqueda in dic_eq:
+            nom_fotmob, iso_eq = dic_eq[clave_busqueda]
             if pais_iso_contexto and pais_iso_contexto not in ("", "INT") and iso_eq != pais_iso_contexto:
                 continue
             return nom_fotmob, iso_eq
 
-    # Si contiene palabras de un club en DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB del mismo país
+    # Si contiene palabras de un club en diccionario efectivo del mismo país
     if pais_iso_contexto and pais_iso_contexto not in ("", "INT"):
         mejor_match: Optional[Tuple[str, str]] = None
         mejor_len = 0
-        for k_alias, (nom_fot, iso_eq) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB.items():
+        for k_alias, (nom_fot, iso_eq) in dic_eq.items():
             if iso_eq != pais_iso_contexto:
                 continue
             if len(k_alias) >= 4 and re.search(rf"\b{re.escape(k_alias)}\b", norm):
@@ -2502,7 +2549,11 @@ def resolver(
         if iso_c and iso_c != "INT":
             cands_paises_v.add(iso_c)
 
-    paises_conf_cruce = (cands_paises_l & cands_paises_v) or (cands_paises_l | cands_paises_v)
+    paises_conf_cruce = (
+        ((cands_paises_l & cands_paises_v) or (cands_paises_l | cands_paises_v))
+        if _guardian_r29_activo()
+        else None
+    )
     pais_iso_liga = normalizar_pais_iso(liga_str, paises_confirmacion=paises_conf_cruce)
     liga_norm = normalizar_texto(liga_str)
     es_fem, es_juv = detectar_categoria_desde_texto(f"{liga_str} {loc_str} {vis_str}")
@@ -2537,7 +2588,12 @@ def resolver(
     if not es_internacional and not es_duelo_selecciones:
         if pais_iso_liga and pais_iso_liga != "INT":
             inter = cands_paises_l & cands_paises_v
-            if inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter and "ITA" not in inter:
+            es_serie_bc_bra = (
+                (inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter and "ITA" not in inter)
+                if _guardian_r29_activo()
+                else (inter and pais_iso_liga not in inter and any(k in liga_norm for k in ("serie b", "serie c")) and "BRA" in inter)
+            )
+            if es_serie_bc_bra:
                 pais_conjunto = "BRA"
                 criterio_desempate = "liga_declarada (serie_b_c_brasil)"
             else:
@@ -2595,8 +2651,10 @@ def resolver(
         pais_final = "INT"
 
     # Verificar si la identidad está confirmada o no verificada
-    cand_l_known = bool((nom_loc, pais_local) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_loc) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or sel_l or iso_loc)
-    cand_v_known = bool((nom_vis, pais_visita) in FOTMOB_IDS_CONOCIDOS or normalizar_texto(nom_vis) in DICCIONARIO_EQUIPOS_FLASHSCORE_A_FOTMOB or sel_v or iso_vis)
+    dic_eq = _diccionario_equipos_efectivo()
+    ids_eq = _fotmob_ids_conocidos_efectivo()
+    cand_l_known = bool((nom_loc, pais_local) in ids_eq or normalizar_texto(nom_loc) in dic_eq or sel_l or iso_loc)
+    cand_v_known = bool((nom_vis, pais_visita) in ids_eq or normalizar_texto(nom_vis) in dic_eq or sel_v or iso_vis)
 
     # Detección de homónimos desconocidos o candidatos ambiguos
     cands_l_paises = {c.get("pais_iso") or c.get("country") for c in (candidatos_local or []) if (c.get("pais_iso") or c.get("country"))}
@@ -2629,10 +2687,10 @@ def resolver(
         motivo_identidad = ""
         nivel_confianza = "alta" if (criterio_desempate != "sin_desempate_claro") else "media"
 
-    id_prov_l = FOTMOB_IDS_CONOCIDOS.get((nom_loc, pais_local))
+    id_prov_l = ids_eq.get((nom_loc, pais_local))
     if not id_prov_l and candidatos_local and len(candidatos_local) == 1:
         id_prov_l = candidatos_local[0].get("id")
-    id_prov_v = FOTMOB_IDS_CONOCIDOS.get((nom_vis, pais_visita))
+    id_prov_v = ids_eq.get((nom_vis, pais_visita))
     if not id_prov_v and candidatos_visita and len(candidatos_visita) == 1:
         id_prov_v = candidatos_visita[0].get("id")
 
@@ -2737,11 +2795,13 @@ def validar_y_puntuar_candidato_fotmob(
     sel_buscada = obtener_seleccion_nacional(texto_buscado)
     if sel_buscada:
         iso_esperado = sel_buscada[1]
-    else:
+    elif _guardian_r29_activo():
         iso_esperado = normalizar_pais_iso(
             pais_iso_esperado or texto_liga_o_contexto,
             paises_confirmacion=_paises_posibles_para_club(texto_buscado),
         )
+    else:
+        iso_esperado = normalizar_pais_iso(pais_iso_esperado or texto_liga_o_contexto)
     cand_liga_id = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
     liga_cand_norm = normalizar_texto(liga_cand)
     if _guardian_r29_activo():
@@ -2853,7 +2913,7 @@ def construir_clave_cache_entidad(
         nom_of, iso_of = resolver_equipo_individual(tid, pais_iso_contexto=iso if iso != "UNK" else None, es_femenino=es_femenino, es_juvenil=es_juvenil)
         if iso == "UNK" and iso_of:
             iso = iso_of
-        tid_conocido = FOTMOB_IDS_CONOCIDOS.get((nom_of, iso))
+        tid_conocido = _fotmob_ids_conocidos_efectivo().get((nom_of, iso))
         if tid_conocido:
             tid = tid_conocido
         else:
