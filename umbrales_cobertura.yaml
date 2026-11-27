@@ -90,6 +90,7 @@ flags_comportamiento:
   usar_cuotas_mercado_captura: true  # regla operativa, sin validación cronológica
   usar_cuotas_en_ticket: false  # regla operativa, sin validación cronológica
   usar_cierre_remoto_cuotas_en_evaluar: false  # regla operativa, sin validación cronológica
+  usar_guardian_homonimo_por_competicion: true  # regla operativa, sin validación cronológica
 
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica

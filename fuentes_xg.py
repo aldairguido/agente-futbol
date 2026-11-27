@@ -2129,12 +2129,48 @@ _MAPA_CCODE_PAIS: dict[str, str] = {
 }
 
 
-def _pais_de_liga(nombre_liga: str | None, ccode: str | None = None) -> str:
-    """Infiere el país o federación a partir del código de país o del nombre de la liga."""
+def _pais_de_liga(
+    nombre_liga: str | None,
+    ccode: str | None = None,
+    id_liga: Any = None,
+    id_equipo: Any = None,
+    paises_confirmacion: Any = None,
+) -> str:
+    """Infiere el país o federación a partir del código de país, id de liga/equipo o del nombre de la liga."""
     if ccode:
         cc = _sin_acentos(str(ccode)).lower().strip()
         if cc in _MAPA_CCODE_PAIS:
             return _MAPA_CCODE_PAIS[cc]
+        try:
+            from resolvedor_entidades import MAPA_ISO3_A_PAIS_INTERNO, MAPA_PAIS_A_ISO3, _guardian_r29_activo
+            if _guardian_r29_activo():
+                iso_cc = cc.upper() if cc.upper() in MAPA_ISO3_A_PAIS_INTERNO else MAPA_PAIS_A_ISO3.get(cc, "")
+                if iso_cc and iso_cc in MAPA_ISO3_A_PAIS_INTERNO:
+                    return MAPA_ISO3_A_PAIS_INTERNO[iso_cc]
+        except Exception:
+            pass
+    try:
+        from resolvedor_entidades import (
+            MAPA_ISO3_A_PAIS_INTERNO,
+            _guardian_r29_activo,
+            es_nombre_liga_ambiguo,
+            resolver_pais_desde_liga,
+        )
+        if _guardian_r29_activo():
+            if id_liga is not None or id_equipo is not None or paises_confirmacion is not None:
+                iso_id = resolver_pais_desde_liga(
+                    nombre_liga,
+                    ccode=ccode,
+                    id_liga=id_liga,
+                    id_equipo=id_equipo,
+                    paises_confirmacion=paises_confirmacion,
+                )
+                if iso_id and iso_id != "INT" and iso_id in MAPA_ISO3_A_PAIS_INTERNO:
+                    return MAPA_ISO3_A_PAIS_INTERNO[iso_id]
+            if nombre_liga and es_nombre_liga_ambiguo(nombre_liga):
+                return ""
+    except Exception:
+        pass
     if not nombre_liga:
         return ""
     n = _sin_acentos(str(nombre_liga)).lower().strip()
@@ -2225,6 +2261,21 @@ def _inferir_meta_rival_desde_texto(rival_texto: str) -> dict[str, Any] | None:
     if not rival_texto or not str(rival_texto).strip():
         return None
     limpio = str(rival_texto).strip()
+    try:
+        from resolvedor_entidades import _guardian_r29_activo, es_nombre_liga_ambiguo
+        if _guardian_r29_activo() and es_nombre_liga_ambiguo(limpio):
+            return {
+                "nombre": limpio,
+                "liga": limpio,
+                "pais": "",
+                "pais_iso": "",
+                "id_liga": None,
+                "ids_liga": [],
+                "pais_ambiguo": True,
+                "liga_forzada": True,
+            }
+    except Exception:
+        pass
     liga_pref, resto = extraer_liga_de_texto(limpio)
     if liga_pref and not resto:
         return liga_pref
@@ -2235,6 +2286,18 @@ def _inferir_meta_rival_desde_texto(rival_texto: str) -> dict[str, Any] | None:
         if norm_r == patron:
             meta = dict(info)
             meta["liga"] = info["nombre"]
+            try:
+                from resolvedor_entidades import _guardian_r29_activo, es_nombre_liga_ambiguo
+                if _guardian_r29_activo() and (es_nombre_liga_ambiguo(limpio) or es_nombre_liga_ambiguo(info["nombre"])):
+                    meta["pais"] = ""
+                    meta["pais_iso"] = ""
+                    meta["id_liga"] = None
+                    meta["ids_liga"] = []
+                    meta["pais_ambiguo"] = True
+                    meta["liga_forzada"] = True
+                    return meta
+            except Exception:
+                pass
             meta["id_liga"] = info["ids_liga"][0] if info.get("ids_liga") else None
             meta["liga_forzada"] = True
             return meta
@@ -2571,6 +2634,7 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
         r_pais = _pais_de_liga(
             r_lname_raw if r_lname else None,
             ccode=ccode_r,
+            id_liga=r_liga_id,
         ) or (norm(rival_meta.get("pais") or "") if norm(rival_meta.get("pais") or "") != "int" else "")
         cand_lid = candidato.get("leagueId") or candidato.get("primaryLeagueId") or candidato.get("id_liga")
         if (cand_lid is not None and str(cand_lid) in ("8971", "8814", "268")) or (c_lname in ("serie c", "serie b", "serie a") and (r_pais == "brasil" or str(ccode_r or "").upper() == "BRA")):
@@ -2579,6 +2643,8 @@ def puntuar_candidato(candidato: dict[str, Any], consulta: str,
             c_pais = _pais_de_liga(
                 candidato.get("leagueName") or candidato.get("primaryLeagueName") or candidato.get("liga"),
                 ccode=candidato.get("ccode") or candidato.get("country") or candidato.get("pais"),
+                id_liga=cand_lid,
+                id_equipo=candidato.get("id"),
             )
         es_duelo_nacional = bool(r_pais and r_pais not in ("europa", "sudamerica", "internacional"))
         if r_pais and c_pais:
@@ -2951,7 +3017,15 @@ def resolver_pareja_misma_liga(
             mejor_par = dict(par)
 
     if mejor_par and mejor_score >= 120.0:
-        mejor_par["pais_iso"] = pais_iso_norm or mejor_par.get("pais_iso") or "INT"
+        from resolvedor_entidades import _guardian_r29_activo, es_competicion_internacional, resolver_pais_desde_liga
+        if _guardian_r29_activo() and es_competicion_internacional(mejor_par.get("leagueName") or mejor_par.get("liga"), id_liga=mejor_par.get("leagueId") or mejor_par.get("id_liga")):
+            iso_par_eq = resolver_pais_desde_liga(
+                "",
+                id_equipo=mejor_par.get("id"),
+            )
+            mejor_par["pais_iso"] = iso_par_eq or "INT"
+        else:
+            mejor_par["pais_iso"] = pais_iso_norm or mejor_par.get("pais_iso") or "INT"
         mejor_par["resuelto_por_tabla_comun"] = True
         return mejor_par
     return None
@@ -2990,10 +3064,31 @@ def validar_coherencia_nacional_15_partidos(
                     p_eq = str(meta_eq.get("pais") or "")
             partidos = doc_or_list.get("partidos") or []
 
+        try:
+            from resolvedor_entidades import _guardian_r29_activo, _paises_posibles_para_club
+            r29_on = _guardian_r29_activo()
+        except Exception:
+            r29_on = False
+            _paises_posibles_para_club = lambda _x: set()
+
         paises: list[str] = []
         for p in partidos[:15]:
             comp = str(p.get("competicion") or p.get("torneo") or p.get("liga") or "")
-            pc = _pais_de_liga(comp)
+            if r29_on:
+                riv_raw = p.get("rival")
+                nom_riv = (
+                    str(riv_raw.get("nombre") or riv_raw.get("name") or "")
+                    if isinstance(riv_raw, dict)
+                    else str(riv_raw or "")
+                ).strip()
+                paises_riv: set[str] = set(_paises_posibles_para_club(nom_riv)) if nom_riv else set()
+                pc = _pais_de_liga(comp, paises_confirmacion=paises_riv or None)
+                if not pc and nom_riv:
+                    meta_riv = _inferir_meta_rival_desde_texto(nom_riv)
+                    if meta_riv and meta_riv.get("pais"):
+                        pc = str(meta_riv["pais"])
+            else:
+                pc = _pais_de_liga(comp)
             if pc in ("", "europa", "sudamerica") and p_eq:
                 pc = p_eq
             if pc:
@@ -3405,7 +3500,14 @@ class FuenteFotMob(FuenteXG):
         if not pide_no_senior:
             nombre_final = re.sub(r"\s*\((?:w|women)\)\s*", "", str(nombre_final), flags=re.IGNORECASE).strip()
 
-        from resolvedor_entidades import construir_clave_cache_entidad, normalizar_pais_iso, detectar_categoria_desde_texto
+        from resolvedor_entidades import (
+            _guardian_r29_activo,
+            construir_clave_cache_entidad,
+            detectar_categoria_desde_texto,
+            normalizar_pais_iso,
+            normalizar_texto,
+            resolver_pais_desde_liga,
+        )
         es_fem_eq, es_juv_eq = detectar_categoria_desde_texto(
             f"{nombre} {(meta_rival or {}).get('liga', '')} {(meta_rival or {}).get('nombre', '')}"
         )
@@ -3425,7 +3527,19 @@ class FuenteFotMob(FuenteXG):
             or (meta_rival or {}).get("pais")
         )
 
-        if lid_cand_int in (8971, 8814, 268) or (pais_iso_pref == "BRA" and normalizar_texto(str(elegido.get("leagueName") or "")) in ("serie c", "serie b", "serie a")):
+        if _guardian_r29_activo():
+            pais_iso_eq = (
+                resolver_pais_desde_liga(
+                    elegido.get("leagueName"),
+                    ccode=elegido.get("ccode") or elegido.get("country"),
+                    id_liga=lid_cand,
+                    id_equipo=elegido.get("id"),
+                    paises_confirmacion=pais_iso_pref if (pais_iso_pref and pais_iso_pref != "INT") else None,
+                )
+                or (pais_iso_pref if (pais_iso_pref and pais_iso_pref != "INT" and not elegido.get("leagueName")) else "")
+                or "INT"
+            )
+        elif lid_cand_int in (8971, 8814, 268) or (pais_iso_pref == "BRA" and normalizar_texto(str(elegido.get("leagueName") or "")) in ("serie c", "serie b", "serie a")):
             pais_iso_eq = "BRA"
         else:
             pais_iso_eq = (
