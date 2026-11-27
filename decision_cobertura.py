@@ -77,6 +77,8 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_etiqueta_matriz_final_y_cronologia_raw": True,
     "usar_umbral_unificado_sin_tolerancia": True,
     "usar_cache_auditoria_con_corte": True,
+    "usar_correccion_a1_sin_duplicar_xg_contra": False,
+    "usar_correccion_a2_media_ponderada": False,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -103,6 +105,8 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_etiqueta_matriz_final_y_cronologia_raw",
     "usar_umbral_unificado_sin_tolerancia",
     "usar_cache_auditoria_con_corte",
+    "usar_correccion_a1_sin_duplicar_xg_contra",
+    "usar_correccion_a2_media_ponderada",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}

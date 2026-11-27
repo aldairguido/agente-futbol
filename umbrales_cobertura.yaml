@@ -98,6 +98,8 @@ flags_comportamiento:
   usar_etiqueta_matriz_final_y_cronologia_raw: true  # regla operativa, sin validación cronológica
   usar_umbral_unificado_sin_tolerancia: true  # regla operativa, sin validación cronológica
   usar_cache_auditoria_con_corte: true  # regla operativa, sin validación cronológica
+  usar_correccion_a1_sin_duplicar_xg_contra: false  # modo sombra A1 (motor congelado lote n=30)
+  usar_correccion_a2_media_ponderada: false  # modo sombra A2 (motor congelado lote n=30)
 
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica

@@ -1058,7 +1058,11 @@ def extraer_muestra(doc: dict[str, Any], condicion: str | None = None,
 
         # xG en contra: el reporte del equipo no publica su xG concedido, se usa el
         # xG del rival (aproximación declarada).
-        muestra.dame("xg_contra").agregar(_val_ajustado("xg", "rival"), peso)
+        # Nota A1 (Ronda 31 Bloque 8): METRICAS_GOLEADORAS ya agrega "xg_contra": "xg" (bando="rival").
+        # Con `usar_correccion_a1_sin_duplicar_xg_contra=True` se omite la segunda inserción duplicada.
+        from decision_cobertura import bandera_activa as _ba_a1_xgc
+        if not bool(_ba_a1_xgc("usar_correccion_a1_sin_duplicar_xg_contra")):
+            muestra.dame("xg_contra").agregar(_val_ajustado("xg", "rival"), peso)
 
     # Fallback inteligente si los partidos de la muestra carecían de estadísticas detalladas (n_con_stats == 0)
     if hubo_partidos_sin_stats and muestra.dame("goles_favor").n > 0 and muestra.dame("remates_totales_favor").n == 0:
@@ -1180,7 +1184,12 @@ def media_ajustada(general: MuestraMetrica, condicion: MuestraMetrica,
     reduce según cuántos partidos la respaldan. Si es None se usa el peso fijo
     (comportamiento anterior, conservado para poder comparar).
     """
-    mg, mc = general.media, condicion.media
+    from decision_cobertura import bandera_activa as _ba_a2_mp
+    if bool(_ba_a2_mp("usar_correccion_a2_media_ponderada")):
+        mg = general.media_ponderada if general.media_ponderada is not None else general.media
+        mc = condicion.media_ponderada if condicion.media_ponderada is not None else condicion.media
+    else:
+        mg, mc = general.media, condicion.media
     if mg is None and mc is None:
         return None
     if mg is None:

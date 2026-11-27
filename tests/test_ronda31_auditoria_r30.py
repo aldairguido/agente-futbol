@@ -697,6 +697,56 @@ def test_r31_bloque7_cache_auditoria_incluye_corte_ventanas_distintas(monkeypatc
     assert len(llamadas_internas) == 2
 
 
+def test_r31_bloque8_banderas_sombra_a1_a2_apagadas_por_defecto():
+    # Por defecto ambas banderas están apagadas (False) para mantener invariancia absoluta en producción
+    assert dc.bandera_activa("usar_correccion_a1_sin_duplicar_xg_contra") is False
+    assert dc.bandera_activa("usar_correccion_a2_media_ponderada") is False
+
+    # Construimos un documento con 15 partidos donde el partido 1 tiene tarjeta roja (peso_roja < 1)
+    partidos = []
+    for i in range(15):
+        es_roja = i == 0
+        xg_riv = 2.50 if es_roja else 1.00
+        goles_eq = 3 if es_roja else 1
+        partidos.append(
+            {
+                "id_partido": f"p_{i+1}",
+                "fecha": f"2026-11-{20 - i:02d}",
+                "condicion": "casa" if i % 2 == 0 else "fuera",
+                "goles_equipo": goles_eq,
+                "goles_rival": 1,
+                "marcador": {"equipo": goles_eq, "rival": 1},
+                "periodos": {
+                    "FT": {
+                        "filas": [
+                            {"clave": "xg", "equipo": 1.20, "rival": xg_riv},
+                            {"clave": "tarjetas_rojas", "equipo": 1 if es_roja else 0, "rival": 0},
+                        ]
+                    }
+                },
+            }
+        )
+    doc = {"equipo": {"nombre": "ClubTest", "liga": "LaLiga"}, "partidos": partidos}
+
+    # 1) Modo producción (banderas False): xg_contra tiene n=30 (duplicado) y media_ajustada usa media simple
+    m_prod = mm.extraer_muestra(doc, condicion=None, periodo="FT", peso_roja=0.25)
+    assert m_prod.dame("xg_contra").n == 30
+    ma_prod = mm.media_ajustada(m_prod.dame("goles_favor"), m_prod.dame("goles_favor"), 0.5)
+    assert abs(ma_prod - m_prod.dame("goles_favor").media) < 1e-12
+
+    # 2) Modo sombra corregido (A1=True, A2=True): xg_contra tiene n=15 y media_ajustada usa media_ponderada
+    with dc.banderas_comportamiento(
+        usar_correccion_a1_sin_duplicar_xg_contra=True,
+        usar_correccion_a2_media_ponderada=True,
+    ):
+        m_corr = mm.extraer_muestra(doc, condicion=None, periodo="FT", peso_roja=0.25)
+        assert m_corr.dame("xg_contra").n == 15
+        ma_corr = mm.media_ajustada(m_corr.dame("goles_favor"), m_corr.dame("goles_favor"), 0.5)
+        assert abs(ma_corr - m_corr.dame("goles_favor").media_ponderada) < 1e-12
+        assert ma_corr < ma_prod
+
+
+
 
 
 
