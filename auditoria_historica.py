@@ -114,6 +114,42 @@ def guardar_auditoria_en_memoria(equipo_slug: str, doc: dict[str, Any]) -> None:
         _CACHE_MEMORIA_AUDITORIAS[equipo_slug] = doc
 
 
+def _sufijo_corte_cache_memoria(
+    *,
+    fecha_corte: Any = None,
+    id_partido_excluir: Any = None,
+    cutoff_timestamp: Any = None,
+    exclude_match_ids: Any = None,
+) -> str:
+    """
+    Construye el sufijo de corte para la clave de caché en memoria de auditoría (Ronda 31 Bloque 7).
+    Cuando `usar_cache_auditoria_con_corte=True`, incorpora fecha_corte, cutoff_timestamp,
+    id_partido_excluir y exclude_match_ids para que dos consultas del mismo club con cortes
+    distintos en el mismo proceso no compartan la ventana de 15 partidos.
+    """
+    from decision_cobertura import bandera_activa as _ba_cache_corte
+    if not bool(_ba_cache_corte("usar_cache_auditoria_con_corte")):
+        return ""
+    fc_s = str(fecha_corte or "").strip()
+    ct_s = str(cutoff_timestamp or "").strip()
+    id_ex = str(id_partido_excluir or "").strip()
+    ex_set: list[str] = []
+    if exclude_match_ids:
+        if isinstance(exclude_match_ids, (list, tuple, set, frozenset)):
+            ex_set = sorted(str(x).strip() for x in exclude_match_ids if str(x).strip())
+        else:
+            ex_set = [str(exclude_match_ids).strip()]
+    if not (fc_s or ct_s or id_ex or ex_set):
+        return ""
+    return f"__fc={fc_s}|ct={ct_s}|ex={id_ex}|exs={','.join(ex_set)}"
+
+
+def _clave_con_corte_memoria(clave_base: str, sufijo_corte: str) -> str:
+    if not clave_base or not sufijo_corte:
+        return clave_base
+    return f"{clave_base}{sufijo_corte}"
+
+
 def limpiar_cache_memoria_auditorias() -> None:
     """Limpia la caché en memoria (útil en pruebas)."""
     with _LOCK_GLOBAL_LOCKS:
@@ -172,9 +208,12 @@ def eliminar_cache_equipo(nombre_o_doc: Any, pais_iso: str = "") -> int:
                 "_",
                 unicodedata.normalize("NFKD", nom_m).encode("ascii", "ignore").decode(),
             ).strip("_").lower()
+            k_mem_base = k_mem.split("__", 1)[0]
             if (
                 k_mem in slugs
+                or k_mem_base in slugs
                 or k_mem in claves_cache
+                or k_mem_base in claves_cache
                 or (id_m and id_m in ids_eq)
                 or (slug_m and slug_m in slugs)
             ):
@@ -2041,11 +2080,20 @@ def auditar_equipo(
         or meta_ctx.get("pais")
     )
 
+    sufijo_corte_mem = _sufijo_corte_cache_memoria(
+        fecha_corte=fecha_corte,
+        id_partido_excluir=id_partido_excluir,
+        cutoff_timestamp=cutoff_timestamp,
+        exclude_match_ids=exclude_match_ids,
+    )
+    clave_mem_entidad = _clave_con_corte_memoria(clave_cache_entidad, sufijo_corte_mem)
+    slug_mem_equipo = _clave_con_corte_memoria(slug_equipo, sufijo_corte_mem)
+
     with lock_equipo:
         if fuente_obj is None:
-            doc_mem = obtener_auditoria_en_memoria(clave_cache_entidad)
-            if doc_mem is None and slug_equipo:
-                cand_mem = obtener_auditoria_en_memoria(slug_equipo)
+            doc_mem = obtener_auditoria_en_memoria(clave_mem_entidad)
+            if doc_mem is None and slug_mem_equipo:
+                cand_mem = obtener_auditoria_en_memoria(slug_mem_equipo)
                 if cand_mem:
                     cand_pais = (cand_mem.get("equipo") or {}).get("pais_iso") or (cand_mem.get("identidad") or {}).get("pais_iso")
                     if pais_iso_ctx not in ("", "INT") and cand_pais and cand_pais != pais_iso_ctx:
@@ -2144,13 +2192,28 @@ def auditar_equipo(
             "confianza": "alta",
         }
         res["estado_identidad"] = "verificada"
-        guardar_auditoria_en_memoria(clave_id_oficial, res)
-        guardar_auditoria_en_memoria(clave_cache_entidad, res)
+        partidos_res = [p for p in (res.get("partidos") or []) if isinstance(p, dict)]
+        ult_fecha_res = str(partidos_res[0].get("fecha") or "") if partidos_res else ""
+        ult_id_res = str(partidos_res[0].get("id_partido") or partidos_res[0].get("id") or "") if partidos_res else ""
+        res["_cache_corte_meta"] = {
+            "sufijo_corte": sufijo_corte_mem,
+            "fecha_corte": str(fecha_corte or ""),
+            "cutoff_timestamp": str(cutoff_timestamp or ""),
+            "ultimo_partido_fecha": ult_fecha_res,
+            "ultimo_partido_id": ult_id_res,
+        }
+        clave_mem_id_oficial = _clave_con_corte_memoria(clave_id_oficial, sufijo_corte_mem)
+        guardar_auditoria_en_memoria(clave_mem_id_oficial, res)
+        guardar_auditoria_en_memoria(clave_mem_entidad, res)
+        if sufijo_corte_mem and ult_fecha_res:
+            suf_ult = f"{sufijo_corte_mem}|ult={ult_fecha_res}:{ult_id_res}"
+            guardar_auditoria_en_memoria(_clave_con_corte_memoria(clave_id_oficial, suf_ult), res)
+            guardar_auditoria_en_memoria(_clave_con_corte_memoria(clave_cache_entidad, suf_ult), res)
         _guardar_cache_resiliencia(clave_id_oficial, res)
         _guardar_cache_resiliencia(clave_cache_entidad, res)
         nom_resuelto = eq_res.get("nombre")
         if nom_resuelto and _slug(nom_resuelto) != slug_equipo:
-            guardar_auditoria_en_memoria(_slug(nom_resuelto), res)
+            guardar_auditoria_en_memoria(_clave_con_corte_memoria(_slug(nom_resuelto), sufijo_corte_mem), res)
             _guardar_cache_resiliencia(_slug(nom_resuelto), res)
         return res
 

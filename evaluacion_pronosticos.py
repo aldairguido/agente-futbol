@@ -1588,6 +1588,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                     if _vals_e:
                         _d_e = min(_vals_e) - float(s.probabilidad)
                         _sig_desv = "-" if _d_e < -1e-6 else ("+" if _d_e > 1e-6 else "0")
+            from decision_cobertura import supera_umbral_probabilidad as _sup_umb_snap
+            _pasa_umb_s = bool(_sup_umb_snap(s.probabilidad, umbral, estricto_legado=True))
             entrada = {
                 "mercado": s.mercado, "id_mercado": s.id_mercado, "evento": s.evento,
                 "etiqueta": s.etiqueta, "periodo": s.periodo, "equipo": s.equipo,
@@ -1596,10 +1598,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 "signo_desvio": _sig_desv if _est_sens == "sensible" else None,
                 **({"desvio_observado_pp": _desv_pp} if _desv_pp is not None and _est_sens == "sensible" else {}),
                 "escenarios": s.escenarios,
-                "supera_umbral": bool(s.probabilidad > umbral),
+                "supera_umbral": _pasa_umb_s,
             }
             todas.append(entrada)
-            if s.probabilidad > umbral:
+            if _pasa_umb_s:
                 publicadas.append(dict(entrada))
 
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)
@@ -7617,26 +7619,27 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
     cc_col = calcular_cuadro_c_timeline_15min(pts_col, "Colombia")
     cc_chi = calcular_cuadro_c_timeline_15min(pts_chi, "Chile")
 
-    veredicto_sin_top = generar_veredicto_tactico_partido(
-        "Colombia", "Chile",
-        rec_a.get("patrones_55_local") or {},
-        rec_a.get("patrones_55_visita") or {},
-        {"local": p1_m, "empate": px_m, "visita": p2_m},
-        cb_col, cb_chi, cc_col, cc_chi,
-        top5_podio=[],
-        selecciones_sec1=sec1_a,
-        motor=motor_a,
-    )
-    veredicto_con_top = generar_veredicto_tactico_partido(
-        "Colombia", "Chile",
-        rec_a.get("patrones_55_local") or {},
-        rec_a.get("patrones_55_visita") or {},
-        {"local": p1_m, "empate": px_m, "visita": p2_m},
-        cb_col, cb_chi, cc_col, cc_chi,
-        top5_podio=top5_a,
-        selecciones_sec1=sec1_a,
-        motor=motor_a,
-    )
+    with banderas_comportamiento(usar_etiqueta_matriz_final_y_cronologia_raw=False):
+        veredicto_sin_top = generar_veredicto_tactico_partido(
+            "Colombia", "Chile",
+            rec_a.get("patrones_55_local") or {},
+            rec_a.get("patrones_55_visita") or {},
+            {"local": p1_m, "empate": px_m, "visita": p2_m},
+            cb_col, cb_chi, cc_col, cc_chi,
+            top5_podio=[],
+            selecciones_sec1=sec1_a,
+            motor=motor_a,
+        )
+        veredicto_con_top = generar_veredicto_tactico_partido(
+            "Colombia", "Chile",
+            rec_a.get("patrones_55_local") or {},
+            rec_a.get("patrones_55_visita") or {},
+            {"local": p1_m, "empate": px_m, "visita": p2_m},
+            cb_col, cb_chi, cc_col, cc_chi,
+            top5_podio=top5_a,
+            selecciones_sec1=sec1_a,
+            motor=motor_a,
+        )
     filas_sec1_cuadro = _organizar_sec1_para_cuadro(analisis_a, sec1_a, "Colombia", "Chile", matriz_prob=mat_ft, top5_podio=top5_a)
     fila_hc_sec1 = next((r for r in filas_sec1_cuadro if r["categoria"] == "HÁNDICAP / 1X2 / DC"), {})
 

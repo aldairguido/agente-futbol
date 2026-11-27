@@ -290,7 +290,17 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
     } | {_clave_equipo(a) for a in (doc_visitante.get("equipo") or {}).get("alternativas") or []}
     nom_v.discard("")
 
+    from decision_cobertura import bandera_activa as _ba_emp_f4
+    _exacto_f4 = bool(_ba_emp_f4("usar_emparejamiento_exacto_sin_subcadena"))
+
     def coincide_bando(bid: str, bnom: str, target_id: str, target_noms: set[str]) -> bool:
+        if _exacto_f4:
+            if target_id and bid:
+                return str(bid).strip() == str(target_id).strip()
+            cl = _clave_equipo(bnom)
+            if not cl:
+                return False
+            return cl in target_noms
         if target_id and bid and str(bid) == str(target_id):
             return True
         cl = _clave_equipo(bnom)
@@ -612,21 +622,41 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
 
     info_analisis = resolver_fecha_encuentro_lima(None, es_partido_programado=False)
 
+    from decision_cobertura import bandera_activa as _ba_meta_f4
+    _exacto_meta_f4 = bool(_ba_meta_f4("usar_emparejamiento_exacto_sin_subcadena"))
+
+    id_l_doc = str(((doc_local or {}).get("equipo") or {}).get("id") or "").strip()
+    id_v_doc = str(((doc_visitante or {}).get("equipo") or {}).get("id") or "").strip()
+    cl_l = _clave_equipo(equipo_local)
+    cl_v = _clave_equipo(equipo_visitante)
+
     por_id: dict[str, dict[str, Any]] = {}
-    for doc, equipo in ((doc_local, equipo_local), (doc_visitante, equipo_visitante)):
+    for doc, equipo, side_tag in ((doc_local, equipo_local, "local"), (doc_visitante, equipo_visitante, "visitante")):
         for p in doc.get("partidos", []):
             pid = str(p.get("id_partido"))
-            por_id.setdefault(pid, {})[equipo.lower()] = p
+            key_b = side_tag if _exacto_meta_f4 else equipo.lower()
+            por_id.setdefault(pid, {})[key_b] = p
 
     nombre_l = equipo_local.lower()
     nombre_v = equipo_visitante.lower()
     for pid, bandos in por_id.items():
-        claves = list(bandos.keys())
-        tiene_l = any(nombre_l in k or k in nombre_l for k in claves)
-        tiene_v = any(nombre_v in k or k in nombre_v for k in claves)
-        if tiene_l and tiene_v and len(bandos) >= 2:
-            pl = bandos.get(claves[0])
-            pv = bandos.get(claves[1])
+        if _exacto_meta_f4:
+            if id_l_doc and id_v_doc and id_l_doc == id_v_doc:
+                continue
+            if not (id_l_doc and id_v_doc) and cl_l == cl_v:
+                continue
+            pl = bandos.get("local")
+            pv = bandos.get("visitante")
+            tiene_l = pl is not None
+            tiene_v = pv is not None
+            cond_l = str(pl.get("condicion", "")).lower() if pl is not None else None
+            cond_v = str(pv.get("condicion", "")).lower() if pv is not None else None
+        else:
+            claves = list(bandos.keys())
+            tiene_l = any(nombre_l in k or k in nombre_l for k in claves)
+            tiene_v = any(nombre_v in k or k in nombre_v for k in claves)
+            pl = bandos.get(claves[0]) if len(claves) >= 1 else None
+            pv = bandos.get(claves[1]) if len(claves) >= 2 else None
             cond_l = None
             cond_v = None
             for k, p in bandos.items():
@@ -634,6 +664,7 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                     cond_l = str(p.get("condicion", "")).lower()
                 if nombre_v in k or k in nombre_v:
                     cond_v = str(p.get("condicion", "")).lower()
+        if tiene_l and tiene_v and len(bandos) >= 2:
 
             m_l = pl.get("marcador") or {}
             m_v = pv.get("marcador") or {}
@@ -752,7 +783,16 @@ def construir_resumen_h2h_ticket(
     t_v = _toks(equipo_visitante)
     fecha_lim = str(fecha_objetivo or "")[:10]
 
+    from decision_cobertura import bandera_activa as _ba_h2h_f4
+    _exacto_h2h_f4 = bool(_ba_h2h_f4("usar_emparejamiento_exacto_sin_subcadena"))
+    claves_l = {_clave_equipo(t) for t in t_l if _clave_equipo(t)}
+    claves_v = {_clave_equipo(t) for t in t_v if _clave_equipo(t)}
+
     def _mismo(nombre: str, toks: set[str]) -> bool:
+        if _exacto_h2h_f4:
+            cl_s = _clave_equipo(str(nombre or ""))
+            claves_ref = claves_l if toks is t_l else (claves_v if toks is t_v else {_clave_equipo(t) for t in toks if _clave_equipo(t)})
+            return bool(cl_s) and (cl_s in claves_ref)
         s = _sin_acentos(str(nombre or "")).lower().strip()
         return any(s == tk or tk in s or s in tk for tk in toks if len(tk) >= 3)
 
@@ -1510,11 +1550,14 @@ def evaluar_antiguedad_datos(
     eq_l = str(_eq_l_raw.get("nombre") if isinstance(_eq_l_raw, dict) else (_eq_l_raw or "Local"))
     _eq_v_raw = (doc_visitante or {}).get("equipo") if isinstance(doc_visitante, dict) else None
     eq_v = str(_eq_v_raw.get("nombre") if isinstance(_eq_v_raw, dict) else (_eq_v_raw or "Visitante"))
+    from decision_cobertura import bandera_activa as _ba_b5_ant
+    _usar_b5_ant = bool(_ba_b5_ant("usar_etiqueta_matriz_final_y_cronologia_raw"))
+    _txt_hasta_ref = f" hasta la fecha del partido {ref_date.isoformat()}" if _usar_b5_ant else ""
     motivos: list[str] = []
     if dias_l is not None and dias_l > max_dias:
-        motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad > {max_dias} días)")
+        motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad{_txt_hasta_ref} > {max_dias} días)")
     if dias_v is not None and dias_v > max_dias:
-        motivos.append(f"{eq_v}: último partido {f_v} ({dias_v} días de antigüedad > {max_dias} días)")
+        motivos.append(f"{eq_v}: último partido {f_v} ({dias_v} días de antigüedad{_txt_hasta_ref} > {max_dias} días)")
 
     desact = bool(motivos)
     motivo = (
@@ -1659,7 +1702,9 @@ def marcar_estado(id_trabajo: str, estado: str, extra: dict[str, Any] | None = N
 
 
 LOG_CONSULTAS_ABSTENCIONES = str(Path(MERCADOS_DIR) / "log_consultas_abstenciones.json")
+LOG_CONSULTAS_JSONL = str(Path(BASE_DIR) / "informes" / "evaluacion" / "log_consultas.jsonl")
 _lock_log_consultas = threading.Lock()
+_CONTADOR_HIDRATADO_DESDE_JSONL: bool = False
 
 
 def _crear_estructura_contador_abstenciones() -> dict[str, Any]:
@@ -1696,16 +1741,108 @@ def _crear_estructura_contador_abstenciones() -> dict[str, Any]:
 _CONTADOR_ABSTENCIONES_CONSULTAS: dict[str, Any] = _crear_estructura_contador_abstenciones()
 
 
-def reiniciar_contador_abstenciones_consultas() -> dict[str, Any]:
-    """Reinicia en memoria el contador de abstenciones por motivo en el log de consultas."""
-    global _CONTADOR_ABSTENCIONES_CONSULTAS
+def _aplicar_entrada_a_contador(cont: dict[str, Any], obj: dict[str, Any]) -> None:
+    ambito = str(obj.get("ambito") or "domestica").strip().lower()
+    clave_ambito = "internacionales" if ambito == "internacional" else "domesticas"
+    abstenido = bool(obj.get("abstenido"))
+    est_low = str(obj.get("estado_cobertura") or obj.get("estado") or ("abstenido" if abstenido else "cobertura_suficiente")).strip().lower()
+    motivo_clave = str(obj.get("motivo_clave") or ("OTRO_MOTIVO" if abstenido else "OK")).strip().upper()
+    if abstenido and motivo_clave not in ("PAIS_AMBIGUO", "FALSO_HOMONIMO", "OTRO_MOTIVO"):
+        motivo_clave = "OTRO_MOTIVO"
+
+    cont["total_consultas"] = int(cont["total_consultas"]) + 1
+    bucket_amb = cont[clave_ambito]
+    bucket_amb["total_consultas"] = int(bucket_amb["total_consultas"]) + 1
+    if not abstenido:
+        cont["total_ok"] = int(cont["total_ok"]) + 1
+        bucket_amb["ok"] = int(bucket_amb["ok"]) + 1
+    else:
+        cont["total_abstenidas"] = int(cont["total_abstenidas"]) + 1
+        bucket_amb["abstenidas"] = int(bucket_amb["abstenidas"]) + 1
+        pm = cont["por_motivo"]
+        pm[motivo_clave] = int(pm.get(motivo_clave, 0)) + 1
+        bucket_amb[motivo_clave] = int(bucket_amb.get(motivo_clave, 0)) + 1
+
+    por_est = cont["por_estado_cobertura"]
+    por_est[est_low] = int(por_est.get(est_low, 0)) + 1
+
+    ult = cont["ultimas_consultas"]
+    ult.append({
+        "en": str(obj.get("hora_lima") or obj.get("en") or obj.get("fecha_utc") or ""),
+        "fecha_utc": str(obj.get("fecha_utc") or ""),
+        "hora_lima": str(obj.get("hora_lima") or ""),
+        "id_trabajo": str(obj.get("id_trabajo") or ""),
+        "partido": str(obj.get("partido") or ""),
+        "competicion": str(obj.get("competicion") or "Competición oficial"),
+        "ambito": ambito,
+        "abstenido": abstenido,
+        "estado": est_low,
+        "motivo": str(obj.get("motivo") or motivo_clave),
+        "motivo_clave": motivo_clave,
+        "estado_cobertura": est_low,
+        "build": str(obj.get("build") or ""),
+    })
+    if len(ult) > 100:
+        del ult[:-100]
+
+
+def hidratar_contador_desde_jsonl(ruta_jsonl: str | None = None, ruta_resumen: str | None = None) -> dict[str, Any]:
+    """Reconstruye el contador en memoria desde el archivo append-only `log_consultas.jsonl`."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
+    p_jsonl = Path(ruta_jsonl or LOG_CONSULTAS_JSONL)
+    with _lock_log_consultas:
+        nuevo = _crear_estructura_contador_abstenciones()
+        if p_jsonl.exists():
+            try:
+                for raw_ln in p_jsonl.read_text(encoding="utf-8").splitlines():
+                    ln = raw_ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        obj = json.loads(ln)
+                        if isinstance(obj, dict):
+                            _aplicar_entrada_a_contador(nuevo, obj)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+        _CONTADOR_ABSTENCIONES_CONSULTAS = nuevo
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
+        snap = json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
+        p_res = Path(ruta_resumen or LOG_CONSULTAS_ABSTENCIONES)
+        if nuevo["total_consultas"] > 0 or p_res.exists():
+            try:
+                p_res.parent.mkdir(parents=True, exist_ok=True)
+                p_res.write_text(json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
+            except Exception:
+                pass
+        return snap
+
+
+def simular_reinicio_proceso_log_consultas(ruta_jsonl: str | None = None, ruta_resumen: str | None = None) -> dict[str, Any]:
+    """Simula un reinicio de proceso (ej. ciclo de 285 min) borrando memoria y rehidratando desde disco."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
     with _lock_log_consultas:
         _CONTADOR_ABSTENCIONES_CONSULTAS = _crear_estructura_contador_abstenciones()
+        _CONTADOR_HIDRATADO_DESDE_JSONL = False
+    return hidratar_contador_desde_jsonl(ruta_jsonl=ruta_jsonl, ruta_resumen=ruta_resumen)
+
+
+def reiniciar_contador_abstenciones_consultas() -> dict[str, Any]:
+    """Reinicia en memoria el contador de abstenciones por motivo en el log de consultas."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
+    with _lock_log_consultas:
+        _CONTADOR_ABSTENCIONES_CONSULTAS = _crear_estructura_contador_abstenciones()
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
         return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
 
 def obtener_contador_abstenciones_consultas() -> dict[str, Any]:
     """Devuelve copia instantánea del contador de abstenciones por motivo (PAIS_AMBIGUO y FALSO_HOMONIMO)."""
+    from decision_cobertura import bandera_activa as _ba_cnt_j
+    if not _CONTADOR_HIDRATADO_DESDE_JSONL and bool(_ba_cnt_j("usar_registro_consultas_jsonl_persistente")):
+        if os.path.exists(LOG_CONSULTAS_JSONL):
+            return hidratar_contador_desde_jsonl()
     with _lock_log_consultas:
         return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
@@ -1766,44 +1903,66 @@ def registrar_consulta_log_abstenciones(
     else:
         motivo_clave = "OTRO_MOTIVO"
 
+    from datetime import timedelta
+    from decision_cobertura import bandera_activa as _ba_log_j
+    from utilidades_seguridad import obtener_hash_corto_git
+
+    _usar_jsonl = bool(_ba_log_j("usar_registro_consultas_jsonl_persistente"))
+    ahora_utc_dt = datetime.now(timezone.utc)
+    tz_lima = timezone(timedelta(hours=-5), name="America/Lima")
+    fecha_utc_iso = ahora_utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    hora_lima_str = ahora_utc_dt.astimezone(tz_lima).strftime("%Y-%m-%d %H:%M:%S America/Lima")
+    build_sha = obtener_hash_corto_git()
+    partido_lbl = f"{equipo_local} vs {equipo_visitante}".strip() if equipo_visitante else str(equipo_local).strip()
+    motivo_txt = str(motivo_abstencion or motivo_clave).strip()
+
+    ruta_jsonl = (
+        os.path.join(directorio_salida, "log_consultas.jsonl")
+        if directorio_salida
+        else LOG_CONSULTAS_JSONL
+    )
+    ruta_log = (
+        os.path.join(directorio_salida, "log_consultas_abstenciones.json")
+        if directorio_salida
+        else LOG_CONSULTAS_ABSTENCIONES
+    )
+
+    global _CONTADOR_HIDRATADO_DESDE_JSONL
+    if _usar_jsonl and not _CONTADOR_HIDRATADO_DESDE_JSONL and os.path.exists(ruta_jsonl):
+        hidratar_contador_desde_jsonl(ruta_jsonl=ruta_jsonl, ruta_resumen=ruta_log)
+
+    registro_linea = {
+        "fecha_utc": fecha_utc_iso,
+        "hora_lima": hora_lima_str,
+        "en": _ahora(),
+        "id_trabajo": str(id_trabajo or ""),
+        "partido": partido_lbl,
+        "equipo_local": equipo_local,
+        "equipo_visitante": equipo_visitante,
+        "competicion": comp_txt,
+        "ambito": ambito,
+        "abstenido": bool(abstenido),
+        "estado": est_low,
+        "estado_cobertura": est_low,
+        "motivo": motivo_txt,
+        "motivo_clave": motivo_clave,
+        "motivo_abstencion": motivo_abstencion,
+        "build": build_sha,
+    }
+
     with _lock_log_consultas:
-        _CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"]) + 1
-        bucket_amb = _CONTADOR_ABSTENCIONES_CONSULTAS[clave_ambito]
-        bucket_amb["total_consultas"] = int(bucket_amb["total_consultas"]) + 1
-        if not abstenido:
-            _CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"]) + 1
-            bucket_amb["ok"] = int(bucket_amb["ok"]) + 1
-        else:
-            _CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"]) + 1
-            bucket_amb["abstenidas"] = int(bucket_amb["abstenidas"]) + 1
-            pm = _CONTADOR_ABSTENCIONES_CONSULTAS["por_motivo"]
-            pm[motivo_clave] = int(pm.get(motivo_clave, 0)) + 1
-            bucket_amb[motivo_clave] = int(bucket_amb.get(motivo_clave, 0)) + 1
-
-        por_est = _CONTADOR_ABSTENCIONES_CONSULTAS["por_estado_cobertura"]
-        por_est[est_low] = int(por_est.get(est_low, 0)) + 1
-
-        ult = _CONTADOR_ABSTENCIONES_CONSULTAS["ultimas_consultas"]
-        ult.append({
-            "en": _ahora(),
-            "id_trabajo": str(id_trabajo or ""),
-            "partido": f"{equipo_local} vs {equipo_visitante}",
-            "competicion": comp_txt,
-            "ambito": ambito,
-            "abstenido": bool(abstenido),
-            "motivo_clave": motivo_clave,
-            "estado_cobertura": est_low,
-        })
-        if len(ult) > 100:
-            del ult[:-100]
-
+        _aplicar_entrada_a_contador(_CONTADOR_ABSTENCIONES_CONSULTAS, registro_linea)
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
         snap = json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
-        ruta_log = (
-            os.path.join(directorio_salida, "log_consultas_abstenciones.json")
-            if directorio_salida
-            else LOG_CONSULTAS_ABSTENCIONES
-        )
+        if _usar_jsonl:
+            try:
+                os.makedirs(os.path.dirname(ruta_jsonl), exist_ok=True)
+                with open(ruta_jsonl, "a", encoding="utf-8") as fh_jl:
+                    fh_jl.write(json.dumps(registro_linea, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
         try:
             os.makedirs(os.path.dirname(ruta_log), exist_ok=True)
             with open(ruta_log, "w", encoding="utf-8") as fh_log:
@@ -1928,6 +2087,10 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     lin = _val_sel(s, "linea", None)
     prob = float(_val_sel(s, "probabilidad", 0.0) or 0.0)
     pct = f"{prob:.0%}"
+    import math as _math_pild
+    from decision_cobertura import bandera_activa as _ba_pild_umb
+    if bool(_ba_pild_umb("usar_umbral_unificado_sin_tolerancia")) and prob < 0.70 and pct == "70%":
+        pct = f"{_math_pild.floor(float(prob) * 100.0):.0f}%"
 
     try:
         from decision_cobertura import bandera_activa as _ba_cal_s1
@@ -2155,9 +2318,10 @@ def calcular_seccion1_unificada(
                 return False
         return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_s1
     sels_validas = [
         s for s in sels_raw
-        if float(_val_sel(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
+        if _sup_umb_s1(float(_val_sel(s, "probabilidad") or 0.0), umbral_val, tolerancia_legado=1e-6) and _permitida_sel(s)
     ]
 
     if top5_podio is None:
@@ -3422,6 +3586,19 @@ def preparar_analisis(
             "motivo_abstencion": "partido_ya_jugado",
             "grupos": {"mantiene": [], "sensible": []},
         })()
+        from decision_cobertura import bandera_activa as _ba_jug_j
+        if bool(_ba_jug_j("usar_registro_consultas_jsonl_persistente")):
+            registrar_consulta_log_abstenciones(
+                equipo_local=eq_l,
+                equipo_visitante=eq_v,
+                competicion=ctx.get("competicion"),
+                pais_iso=ctx.get("pais_iso"),
+                abstenido=True,
+                estado_cobertura="partido_ya_jugado",
+                motivo_abstencion=f"partido_ya_jugado ({res_txt})",
+                id_trabajo="partido_ya_jugado",
+                directorio_salida=directorio_salida,
+            )
         return {
             "analisis": analisis_jugado,
             "id_trabajo": "partido_ya_jugado",
@@ -4050,7 +4227,7 @@ def preparar_analisis(
 
     # ── Extracción de Cuotas Flashscore, 4ta Imagen (Ticket de Valor) y Análisis de 3 Párrafos ──
     ruta_ticket_valor = None
-    cuotas_flashscore: dict[str, float | None] = {"local": None, "empate": None, "visitante": None}
+    cuotas_flashscore: dict[str, float | None] | None = {"local": None, "empate": None, "visitante": None}
     id_fs_partido: str | None = None
     analisis_texto_3_parrafos = ""
     try:
@@ -4059,6 +4236,7 @@ def preparar_analisis(
 
         usar_captura_cuotas = bool(_ba_cuotas("usar_cuotas_mercado_captura"))
         usar_cuotas_ticket = bool(_ba_cuotas("usar_cuotas_en_ticket"))
+        aislar_try_cuotas = bool(_ba_cuotas("usar_aislamiento_try_cuotas_ticket"))
         id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
         id_fs_prog_val = id_fs_prog if (id_fs_prog and id_fs_prog not in ("N/D", "None", "")) else None
         id_fs_partido = id_fs_prog_val
@@ -4071,14 +4249,28 @@ def preparar_analisis(
             home_pid_fs: str | None = None
             away_pid_fs: str | None = None
             if not id_fs_partido:
-                ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
-                    str(contexto.get("equipo_local") or ""),
-                    str(contexto.get("equipo_visitante") or ""),
-                )
-                if ev_fs_prog:
-                    id_fs_partido = ev_fs_prog["id_flashscore"]
-                    home_pid_fs = ev_fs_prog.get("home_participant_id")
-                    away_pid_fs = ev_fs_prog.get("away_participant_id")
+                if aislar_try_cuotas:
+                    try:
+                        ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                            str(contexto.get("equipo_local") or ""),
+                            str(contexto.get("equipo_visitante") or ""),
+                        )
+                        if ev_fs_prog:
+                            id_fs_partido = ev_fs_prog["id_flashscore"]
+                            home_pid_fs = ev_fs_prog.get("home_participant_id")
+                            away_pid_fs = ev_fs_prog.get("away_participant_id")
+                    except Exception as e_feed_fs:
+                        print(f"[SERVICIO MERCADOS] ⚠️ Error en buscar_evento_programado_feed_diario: "
+                              f"{type(e_feed_fs).__name__}: {e_feed_fs}")
+                else:
+                    ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                        str(contexto.get("equipo_local") or ""),
+                        str(contexto.get("equipo_visitante") or ""),
+                    )
+                    if ev_fs_prog:
+                        id_fs_partido = ev_fs_prog["id_flashscore"]
+                        home_pid_fs = ev_fs_prog.get("home_participant_id")
+                        away_pid_fs = ev_fs_prog.get("away_participant_id")
 
             id_fotmob_prog = (
                 ctx.get("id_partido_fotmob")
@@ -4101,18 +4293,36 @@ def preparar_analisis(
                     pass
 
             if (id_fs_partido or id_fotmob_prog) and not _ya_inicio_cuotas:
-                cuotas_try = cliente_fs.extraer_cuotas(
-                    id_fs_partido or "",
-                    id_fotmob=id_fotmob_prog,
-                    home_participant_id=home_pid_fs,
-                    away_participant_id=away_pid_fs,
-                    equipo_local=str(contexto.get("equipo_local") or ""),
-                    equipo_visitante=str(contexto.get("equipo_visitante") or ""),
-                )
-                if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
-                    cuotas_capturadas = cuotas_try
-                    if isinstance(getattr(analisis, "metadatos", None), dict):
-                        analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+                if aislar_try_cuotas:
+                    try:
+                        cuotas_try = cliente_fs.extraer_cuotas(
+                            id_fs_partido or "",
+                            id_fotmob=id_fotmob_prog,
+                            home_participant_id=home_pid_fs,
+                            away_participant_id=away_pid_fs,
+                            equipo_local=str(contexto.get("equipo_local") or ""),
+                            equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+                        )
+                        if isinstance(cuotas_try, dict) and any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                            cuotas_capturadas = cuotas_try
+                            if isinstance(getattr(analisis, "metadatos", None), dict):
+                                analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+                    except Exception as e_ext_c:
+                        print(f"[SERVICIO MERCADOS] ⚠️ Error en extraer_cuotas: "
+                              f"{type(e_ext_c).__name__}: {e_ext_c}")
+                else:
+                    cuotas_try = cliente_fs.extraer_cuotas(
+                        id_fs_partido or "",
+                        id_fotmob=id_fotmob_prog,
+                        home_participant_id=home_pid_fs,
+                        away_participant_id=away_pid_fs,
+                        equipo_local=str(contexto.get("equipo_local") or ""),
+                        equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+                    )
+                    if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                        cuotas_capturadas = cuotas_try
+                        if isinstance(getattr(analisis, "metadatos", None), dict):
+                            analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
 
         # Solo exponer cuotas reales e ID descubierto al Ticket / párrafo de valor cuando usar_cuotas_en_ticket=True
         if usar_cuotas_ticket and cuotas_capturadas is not None:
@@ -4127,26 +4337,56 @@ def preparar_analisis(
             f"ticket_valor_{_slug(contexto['equipo_local'])}_vs_"
             f"{_slug(contexto['equipo_visitante'])}_{id_trabajo}.png",
         )
-        ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
-            analisis,
-            cuotas_flashscore=cuotas_flashscore,
-            destino=destino_ticket_valor,
-            id_flashscore=id_fs_para_ticket,
-        )
-        if ruta_ticket_valor:
-            rutas["ticket_valor"] = ruta_ticket_valor
+        if aislar_try_cuotas:
+            try:
+                ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
+                    analisis,
+                    cuotas_flashscore=cuotas_flashscore,
+                    destino=destino_ticket_valor,
+                    id_flashscore=id_fs_para_ticket,
+                )
+                if ruta_ticket_valor:
+                    rutas["ticket_valor"] = ruta_ticket_valor
+            except Exception as e_tv_png:
+                print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Ticket de Valor PNG: "
+                      f"{type(e_tv_png).__name__}: {e_tv_png}")
 
-        analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
-            analisis,
-            info_h2h=info_h2h_2024_2026,
-            cuotas_flashscore=cuotas_flashscore,
-            doc_local=contexto.get("doc_local"),
-            doc_visitante=contexto.get("doc_visitante"),
-        )
-        if analisis_texto_3_parrafos:
-            with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
-                f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
-                               + analisis_texto_3_parrafos + "\n")
+            try:
+                analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
+                    analisis,
+                    info_h2h=info_h2h_2024_2026,
+                    cuotas_flashscore=cuotas_flashscore,
+                    doc_local=contexto.get("doc_local"),
+                    doc_visitante=contexto.get("doc_visitante"),
+                )
+                if analisis_texto_3_parrafos:
+                    with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
+                        f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
+                                       + analisis_texto_3_parrafos + "\n")
+            except Exception as e_3p:
+                print(f"[SERVICIO MERCADOS] ⚠️ No se pudo redactar Análisis 3 párrafos: "
+                      f"{type(e_3p).__name__}: {e_3p}")
+        else:
+            ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
+                analisis,
+                cuotas_flashscore=cuotas_flashscore,
+                destino=destino_ticket_valor,
+                id_flashscore=id_fs_para_ticket,
+            )
+            if ruta_ticket_valor:
+                rutas["ticket_valor"] = ruta_ticket_valor
+
+            analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
+                analisis,
+                info_h2h=info_h2h_2024_2026,
+                cuotas_flashscore=cuotas_flashscore,
+                doc_local=contexto.get("doc_local"),
+                doc_visitante=contexto.get("doc_visitante"),
+            )
+            if analisis_texto_3_parrafos:
+                with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
+                    f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
+                                   + analisis_texto_3_parrafos + "\n")
     except Exception as e_val:
         print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Ticket de Valor / Análisis 3 párrafos: "
               f"{type(e_val).__name__}: {e_val}")

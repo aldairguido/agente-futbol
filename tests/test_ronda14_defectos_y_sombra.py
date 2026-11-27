@@ -46,6 +46,13 @@ def test_ronda14_defectos_vigentes_y_documentacion():
             "usar_tercer_brazo_plano_sombra",
             "usar_cuotas_mercado_captura",
             "usar_guardian_homonimo_por_competicion",
+            "usar_emparejamiento_exacto_sin_subcadena",
+            "usar_sin_dato_sin_fallbacks_veredicto",
+            "usar_registro_consultas_jsonl_persistente",
+            "usar_aislamiento_try_cuotas_ticket",
+            "usar_etiqueta_matriz_final_y_cronologia_raw",
+            "usar_umbral_unificado_sin_tolerancia",
+            "usar_cache_auditoria_con_corte",
         ):
             assert dc.bandera_activa(aux) is True
         else:

@@ -820,6 +820,7 @@ def formatear_pct(p: float | None, umbral: float = UMBRAL_DEFECTO) -> str:
     """
     Formato sin mentir por redondeo: nunca muestra un valor igual al umbral
     cuando en realidad lo supera, ni 100% cuando es una muestra perfecta.
+    Tampoco redondea hacia arriba al umbral una probabilidad inferior a `umbral`.
     """
     if p is None:
         return "N/D"
@@ -828,6 +829,10 @@ def formatear_pct(p: float | None, umbral: float = UMBRAL_DEFECTO) -> str:
     texto = f"{p * 100:.1f}".replace(".", ",")
     if p > umbral and float(texto.replace(",", ".")) <= umbral * 100:
         texto = f"{p * 100:.2f}".replace(".", ",")
+    from decision_cobertura import bandera_activa as _ba_fmt_pct
+    if bool(_ba_fmt_pct("usar_umbral_unificado_sin_tolerancia")) and p < umbral and float(texto.replace(",", ".")) >= umbral * 100:
+        val_trunc_1 = math.floor(p * 1000.0) / 10.0
+        texto = f"{val_trunc_1:.1f}".replace(".", ",")
     return f"{texto}%"
 
 
@@ -1053,7 +1058,11 @@ def extraer_muestra(doc: dict[str, Any], condicion: str | None = None,
 
         # xG en contra: el reporte del equipo no publica su xG concedido, se usa el
         # xG del rival (aproximación declarada).
-        muestra.dame("xg_contra").agregar(_val_ajustado("xg", "rival"), peso)
+        # Nota A1 (Ronda 31 Bloque 8): METRICAS_GOLEADORAS ya agrega "xg_contra": "xg" (bando="rival").
+        # Con `usar_correccion_a1_sin_duplicar_xg_contra=True` se omite la segunda inserción duplicada.
+        from decision_cobertura import bandera_activa as _ba_a1_xgc
+        if not bool(_ba_a1_xgc("usar_correccion_a1_sin_duplicar_xg_contra")):
+            muestra.dame("xg_contra").agregar(_val_ajustado("xg", "rival"), peso)
 
     # Fallback inteligente si los partidos de la muestra carecían de estadísticas detalladas (n_con_stats == 0)
     if hubo_partidos_sin_stats and muestra.dame("goles_favor").n > 0 and muestra.dame("remates_totales_favor").n == 0:
@@ -1175,7 +1184,12 @@ def media_ajustada(general: MuestraMetrica, condicion: MuestraMetrica,
     reduce según cuántos partidos la respaldan. Si es None se usa el peso fijo
     (comportamiento anterior, conservado para poder comparar).
     """
-    mg, mc = general.media, condicion.media
+    from decision_cobertura import bandera_activa as _ba_a2_mp
+    if bool(_ba_a2_mp("usar_correccion_a2_media_ponderada")):
+        mg = general.media_ponderada if general.media_ponderada is not None else general.media
+        mc = condicion.media_ponderada if condicion.media_ponderada is not None else condicion.media
+    else:
+        mg, mc = general.media, condicion.media
     if mg is None and mc is None:
         return None
     if mg is None:
@@ -4805,9 +4819,13 @@ def calcular_frecuencia_observada(
         return None
 
     from resolvedor_entidades import normalizar_texto
+    from decision_cobertura import bandera_activa as _ba_te_f4
+    _exacto_te = bool(_ba_te_f4("usar_emparejamiento_exacto_sin_subcadena"))
     nom_l = normalizar_texto(eq_l)
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
+    es_eq_l = bool(eq_norm and (eq_norm == nom_l if _exacto_te else (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)))
+    es_eq_v = bool(eq_norm and (eq_norm == nom_v if _exacto_te else (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)))
     es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
     es_al_menos = ("al_menos" in ev or "al menos" in et)
 
@@ -4831,12 +4849,12 @@ def calcular_frecuencia_observada(
 
     # 2. Córneres por equipo o totales
     if (any(k in mkt for k in ("corner", "córner")) or "corner" in ev) and lin is not None:
-        if "local" in ev or (eq_norm and (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)):
+        if "local" in ev or es_eq_l:
             valid = [float(p["cf"]) for p in pts_l if p.get("cf") is not None]
             if not valid:
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
-        elif "visita" in ev or "visitante" in ev or (eq_norm and (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)):
+        elif "visita" in ev or "visitante" in ev or es_eq_v:
             valid = [float(p["cf"]) for p in pts_v if p.get("cf") is not None]
             if not valid:
                 return None
@@ -4864,7 +4882,7 @@ def calcular_frecuencia_observada(
 
     # 4. Goles por equipo (respetando periodo 1T/2T)
     if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
-        if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
+        if es_eq_l:
             valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
             if not valid:
                 return None
@@ -4873,7 +4891,7 @@ def calcular_frecuencia_observada(
             if es_al_menos:
                 return sum(1 for g in valid if g >= lin) / len(valid)
             return sum(1 for g in valid if g > lin) / len(valid)
-        elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
+        elif es_eq_v:
             valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
             if not valid:
                 return None
@@ -5373,13 +5391,13 @@ def seleccionar_top_5_jugadas_recomendadas(
         return False
 
     import copy as _copy
-    from decision_cobertura import bandera_activa as _ba_pg
+    from decision_cobertura import bandera_activa as _ba_pg, supera_umbral_probabilidad as _sup_umbral
     _incluir_pg_top5 = not bool(_ba_pg("usar_excluir_primer_gol_top5"))
     candidatas = [
         (dict(s) if isinstance(s, dict) else _copy.copy(s))
         for s in selecciones
         if es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, incluir_primer_gol=_incluir_pg_top5)
-        and float(_v(s, "probabilidad", 0.0) or 0.0) >= 0.70
+        and _sup_umbral(float(_v(s, "probabilidad", 0.0) or 0.0), 0.70)
         and not _es_linea_trivial_top5(s)
     ]
 
@@ -5585,15 +5603,21 @@ def seleccionar_top_5_jugadas_recomendadas(
     prohibir_over05_visita = (pos_proy_v_t < 43.0 or atk_v_top < 34.0 or lam_v < 0.95)
 
     def _es_equipo_over_05(s: Any, bando_check: str) -> bool:
+        from resolvedor_entidades import normalizar_texto as _nt_ov05
+        from decision_cobertura import bandera_activa as _ba_ov05
+        _exacto_ov05 = bool(_ba_ov05("usar_emparejamiento_exacto_sin_subcadena"))
         ev_s = str(_v(s, "evento") or "").lower()
         et_s = str(_v(s, "etiqueta") or "").lower()
         eq_s = str(_v(s, "equipo") or "").strip().lower()
         lin_s = _v(s, "linea", None)
         nom_eq = (eq_l if bando_check == "local" else eq_v).strip().lower()
-        es_bando = (
-            ev_s.startswith(f"{bando_check}_")
-            or (eq_s and (eq_s == nom_eq or eq_s in nom_eq or nom_eq in eq_s))
-        )
+        if _exacto_ov05:
+            es_bando = ev_s.startswith(f"{bando_check}_") or bool(eq_s and _nt_ov05(eq_s) == _nt_ov05(nom_eq))
+        else:
+            es_bando = (
+                ev_s.startswith(f"{bando_check}_")
+                or (eq_s and (eq_s == nom_eq or eq_s in nom_eq or nom_eq in eq_s))
+            )
         if not es_bando:
             return False
         if ("over_0.5" in ev_s) or ("al_menos_1" in ev_s):
@@ -6996,6 +7020,8 @@ def clusters_marcador(
     def _val_s12(obj: Any, k: str, d: Any = None) -> Any:
         return obj.get(k, d) if isinstance(obj, dict) else getattr(obj, k, d)
 
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_jo
+
     def _en_sec1_o_2(ev_esperado: str, per_esperado: str = "FT") -> bool:
         if selecciones_sec1_2 is None:
             return True
@@ -7005,7 +7031,7 @@ def clusters_marcador(
             p_it = float(_val_s12(s_it, "probabilidad", 0.0) or 0.0)
             if p_it > 1.0:
                 p_it /= 100.0
-            if p_it < 0.70 - 1e-6:
+            if not _sup_umb_jo(p_it, 0.70, tolerancia_legado=1e-6):
                 continue
             per_it = str(_val_s12(s_it, "periodo", "FT") or "FT").strip().upper()
             if per_it != per_t:
@@ -7036,22 +7062,22 @@ def clusters_marcador(
     ev_fav_code = "1" if p_1 >= p_2 else "2"
     ev_dc_code = "1x" if p_1 >= p_2 else "x2"
     jugada_optima_prob = 0.0
-    if p_fav_val >= 70.0 - 1e-6 and p_00_pct < 8.5 and diff_lam_est >= 0.40 and _en_sec1_o_2(ev_fav_code, "FT"):
+    if _sup_umb_jo(p_fav_val, 70.0, tolerancia_legado=1e-6) and p_00_pct < 8.5 and diff_lam_est >= 0.40 and _en_sec1_o_2(ev_fav_code, "FT"):
         jugada_optima_txt = f"1x2 : {equipo_fav_nombre} ({p_fav_val:.1f}%)"
         jugada_optima_prob = float(p_fav_val)
-    elif is_11_or_00_top3 and p_u25_pct >= 70.0 - 1e-6 and _en_sec1_o_2("under_2.5", "FT"):
+    elif is_11_or_00_top3 and _sup_umb_jo(p_u25_pct, 70.0, tolerancia_legado=1e-6) and _en_sec1_o_2("under_2.5", "FT"):
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
         jugada_optima_prob = float(p_u25_pct)
     elif p_u35_pct >= 75.0 and (p_fav_val < 55.0) and _en_sec1_o_2("under_3.5", "FT"):
         jugada_optima_txt = f"Menos de 3.5 goles ({p_u35_pct:.1f}%)"
         jugada_optima_prob = float(p_u35_pct)
-    elif p_dc_val >= 70.0 - 1e-6 and _en_sec1_o_2(ev_dc_code, "FT"):
+    elif _sup_umb_jo(p_dc_val, 70.0, tolerancia_legado=1e-6) and _en_sec1_o_2(ev_dc_code, "FT"):
         jugada_optima_txt = f"Doble Oportunidad : {dc_equipo} ({p_dc_val:.1f}%)"
         jugada_optima_prob = float(p_dc_val)
-    elif p_btts_no_pct >= 70.0 - 1e-6 and _en_sec1_o_2("btts_no", "FT"):
+    elif _sup_umb_jo(p_btts_no_pct, 70.0, tolerancia_legado=1e-6) and _en_sec1_o_2("btts_no", "FT"):
         jugada_optima_txt = f"Ambos equipos marcan : No ({p_btts_no_pct:.1f}%)"
         jugada_optima_prob = float(p_btts_no_pct)
-    elif p_u25_pct >= 70.0 - 1e-6 and p_cerrados_pct >= 50.0 and _en_sec1_o_2("under_2.5", "FT"):
+    elif _sup_umb_jo(p_u25_pct, 70.0, tolerancia_legado=1e-6) and p_cerrados_pct >= 50.0 and _en_sec1_o_2("under_2.5", "FT"):
         jugada_optima_txt = f"Menos de 2.5 goles ({p_u25_pct:.1f}%)"
         jugada_optima_prob = float(p_u25_pct)
     else:
@@ -7065,7 +7091,7 @@ def clusters_marcador(
     if jugada_optima_txt and asedio_bandas and _en_sec1_o_2("corners_over_8.5", "FT"):
         jugada_optima_txt += " | Córneres : Más de 8.5"
 
-    if not jugada_optima_txt or jugada_optima_prob < 70.0 - 1e-6:
+    if not jugada_optima_txt or not _sup_umb_jo(jugada_optima_prob, 70.0, tolerancia_legado=1e-6):
         jugada_optima_txt = "Sin jugada óptima ≥70%"
         linea_jugada_pie = "ℹ️ Sin jugada óptima ≥70%"
     else:
@@ -7242,19 +7268,20 @@ def clasificar(prob_central: float, escenarios: dict[str, float] | None,
     """
     Clasifica una selección que supera el umbral central.
 
-    • mantiene: TODAS las probabilidades de los escenarios evaluados > umbral.
+    • mantiene: TODAS las probabilidades de los escenarios evaluados >= umbral (con bandera unificada) o > umbral.
     • sensible: la central supera el umbral pero algún escenario no.
     • sensibilidad_incompleta: faltan escenarios requeridos (no se puede afirmar
       que mantenga).
     """
-    if prob_central is None or prob_central <= umbral:
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_cls
+    if not _sup_umb_cls(prob_central, umbral, estricto_legado=True):
         return "", ""
     if not escenarios:
         return ESTADO_INCOMPLETA, "sin escenarios evaluados"
     faltan = [e for e in escenarios_requeridos if e not in escenarios]
     if faltan:
         return ESTADO_INCOMPLETA, f"faltan {len(faltan)} de {len(escenarios_requeridos)} escenarios"
-    no_superan = [e for e, p in escenarios.items() if p <= umbral]
+    no_superan = [e for e, p in escenarios.items() if not _sup_umb_cls(p, umbral, estricto_legado=True)]
     if no_superan:
         return ESTADO_SENSIBLE, f"{len(no_superan)} escenarios ≤ umbral"
     return ESTADO_MANTIENE, f"{len(escenarios)} escenarios > umbral"
@@ -7737,7 +7764,8 @@ def analizar(doc_local: dict[str, Any], doc_visitante: dict[str, Any],
                 pass
             esc = sensibilidad.get(_clave_a_texto(s.clave_unica), {})
             s.escenarios = esc
-            if s.probabilidad <= params.umbral:
+            from decision_cobertura import supera_umbral_probabilidad as _sup_umb_an
+            if not _sup_umb_an(s.probabilidad, params.umbral, estricto_legado=True):
                 continue
             req = requeridos_conteos if res.id_mercado in _mercados_de_conteos() else requeridos_goles
             estado, motivo = clasificar(s.probabilidad, esc, req, params.umbral)
