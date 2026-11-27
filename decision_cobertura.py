@@ -74,6 +74,7 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_sin_dato_sin_fallbacks_veredicto": True,
     "usar_registro_consultas_jsonl_persistente": True,
     "usar_aislamiento_try_cuotas_ticket": True,
+    "usar_etiqueta_matriz_final_y_cronologia_raw": True,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -97,6 +98,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_sin_dato_sin_fallbacks_veredicto",
     "usar_registro_consultas_jsonl_persistente",
     "usar_aislamiento_try_cuotas_ticket",
+    "usar_etiqueta_matriz_final_y_cronologia_raw",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}

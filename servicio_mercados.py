@@ -1550,11 +1550,14 @@ def evaluar_antiguedad_datos(
     eq_l = str(_eq_l_raw.get("nombre") if isinstance(_eq_l_raw, dict) else (_eq_l_raw or "Local"))
     _eq_v_raw = (doc_visitante or {}).get("equipo") if isinstance(doc_visitante, dict) else None
     eq_v = str(_eq_v_raw.get("nombre") if isinstance(_eq_v_raw, dict) else (_eq_v_raw or "Visitante"))
+    from decision_cobertura import bandera_activa as _ba_b5_ant
+    _usar_b5_ant = bool(_ba_b5_ant("usar_etiqueta_matriz_final_y_cronologia_raw"))
+    _txt_hasta_ref = f" hasta la fecha del partido {ref_date.isoformat()}" if _usar_b5_ant else ""
     motivos: list[str] = []
     if dias_l is not None and dias_l > max_dias:
-        motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad > {max_dias} días)")
+        motivos.append(f"{eq_l}: último partido {f_l} ({dias_l} días de antigüedad{_txt_hasta_ref} > {max_dias} días)")
     if dias_v is not None and dias_v > max_dias:
-        motivos.append(f"{eq_v}: último partido {f_v} ({dias_v} días de antigüedad > {max_dias} días)")
+        motivos.append(f"{eq_v}: último partido {f_v} ({dias_v} días de antigüedad{_txt_hasta_ref} > {max_dias} días)")
 
     desact = bool(motivos)
     motivo = (

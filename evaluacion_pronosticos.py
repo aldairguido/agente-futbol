@@ -7617,26 +7617,27 @@ def auditar_colombia_chile_ronda8() -> dict[str, Any]:
     cc_col = calcular_cuadro_c_timeline_15min(pts_col, "Colombia")
     cc_chi = calcular_cuadro_c_timeline_15min(pts_chi, "Chile")
 
-    veredicto_sin_top = generar_veredicto_tactico_partido(
-        "Colombia", "Chile",
-        rec_a.get("patrones_55_local") or {},
-        rec_a.get("patrones_55_visita") or {},
-        {"local": p1_m, "empate": px_m, "visita": p2_m},
-        cb_col, cb_chi, cc_col, cc_chi,
-        top5_podio=[],
-        selecciones_sec1=sec1_a,
-        motor=motor_a,
-    )
-    veredicto_con_top = generar_veredicto_tactico_partido(
-        "Colombia", "Chile",
-        rec_a.get("patrones_55_local") or {},
-        rec_a.get("patrones_55_visita") or {},
-        {"local": p1_m, "empate": px_m, "visita": p2_m},
-        cb_col, cb_chi, cc_col, cc_chi,
-        top5_podio=top5_a,
-        selecciones_sec1=sec1_a,
-        motor=motor_a,
-    )
+    with banderas_comportamiento(usar_etiqueta_matriz_final_y_cronologia_raw=False):
+        veredicto_sin_top = generar_veredicto_tactico_partido(
+            "Colombia", "Chile",
+            rec_a.get("patrones_55_local") or {},
+            rec_a.get("patrones_55_visita") or {},
+            {"local": p1_m, "empate": px_m, "visita": p2_m},
+            cb_col, cb_chi, cc_col, cc_chi,
+            top5_podio=[],
+            selecciones_sec1=sec1_a,
+            motor=motor_a,
+        )
+        veredicto_con_top = generar_veredicto_tactico_partido(
+            "Colombia", "Chile",
+            rec_a.get("patrones_55_local") or {},
+            rec_a.get("patrones_55_visita") or {},
+            {"local": p1_m, "empate": px_m, "visita": p2_m},
+            cb_col, cb_chi, cc_col, cc_chi,
+            top5_podio=top5_a,
+            selecciones_sec1=sec1_a,
+            motor=motor_a,
+        )
     filas_sec1_cuadro = _organizar_sec1_para_cuadro(analisis_a, sec1_a, "Colombia", "Chile", matriz_prob=mat_ft, top5_podio=top5_a)
     fila_hc_sec1 = next((r for r in filas_sec1_cuadro if r["categoria"] == "HÁNDICAP / 1X2 / DC"), {})
 

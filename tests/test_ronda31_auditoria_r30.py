@@ -497,4 +497,78 @@ def test_r31_bloque4_excepcion_en_cuotas_no_anula_ticket_ni_3_parrafos(monkeypat
         assert prep.get("cuotas_flashscore") is None
 
 
+def test_r31_bloque5_etiqueta_matriz_final_cronologia_raw_y_antiguedad():
+    # 1) Etiqueta "Matriz final (45-DCN+Sinkhorn+NB)" y conteo real n_partidos_con_eventos_raw
+    cc_loc = {
+        "sin_dato": True,
+        "_meta": {
+            "n_partidos_con_eventos": 0,
+            "n_partidos_con_eventos_raw": 2,
+            "n_partidos_totales": 15,
+            "sin_dato": True,
+        },
+    }
+    cc_vis = {
+        "sin_dato": True,
+        "_meta": {
+            "n_partidos_con_eventos": 0,
+            "n_partidos_con_eventos_raw": 1,
+            "n_partidos_totales": 15,
+            "sin_dato": True,
+        },
+    }
+    ver = mi.generar_veredicto_tactico_partido(
+        "Athletic Club",
+        "Espanyol",
+        {},
+        {},
+        {"local": 0.562, "empate": 0.251, "visita": 0.187},
+        {},
+        {},
+        cc_loc,
+        cc_vis,
+    )
+    assert "Matriz final (45-DCN+Sinkhorn+NB):" in ver
+    assert "Base Matriz Poisson:" not in ver
+    assert "(1/15 partidos con cronología verificada)" in ver
+
+    rep_xai = mi.generar_reporte_xai_telegram(
+        "Athletic Club",
+        "Espanyol",
+        {},
+        {},
+        {"local": 0.562, "empate": 0.251, "visita": 0.187},
+        [],
+        {},
+        {},
+        cc_loc,
+        cc_vis,
+    )
+    assert "1/15 partidos" in rep_xai
+
+    # Con bandera False vuelve a "Base Matriz Poisson" y 0/15
+    with dc.banderas_comportamiento(usar_etiqueta_matriz_final_y_cronologia_raw=False):
+        ver_leg = mi.generar_veredicto_tactico_partido(
+            "Athletic Club",
+            "Espanyol",
+            {},
+            {},
+            {"local": 0.562, "empate": 0.251, "visita": 0.187},
+            {},
+            {},
+            cc_loc,
+            cc_vis,
+        )
+        assert "Base Matriz Poisson:" in ver_leg
+        assert "(0/15 partidos con cronología verificada)" in ver_leg
+
+    # 2) evaluar_antiguedad_datos aclara "hasta la fecha del partido YYYY-MM-DD"
+    doc_l = {"equipo": "Celta Vigo", "partidos": [{"fecha": "2026-10-15"}]}
+    doc_v = {"equipo": "Sevilla", "partidos": [{"fecha": "2026-11-20"}]}
+    ev_ant = sm.evaluar_antiguedad_datos(doc_l, doc_v, fecha_referencia="2026-11-25", max_dias=30)
+    assert ev_ant["desactualizado"] is True
+    assert "41 días de antigüedad hasta la fecha del partido 2026-11-25 > 30 días" in ev_ant["motivo"]
+
+
+
 

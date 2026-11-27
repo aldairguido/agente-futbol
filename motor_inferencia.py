@@ -1174,15 +1174,25 @@ def generar_reporte_xai_telegram(
     goles_tardios_loc_anot = _cnt_c(cuadro_c_loc, "76_90", "76'-90'", "anotados")
     goles_tardios_vis_rec = _cnt_c(cuadro_c_vis, "76_90", "76'-90'", "recibidos")
 
+    from decision_cobertura import bandera_activa as _ba_b5_tel
+    _usar_b5_tel = bool(_ba_b5_tel("usar_etiqueta_matriz_final_y_cronologia_raw"))
     _sd_l_tel = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
     _sd_v_tel = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l_tel = 0 if _sd_l_tel else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+        _meta_l_tel = cuadro_c_loc.get("_meta") or {}
+        if _usar_b5_tel and "n_partidos_con_eventos_raw" in _meta_l_tel and _meta_l_tel.get("n_partidos_con_eventos_raw") is not None:
+            n_ev_l_tel = int(_meta_l_tel.get("n_partidos_con_eventos_raw") or 0)
+        else:
+            n_ev_l_tel = 0 if _sd_l_tel else int(_meta_l_tel.get("n_partidos_con_eventos", 0) or 0)
     else:
         n_ev_l_tel = 0 if _sd_l_tel else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v_tel = 0 if _sd_v_tel else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+        _meta_v_tel = cuadro_c_vis.get("_meta") or {}
+        if _usar_b5_tel and "n_partidos_con_eventos_raw" in _meta_v_tel and _meta_v_tel.get("n_partidos_con_eventos_raw") is not None:
+            n_ev_v_tel = int(_meta_v_tel.get("n_partidos_con_eventos_raw") or 0)
+        else:
+            n_ev_v_tel = 0 if _sd_v_tel else int(_meta_v_tel.get("n_partidos_con_eventos", 0) or 0)
     else:
         n_ev_v_tel = 0 if _sd_v_tel else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
@@ -1932,31 +1942,34 @@ def generar_veredicto_tactico_partido(
         and not _es_res_act
         and any(k in _j1_low_act for k in ("más", "mas de", "over", "+0.5", "+1.5", "+2.5", "+3.5", "ambos tiempos", "ambos equipos marcan", "btts", "al menos", "gol en"))
     )
+    from decision_cobertura import bandera_activa as _ba_b5_ver
+    _usar_b5_ver = bool(_ba_b5_ver("usar_etiqueta_matriz_final_y_cronologia_raw"))
+    _etq_mat_ver = "Matriz final (45-DCN+Sinkhorn+NB)" if _usar_b5_ver else "Base Matriz Poisson"
     if jugada_1_prob < 70.0 - 1e-6 or estado_j1 in ("bajo_umbral", "no_validado"):
         accion_ticket = formatear_pick_segun_estado(
             jugada_1_nombre,
             jugada_1_prob,
             "bajo_umbral",
             en_seccion_2=False,
-            sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
+            sufijo_extra=f" ({_etq_mat_ver}: {p_dc_base:.1f}%).",
         )
     elif estado_j1 == "sensible":
         accion_ticket = formatear_pick_segun_estado(
             jugada_1_nombre,
             jugada_1_prob,
             "sensible",
-            sufijo_extra=f" (Base Matriz Poisson: {p_dc_base:.1f}%).",
+            sufijo_extra=f" ({_etq_mat_ver}: {p_dc_base:.1f}%).",
         )
     elif es_under:
         if _lam_tot_ver >= 2.2:
-            accion_ticket = f"El Ticket acota el techo de goles ({_lam_tot_ver:.2f} esperados) con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+            accion_ticket = f"El Ticket acota el techo de goles ({_lam_tot_ver:.2f} esperados) con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% ({_etq_mat_ver}: {p_dc_base:.1f}%)."
         else:
-            accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+            accion_ticket = f"El Ticket prioriza cautela en el marcador con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% ({_etq_mat_ver}: {p_dc_base:.1f}%)."
     elif es_over_o_abierto:
         _txt_lam_ab = f" ({_lam_tot_ver:.2f} goles esperados)" if _lam_tot_ver > 0 else ""
-        accion_ticket = f"El Ticket proyecta partido abierto{_txt_lam_ab} con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        accion_ticket = f"El Ticket proyecta partido abierto{_txt_lam_ab} con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% ({_etq_mat_ver}: {p_dc_base:.1f}%)."
     else:
-        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% (Base Matriz Poisson: {p_dc_base:.1f}%)."
+        accion_ticket = f"El Ticket protege con '{jugada_1_nombre}' al {jugada_1_prob:.1f}% ({_etq_mat_ver}: {p_dc_base:.1f}%)."
     _j1_low = jugada_1_nombre.lower()
     _es_techo_alto = (_lam_tot_ver >= 2.2) or (
         any(k in _j1_low for k in ("-3.5", "-4.5", "3.5", "4.5")) and jugada_1_prob < 80.0
@@ -1988,12 +2001,20 @@ def generar_veredicto_tactico_partido(
     _sd_l_ver = bool(isinstance(cuadro_c_loc, dict) and (cuadro_c_loc.get("sin_dato") or (cuadro_c_loc.get("_meta") or {}).get("sin_dato")))
     _sd_v_ver = bool(isinstance(cuadro_c_vis, dict) and (cuadro_c_vis.get("sin_dato") or (cuadro_c_vis.get("_meta") or {}).get("sin_dato")))
     if isinstance(cuadro_c_loc, dict) and "_meta" in cuadro_c_loc:
-        n_ev_l = 0 if _sd_l_ver else int((cuadro_c_loc.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+        _meta_l_ver = cuadro_c_loc.get("_meta") or {}
+        if _usar_b5_ver and "n_partidos_con_eventos_raw" in _meta_l_ver and _meta_l_ver.get("n_partidos_con_eventos_raw") is not None:
+            n_ev_l = int(_meta_l_ver.get("n_partidos_con_eventos_raw") or 0)
+        else:
+            n_ev_l = 0 if _sd_l_ver else int(_meta_l_ver.get("n_partidos_con_eventos", 0) or 0)
     else:
         n_ev_l = 0 if _sd_l_ver else (15 if (isinstance(cuadro_c_loc, dict) and bool(cuadro_c_loc.get("anotados") or cuadro_c_loc.get("franjas"))) else 0)
 
     if isinstance(cuadro_c_vis, dict) and "_meta" in cuadro_c_vis:
-        n_ev_v = 0 if _sd_v_ver else int((cuadro_c_vis.get("_meta") or {}).get("n_partidos_con_eventos", 0) or 0)
+        _meta_v_ver = cuadro_c_vis.get("_meta") or {}
+        if _usar_b5_ver and "n_partidos_con_eventos_raw" in _meta_v_ver and _meta_v_ver.get("n_partidos_con_eventos_raw") is not None:
+            n_ev_v = int(_meta_v_ver.get("n_partidos_con_eventos_raw") or 0)
+        else:
+            n_ev_v = 0 if _sd_v_ver else int(_meta_v_ver.get("n_partidos_con_eventos", 0) or 0)
     else:
         n_ev_v = 0 if _sd_v_ver else (15 if (isinstance(cuadro_c_vis, dict) and bool(cuadro_c_vis.get("anotados") or cuadro_c_vis.get("franjas"))) else 0)
 
