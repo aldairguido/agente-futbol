@@ -42,7 +42,7 @@ def test_ronda14_defectos_vigentes_y_documentacion():
     assert "usar_sobredispersion_nb_corners: true  # regla operativa sin validación" in yaml_txt
 
     for aux in dc._BANDERAS_AUXILIARES_DEFECTO:
-        if aux == "usar_tercer_brazo_plano_sombra":
+        if aux in ("usar_tercer_brazo_plano_sombra", "usar_cuotas_mercado_captura"):
             assert dc.bandera_activa(aux) is True
         else:
             assert dc.bandera_activa(aux) is False
