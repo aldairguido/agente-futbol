@@ -72,6 +72,7 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_guardian_homonimo_por_competicion": True,
     "usar_emparejamiento_exacto_sin_subcadena": True,
     "usar_sin_dato_sin_fallbacks_veredicto": True,
+    "usar_registro_consultas_jsonl_persistente": True,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -93,6 +94,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_guardian_homonimo_por_competicion",
     "usar_emparejamiento_exacto_sin_subcadena",
     "usar_sin_dato_sin_fallbacks_veredicto",
+    "usar_registro_consultas_jsonl_persistente",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}

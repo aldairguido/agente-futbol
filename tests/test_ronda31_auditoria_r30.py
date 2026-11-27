@@ -281,3 +281,153 @@ def test_r31_bloque2_veredicto_sin_fallbacks_numericos_y_tope_099_solo_presentac
     assert info_pres["p_1x"] == 0.99
     assert abs((r1x2["1"] + r1x2["X"]) - 0.995) < 1e-9
 
+
+def test_r31_bloque3_log_consultas_jsonl_append_only_persistencia_y_reinicio_285m(monkeypatch, tmp_path):
+    import json
+    import subprocess
+    import bot_interactivo as bi
+    import persistencia_produccion as pp
+
+    ws_a = tmp_path / "runner_antes_reinicio"
+    ws_b = tmp_path / "runner_despues_reinicio_285m"
+    remoto_priv = tmp_path / "remoto_datos_privado.git"
+    remoto_pub = tmp_path / "remoto_publico.git"
+    for p in (ws_a, ws_b, remoto_priv, remoto_pub):
+        p.mkdir(parents=True, exist_ok=True)
+
+    subprocess.run(["git", "init", "--bare", str(remoto_priv)], check=True, capture_output=True)
+    subprocess.run(["git", "init", "--bare", str(remoto_pub)], check=True, capture_output=True)
+    for ws in (ws_a, ws_b):
+        subprocess.run(["git", "init", str(ws)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(ws), "remote", "add", "origin", str(remoto_pub)], check=True, capture_output=True)
+
+    log_jsonl_a = ws_a / pp.RUTA_LOG_CONSULTAS_JSONL_REL
+    log_res_a = ws_a / pp.RUTA_LOG_CONSULTAS_RESUMEN_REL
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_JSONL", str(log_jsonl_a))
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_ABSTENCIONES", str(log_res_a))
+    sm.reiniciar_contador_abstenciones_consultas()
+
+    # 1) Consulta OK
+    sm.registrar_consulta_log_abstenciones(
+        equipo_local="Athletic Club",
+        equipo_visitante="Espanyol",
+        competicion="LaLiga",
+        pais_iso="ESP",
+        abstenido=False,
+        estado_cobertura="cobertura_suficiente",
+        motivo_abstencion=None,
+        id_trabajo="id_ok_1",
+    )
+    # 2) Abstención temprana en bot_interactivo.cmd_mercados por liga ambigua ("serie a")
+    mensajes_bot = []
+    monkeypatch.setattr(bi, "enviar_seguro", lambda _b, _m, txt, **kw: mensajes_bot.append(txt))
+    monkeypatch.setattr(bi, "_encolar_persistencia_segura", lambda **kw: kw)
+    msg_fake = SimpleNamespace(
+        text="/mercados serie a Milan vs Inter",
+        chat=SimpleNamespace(id=12345),
+        from_user=SimpleNamespace(id=12345),
+    )
+    # Llamar función interna decorada o con chat autorizado
+    monkeypatch.setattr(bi, "CHAT_ID_AUTORIZADO", "12345")
+    bi.cmd_mercados(msg_fake)
+    assert mensajes_bot, "cmd_mercados debe responder desambiguación en liga ambigua"
+
+    # 3) Abstención temprana en preparar_analisis por partido_ya_jugado
+    monkeypatch.setattr(
+        sm,
+        "resolver_enfrentamiento",
+        lambda *a, **k: {
+            "equipo_local": "Real Madrid",
+            "equipo_visitante": "Celta Vigo",
+            "doc_local": {"equipo": {"nombre": "Real Madrid"}, "partidos": []},
+            "doc_visitante": {"equipo": {"nombre": "Celta Vigo"}, "partidos": []},
+            "contexto": {
+                "competicion": "LaLiga",
+                "pais_iso": "ESP",
+                "partido_ya_jugado": True,
+                "fecha_jugado": "2026-11-21",
+                "resultado_partido": "Real Madrid 3 - 1 Celta Vigo",
+            },
+        },
+    )
+    res_jug = sm.preparar_analisis("Real Madrid", "Celta Vigo")
+    assert res_jug["partido_ya_jugado"] is True
+
+    # 4) Abstención por falso_homonimo_extranjero
+    sm.registrar_consulta_log_abstenciones(
+        equipo_local="Villarreal",
+        equipo_visitante="Barcelona SC",
+        competicion="LaLiga",
+        pais_iso="ESP",
+        abstenido=True,
+        estado_cobertura="falso_homonimo_extranjero",
+        motivo_abstencion="FALSO HOMÓNIMO EXTRANJERO detectado en visita",
+        id_trabajo="id_fh_4",
+    )
+
+    assert log_jsonl_a.exists()
+    lineas_a = [json.loads(ln) for ln in log_jsonl_a.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lineas_a) == 4
+    estados_a = [x["estado"] for x in lineas_a]
+    assert estados_a == ["cobertura_suficiente", "liga_ambigua", "partido_ya_jugado", "falso_homonimo_extranjero"]
+    for row in lineas_a:
+        for campo in ("fecha_utc", "hora_lima", "partido", "estado", "motivo", "build"):
+            assert campo in row and str(row[campo]).strip() != "", f"Falta {campo} en {row}"
+        assert row["fecha_utc"].endswith("Z")
+        assert "America/Lima" in row["hora_lima"]
+
+    # 5) Persistir hacia la rama privada produccion-datos
+    cfg_a = pp.ConfigPersistencia(
+        workspace_dir=ws_a,
+        remote="origin",
+        remote_url=str(remoto_priv),
+        rama_datos="produccion-datos",
+        habilitada=True,
+    )
+    res_push_a = pp.sincronizar_y_push_datos(cfg_a, mensaje_commit="datos(test): log consultas antes de reinicio")
+    assert res_push_a["ok"] is True and res_push_a["pushed"] is True
+
+    # 6) Simular reinicio de 285 min en un runner limpio (ws_b) e hidratar desde produccion-datos
+    log_jsonl_b = ws_b / pp.RUTA_LOG_CONSULTAS_JSONL_REL
+    log_res_b = ws_b / pp.RUTA_LOG_CONSULTAS_RESUMEN_REL
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_JSONL", str(log_jsonl_b))
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_ABSTENCIONES", str(log_res_b))
+
+    cfg_b = pp.ConfigPersistencia(
+        workspace_dir=ws_b,
+        remote="origin",
+        remote_url=str(remoto_priv),
+        rama_datos="produccion-datos",
+        habilitada=True,
+    )
+    res_hyd_b = pp.hidratar_desde_remoto_datos(cfg_b)
+    assert res_hyd_b["ok"] is True
+    assert log_jsonl_b.exists()
+
+    snap_post_reinicio = sm.simular_reinicio_proceso_log_consultas(
+        ruta_jsonl=str(log_jsonl_b), ruta_resumen=str(log_res_b)
+    )
+    assert snap_post_reinicio["total_consultas"] == 4
+    assert snap_post_reinicio["total_ok"] == 1
+    assert snap_post_reinicio["total_abstenidas"] == 3
+    assert snap_post_reinicio["por_estado_cobertura"]["liga_ambigua"] == 1
+    assert snap_post_reinicio["por_estado_cobertura"]["partido_ya_jugado"] == 1
+    assert snap_post_reinicio["por_motivo"]["FALSO_HOMONIMO"] == 1
+
+    # 7) Nueva consulta tras el reinicio se añade en append-only sin perder las 4 anteriores
+    sm.registrar_consulta_log_abstenciones(
+        equipo_local="Athletic Unido",
+        equipo_visitante="Barcelona",
+        competicion="Champions League",
+        pais_iso="INT",
+        abstenido=True,
+        estado_cobertura="pais_ambiguo",
+        motivo_abstencion="PAIS_AMBIGUO detectado",
+        id_trabajo="id_pa_5",
+    )
+    lineas_b = [json.loads(ln) for ln in log_jsonl_b.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert len(lineas_b) == 5
+    assert sm.obtener_contador_abstenciones_consultas()["total_consultas"] == 5
+    assert sm.obtener_contador_abstenciones_consultas()["por_motivo"]["PAIS_AMBIGUO"] == 1
+
+

@@ -1699,7 +1699,9 @@ def marcar_estado(id_trabajo: str, estado: str, extra: dict[str, Any] | None = N
 
 
 LOG_CONSULTAS_ABSTENCIONES = str(Path(MERCADOS_DIR) / "log_consultas_abstenciones.json")
+LOG_CONSULTAS_JSONL = str(Path(BASE_DIR) / "informes" / "evaluacion" / "log_consultas.jsonl")
 _lock_log_consultas = threading.Lock()
+_CONTADOR_HIDRATADO_DESDE_JSONL: bool = False
 
 
 def _crear_estructura_contador_abstenciones() -> dict[str, Any]:
@@ -1736,16 +1738,108 @@ def _crear_estructura_contador_abstenciones() -> dict[str, Any]:
 _CONTADOR_ABSTENCIONES_CONSULTAS: dict[str, Any] = _crear_estructura_contador_abstenciones()
 
 
-def reiniciar_contador_abstenciones_consultas() -> dict[str, Any]:
-    """Reinicia en memoria el contador de abstenciones por motivo en el log de consultas."""
-    global _CONTADOR_ABSTENCIONES_CONSULTAS
+def _aplicar_entrada_a_contador(cont: dict[str, Any], obj: dict[str, Any]) -> None:
+    ambito = str(obj.get("ambito") or "domestica").strip().lower()
+    clave_ambito = "internacionales" if ambito == "internacional" else "domesticas"
+    abstenido = bool(obj.get("abstenido"))
+    est_low = str(obj.get("estado_cobertura") or obj.get("estado") or ("abstenido" if abstenido else "cobertura_suficiente")).strip().lower()
+    motivo_clave = str(obj.get("motivo_clave") or ("OTRO_MOTIVO" if abstenido else "OK")).strip().upper()
+    if abstenido and motivo_clave not in ("PAIS_AMBIGUO", "FALSO_HOMONIMO", "OTRO_MOTIVO"):
+        motivo_clave = "OTRO_MOTIVO"
+
+    cont["total_consultas"] = int(cont["total_consultas"]) + 1
+    bucket_amb = cont[clave_ambito]
+    bucket_amb["total_consultas"] = int(bucket_amb["total_consultas"]) + 1
+    if not abstenido:
+        cont["total_ok"] = int(cont["total_ok"]) + 1
+        bucket_amb["ok"] = int(bucket_amb["ok"]) + 1
+    else:
+        cont["total_abstenidas"] = int(cont["total_abstenidas"]) + 1
+        bucket_amb["abstenidas"] = int(bucket_amb["abstenidas"]) + 1
+        pm = cont["por_motivo"]
+        pm[motivo_clave] = int(pm.get(motivo_clave, 0)) + 1
+        bucket_amb[motivo_clave] = int(bucket_amb.get(motivo_clave, 0)) + 1
+
+    por_est = cont["por_estado_cobertura"]
+    por_est[est_low] = int(por_est.get(est_low, 0)) + 1
+
+    ult = cont["ultimas_consultas"]
+    ult.append({
+        "en": str(obj.get("hora_lima") or obj.get("en") or obj.get("fecha_utc") or ""),
+        "fecha_utc": str(obj.get("fecha_utc") or ""),
+        "hora_lima": str(obj.get("hora_lima") or ""),
+        "id_trabajo": str(obj.get("id_trabajo") or ""),
+        "partido": str(obj.get("partido") or ""),
+        "competicion": str(obj.get("competicion") or "Competición oficial"),
+        "ambito": ambito,
+        "abstenido": abstenido,
+        "estado": est_low,
+        "motivo": str(obj.get("motivo") or motivo_clave),
+        "motivo_clave": motivo_clave,
+        "estado_cobertura": est_low,
+        "build": str(obj.get("build") or ""),
+    })
+    if len(ult) > 100:
+        del ult[:-100]
+
+
+def hidratar_contador_desde_jsonl(ruta_jsonl: str | None = None, ruta_resumen: str | None = None) -> dict[str, Any]:
+    """Reconstruye el contador en memoria desde el archivo append-only `log_consultas.jsonl`."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
+    p_jsonl = Path(ruta_jsonl or LOG_CONSULTAS_JSONL)
+    with _lock_log_consultas:
+        nuevo = _crear_estructura_contador_abstenciones()
+        if p_jsonl.exists():
+            try:
+                for raw_ln in p_jsonl.read_text(encoding="utf-8").splitlines():
+                    ln = raw_ln.strip()
+                    if not ln:
+                        continue
+                    try:
+                        obj = json.loads(ln)
+                        if isinstance(obj, dict):
+                            _aplicar_entrada_a_contador(nuevo, obj)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+        _CONTADOR_ABSTENCIONES_CONSULTAS = nuevo
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
+        snap = json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
+        p_res = Path(ruta_resumen or LOG_CONSULTAS_ABSTENCIONES)
+        if nuevo["total_consultas"] > 0 or p_res.exists():
+            try:
+                p_res.parent.mkdir(parents=True, exist_ok=True)
+                p_res.write_text(json.dumps(snap, ensure_ascii=False, indent=1), encoding="utf-8")
+            except Exception:
+                pass
+        return snap
+
+
+def simular_reinicio_proceso_log_consultas(ruta_jsonl: str | None = None, ruta_resumen: str | None = None) -> dict[str, Any]:
+    """Simula un reinicio de proceso (ej. ciclo de 285 min) borrando memoria y rehidratando desde disco."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
     with _lock_log_consultas:
         _CONTADOR_ABSTENCIONES_CONSULTAS = _crear_estructura_contador_abstenciones()
+        _CONTADOR_HIDRATADO_DESDE_JSONL = False
+    return hidratar_contador_desde_jsonl(ruta_jsonl=ruta_jsonl, ruta_resumen=ruta_resumen)
+
+
+def reiniciar_contador_abstenciones_consultas() -> dict[str, Any]:
+    """Reinicia en memoria el contador de abstenciones por motivo en el log de consultas."""
+    global _CONTADOR_ABSTENCIONES_CONSULTAS, _CONTADOR_HIDRATADO_DESDE_JSONL
+    with _lock_log_consultas:
+        _CONTADOR_ABSTENCIONES_CONSULTAS = _crear_estructura_contador_abstenciones()
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
         return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
 
 def obtener_contador_abstenciones_consultas() -> dict[str, Any]:
     """Devuelve copia instantánea del contador de abstenciones por motivo (PAIS_AMBIGUO y FALSO_HOMONIMO)."""
+    from decision_cobertura import bandera_activa as _ba_cnt_j
+    if not _CONTADOR_HIDRATADO_DESDE_JSONL and bool(_ba_cnt_j("usar_registro_consultas_jsonl_persistente")):
+        if os.path.exists(LOG_CONSULTAS_JSONL):
+            return hidratar_contador_desde_jsonl()
     with _lock_log_consultas:
         return json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
@@ -1806,44 +1900,66 @@ def registrar_consulta_log_abstenciones(
     else:
         motivo_clave = "OTRO_MOTIVO"
 
+    from datetime import timedelta
+    from decision_cobertura import bandera_activa as _ba_log_j
+    from utilidades_seguridad import obtener_hash_corto_git
+
+    _usar_jsonl = bool(_ba_log_j("usar_registro_consultas_jsonl_persistente"))
+    ahora_utc_dt = datetime.now(timezone.utc)
+    tz_lima = timezone(timedelta(hours=-5), name="America/Lima")
+    fecha_utc_iso = ahora_utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    hora_lima_str = ahora_utc_dt.astimezone(tz_lima).strftime("%Y-%m-%d %H:%M:%S America/Lima")
+    build_sha = obtener_hash_corto_git()
+    partido_lbl = f"{equipo_local} vs {equipo_visitante}".strip() if equipo_visitante else str(equipo_local).strip()
+    motivo_txt = str(motivo_abstencion or motivo_clave).strip()
+
+    ruta_jsonl = (
+        os.path.join(directorio_salida, "log_consultas.jsonl")
+        if directorio_salida
+        else LOG_CONSULTAS_JSONL
+    )
+    ruta_log = (
+        os.path.join(directorio_salida, "log_consultas_abstenciones.json")
+        if directorio_salida
+        else LOG_CONSULTAS_ABSTENCIONES
+    )
+
+    global _CONTADOR_HIDRATADO_DESDE_JSONL
+    if _usar_jsonl and not _CONTADOR_HIDRATADO_DESDE_JSONL and os.path.exists(ruta_jsonl):
+        hidratar_contador_desde_jsonl(ruta_jsonl=ruta_jsonl, ruta_resumen=ruta_log)
+
+    registro_linea = {
+        "fecha_utc": fecha_utc_iso,
+        "hora_lima": hora_lima_str,
+        "en": _ahora(),
+        "id_trabajo": str(id_trabajo or ""),
+        "partido": partido_lbl,
+        "equipo_local": equipo_local,
+        "equipo_visitante": equipo_visitante,
+        "competicion": comp_txt,
+        "ambito": ambito,
+        "abstenido": bool(abstenido),
+        "estado": est_low,
+        "estado_cobertura": est_low,
+        "motivo": motivo_txt,
+        "motivo_clave": motivo_clave,
+        "motivo_abstencion": motivo_abstencion,
+        "build": build_sha,
+    }
+
     with _lock_log_consultas:
-        _CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_consultas"]) + 1
-        bucket_amb = _CONTADOR_ABSTENCIONES_CONSULTAS[clave_ambito]
-        bucket_amb["total_consultas"] = int(bucket_amb["total_consultas"]) + 1
-        if not abstenido:
-            _CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_ok"]) + 1
-            bucket_amb["ok"] = int(bucket_amb["ok"]) + 1
-        else:
-            _CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"] = int(_CONTADOR_ABSTENCIONES_CONSULTAS["total_abstenidas"]) + 1
-            bucket_amb["abstenidas"] = int(bucket_amb["abstenidas"]) + 1
-            pm = _CONTADOR_ABSTENCIONES_CONSULTAS["por_motivo"]
-            pm[motivo_clave] = int(pm.get(motivo_clave, 0)) + 1
-            bucket_amb[motivo_clave] = int(bucket_amb.get(motivo_clave, 0)) + 1
-
-        por_est = _CONTADOR_ABSTENCIONES_CONSULTAS["por_estado_cobertura"]
-        por_est[est_low] = int(por_est.get(est_low, 0)) + 1
-
-        ult = _CONTADOR_ABSTENCIONES_CONSULTAS["ultimas_consultas"]
-        ult.append({
-            "en": _ahora(),
-            "id_trabajo": str(id_trabajo or ""),
-            "partido": f"{equipo_local} vs {equipo_visitante}",
-            "competicion": comp_txt,
-            "ambito": ambito,
-            "abstenido": bool(abstenido),
-            "motivo_clave": motivo_clave,
-            "estado_cobertura": est_low,
-        })
-        if len(ult) > 100:
-            del ult[:-100]
-
+        _aplicar_entrada_a_contador(_CONTADOR_ABSTENCIONES_CONSULTAS, registro_linea)
+        _CONTADOR_HIDRATADO_DESDE_JSONL = True
         snap = json.loads(json.dumps(_CONTADOR_ABSTENCIONES_CONSULTAS))
 
-        ruta_log = (
-            os.path.join(directorio_salida, "log_consultas_abstenciones.json")
-            if directorio_salida
-            else LOG_CONSULTAS_ABSTENCIONES
-        )
+        if _usar_jsonl:
+            try:
+                os.makedirs(os.path.dirname(ruta_jsonl), exist_ok=True)
+                with open(ruta_jsonl, "a", encoding="utf-8") as fh_jl:
+                    fh_jl.write(json.dumps(registro_linea, ensure_ascii=False) + "\n")
+            except Exception:
+                pass
+
         try:
             os.makedirs(os.path.dirname(ruta_log), exist_ok=True)
             with open(ruta_log, "w", encoding="utf-8") as fh_log:
@@ -3462,6 +3578,19 @@ def preparar_analisis(
             "motivo_abstencion": "partido_ya_jugado",
             "grupos": {"mantiene": [], "sensible": []},
         })()
+        from decision_cobertura import bandera_activa as _ba_jug_j
+        if bool(_ba_jug_j("usar_registro_consultas_jsonl_persistente")):
+            registrar_consulta_log_abstenciones(
+                equipo_local=eq_l,
+                equipo_visitante=eq_v,
+                competicion=ctx.get("competicion"),
+                pais_iso=ctx.get("pais_iso"),
+                abstenido=True,
+                estado_cobertura="partido_ya_jugado",
+                motivo_abstencion=f"partido_ya_jugado ({res_txt})",
+                id_trabajo="partido_ya_jugado",
+                directorio_salida=directorio_salida,
+            )
         return {
             "analisis": analisis_jugado,
             "id_trabajo": "partido_ya_jugado",

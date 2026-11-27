@@ -1842,6 +1842,32 @@ def cmd_mercados(message):
     from fuentes_xg import detectar_liga_ambigua_serie_ab, mensaje_desambiguacion_serie_ab
     liga_amb = detectar_liga_ambigua_serie_ab(texto_msg)
     if liga_amb:
+        try:
+            from decision_cobertura import bandera_activa as _ba_bot_amb
+            if bool(_ba_bot_amb("usar_registro_consultas_jsonl_persistente")):
+                import servicio_mercados as _sm_amb
+                from persistencia_produccion import RUTA_LOG_CONSULTAS_JSONL_REL, RUTA_LOG_CONSULTAS_RESUMEN_REL
+                try:
+                    _a_amb, _b_amb, _, _, _ = _parsear_argumentos_mercados(texto_msg)
+                except Exception:
+                    _a_amb, _b_amb = "", ""
+                _sm_amb.registrar_consulta_log_abstenciones(
+                    equipo_local=_a_amb or texto_msg.strip(),
+                    equipo_visitante=_b_amb or "",
+                    competicion=str(liga_amb),
+                    abstenido=True,
+                    estado_cobertura="liga_ambigua",
+                    motivo_abstencion=f"liga_ambigua ({liga_amb})",
+                    id_trabajo="liga_ambigua",
+                )
+                _encolar_persistencia_segura(
+                    tipo="log_consulta",
+                    id_trabajo="liga_ambigua",
+                    archivos_rel=[RUTA_LOG_CONSULTAS_JSONL_REL, RUTA_LOG_CONSULTAS_RESUMEN_REL],
+                    mensaje_commit=f"datos(consultas): abstencion liga_ambigua {liga_amb}",
+                )
+        except Exception as _e_amb_log:
+            print(f"[BOT TELEGRAM] ⚠️ No se pudo registrar abstención por liga ambigua: {_e_amb_log}")
         enviar_seguro(bot, message, mensaje_desambiguacion_serie_ab(liga_amb), es_reply=True)
         return
     liga_info = _extraer_liga_de_comando_raw(texto_msg)
@@ -1958,6 +1984,18 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
         print(f"[BOT TELEGRAM] 📊 Contador abstenciones consultas: {servicio.formatear_resumen_abstenciones_consultas()}")
 
         if preparado.get("partido_ya_jugado"):
+            try:
+                from decision_cobertura import bandera_activa as _ba_bot_jug
+                if bool(_ba_bot_jug("usar_registro_consultas_jsonl_persistente")):
+                    from persistencia_produccion import RUTA_LOG_CONSULTAS_JSONL_REL, RUTA_LOG_CONSULTAS_RESUMEN_REL
+                    _encolar_persistencia_segura(
+                        tipo="log_consulta",
+                        id_trabajo="partido_ya_jugado",
+                        archivos_rel=[RUTA_LOG_CONSULTAS_JSONL_REL, RUTA_LOG_CONSULTAS_RESUMEN_REL],
+                        mensaje_commit=f"datos(consultas): partido_ya_jugado {equipo_a} vs {equipo_b}",
+                    )
+            except Exception:
+                pass
             enviar_seguro(bot, chat_id, preparado.get("analisis_texto_3_parrafos") or "⚠️ Partido ya jugado, usa /evaluar")
             return
 
@@ -1988,6 +2026,16 @@ def _hilo_ejecutar_mercados(chat_id: int | str, equipo_a: str, equipo_b: str,
                 except Exception:
                     rel_inp = os.path.relpath(ruta_inp_gz, str(BASE_DIR)).replace("\\", "/")
                 archivos_sync_pre.append(rel_inp)
+            try:
+                from decision_cobertura import bandera_activa as _ba_bot_sync
+                if bool(_ba_bot_sync("usar_registro_consultas_jsonl_persistente")):
+                    from persistencia_produccion import RUTA_LOG_CONSULTAS_JSONL_REL, RUTA_LOG_CONSULTAS_RESUMEN_REL
+                    if (BASE_DIR / RUTA_LOG_CONSULTAS_JSONL_REL).exists():
+                        archivos_sync_pre.append(RUTA_LOG_CONSULTAS_JSONL_REL)
+                    if (BASE_DIR / RUTA_LOG_CONSULTAS_RESUMEN_REL).exists():
+                        archivos_sync_pre.append(RUTA_LOG_CONSULTAS_RESUMEN_REL)
+            except Exception:
+                pass
             _encolar_persistencia_segura(
                 tipo="mercados_pre",
                 id_trabajo=str(preparado.get("id_trabajo") or ""),

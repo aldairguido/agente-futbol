@@ -42,6 +42,8 @@ from urllib.parse import urlsplit
 
 RUTA_LEDGER_REL = "informes/evaluacion/ledger_oos.jsonl"
 RUTA_REGISTRO_EVAL_REL = "informes/evaluacion/registro_evaluaciones.json"
+RUTA_LOG_CONSULTAS_JSONL_REL = "informes/evaluacion/log_consultas.jsonl"
+RUTA_LOG_CONSULTAS_RESUMEN_REL = "informes/mercados/log_consultas_abstenciones.json"
 DIR_PRONOSTICOS_REL = "informes/pronosticos"
 DIR_EVALUACION_REL = "informes/evaluacion"
 DIR_EVENTOS_REL = "informes/evaluacion/eventos"
@@ -646,6 +648,56 @@ def _merge_registro_evaluaciones(remoto_txt: str | None, local_path: Path, dst_p
     return cambio
 
 
+def _merge_log_consultas_jsonl(remoto_txt: str | None, local_path: Path, dst_path: Path) -> bool:
+    """
+    Fusión append-only idempotente de `informes/evaluacion/log_consultas.jsonl`:
+    conserva todas las líneas remotas en orden y añade al final las líneas locales nuevas.
+    """
+    lineas_out: list[str] = []
+    vistas: set[str] = set()
+
+    def _agregar_texto(txt: str | None) -> None:
+        if not txt:
+            return
+        for raw_ln in txt.splitlines():
+            ln = raw_ln.strip()
+            if not ln:
+                continue
+            try:
+                obj = json.loads(ln)
+                clave = json.dumps(
+                    {
+                        "fecha_utc": obj.get("fecha_utc"),
+                        "partido": obj.get("partido"),
+                        "estado": obj.get("estado"),
+                        "motivo": obj.get("motivo"),
+                        "id_trabajo": obj.get("id_trabajo"),
+                    },
+                    sort_keys=True,
+                    ensure_ascii=False,
+                )
+            except Exception:
+                clave = ln
+            if clave not in vistas:
+                vistas.add(clave)
+                lineas_out.append(ln)
+
+    _agregar_texto(remoto_txt)
+    if local_path.exists():
+        try:
+            _agregar_texto(local_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    if not lineas_out and not dst_path.exists():
+        return False
+    txt_final = ("\n".join(lineas_out) + "\n") if lineas_out else ""
+    cambio = (not dst_path.exists()) or (dst_path.read_text(encoding="utf-8") != txt_final)
+    if lineas_out or dst_path.exists():
+        escribir_atomico_texto(dst_path, txt_final)
+    return cambio
+
+
 def _leer_archivo_git_ref(repo_dir: Path, ref: str, rel_path: str) -> str | None:
     cp = _run_git(repo_dir, "show", f"{ref}:{rel_path}", check=False)
     if cp.returncode == 0:
@@ -783,7 +835,7 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
     n_eval = 0
     n_ev = 0
     for rel in _listar_archivos_git_ref(ws, ref_full, DIR_EVALUACION_REL):
-        if rel in (RUTA_LEDGER_REL, RUTA_REGISTRO_EVAL_REL):
+        if rel in (RUTA_LEDGER_REL, RUTA_REGISTRO_EVAL_REL, RUTA_LOG_CONSULTAS_JSONL_REL):
             continue
         dst = ws / rel
         if not dst.exists():
@@ -806,6 +858,17 @@ def hidratar_desde_remoto_datos(cfg: ConfigPersistencia) -> dict[str, Any]:
     if reg_rem_txt is not None:
         reg_dst = ws / RUTA_REGISTRO_EVAL_REL
         _merge_registro_evaluaciones(reg_rem_txt, reg_dst, reg_dst)
+
+    log_cons_rem_txt = _leer_archivo_git_ref(ws, ref_full, RUTA_LOG_CONSULTAS_JSONL_REL)
+    if log_cons_rem_txt is not None or (ws / RUTA_LOG_CONSULTAS_JSONL_REL).exists():
+        log_dst = ws / RUTA_LOG_CONSULTAS_JSONL_REL
+        _merge_log_consultas_jsonl(log_cons_rem_txt, log_dst, log_dst)
+        try:
+            import servicio_mercados as _sm_hyd
+            if hasattr(_sm_hyd, "hidratar_contador_desde_jsonl"):
+                _sm_hyd.hidratar_contador_desde_jsonl(str(log_dst))
+        except Exception:
+            pass
 
     rem_ledger_txt = _leer_archivo_git_ref(ws, ref_full, RUTA_LEDGER_REL)
     loc_ledger = ws / RUTA_LEDGER_REL
@@ -942,22 +1005,28 @@ def sincronizar_y_push_datos(
                     src_dir = ws / d_rel
                     if src_dir.exists():
                         for p in src_dir.glob("*"):
-                            if p.is_file() and (p.suffix in (".json", ".md", ".gz")) and p.name != "registro_evaluaciones.json":
+                            if p.is_file() and (p.suffix in (".json", ".md", ".gz", ".jsonl")) and p.name not in ("registro_evaluaciones.json", "log_consultas.jsonl"):
                                 candidatos_rel.add(p.relative_to(ws).as_posix())
+                if (ws / RUTA_LOG_CONSULTAS_RESUMEN_REL).exists():
+                    candidatos_rel.add(RUTA_LOG_CONSULTAS_RESUMEN_REL)
             for r_ex in (archivos_rel or []):
                 candidatos_rel.add(Path(r_ex).as_posix())
             for r_cfg in cfg.archivos_extra_rel:
                 candidatos_rel.add(Path(r_cfg).as_posix())
 
             for rel in sorted(candidatos_rel):
-                if rel == RUTA_LEDGER_REL or rel == RUTA_REGISTRO_EVAL_REL:
+                if rel in (RUTA_LEDGER_REL, RUTA_REGISTRO_EVAL_REL, RUTA_LOG_CONSULTAS_JSONL_REL):
                     continue
                 _copiar_si_nuevo_o_actualizado(ws / rel, stage_dir / rel)
 
-            # 2. Merge idempotente de registro_evaluaciones.json si existe local o remoto
+            # 2. Merge idempotente de registro_evaluaciones.json y log_consultas.jsonl si existe local o remoto
             reg_rem = _leer_archivo_git_ref(stage_dir, "HEAD", RUTA_REGISTRO_EVAL_REL) if rama_existia else None
             if reg_rem is not None or (ws / RUTA_REGISTRO_EVAL_REL).exists():
                 _merge_registro_evaluaciones(reg_rem, ws / RUTA_REGISTRO_EVAL_REL, stage_dir / RUTA_REGISTRO_EVAL_REL)
+
+            log_cons_rem = _leer_archivo_git_ref(stage_dir, "HEAD", RUTA_LOG_CONSULTAS_JSONL_REL) if rama_existia else None
+            if log_cons_rem is not None or (ws / RUTA_LOG_CONSULTAS_JSONL_REL).exists():
+                _merge_log_consultas_jsonl(log_cons_rem, ws / RUTA_LOG_CONSULTAS_JSONL_REL, stage_dir / RUTA_LOG_CONSULTAS_JSONL_REL)
 
             # 3. Ledger SIEMPRE reconstruido desde la copia remota actual
             rem_ledger_txt = _leer_archivo_git_ref(stage_dir, "HEAD", RUTA_LEDGER_REL) if rama_existia else None
@@ -1002,6 +1071,9 @@ def sincronizar_y_push_datos(
                 escribir_atomico_texto(ws / RUTA_LEDGER_REL, res_led["contenido"])
                 if (stage_dir / RUTA_REGISTRO_EVAL_REL).exists():
                     shutil.copy2(stage_dir / RUTA_REGISTRO_EVAL_REL, ws / RUTA_REGISTRO_EVAL_REL)
+                if (stage_dir / RUTA_LOG_CONSULTAS_JSONL_REL).exists():
+                    (ws / RUTA_LOG_CONSULTAS_JSONL_REL).parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(stage_dir / RUTA_LOG_CONSULTAS_JSONL_REL, ws / RUTA_LOG_CONSULTAS_JSONL_REL)
                 cp_head = _run_git(stage_dir, "rev-parse", "HEAD", check=False)
                 return {
                     "ok": True,
