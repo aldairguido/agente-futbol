@@ -633,6 +633,71 @@ def test_r31_bloque6_umbral_unificado_sin_tolerancia_ni_redondeo():
             assert pild_pct != "70%", f"Píldora redondeó {p_val} a 70%"
 
 
+def test_r31_bloque7_cache_auditoria_incluye_corte_ventanas_distintas(monkeypatch):
+    import auditoria_historica as ah
+
+    ah.limpiar_cache_memoria_auditorias()
+    llamadas_internas = []
+
+    # Generamos un calendario sintético de 25 partidos hacia atrás desde 2026-11-24
+    from datetime import date, timedelta
+    todos_partidos = []
+    d0 = date(2026, 11, 24)
+    for i in range(25):
+        fecha_p = (d0 - timedelta(days=i * 2)).isoformat()
+        todos_partidos.append(
+            {
+                "id_partido": f"m_{i+1}",
+                "fecha": fecha_p,
+                "rival": f"Rival_{i+1}",
+                "torneo": "LaLiga",
+                "goles_equipo": 2,
+                "goles_rival": 1,
+                "condicion": "casa",
+                "periodos": {"FT": {"filas": [{"clave": "goles", "equipo": 2, "rival": 1}] * 6}},
+            }
+        )
+
+    def _fake_auditar_interno(**kwargs):
+        fc = str(kwargs.get("fecha_corte") or "9999-12-31")
+        llamadas_internas.append(fc)
+        pts_ventana = [dict(p) for p in todos_partidos if p["fecha"] < fc][:15]
+        return {
+            "equipo": {
+                "id": "8633",
+                "nombre": "Real Madrid",
+                "liga": "LaLiga",
+                "id_liga": 87,
+                "pais_iso": "ESP",
+            },
+            "partidos": pts_ventana,
+            "resumen": {"partidos_con_datos": len(pts_ventana)},
+            "identidad_verificada": True,
+        }
+
+    monkeypatch.setattr("fuentes_xg.ejecutar_sync_seguro", lambda fn, **kw: _fake_auditar_interno(**kw))
+
+    # 1) Primera consulta con fecha_corte="2026-11-05" (ventana más antigua)
+    doc_corte_1 = ah.auditar_equipo("Real Madrid", limite=15, fecha_corte="2026-11-05")
+    fechas_1 = [p["fecha"] for p in doc_corte_1["partidos"]]
+    assert len(fechas_1) == 15
+    assert max(fechas_1) < "2026-11-05"
+
+    # 2) Segunda consulta del MISMO club con fecha_corte="2026-11-25" (ventana más reciente) en el mismo proceso
+    doc_corte_2 = ah.auditar_equipo("Real Madrid", limite=15, fecha_corte="2026-11-25")
+    fechas_2 = [p["fecha"] for p in doc_corte_2["partidos"]]
+    assert len(fechas_2) == 15
+    assert fechas_2 != fechas_1, "La caché devolvió la misma ventana para fechas de corte distintas"
+    assert max(fechas_2) > "2026-11-05"
+    assert len(llamadas_internas) == 2
+
+    # 3) Tercera consulta repitiendo fecha_corte="2026-11-05" reutiliza su entrada exacta en memoria
+    doc_corte_1_hit = ah.auditar_equipo("Real Madrid", limite=15, fecha_corte="2026-11-05")
+    assert [p["fecha"] for p in doc_corte_1_hit["partidos"]] == fechas_1
+    assert len(llamadas_internas) == 2
+
+
+
 
 
 
