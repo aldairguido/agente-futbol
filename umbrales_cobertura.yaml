@@ -94,6 +94,7 @@ flags_comportamiento:
   usar_emparejamiento_exacto_sin_subcadena: true  # regla operativa, sin validación cronológica
   usar_sin_dato_sin_fallbacks_veredicto: true  # regla operativa, sin validación cronológica
   usar_registro_consultas_jsonl_persistente: true  # regla operativa, sin validación cronológica
+  usar_aislamiento_try_cuotas_ticket: true  # regla operativa, sin validación cronológica
 
 # Gobierno de pendientes Entrega 1b (Ronda 7 Punto 6)
 stake_max_conservador_kelly: 0.03  # regla operativa, sin validación cronológica

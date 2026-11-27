@@ -431,3 +431,70 @@ def test_r31_bloque3_log_consultas_jsonl_append_only_persistencia_y_reinicio_285
     assert sm.obtener_contador_abstenciones_consultas()["por_motivo"]["PAIS_AMBIGUO"] == 1
 
 
+def test_r31_bloque4_excepcion_en_cuotas_no_anula_ticket_ni_3_parrafos(monkeypatch, tmp_path):
+    import json
+    from fuente_flashscore import ClienteFlashscore
+
+    root = Path(__file__).resolve().parents[1]
+    fx = json.loads((root / "tests" / "fixtures" / "londrina_nautico_fixtures.json").read_text(encoding="utf-8"))
+    dl = copy.deepcopy(fx["londrina"])
+    dv = copy.deepcopy(fx["nautico"])
+    for d in (dl, dv):
+        for idx, p in enumerate(d.get("partidos") or []):
+            p["fecha"] = f"2026-11-{20 - (idx % 15):02d}"
+
+    fake_ctx = {
+        "equipo_local": "Londrina",
+        "equipo_visitante": "Náutico",
+        "doc_local": dl,
+        "doc_visitante": dv,
+        "contexto": {
+            "competicion": "Brasileirao Serie C",
+            "pais_iso": "BRA",
+            "condicion_local": "casa",
+            "condicion_visitante": "fuera",
+            "fecha_partido": "2026-12-05",
+            "hora_inicio_partido": "2026-12-05T20:00:00Z",
+            "fixture_confirmado": True,
+            "id_partido": "999111",
+            "id_flashscore_partido": "",
+        },
+        "identidad_verificada": True,
+        "estado_identidad": "verificada",
+    }
+
+    class _DummyConciencia:
+        def diagnosticar_enfrentamiento(self, *a, **k):
+            return {"indice_confianza_cognitiva": 0.5}
+        def formatear_bloque_metacognitivo_md(self, *a, **k):
+            return ""
+
+    monkeypatch.setattr(sm, "resolver_enfrentamiento", lambda *a, **k: copy.deepcopy(fake_ctx))
+    monkeypatch.setattr(sm, "marcar_estado", lambda *a, **k: None)
+    monkeypatch.setattr(sm, "MERCADOS_DIR", str(tmp_path / "mer"))
+    monkeypatch.setattr(sm, "H2H_DIR", str(tmp_path / "h2h"))
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_ABSTENCIONES", str(tmp_path / "mer" / "log_abs.json"))
+    monkeypatch.setattr(sm, "LOG_CONSULTAS_JSONL", str(tmp_path / "mer" / "log_cons.jsonl"))
+    monkeypatch.setattr(sm, "REGISTRO_ENVIOS", str(tmp_path / "mer" / "reg_env.json"))
+    monkeypatch.setattr("banco_historico.guardar_en_banco_no_bloqueante", lambda *a, **k: None)
+    monkeypatch.setattr("agente_consciente.obtener_agente_consciente", lambda: _DummyConciencia())
+    monkeypatch.setattr(
+        "cuadro_h2h_2024_2026.generar_cuadro_h2h_desde_analisis",
+        lambda *a, **k: {"ruta": None, "n_duelos": 0, "estado": "Sin enfrentamientos directos en 2024–2026", "duelos": []},
+    )
+
+    for idx, exc_cls in enumerate((TimeoutError, RuntimeError, ValueError, KeyError)):
+        out_d = tmp_path / f"case_{idx}"
+        out_d.mkdir(parents=True, exist_ok=True)
+        with patch.object(ClienteFlashscore, "buscar_evento_programado_feed_diario", side_effect=exc_cls("fallo feed")), \
+             patch.object(ClienteFlashscore, "extraer_cuotas", side_effect=exc_cls("fallo extraer_cuotas")):
+            prep = sm.preparar_analisis("Londrina", "Náutico", directorio_salida=str(out_d))
+        assert prep.get("abstenido") is not True
+        ruta_tv = prep.get("ruta_ticket_valor") or (prep.get("rutas") or {}).get("ticket_valor")
+        assert ruta_tv is not None and Path(ruta_tv).exists(), f"Ticket Valor PNG anulado con {exc_cls.__name__}"
+        txt_3p = prep.get("analisis_texto_3_parrafos") or ""
+        assert len(txt_3p) > 0, f"Texto 3 párrafos vacío con {exc_cls.__name__}"
+        assert prep.get("cuotas_flashscore") is None
+
+
+

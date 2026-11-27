@@ -4219,7 +4219,7 @@ def preparar_analisis(
 
     # ── Extracción de Cuotas Flashscore, 4ta Imagen (Ticket de Valor) y Análisis de 3 Párrafos ──
     ruta_ticket_valor = None
-    cuotas_flashscore: dict[str, float | None] = {"local": None, "empate": None, "visitante": None}
+    cuotas_flashscore: dict[str, float | None] | None = {"local": None, "empate": None, "visitante": None}
     id_fs_partido: str | None = None
     analisis_texto_3_parrafos = ""
     try:
@@ -4228,6 +4228,7 @@ def preparar_analisis(
 
         usar_captura_cuotas = bool(_ba_cuotas("usar_cuotas_mercado_captura"))
         usar_cuotas_ticket = bool(_ba_cuotas("usar_cuotas_en_ticket"))
+        aislar_try_cuotas = bool(_ba_cuotas("usar_aislamiento_try_cuotas_ticket"))
         id_fs_prog = str(ctx.get("id_flashscore_partido") or "").strip()
         id_fs_prog_val = id_fs_prog if (id_fs_prog and id_fs_prog not in ("N/D", "None", "")) else None
         id_fs_partido = id_fs_prog_val
@@ -4240,14 +4241,28 @@ def preparar_analisis(
             home_pid_fs: str | None = None
             away_pid_fs: str | None = None
             if not id_fs_partido:
-                ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
-                    str(contexto.get("equipo_local") or ""),
-                    str(contexto.get("equipo_visitante") or ""),
-                )
-                if ev_fs_prog:
-                    id_fs_partido = ev_fs_prog["id_flashscore"]
-                    home_pid_fs = ev_fs_prog.get("home_participant_id")
-                    away_pid_fs = ev_fs_prog.get("away_participant_id")
+                if aislar_try_cuotas:
+                    try:
+                        ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                            str(contexto.get("equipo_local") or ""),
+                            str(contexto.get("equipo_visitante") or ""),
+                        )
+                        if ev_fs_prog:
+                            id_fs_partido = ev_fs_prog["id_flashscore"]
+                            home_pid_fs = ev_fs_prog.get("home_participant_id")
+                            away_pid_fs = ev_fs_prog.get("away_participant_id")
+                    except Exception as e_feed_fs:
+                        print(f"[SERVICIO MERCADOS] ⚠️ Error en buscar_evento_programado_feed_diario: "
+                              f"{type(e_feed_fs).__name__}: {e_feed_fs}")
+                else:
+                    ev_fs_prog = cliente_fs.buscar_evento_programado_feed_diario(
+                        str(contexto.get("equipo_local") or ""),
+                        str(contexto.get("equipo_visitante") or ""),
+                    )
+                    if ev_fs_prog:
+                        id_fs_partido = ev_fs_prog["id_flashscore"]
+                        home_pid_fs = ev_fs_prog.get("home_participant_id")
+                        away_pid_fs = ev_fs_prog.get("away_participant_id")
 
             id_fotmob_prog = (
                 ctx.get("id_partido_fotmob")
@@ -4270,18 +4285,36 @@ def preparar_analisis(
                     pass
 
             if (id_fs_partido or id_fotmob_prog) and not _ya_inicio_cuotas:
-                cuotas_try = cliente_fs.extraer_cuotas(
-                    id_fs_partido or "",
-                    id_fotmob=id_fotmob_prog,
-                    home_participant_id=home_pid_fs,
-                    away_participant_id=away_pid_fs,
-                    equipo_local=str(contexto.get("equipo_local") or ""),
-                    equipo_visitante=str(contexto.get("equipo_visitante") or ""),
-                )
-                if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
-                    cuotas_capturadas = cuotas_try
-                    if isinstance(getattr(analisis, "metadatos", None), dict):
-                        analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+                if aislar_try_cuotas:
+                    try:
+                        cuotas_try = cliente_fs.extraer_cuotas(
+                            id_fs_partido or "",
+                            id_fotmob=id_fotmob_prog,
+                            home_participant_id=home_pid_fs,
+                            away_participant_id=away_pid_fs,
+                            equipo_local=str(contexto.get("equipo_local") or ""),
+                            equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+                        )
+                        if isinstance(cuotas_try, dict) and any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                            cuotas_capturadas = cuotas_try
+                            if isinstance(getattr(analisis, "metadatos", None), dict):
+                                analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
+                    except Exception as e_ext_c:
+                        print(f"[SERVICIO MERCADOS] ⚠️ Error en extraer_cuotas: "
+                              f"{type(e_ext_c).__name__}: {e_ext_c}")
+                else:
+                    cuotas_try = cliente_fs.extraer_cuotas(
+                        id_fs_partido or "",
+                        id_fotmob=id_fotmob_prog,
+                        home_participant_id=home_pid_fs,
+                        away_participant_id=away_pid_fs,
+                        equipo_local=str(contexto.get("equipo_local") or ""),
+                        equipo_visitante=str(contexto.get("equipo_visitante") or ""),
+                    )
+                    if any(cuotas_try.get(k) is not None for k in ("local", "empate", "visitante")):
+                        cuotas_capturadas = cuotas_try
+                        if isinstance(getattr(analisis, "metadatos", None), dict):
+                            analisis.metadatos["cuotas_mercado"] = dict(cuotas_try)
 
         # Solo exponer cuotas reales e ID descubierto al Ticket / párrafo de valor cuando usar_cuotas_en_ticket=True
         if usar_cuotas_ticket and cuotas_capturadas is not None:
@@ -4296,26 +4329,56 @@ def preparar_analisis(
             f"ticket_valor_{_slug(contexto['equipo_local'])}_vs_"
             f"{_slug(contexto['equipo_visitante'])}_{id_trabajo}.png",
         )
-        ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
-            analisis,
-            cuotas_flashscore=cuotas_flashscore,
-            destino=destino_ticket_valor,
-            id_flashscore=id_fs_para_ticket,
-        )
-        if ruta_ticket_valor:
-            rutas["ticket_valor"] = ruta_ticket_valor
+        if aislar_try_cuotas:
+            try:
+                ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
+                    analisis,
+                    cuotas_flashscore=cuotas_flashscore,
+                    destino=destino_ticket_valor,
+                    id_flashscore=id_fs_para_ticket,
+                )
+                if ruta_ticket_valor:
+                    rutas["ticket_valor"] = ruta_ticket_valor
+            except Exception as e_tv_png:
+                print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Ticket de Valor PNG: "
+                      f"{type(e_tv_png).__name__}: {e_tv_png}")
 
-        analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
-            analisis,
-            info_h2h=info_h2h_2024_2026,
-            cuotas_flashscore=cuotas_flashscore,
-            doc_local=contexto.get("doc_local"),
-            doc_visitante=contexto.get("doc_visitante"),
-        )
-        if analisis_texto_3_parrafos:
-            with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
-                f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
-                               + analisis_texto_3_parrafos + "\n")
+            try:
+                analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
+                    analisis,
+                    info_h2h=info_h2h_2024_2026,
+                    cuotas_flashscore=cuotas_flashscore,
+                    doc_local=contexto.get("doc_local"),
+                    doc_visitante=contexto.get("doc_visitante"),
+                )
+                if analisis_texto_3_parrafos:
+                    with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
+                        f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
+                                       + analisis_texto_3_parrafos + "\n")
+            except Exception as e_3p:
+                print(f"[SERVICIO MERCADOS] ⚠️ No se pudo redactar Análisis 3 párrafos: "
+                      f"{type(e_3p).__name__}: {e_3p}")
+        else:
+            ruta_ticket_valor = informe_mod.generar_ticket_valor_png(
+                analisis,
+                cuotas_flashscore=cuotas_flashscore,
+                destino=destino_ticket_valor,
+                id_flashscore=id_fs_para_ticket,
+            )
+            if ruta_ticket_valor:
+                rutas["ticket_valor"] = ruta_ticket_valor
+
+            analisis_texto_3_parrafos = informe_mod.redactar_analisis_3_parrafos(
+                analisis,
+                info_h2h=info_h2h_2024_2026,
+                cuotas_flashscore=cuotas_flashscore,
+                doc_local=contexto.get("doc_local"),
+                doc_visitante=contexto.get("doc_visitante"),
+            )
+            if analisis_texto_3_parrafos:
+                with open(rutas["informe"], "a", encoding="utf-8") as f_md_val:
+                    f_md_val.write("\n\n## 🧠 Análisis Comparativo y Veredicto de Valor (+EV)\n\n"
+                                   + analisis_texto_3_parrafos + "\n")
     except Exception as e_val:
         print(f"[SERVICIO MERCADOS] ⚠️ No se pudo generar el Ticket de Valor / Análisis 3 párrafos: "
               f"{type(e_val).__name__}: {e_val}")
