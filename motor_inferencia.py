@@ -1313,8 +1313,9 @@ def formatear_pick_segun_estado(
     )
     pick_con_pct = pick_texto if (has_pct or not prob_str) else f"{pick_texto}{prob_str}"
 
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_fp
     if est in ("bajo_umbral", "no_validado") or (
-        prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6
+        prob_pct is not None and not _sup_umb_fp(float(prob_pct), float(umbral_pct), tolerancia_legado=1e-6)
     ):
         return f"Por debajo del umbral ({umbral_pct:.0f}%, no validado): {pick_con_pct}{sufijo_extra}"
 
@@ -1354,7 +1355,8 @@ def _esta_en_seccion_2(
     motor: Any = None,
     umbral_pct: float = 70.0,
 ) -> bool:
-    if prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6:
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_s2
+    if prob_pct is not None and not _sup_umb_s2(float(prob_pct), float(umbral_pct), tolerancia_legado=1e-6):
         return False
     ev_obj, aliases = _aliases_evento_resultado(codigo_ev)
 
@@ -1380,7 +1382,7 @@ def _esta_en_seccion_2(
             et_t = str((it.get("etiqueta") if isinstance(it, dict) else getattr(it, "etiqueta", "")) or "").lower()
             p_it = float((it.get("probabilidad") if isinstance(it, dict) else getattr(it, "probabilidad", 0.0)) or 0.0)
             p_it_pct = p_it * 100.0 if p_it <= 1.0 else p_it
-            if p_it_pct < float(umbral_pct) - 1e-6:
+            if not _sup_umb_s2(p_it_pct, float(umbral_pct), tolerancia_legado=1e-6):
                 continue
             if _coincide_evento_resultado(_ev_de(it), ev_obj, aliases) or (
                 ev_obj in ("1x", "x2") and f" {ev_obj}:" in f" {et_t}"
@@ -1417,7 +1419,8 @@ def _explicacion_diferencia_prediccion_veredicto(
     )
     if coincide:
         return ""
-    if prob_pred < umbral_pct - 1e-6:
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_exp
+    if not _sup_umb_exp(prob_pred, umbral_pct, tolerancia_legado=1e-6):
         return (
             f"Diferencia con el Veredicto: '{pick_pred}' ({prob_pred:.1f}%) está por debajo del umbral {umbral_pct:.0f}% "
             f"(no validado en Sección 1/2); el Veredicto #1 usa la Jugada #1 del Ticket: '{j1_et}' ({j1_prob:.1f}%)."
@@ -1438,7 +1441,8 @@ def _inferir_estado_pick_dc(
     prob_pct: Optional[float] = None,
     umbral_pct: float = 70.0,
 ) -> str:
-    if prob_pct is not None and float(prob_pct) < float(umbral_pct) - 1e-6:
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_inf_dc
+    if prob_pct is not None and not _sup_umb_inf_dc(float(prob_pct), float(umbral_pct), tolerancia_legado=1e-6):
         return "bajo_umbral"
     ev_obj, aliases = _aliases_evento_resultado(codigo_ev)
 
@@ -1942,10 +1946,10 @@ def generar_veredicto_tactico_partido(
         and not _es_res_act
         and any(k in _j1_low_act for k in ("más", "mas de", "over", "+0.5", "+1.5", "+2.5", "+3.5", "ambos tiempos", "ambos equipos marcan", "btts", "al menos", "gol en"))
     )
-    from decision_cobertura import bandera_activa as _ba_b5_ver
+    from decision_cobertura import bandera_activa as _ba_b5_ver, supera_umbral_probabilidad as _sup_umb_ver
     _usar_b5_ver = bool(_ba_b5_ver("usar_etiqueta_matriz_final_y_cronologia_raw"))
     _etq_mat_ver = "Matriz final (45-DCN+Sinkhorn+NB)" if _usar_b5_ver else "Base Matriz Poisson"
-    if jugada_1_prob < 70.0 - 1e-6 or estado_j1 in ("bajo_umbral", "no_validado"):
+    if not _sup_umb_ver(jugada_1_prob, 70.0, tolerancia_legado=1e-6) or estado_j1 in ("bajo_umbral", "no_validado"):
         accion_ticket = formatear_pick_segun_estado(
             jugada_1_nombre,
             jugada_1_prob,

@@ -1049,9 +1049,10 @@ def redactar_analisis_3_parrafos(
         )
 
     # ── PÁRRAFO 3: Veredicto Final y Mejor Apuesta de Valor (+EV) ───────────
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_inf
     umbral_vf = float(getattr(getattr(analisis, "parametros", None), "umbral", 0.70) or 0.70)
     filas_ev = construir_filas_ticket_valor(analisis, cuotas_flashscore)
-    filas_ev_umbral = [f for f in filas_ev if float(f.get("prob_bot") or 0.0) >= (umbral_vf - 1e-6)]
+    filas_ev_umbral = [f for f in filas_ev if _sup_umb_inf(float(f.get("prob_bot") or 0.0), umbral_vf, tolerancia_legado=1e-6)]
     con_valor = [f for f in filas_ev_umbral if f["tiene_valor"] and f["ev_pct"] is not None]
     # Ordenar por combinación de mayor EV y probabilidad sólida
     con_valor_solido = sorted(

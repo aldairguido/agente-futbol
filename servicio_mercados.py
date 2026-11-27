@@ -2087,6 +2087,10 @@ def formatear_pildora_seccion1(s: Any, cat: str, eq_l: str, eq_v: str) -> tuple[
     lin = _val_sel(s, "linea", None)
     prob = float(_val_sel(s, "probabilidad", 0.0) or 0.0)
     pct = f"{prob:.0%}"
+    import math as _math_pild
+    from decision_cobertura import bandera_activa as _ba_pild_umb
+    if bool(_ba_pild_umb("usar_umbral_unificado_sin_tolerancia")) and prob < 0.70 and pct == "70%":
+        pct = f"{_math_pild.floor(float(prob) * 100.0):.0f}%"
 
     try:
         from decision_cobertura import bandera_activa as _ba_cal_s1
@@ -2314,9 +2318,10 @@ def calcular_seccion1_unificada(
                 return False
         return es_seleccion_competitiva_ticket(s, eq_l, eq_v, p_1x2, motor=motor)
 
+    from decision_cobertura import supera_umbral_probabilidad as _sup_umb_s1
     sels_validas = [
         s for s in sels_raw
-        if float(_val_sel(s, "probabilidad") or 0.0) >= (umbral_val - 1e-6) and _permitida_sel(s)
+        if _sup_umb_s1(float(_val_sel(s, "probabilidad") or 0.0), umbral_val, tolerancia_legado=1e-6) and _permitida_sel(s)
     ]
 
     if top5_podio is None:

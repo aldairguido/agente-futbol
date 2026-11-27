@@ -570,5 +570,69 @@ def test_r31_bloque5_etiqueta_matriz_final_cronologia_raw_y_antiguedad():
     assert "41 días de antigüedad hasta la fecha del partido 2026-11-25 > 30 días" in ev_ant["motivo"]
 
 
+def test_r31_bloque6_umbral_unificado_sin_tolerancia_ni_redondeo():
+    # Regla única p >= 0.70 sin redondear y sin tolerancia -1e-6
+    for p_val, esperado in (
+        (0.695, False),
+        (0.6999, False),
+        (0.699999, False),
+        (0.70, True),
+        (0.7001, True),
+        (0.705, True),
+    ):
+        assert dc.supera_umbral_probabilidad(p_val, 0.70) is esperado
+
+        # 1) motor_mercados.clasificar
+        esc_ok = {"e1": p_val, "e2": 0.75}
+        est_cls, _ = mm.clasificar(p_val, esc_ok, ["e1", "e2"], 0.70)
+        assert (est_cls == mm.ESTADO_MANTIENE) is esperado
+
+        # 2) seleccionar_top_5_jugadas_recomendadas
+        sel_item = {
+            "id_mercado": "doble_oportunidad",
+            "mercado": "Doble oportunidad",
+            "evento": "1x",
+            "etiqueta": "1X (EqA o Empate)",
+            "periodo": "FT",
+            "equipo": "EqA",
+            "linea": None,
+            "probabilidad": p_val,
+            "estado": "mantiene" if esperado else "sensible",
+        }
+        top5 = mm.seleccionar_top_5_jugadas_recomendadas([sel_item], eq_l="EqA", eq_v="EqB")
+        assert (len(top5) == 1) is esperado
+
+        # 3) calcular_seccion1_unificada
+        s1_u = sm.calcular_seccion1_unificada(
+            None,
+            metadatos={"equipo_local": "EqA", "equipo_visitante": "EqB"},
+            umbral=0.70,
+            sec1_data=[dict(sel_item)],
+            eq_l="EqA",
+            eq_v="EqB",
+        )
+        assert (len(s1_u["mantiene_raw"]) == 1) is esperado
+
+        # 4) motor_inferencia.formatear_pick_segun_estado y _esta_en_seccion_2
+        p_pct = p_val * 100.0
+        txt_pick = mi.formatear_pick_segun_estado("Ambos marcan: Sí", p_pct, "mantiene", umbral_pct=70.0)
+        assert ("Por debajo del umbral" not in txt_pick) is esperado
+        en_s2 = mi._esta_en_seccion_2(
+            "1x",
+            prob_pct=p_pct,
+            selecciones_sec2=[{"evento": "1x", "periodo": "FT", "probabilidad": p_val, "estado": "sensible"}],
+            umbral_pct=70.0,
+        )
+        assert en_s2 is esperado
+
+        # 5) Ninguna probabilidad < 0.70 se formatea como "70%" ni "70,0%"
+        if not esperado:
+            pct_str = mm.formatear_pct(p_val, 0.70)
+            assert pct_str not in ("70%", "70,0%", "70.0%"), f"Redondeo engañoso al umbral para {p_val}: {pct_str}"
+            _, pild_pct, _ = sm.formatear_pildora_seccion1(sel_item, "GOLES PARTIDO", "EqA", "EqB")
+            assert pild_pct != "70%", f"Píldora redondeó {p_val} a 70%"
+
+
+
 
 

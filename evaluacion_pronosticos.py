@@ -1588,6 +1588,8 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                     if _vals_e:
                         _d_e = min(_vals_e) - float(s.probabilidad)
                         _sig_desv = "-" if _d_e < -1e-6 else ("+" if _d_e > 1e-6 else "0")
+            from decision_cobertura import supera_umbral_probabilidad as _sup_umb_snap
+            _pasa_umb_s = bool(_sup_umb_snap(s.probabilidad, umbral, estricto_legado=True))
             entrada = {
                 "mercado": s.mercado, "id_mercado": s.id_mercado, "evento": s.evento,
                 "etiqueta": s.etiqueta, "periodo": s.periodo, "equipo": s.equipo,
@@ -1596,10 +1598,10 @@ def snapshot_desde_analisis(preparado: dict[str, Any],
                 "signo_desvio": _sig_desv if _est_sens == "sensible" else None,
                 **({"desvio_observado_pp": _desv_pp} if _desv_pp is not None and _est_sens == "sensible" else {}),
                 "escenarios": s.escenarios,
-                "supera_umbral": bool(s.probabilidad > umbral),
+                "supera_umbral": _pasa_umb_s,
             }
             todas.append(entrada)
-            if s.probabilidad > umbral:
+            if _pasa_umb_s:
                 publicadas.append(dict(entrada))
 
     traza_6, resumen_6 = _extraer_traza_etapa_6_snapshot(motor)

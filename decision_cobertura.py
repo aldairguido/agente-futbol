@@ -75,6 +75,7 @@ _BANDERAS_AUXILIARES_DEFECTO: Dict[str, bool] = {
     "usar_registro_consultas_jsonl_persistente": True,
     "usar_aislamiento_try_cuotas_ticket": True,
     "usar_etiqueta_matriz_final_y_cronologia_raw": True,
+    "usar_umbral_unificado_sin_tolerancia": True,
 }
 
 # Banderas de cierre/gobierno (Ronda 7 Puntos 5-6): no se encienden con activar_todas=True salvo override explícito.
@@ -99,6 +100,7 @@ _BANDERAS_EXCLUIDAS_ACTIVAR_TODAS = frozenset({
     "usar_registro_consultas_jsonl_persistente",
     "usar_aislamiento_try_cuotas_ticket",
     "usar_etiqueta_matriz_final_y_cronologia_raw",
+    "usar_umbral_unificado_sin_tolerancia",
 })
 
 _OVERRIDES_BANDERAS: Dict[str, bool] = {}
@@ -308,6 +310,29 @@ def obtener_umbral_cuota_justa_top5(umbrales: Optional[Dict[str, Any]] = None) -
     if bandera_activa("usar_cuota_justa_114_top5", u):
         return 1.14
     return float(u.get("min_cuota_justa_no_trivial_top5", 1.25))
+
+
+def supera_umbral_probabilidad(
+    prob: Optional[float],
+    umbral: float = 0.70,
+    *,
+    estricto_legado: bool = False,
+    tolerancia_legado: float = 0.0,
+) -> bool:
+    """
+    Criterio único de umbral de probabilidad (Ronda 31 Bloque 6):
+    con `usar_umbral_unificado_sin_tolerancia=True`, evalúa `float(prob) >= float(umbral)`
+    sobre la probabilidad sin redondear y sin tolerancia (`-1e-6`).
+    """
+    if prob is None:
+        return False
+    p = float(prob)
+    u = float(umbral)
+    if bandera_activa("usar_umbral_unificado_sin_tolerancia"):
+        return p >= u
+    if estricto_legado:
+        return p > u
+    return p >= (u - float(tolerancia_legado))
 
 
 @dataclass
