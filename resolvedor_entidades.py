@@ -1699,25 +1699,32 @@ def _guardian_r29_activo() -> bool:
         return True
 
 
+_RE_LIMPIAR_BASE_LIGA = re.compile(
+    r"\b(?:femenin[oa]|women|fem|u19|u20|u21|u23|sub-(?:19|20|21|23)|clausura|apertura|grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|playoffs?)\b"
+)
+_RE_SEPARADORES_LIGA = re.compile(r"[\-–—:|·]+")
+_RE_ESPACIOS_MULT = re.compile(r"\s+")
+_RE_TOKENS_PAIS_EXPLICITO: List[Tuple[re.Pattern[str], str]] = [
+    (re.compile(rf"\b{re.escape(tok_p)}\b"), iso_p)
+    for tok_p, iso_p in sorted(_TOKENS_PAIS_EXPLICITO_EN_LIGA.items(), key=lambda x: len(x[0]), reverse=True)
+]
+
+
 def _limpiar_base_nombre_liga(nombre_liga: Any) -> str:
     norm = normalizar_texto(str(nombre_liga or ""))
     if not norm:
         return ""
-    norm = re.sub(
-        r"\b(?:femenin[oa]|women|fem|u19|u20|u21|u23|sub-(?:19|20|21|23)|clausura|apertura|grupo\s+[a-z0-9]+|grp\.?\s*[a-z0-9]+|playoffs?)\b",
-        " ",
-        norm,
-    )
-    norm = re.sub(r"[\-–—:|·]+", " ", norm)
-    return re.sub(r"\s+", " ", norm).strip()
+    norm = _RE_LIMPIAR_BASE_LIGA.sub(" ", norm)
+    norm = _RE_SEPARADORES_LIGA.sub(" ", norm)
+    return _RE_ESPACIOS_MULT.sub(" ", norm).strip()
 
 
 def _extraer_pais_explicito_de_texto_liga(nombre_liga: Any) -> str:
     norm = normalizar_texto(str(nombre_liga or ""))
     if not norm:
         return ""
-    for tok_p, iso_p in sorted(_TOKENS_PAIS_EXPLICITO_EN_LIGA.items(), key=lambda x: len(x[0]), reverse=True):
-        if re.search(rf"\b{re.escape(tok_p)}\b", norm):
+    for pat_p, iso_p in _RE_TOKENS_PAIS_EXPLICITO:
+        if pat_p.search(norm):
             return iso_p
     return ""
 

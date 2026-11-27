@@ -143,50 +143,67 @@ CATALOGO_MERCADOS = [
 ]
 
 
+_CACHE_UMBRALES_ARCHIVO: Dict[str, Tuple[Optional[float], Dict[str, Any], Dict[str, bool]]] = {}
+
+
 def cargar_umbrales_cobertura(ruta: Optional[str] = None) -> Dict[str, Any]:
     """
     Carga umbrales_cobertura.yaml sin dependencias externas (soporta enteros/decimales
     negativos, booleanos, bloque flags_comportamiento y overrides de sesión).
+    Usa caché en memoria validada por mtime del archivo para evitar lecturas de disco
+    repetidas en cada llamada a bandera_activa().
     """
     path = ruta or RUTA_UMBRALES_COBERTURA
-    umbrales = dict(DEFAULTS_UMBRALES)
-    umbrales["flags_comportamiento"] = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
-    if os.path.isfile(path):
-        with open(path, "r", encoding="utf-8") as f:
-            contenido = f.read()
+    existe = os.path.isfile(path)
+    mtime: Optional[float] = os.path.getmtime(path) if existe else None
+    cached = _CACHE_UMBRALES_ARCHIVO.get(path)
+    if cached is not None and cached[0] == mtime:
+        umbrales = dict(cached[1])
+        umbrales["flags_comportamiento"] = dict(cached[2])
+    else:
+        umbrales = dict(DEFAULTS_UMBRALES)
+        umbrales["flags_comportamiento"] = dict(BANDERAS_COMPORTAMIENTO_DEFECTO)
+        if existe:
+            with open(path, "r", encoding="utf-8") as f:
+                contenido = f.read()
 
-        en_flags = False
-        for linea in contenido.splitlines():
-            raw_no_comment = linea.split("#")[0].rstrip()
-            if not raw_no_comment.strip():
-                continue
-            indent = len(raw_no_comment) - len(raw_no_comment.lstrip(" "))
-            linea_limpia = raw_no_comment.strip()
-            if linea_limpia == "flags_comportamiento:":
-                en_flags = True
-                continue
-            if indent == 0 and ":" in linea_limpia:
-                en_flags = False
-            if ":" not in linea_limpia:
-                continue
-            k, v = linea_limpia.split(":", 1)
-            k = k.strip()
-            v = v.strip()
-            if v == "":
-                continue
-            val_parsed: Any = None
-            if re.match(r"^-?\d+$", v):
-                val_parsed = int(v)
-            elif re.match(r"^-?\d+\.\d+$", v):
-                val_parsed = float(v)
-            elif v.lower() in ("true", "false"):
-                val_parsed = v.lower() == "true"
-            if val_parsed is not None:
-                if en_flags or k in BANDERAS_COMPORTAMIENTO_DEFECTO:
-                    umbrales["flags_comportamiento"][k] = bool(val_parsed)
-                    umbrales[k] = bool(val_parsed)
-                else:
-                    umbrales[k] = val_parsed
+            en_flags = False
+            for linea in contenido.splitlines():
+                raw_no_comment = linea.split("#")[0].rstrip()
+                if not raw_no_comment.strip():
+                    continue
+                indent = len(raw_no_comment) - len(raw_no_comment.lstrip(" "))
+                linea_limpia = raw_no_comment.strip()
+                if linea_limpia == "flags_comportamiento:":
+                    en_flags = True
+                    continue
+                if indent == 0 and ":" in linea_limpia:
+                    en_flags = False
+                if ":" not in linea_limpia:
+                    continue
+                k, v = linea_limpia.split(":", 1)
+                k = k.strip()
+                v = v.strip()
+                if v == "":
+                    continue
+                val_parsed: Any = None
+                if re.match(r"^-?\d+$", v):
+                    val_parsed = int(v)
+                elif re.match(r"^-?\d+\.\d+$", v):
+                    val_parsed = float(v)
+                elif v.lower() in ("true", "false"):
+                    val_parsed = v.lower() == "true"
+                if val_parsed is not None:
+                    if en_flags or k in BANDERAS_COMPORTAMIENTO_DEFECTO:
+                        umbrales["flags_comportamiento"][k] = bool(val_parsed)
+                        umbrales[k] = bool(val_parsed)
+                    else:
+                        umbrales[k] = val_parsed
+        _CACHE_UMBRALES_ARCHIVO[path] = (
+            mtime,
+            dict(umbrales),
+            dict(umbrales["flags_comportamiento"]),
+        )
 
     if _OVERRIDES_BANDERAS:
         for fk, fv in _OVERRIDES_BANDERAS.items():
