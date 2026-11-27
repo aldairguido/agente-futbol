@@ -4805,9 +4805,13 @@ def calcular_frecuencia_observada(
         return None
 
     from resolvedor_entidades import normalizar_texto
+    from decision_cobertura import bandera_activa as _ba_te_f4
+    _exacto_te = bool(_ba_te_f4("usar_emparejamiento_exacto_sin_subcadena"))
     nom_l = normalizar_texto(eq_l)
     nom_v = normalizar_texto(eq_v)
     eq_norm = normalizar_texto(eq)
+    es_eq_l = bool(eq_norm and (eq_norm == nom_l if _exacto_te else (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)))
+    es_eq_v = bool(eq_norm and (eq_norm == nom_v if _exacto_te else (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)))
     es_under = ("under" in ev or ("menos" in et and "al menos" not in et))
     es_al_menos = ("al_menos" in ev or "al menos" in et)
 
@@ -4831,12 +4835,12 @@ def calcular_frecuencia_observada(
 
     # 2. Córneres por equipo o totales
     if (any(k in mkt for k in ("corner", "córner")) or "corner" in ev) and lin is not None:
-        if "local" in ev or (eq_norm and (eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm)):
+        if "local" in ev or es_eq_l:
             valid = [float(p["cf"]) for p in pts_l if p.get("cf") is not None]
             if not valid:
                 return None
             return (sum(1 for c in valid if c < lin) / len(valid)) if es_under else (sum(1 for c in valid if c > lin) / len(valid))
-        elif "visita" in ev or "visitante" in ev or (eq_norm and (eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm)):
+        elif "visita" in ev or "visitante" in ev or es_eq_v:
             valid = [float(p["cf"]) for p in pts_v if p.get("cf") is not None]
             if not valid:
                 return None
@@ -4864,7 +4868,7 @@ def calcular_frecuencia_observada(
 
     # 4. Goles por equipo (respetando periodo 1T/2T)
     if ("goles" in mkt or "gol" in ev) and eq_norm and lin is not None:
-        if eq_norm == nom_l or eq_norm in nom_l or nom_l in eq_norm:
+        if es_eq_l:
             valid = [float(p["gf_per"]) for p in pts_l if p.get("gf_per") is not None]
             if not valid:
                 return None
@@ -4873,7 +4877,7 @@ def calcular_frecuencia_observada(
             if es_al_menos:
                 return sum(1 for g in valid if g >= lin) / len(valid)
             return sum(1 for g in valid if g > lin) / len(valid)
-        elif eq_norm == nom_v or eq_norm in nom_v or nom_v in eq_norm:
+        elif es_eq_v:
             valid = [float(p["gf_per"]) for p in pts_v if p.get("gf_per") is not None]
             if not valid:
                 return None
@@ -5585,15 +5589,21 @@ def seleccionar_top_5_jugadas_recomendadas(
     prohibir_over05_visita = (pos_proy_v_t < 43.0 or atk_v_top < 34.0 or lam_v < 0.95)
 
     def _es_equipo_over_05(s: Any, bando_check: str) -> bool:
+        from resolvedor_entidades import normalizar_texto as _nt_ov05
+        from decision_cobertura import bandera_activa as _ba_ov05
+        _exacto_ov05 = bool(_ba_ov05("usar_emparejamiento_exacto_sin_subcadena"))
         ev_s = str(_v(s, "evento") or "").lower()
         et_s = str(_v(s, "etiqueta") or "").lower()
         eq_s = str(_v(s, "equipo") or "").strip().lower()
         lin_s = _v(s, "linea", None)
         nom_eq = (eq_l if bando_check == "local" else eq_v).strip().lower()
-        es_bando = (
-            ev_s.startswith(f"{bando_check}_")
-            or (eq_s and (eq_s == nom_eq or eq_s in nom_eq or nom_eq in eq_s))
-        )
+        if _exacto_ov05:
+            es_bando = ev_s.startswith(f"{bando_check}_") or bool(eq_s and _nt_ov05(eq_s) == _nt_ov05(nom_eq))
+        else:
+            es_bando = (
+                ev_s.startswith(f"{bando_check}_")
+                or (eq_s and (eq_s == nom_eq or eq_s in nom_eq or nom_eq in eq_s))
+            )
         if not es_bando:
             return False
         if ("over_0.5" in ev_s) or ("al_menos_1" in ev_s):

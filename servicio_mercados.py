@@ -290,7 +290,17 @@ def _partido_futuro_en_comun(doc_local: dict[str, Any],
     } | {_clave_equipo(a) for a in (doc_visitante.get("equipo") or {}).get("alternativas") or []}
     nom_v.discard("")
 
+    from decision_cobertura import bandera_activa as _ba_emp_f4
+    _exacto_f4 = bool(_ba_emp_f4("usar_emparejamiento_exacto_sin_subcadena"))
+
     def coincide_bando(bid: str, bnom: str, target_id: str, target_noms: set[str]) -> bool:
+        if _exacto_f4:
+            if target_id and bid:
+                return str(bid).strip() == str(target_id).strip()
+            cl = _clave_equipo(bnom)
+            if not cl:
+                return False
+            return cl in target_noms
         if target_id and bid and str(bid) == str(target_id):
             return True
         cl = _clave_equipo(bnom)
@@ -612,21 +622,41 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
 
     info_analisis = resolver_fecha_encuentro_lima(None, es_partido_programado=False)
 
+    from decision_cobertura import bandera_activa as _ba_meta_f4
+    _exacto_meta_f4 = bool(_ba_meta_f4("usar_emparejamiento_exacto_sin_subcadena"))
+
+    id_l_doc = str(((doc_local or {}).get("equipo") or {}).get("id") or "").strip()
+    id_v_doc = str(((doc_visitante or {}).get("equipo") or {}).get("id") or "").strip()
+    cl_l = _clave_equipo(equipo_local)
+    cl_v = _clave_equipo(equipo_visitante)
+
     por_id: dict[str, dict[str, Any]] = {}
-    for doc, equipo in ((doc_local, equipo_local), (doc_visitante, equipo_visitante)):
+    for doc, equipo, side_tag in ((doc_local, equipo_local, "local"), (doc_visitante, equipo_visitante, "visitante")):
         for p in doc.get("partidos", []):
             pid = str(p.get("id_partido"))
-            por_id.setdefault(pid, {})[equipo.lower()] = p
+            key_b = side_tag if _exacto_meta_f4 else equipo.lower()
+            por_id.setdefault(pid, {})[key_b] = p
 
     nombre_l = equipo_local.lower()
     nombre_v = equipo_visitante.lower()
     for pid, bandos in por_id.items():
-        claves = list(bandos.keys())
-        tiene_l = any(nombre_l in k or k in nombre_l for k in claves)
-        tiene_v = any(nombre_v in k or k in nombre_v for k in claves)
-        if tiene_l and tiene_v and len(bandos) >= 2:
-            pl = bandos.get(claves[0])
-            pv = bandos.get(claves[1])
+        if _exacto_meta_f4:
+            if id_l_doc and id_v_doc and id_l_doc == id_v_doc:
+                continue
+            if not (id_l_doc and id_v_doc) and cl_l == cl_v:
+                continue
+            pl = bandos.get("local")
+            pv = bandos.get("visitante")
+            tiene_l = pl is not None
+            tiene_v = pv is not None
+            cond_l = str(pl.get("condicion", "")).lower() if pl is not None else None
+            cond_v = str(pv.get("condicion", "")).lower() if pv is not None else None
+        else:
+            claves = list(bandos.keys())
+            tiene_l = any(nombre_l in k or k in nombre_l for k in claves)
+            tiene_v = any(nombre_v in k or k in nombre_v for k in claves)
+            pl = bandos.get(claves[0]) if len(claves) >= 1 else None
+            pv = bandos.get(claves[1]) if len(claves) >= 2 else None
             cond_l = None
             cond_v = None
             for k, p in bandos.items():
@@ -634,6 +664,7 @@ def _metadatos_del_encuentro(doc_local: dict[str, Any], doc_visitante: dict[str,
                     cond_l = str(p.get("condicion", "")).lower()
                 if nombre_v in k or k in nombre_v:
                     cond_v = str(p.get("condicion", "")).lower()
+        if tiene_l and tiene_v and len(bandos) >= 2:
 
             m_l = pl.get("marcador") or {}
             m_v = pv.get("marcador") or {}
@@ -752,7 +783,16 @@ def construir_resumen_h2h_ticket(
     t_v = _toks(equipo_visitante)
     fecha_lim = str(fecha_objetivo or "")[:10]
 
+    from decision_cobertura import bandera_activa as _ba_h2h_f4
+    _exacto_h2h_f4 = bool(_ba_h2h_f4("usar_emparejamiento_exacto_sin_subcadena"))
+    claves_l = {_clave_equipo(t) for t in t_l if _clave_equipo(t)}
+    claves_v = {_clave_equipo(t) for t in t_v if _clave_equipo(t)}
+
     def _mismo(nombre: str, toks: set[str]) -> bool:
+        if _exacto_h2h_f4:
+            cl_s = _clave_equipo(str(nombre or ""))
+            claves_ref = claves_l if toks is t_l else (claves_v if toks is t_v else {_clave_equipo(t) for t in toks if _clave_equipo(t)})
+            return bool(cl_s) and (cl_s in claves_ref)
         s = _sin_acentos(str(nombre or "")).lower().strip()
         return any(s == tk or tk in s or s in tk for tk in toks if len(tk) >= 3)
 

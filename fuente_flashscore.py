@@ -612,6 +612,13 @@ class ClienteFlashscore:
                 vis_c = str(c.get("visitante") or "")
                 directo = _parecido(loc_c, eq_l) and _parecido(vis_c, eq_v)
                 invertido = _parecido(loc_c, eq_v) and _parecido(vis_c, eq_l)
+                if directo and invertido:
+                    from decision_cobertura import bandera_activa as _ba_fs_p
+                    if bool(_ba_fs_p("usar_emparejamiento_exacto_sin_subcadena")):
+                        nl_c, nv_c = normalizar(loc_c), normalizar(vis_c)
+                        nl_q, nv_q = normalizar(eq_l), normalizar(eq_v)
+                        directo = (nl_c == nl_q and nv_c == nv_q)
+                        invertido = (nl_c == nv_q and nv_c == nl_q)
                 if not (directo or invertido):
                     continue
                 if d_obj is not None and c.get("fecha"):
@@ -885,6 +892,13 @@ class ClienteFlashscore:
         finalizados (`AB=3`) para evitar contaminar cuotas pre-partido con cuotas in-play.
         """
         import unicodedata
+        from decision_cobertura import bandera_activa as _ba_feed_f4
+        _exacto_feed = bool(_ba_feed_f4("usar_emparejamiento_exacto_sin_subcadena"))
+        _vacias_feed = (
+            ("fc", "cf", "cd", "ac", "as", "fk", "sk", "de", "la", "el", "club", "the", "if", "unido")
+            if _exacto_feed
+            else ("fc", "cf", "sc", "cd", "ac", "as", "fk", "sk", "de", "la", "el", "club", "atletico", "sporting")
+        )
 
         def _norm(s: str) -> str:
             t = str(s or "").lower()
@@ -892,7 +906,7 @@ class ClienteFlashscore:
                 t = t.replace(src_c, dst_c)
             t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode("ascii")
             t = re.sub(r"[^a-z0-9]+", " ", t).strip()
-            toks = [w for w in t.split() if w not in ("fc", "cf", "sc", "cd", "ac", "as", "fk", "sk", "de", "la", "el", "club", "atletico", "sporting")]
+            toks = [w for w in t.split() if w not in _vacias_feed]
             return " ".join(toks) if toks else t
 
         nl = _norm(equipo_local)
@@ -913,6 +927,12 @@ class ClienteFlashscore:
                 el = _norm(ev["local"])
                 ev_n = _norm(ev["visitante"])
                 if not el or not ev_n:
+                    continue
+                if _exacto_feed:
+                    if nl == el and nv == ev_n:
+                        score = 2.0 + (0.25 if ev.get("estado") == "1" else 0.0)
+                        if mejor is None or score > mejor[0]:
+                            mejor = (score, ev)
                     continue
                 tel = set(el.split())
                 tev = set(ev_n.split())
@@ -1475,19 +1495,36 @@ def _parecido(a: str, b: str) -> bool:
     entre paréntesis ni palabras vacías, y admitiendo que uno sea prefijo del otro
     (FotMob dice «Kashiwa Reysol», Flashscore dice «Kashiwa (Jpn)»).
     """
+    from decision_cobertura import bandera_activa as _ba_par_f4
+    _exacto_par = bool(_ba_par_f4("usar_emparejamiento_exacto_sin_subcadena"))
+    _vacias_par = (
+        ("fc", "cf", "ac", "cd", "club", "de", "the", "if", "sk", "unido")
+        if _exacto_par
+        else ("fc", "cf", "sc", "ac", "cd", "club", "de", "the", "if", "sk")
+    )
+
     def limpio(t: str) -> str:
         t = re.sub(r"\([^)]*\)", " ", str(t or ""))          # fuera «(Jpn)»
         t = normalizar(t)
-        palabras = [p for p in t.split() if p not in
-                    ("fc", "cf", "sc", "ac", "cd", "club", "de", "the", "if", "sk")]
+        palabras = [p for p in t.split() if p not in _vacias_par]
         return " ".join(palabras)
     ca, cb = limpio(a), limpio(b)
     if not ca or not cb:
         return False
     if ca == cb:
         return True
-    # Coincidencia por la primera palabra significativa (evita «Ararat 2» vs «Ararat»)
     pa, pb = ca.split(), cb.split()
+    if _exacto_par:
+        # Solo admitir prefijo de primera palabra cuando proviene de etiqueta de país
+        # de Flashscore entre paréntesis («Kashiwa (Jpn)» vs «Kashiwa Reysol») o filial numérica («Ararat 2» vs «Ararat»).
+        tiene_tag_pais = bool(re.search(r"\([A-Za-z]{2,4}\)", str(a or "")) or re.search(r"\([A-Za-z]{2,4}\)", str(b or "")))
+        es_filial_num = (len(pa) == 2 and len(pb) == 1 and pa[0] == pb[0] and pa[1].isdigit()) or (
+            len(pb) == 2 and len(pa) == 1 and pa[0] == pb[0] and pb[1].isdigit()
+        )
+        if (tiene_tag_pais or es_filial_num) and pa and pb and pa[0] == pb[0]:
+            return True
+        return False
+    # Coincidencia por la primera palabra significativa (evita «Ararat 2» vs «Ararat»)
     if pa and pb and pa[0] == pb[0]:
         return True
     return ca.startswith(cb) or cb.startswith(ca)

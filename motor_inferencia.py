@@ -57,6 +57,22 @@ def _es_mismo_equipo(nombre_buscado: str, nombre_en_partido: str) -> bool:
         return False
     if a == b:
         return True
+    from decision_cobertura import bandera_activa as _ba_mi_f4
+    _exacto_mi = bool(_ba_mi_f4("usar_emparejamiento_exacto_sin_subcadena"))
+    if _exacto_mi:
+        # Evitar falsos positivos de subcadena entre clubes distintos ('inter' vs 'internacional', 'athletic' vs 'atletico')
+        _pares_distintos = (
+            ({"inter", "inter milan", "internazionale"}, {"internacional", "sc internacional"}),
+            ({"athletic", "athletic club", "athletic bilbao"}, {"atletico", "atletico madrid", "atletico de madrid", "atletico nacional"}),
+        )
+        for g1, g2 in _pares_distintos:
+            if (a in g1 and b in g2) or (a in g2 and b in g1):
+                return False
+        if " " not in a and " " not in b and a != b:
+            # Solo permitir alias de raíz truncada conocido ('barca' vs 'barcelona'), nunca 'inter' vs 'internacional'
+            if {a, b} == {"barca", "barcelona"}:
+                return True
+            return False
     # Evitar falsos positivos cuando ambos empiezan con 'real ' o 'atletico ' pero difieren en la segunda palabra
     for pref in ("real ", "atletico ", "deportivo ", " sporting "):
         p_s = pref.strip() + " "
@@ -1705,11 +1721,25 @@ def generar_veredicto_tactico_partido(
             toks = [t for t in re.split(r"[^a-z0-9]+", s) if len(t) >= 4 and t not in ("club", "real", "city", "sport", "futbol", "football", "united", "atletico", "deportivo")]
             return toks or ([s.strip()] if s.strip() else [])
         import unicodedata as _ud2
+        from decision_cobertura import bandera_activa as _ba_mkt2t_f4
+        _exacto_mkt2t = bool(_ba_mkt2t_f4("usar_emparejamiento_exacto_sin_subcadena"))
         txt_norm = "".join(c for c in _ud2.normalize("NFD", txt_busq) if _ud2.category(c) != "Mn")
         nl_norm = "".join(c for c in _ud2.normalize("NFD", nombre_local.lower()) if _ud2.category(c) != "Mn").strip()
         nv_norm = "".join(c for c in _ud2.normalize("NFD", nombre_visita.lower()) if _ud2.category(c) != "Mn").strip()
-        en_loc = bool(nl_norm and nl_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_local))
-        en_vis = bool(nv_norm and nv_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_visita))
+        if _exacto_mkt2t:
+            palabras_txt = set(re.findall(r"[a-z0-9]+", txt_norm))
+            toks_l = set(_tokens_club(nombre_local))
+            toks_v = set(_tokens_club(nombre_visita))
+            en_loc = bool(toks_l and toks_l.issubset(palabras_txt))
+            en_vis = bool(toks_v and toks_v.issubset(palabras_txt))
+            if en_loc and en_vis:
+                if len(toks_l) > len(toks_v):
+                    en_vis = False
+                elif len(toks_v) > len(toks_l):
+                    en_loc = False
+        else:
+            en_loc = bool(nl_norm and nl_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_local))
+            en_vis = bool(nv_norm and nv_norm in txt_norm) or any(t in txt_norm for t in _tokens_club(nombre_visita))
         if en_vis and not en_loc:
             return "visita"
         if en_loc and not en_vis:
